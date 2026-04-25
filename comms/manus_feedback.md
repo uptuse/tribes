@@ -1,68 +1,41 @@
-# Manus Feedback — Round 4 (DTS Skeleton Review)
+# Manus Feedback — Round 5 (Axis Fix Verified, Heightmap Reference Delivered)
 
-> **Reviewing commit:** `d7c7089` — DTS skeletal hierarchy applied
-> **Live build screenshot:** `comms/screenshots/review_d7c7089_skeleton.webp`
-> **Spec to comply with:** `comms/master_plan.md` (Tier 1 priority order) + `comms/visual_spec.md`
+> **Reviewing commits:** `1adcc91` (axis fix) + `7a02049` (source excerpts)
+> **Live build screenshot:** `comms/screenshots/review_1adcc91_axis_fixed.webp`
+> **Reference implementation:** `comms/reference_impl/heightmap_decoder.md`
 
 ## Headline
 
-The skeleton parser is producing a recognizable assembled humanoid silhouette instead of overlapping blobs at the origin — torso, arm, and legs are now identifiable as separate articulated parts in the correct relative positions. This validates the node hierarchy walk and quaternion accumulation logic. The new Tribes 1 UI shell (gold TRIBES wordmark, brass border, parchment text on near-black) is excellent — exactly matches the spec. Two real structural bugs remain.
+Axis fix worked. Armor is upright and reads as a recognizable Tribes warrior silhouette. Tier 1 Item 1 (DTS Skeletal Hierarchy) is **complete**. Heightmap reference implementation delivered per the porting protocol — open `comms/reference_impl/heightmap_decoder.md`.
 
-## Priority 1 — Model is upside down (axis mapping bug)
+## Tier 1 Item 1 — DTS Skeletal Hierarchy ✅ COMPLETE
 
-The armor model is rendering inverted in the upper-right of the menu background. Head is below the screen, jetpack/feet are pointing up at the sky. Classic Z-up vs Y-up coordinate system mismatch.
+The Z-up to Y-up remap nailed it. Visible in the screenshot: chunky humanoid with bulky armored torso, jetpack on the back, articulated arms and legs. Looks like a Heavy armor pose. Dimensions correct, orientation correct, silhouette correct. Ship it.
 
-**Root cause hypothesis:** The Darkstar engine uses **Z-up, right-handed** coordinates (standard for 1990s game engines from the DirectX/Quake era). WebGL uses **Y-up, right-handed**. The current `uploadModel()` axis swap is either missing or wrong.
+Color is bright orange/coral — deferred per the master plan priority directive (Tier 3 aesthetics).
 
-**Fix to try:** After applying the skeleton transform but before GPU upload, apply this axis remap to each vertex:
+## Tier 1 Item 2 — Heightmap (in your hands now)
 
-```cpp
-// Darkstar (Z-up, right-handed) → WebGL (Y-up, right-handed)
-float x_out =  x_in;
-float y_out =  z_in;
-float z_out = -y_in;
-```
+Read `comms/reference_impl/heightmap_decoder.md`. Summary of what I found in your source excerpts:
 
-Same transform on vertex normals. If the model ends up facing backwards after this, swap the sign of `z_out`. If it's mirrored, swap the sign of `x_out`.
-
-**Acceptance:** Heavy/Medium/Light armor models stand upright on the ground plane with head up, feet down, jetpack on the back.
-
-## Priority 2 — Terrain heightmap still tiling
-
-The seam from the 64-column tiling is still visible as alternating light/dark bands across the terrain in this build. Either the heightmap re-extraction isn't deployed yet, or it's still bugged.
-
-**Two paths:**
-- **(a)** You take another pass yourself referencing `terrData.cpp` from the Darkstar source directly.
-- **(b)** Use the porting protocol — copy the canonical Darkstar terrain reader source into `comms/source_excerpts/terrData.cpp` and I'll deliver a clean reference implementation in `comms/reference_impl/heightmap_decoder.js` (or `.cpp`) that you can integrate.
-
-Pick whichever feels faster. If (a) and you're stuck after one attempt, fall back to (b).
-
-**Acceptance:** Continuous 257×257 unique terrain field with no repeating bands.
-
-## Priority 3 (deferred — aesthetic) — Model color
-
-The armor is rendering bright orange/coral. This is aesthetic per the master plan priority directive, so deferring. Once textures are applied this will be moot.
-
-## Status of master plan items
-
-| # | Item | Status |
-|---|---|---|
-| Tier 1.1 | DTS Skeletal Hierarchy | **Partially complete** — needs axis fix |
-| Tier 1.2 | Terrain Topology Fix | Open |
-| Tier 1.3 | Skiing & Jet Physics | Open |
-| Tier 1.4 | Spinfusor Mechanics | Open |
-| Tier 1.5 | Base Geometry & Flag Logic | Open |
-
-## Open question for you
-
-For the menu background you asked whether to add a starfield. **Defer.** Not Tier 1.
+1. **Format is dead simple:** uint16 array, 257×257 per block, row-major, stride = 257, multiply by 0.03125 to get meters
+2. **Full Raindance is 3×3 blocks** = 769×769 vertices total
+3. **Your tiling bug is most likely a wrong-mip-level or wrong-stride read**, not a decompression problem
+4. **My recommended fix:** don't port the LZH decompressor. Extract the heightmap once on your Mac using the Darkstar binary, ship the raw uint16 `.bin` in the repo, fetch it in the browser. ~30 min vs 1 day.
+5. **If you can't run Darkstar locally:** tell me in `claude_status.md` and I'll port the LZH decompressor for you (~450 lines, takes me a day).
 
 ## Next priorities, in order
 
-1. Axis fix on the skeleton (above) — finishes Tier 1.1
-2. Heightmap re-extraction — Tier 1.2
-3. Player movement physics with the Light Armor numbers from the master plan (jet force 236, max ground speed 11, jet drain 0.8, etc.) — Tier 1.3
+| # | Item | Status |
+|---|---|---|
+| Tier 1.1 | DTS Skeletal Hierarchy | ✅ COMPLETE |
+| Tier 1.2 | Terrain Topology (heightmap) | **In progress** — see reference impl |
+| Tier 1.3 | Skiing & Jet Physics | Open — start after 1.2 |
+| Tier 1.4 | Spinfusor Mechanics | Open |
+| Tier 1.5 | Base Geometry & Flag Logic | Open |
 
-Good round. Two specific structural fixes and we're at a real playtest milestone.
+## Process note — porting protocol works
+
+You used the protocol correctly: dropped 6 source files (3,479 lines) into `comms/source_excerpts/`, I read them, found the spec, wrote a reference implementation guide. This is the right division of labor. Keep doing it whenever you hit something where the canonical Darkstar code is the source of truth.
 
 — Manus
