@@ -5,103 +5,121 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Starsiege: Tribes</title>
   <style>
-    @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Rajdhani:wght@300;400;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap');
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#000; color:#ccc; font-family:'Rajdhani',sans-serif; overflow:hidden; height:100vh; display:flex; align-items:center; justify-content:center; }
+    body { background:#0a0a08; color:#E8DCB8; font-family:'Barlow Condensed',sans-serif; overflow:hidden; height:100vh; display:flex; align-items:center; justify-content:center; }
     canvas { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); cursor:crosshair; z-index:1; }
 
-    /* Overlay system */
     .overlay { position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; display:flex; align-items:center; justify-content:center; pointer-events:none; }
     .overlay.active { pointer-events:auto; }
     .overlay:not(.active) { display:none; }
-    .panel { background:rgba(8,12,20,0.95); border:1px solid rgba(80,160,255,0.3); border-radius:4px; padding:30px 40px; min-width:400px; box-shadow:0 0 40px rgba(20,60,120,0.4), inset 0 0 60px rgba(10,20,40,0.3); }
-    .panel-wide { min-width:700px; }
 
-    /* Typography */
-    h1 { font-family:'Orbitron',sans-serif; font-size:2.8em; font-weight:900; letter-spacing:6px; text-transform:uppercase; background:linear-gradient(180deg,#7cb8ff,#3a7bd5,#1a3a6a); -webkit-background-clip:text; -webkit-text-fill-color:transparent; margin-bottom:5px; text-align:center; }
-    h2 { font-family:'Orbitron',sans-serif; font-size:1.3em; font-weight:400; letter-spacing:4px; color:#4a8ac7; text-transform:uppercase; margin-bottom:25px; text-align:center; }
-    h3 { font-family:'Orbitron',sans-serif; font-size:1em; font-weight:700; letter-spacing:3px; color:#5a9ad5; text-transform:uppercase; margin-bottom:15px; border-bottom:1px solid rgba(80,160,255,0.2); padding-bottom:8px; }
+    /* Tribes 1 dialog panel: near-black warm grey, brass border */
+    .panel { background:rgba(20,20,18,0.96); border:2px solid #7A6A4A; padding:25px 35px; min-width:380px; }
+    .panel-wide { min-width:650px; }
 
-    /* Buttons */
-    .btn { display:block; width:100%; padding:14px 20px; margin:8px 0; background:linear-gradient(180deg,rgba(30,60,100,0.6),rgba(15,30,60,0.8)); border:1px solid rgba(80,160,255,0.3); border-radius:3px; color:#8cc4ff; font-family:'Orbitron',sans-serif; font-size:0.95em; letter-spacing:3px; text-transform:uppercase; cursor:pointer; transition:all 0.2s; text-align:center; }
-    .btn:hover { background:linear-gradient(180deg,rgba(40,80,140,0.8),rgba(20,50,100,0.9)); border-color:rgba(100,180,255,0.6); color:#fff; box-shadow:0 0 15px rgba(60,140,255,0.3); transform:translateY(-1px); }
-    .btn:active { transform:translateY(1px); }
-    .btn-red { border-color:rgba(255,80,80,0.4); color:#ff8888; background:linear-gradient(180deg,rgba(100,30,30,0.6),rgba(60,15,15,0.8)); }
-    .btn-red:hover { border-color:rgba(255,100,100,0.7); color:#ffaaaa; box-shadow:0 0 15px rgba(255,60,60,0.3); }
-    .btn-small { padding:10px 15px; font-size:0.8em; width:auto; display:inline-block; margin:4px; }
-    .btn-selected { background:linear-gradient(180deg,rgba(60,120,200,0.7),rgba(30,80,160,0.9)); border-color:rgba(120,200,255,0.8); color:#fff; box-shadow:0 0 20px rgba(60,140,255,0.4); }
+    /* Gold wordmark */
+    .wordmark { font-family:'Cinzel',serif; font-size:3.2em; font-weight:900; letter-spacing:8px; text-transform:uppercase; text-align:center;
+      background:linear-gradient(180deg,#FFEE60,#D4A030,#8A6A20); -webkit-background-clip:text; -webkit-text-fill-color:transparent;
+      text-shadow:none; filter:drop-shadow(0 2px 4px rgba(0,0,0,0.8)); }
+    .subtitle { font-family:'Cinzel',serif; font-size:0.85em; font-weight:400; letter-spacing:6px; color:#9A8A6A; text-transform:uppercase; text-align:center; margin-bottom:20px; }
+
+    h3 { font-family:'Cinzel',serif; font-size:0.95em; font-weight:700; letter-spacing:3px; color:#D4A030; text-transform:uppercase; margin-bottom:12px;
+      border-bottom:1px solid #4A3A2A; padding-bottom:6px; }
+
+    /* Menu items — plain text, no buttons */
+    .menu-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px 40px; margin:25px 0; text-align:center; }
+    .menu-item { font-family:'Barlow Condensed',sans-serif; font-size:1.15em; font-weight:500; letter-spacing:3px; text-transform:uppercase;
+      color:#E8DCB8; cursor:pointer; padding:10px 5px; transition:color 0.15s; }
+    .menu-item:hover { color:#FFC850; }
+
+    /* Tab strip */
+    .tab-strip { display:flex; justify-content:center; gap:30px; padding:8px 0; border-bottom:1px solid #3A3020; margin-bottom:10px; }
+    .tab-item { font-family:'Barlow Condensed',sans-serif; font-size:0.8em; font-weight:600; letter-spacing:3px; text-transform:uppercase;
+      color:#7A6A4A; cursor:pointer; padding:4px 8px; }
+    .tab-item:hover, .tab-item.active { color:#FFC850; border-bottom:1px solid #D4A030; }
+
+    /* Buttons — rectangular, brass border */
+    .btn { display:block; width:100%; padding:11px 18px; margin:6px 0;
+      background:rgba(26,26,24,0.9); border:1px solid #7A6A4A; color:#E8DCB8;
+      font-family:'Barlow Condensed',sans-serif; font-size:0.95em; font-weight:500; letter-spacing:2px; text-transform:uppercase;
+      cursor:pointer; transition:all 0.15s; text-align:center; }
+    .btn:hover { border-color:#D4A030; color:#FFC850; background:rgba(40,35,25,0.95); }
+    .btn:active { background:rgba(50,45,30,0.95); }
+    .btn-small { padding:8px 12px; font-size:0.8em; width:auto; display:inline-block; margin:3px; }
+    .btn-selected { border-color:#D4A030; color:#FFC850; background:rgba(50,40,20,0.7); }
+    .btn-back { border-color:#5A4A3A; color:#9A8A6A; }
+    .btn-back:hover { border-color:#7A6A4A; color:#E8DCB8; }
 
     /* Armor cards */
-    .armor-row { display:flex; gap:15px; margin:15px 0; }
-    .armor-card { flex:1; background:rgba(15,25,40,0.8); border:1px solid rgba(80,160,255,0.2); border-radius:4px; padding:15px; cursor:pointer; transition:all 0.2s; text-align:center; }
-    .armor-card:hover { border-color:rgba(100,180,255,0.5); background:rgba(20,35,60,0.9); }
-    .armor-card.selected { border-color:rgba(100,200,255,0.8); box-shadow:0 0 20px rgba(60,140,255,0.3); background:rgba(25,45,80,0.9); }
-    .armor-name { font-family:'Orbitron',sans-serif; font-size:1.1em; color:#8cc4ff; margin-bottom:8px; letter-spacing:2px; }
-    .armor-icon { font-size:2.5em; margin:10px 0; }
-    .armor-stat { font-size:0.8em; color:#6a9ac0; margin:3px 0; }
-    .stat-bar { height:4px; background:rgba(40,60,90,0.5); border-radius:2px; margin-top:2px; }
-    .stat-fill { height:100%; background:linear-gradient(90deg,#3a7bd5,#7cb8ff); border-radius:2px; }
+    .armor-row { display:flex; gap:12px; margin:12px 0; }
+    .armor-card { flex:1; background:rgba(22,22,20,0.9); border:1px solid #4A3A2A; padding:12px; cursor:pointer; transition:all 0.15s; text-align:center; }
+    .armor-card:hover { border-color:#7A6A4A; }
+    .armor-card.selected { border-color:#D4A030; background:rgba(40,35,20,0.7); }
+    .armor-name { font-family:'Cinzel',serif; font-size:1em; color:#D4A030; margin-bottom:6px; letter-spacing:2px; }
+    .armor-stat { font-size:0.78em; color:#9A8A6A; margin:2px 0; }
+    .stat-bar { height:3px; background:rgba(40,35,25,0.6); margin-top:2px; }
+    .stat-fill { height:100%; background:linear-gradient(90deg,#7A6A4A,#D4A030); }
 
     /* Team select */
-    .team-row { display:flex; gap:20px; margin:15px 0; }
-    .team-card { flex:1; padding:20px; border-radius:4px; cursor:pointer; transition:all 0.2s; text-align:center; }
-    .team-red { background:rgba(80,20,20,0.6); border:2px solid rgba(255,60,60,0.3); }
-    .team-red:hover,.team-red.selected { border-color:rgba(255,100,100,0.8); box-shadow:0 0 20px rgba(255,40,40,0.3); }
-    .team-blue { background:rgba(20,20,80,0.6); border:2px solid rgba(60,60,255,0.3); }
-    .team-blue:hover,.team-blue.selected { border-color:rgba(100,100,255,0.8); box-shadow:0 0 20px rgba(40,40,255,0.3); }
-    .team-name { font-family:'Orbitron',sans-serif; font-size:1.4em; letter-spacing:3px; margin-bottom:10px; }
-    .team-roster { font-size:0.85em; color:#999; line-height:1.6; }
+    .team-row { display:flex; gap:15px; margin:12px 0; }
+    .team-card { flex:1; padding:18px; cursor:pointer; transition:all 0.15s; text-align:center; }
+    .team-red { background:rgba(50,18,18,0.6); border:1px solid #6A2A2A; }
+    .team-red:hover,.team-red.selected { border-color:#C8302C; }
+    .team-blue { background:rgba(18,18,50,0.6); border:1px solid #2A2A6A; }
+    .team-blue:hover,.team-blue.selected { border-color:#2C5AC8; }
+    .team-name { font-family:'Cinzel',serif; font-size:1.2em; letter-spacing:2px; margin-bottom:8px; }
+    .team-roster { font-size:0.82em; color:#9A8A6A; line-height:1.5; }
 
     /* Scoreboard */
     #scoreboard { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
     #scoreboard.active { display:block; }
     .score-table { width:100%; border-collapse:collapse; }
-    .score-table th { font-family:'Orbitron',sans-serif; font-size:0.75em; letter-spacing:2px; color:#5a9ad5; text-align:left; padding:8px 12px; border-bottom:1px solid rgba(80,160,255,0.3); }
-    .score-table td { padding:6px 12px; font-size:0.9em; border-bottom:1px solid rgba(40,60,90,0.3); }
-    .score-table tr.red td { color:#ff9999; }
-    .score-table tr.blue td { color:#9999ff; }
-    .score-table tr.local td { color:#fff; font-weight:700; }
-    .score-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:15px; }
-    .score-team { font-family:'Orbitron',sans-serif; font-size:2em; font-weight:900; }
-    .score-team.red { color:#ff6666; }
-    .score-team.blue { color:#6666ff; }
-    .score-vs { font-family:'Orbitron',sans-serif; font-size:1em; color:#555; letter-spacing:3px; }
+    .score-table th { font-family:'Barlow Condensed',sans-serif; font-size:0.75em; letter-spacing:2px; color:#D4A030; text-align:left; padding:6px 10px; border-bottom:1px solid #4A3A2A; }
+    .score-table td { padding:5px 10px; font-size:0.85em; border-bottom:1px solid rgba(60,50,35,0.3); }
+    .score-header { display:flex; justify-content:space-between; align-items:center; margin-bottom:12px; }
+    .score-team { font-family:'Cinzel',serif; font-size:1.8em; font-weight:900; }
+    .score-team.red { color:#C8302C; }
+    .score-team.blue { color:#2C5AC8; }
+    .score-vs { font-family:'Cinzel',serif; font-size:0.9em; color:#7A6A4A; letter-spacing:3px; }
 
     /* Death screen */
     #deathscreen { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:15; text-align:center; }
     #deathscreen.active { display:block; }
-    .death-text { font-family:'Orbitron',sans-serif; font-size:2em; color:#ff4444; letter-spacing:5px; text-shadow:0 0 20px rgba(255,0,0,0.5); }
-    .death-sub { color:#888; font-size:1.1em; margin-top:10px; }
+    .death-text { font-family:'Cinzel',serif; font-size:1.8em; color:#C8302C; letter-spacing:5px; }
+    .death-sub { color:#9A8A6A; font-size:1em; margin-top:8px; }
 
     /* Victory screen */
     #victoryscreen { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:25; text-align:center; }
     #victoryscreen.active { display:block; }
-    .victory-text { font-family:'Orbitron',sans-serif; font-size:3em; font-weight:900; letter-spacing:8px; text-shadow:0 0 30px rgba(100,200,255,0.5); }
-    .victory-sub { font-size:1.2em; color:#8cc4ff; margin-top:15px; letter-spacing:3px; }
+    .victory-text { font-family:'Cinzel',serif; font-size:2.5em; font-weight:900; letter-spacing:6px; color:#D4A030; }
+    .victory-sub { font-size:1em; color:#E8DCB8; margin-top:10px; letter-spacing:2px; }
 
     /* Kill feed */
-    #killfeed { position:absolute; top:60px; right:20px; z-index:12; text-align:right; pointer-events:none; }
-    .kill-msg { font-size:0.85em; padding:3px 8px; margin:2px 0; background:rgba(0,0,0,0.5); border-radius:3px; opacity:1; transition:opacity 0.5s; white-space:nowrap; }
+    #killfeed { position:absolute; top:50px; right:15px; z-index:12; text-align:right; pointer-events:none; }
+    .kill-msg { font-size:0.8em; padding:2px 6px; margin:2px 0; background:rgba(15,15,12,0.6); opacity:1; transition:opacity 0.5s; white-space:nowrap; color:#E8DCB8; }
     .kill-msg.fade { opacity:0; }
 
     /* Flag status */
-    #flagstatus { position:absolute; top:20px; left:50%; transform:translateX(-50%); z-index:12; text-align:center; pointer-events:none; font-family:'Orbitron',sans-serif; }
-    .flag-msg { font-size:1.1em; letter-spacing:2px; padding:5px 15px; background:rgba(0,0,0,0.6); border-radius:3px; margin:3px; }
+    #flagstatus { position:absolute; top:15px; left:50%; transform:translateX(-50%); z-index:12; text-align:center; pointer-events:none; }
+    .flag-msg { font-family:'Barlow Condensed',sans-serif; font-size:1em; letter-spacing:2px; padding:4px 12px; background:rgba(15,15,12,0.7); border:1px solid #4A3A2A; color:#FFC850; }
 
     /* Loading */
-    #loading { position:absolute; top:0; left:0; width:100%; height:100%; z-index:30; background:#050810; display:flex; flex-direction:column; align-items:center; justify-content:center; }
+    #loading { position:absolute; top:0; left:0; width:100%; height:100%; z-index:30; background:#0a0a08; display:flex; flex-direction:column; align-items:center; justify-content:center; }
     #loading.hidden { display:none; }
-    .load-bar-bg { width:300px; height:3px; background:rgba(40,60,90,0.5); border-radius:2px; margin-top:20px; }
-    .load-bar { height:100%; background:linear-gradient(90deg,#3a7bd5,#7cb8ff); border-radius:2px; width:0%; transition:width 0.3s; }
-    .load-text { color:#4a7aaa; font-size:0.85em; margin-top:10px; letter-spacing:2px; }
+    .load-bar-bg { width:250px; height:2px; background:rgba(60,50,35,0.5); margin-top:15px; }
+    .load-bar { height:100%; background:linear-gradient(90deg,#7A6A4A,#D4A030); width:0%; transition:width 0.3s; }
+    .load-text { color:#7A6A4A; font-size:0.8em; margin-top:8px; letter-spacing:2px; }
+
+    .footer { font-size:0.65em; color:#5A4A3A; letter-spacing:1px; margin-top:15px; }
     .hidden { display:none; }
   </style>
 </head>
 <body>
   <!-- Loading Screen -->
   <div id="loading">
-    <h1>Tribes</h1>
-    <h2>Browser Edition</h2>
+    <div class="subtitle">STARSIEGE</div>
+    <div class="wordmark">TRIBES</div>
     <div class="load-bar-bg"><div class="load-bar" id="load-bar"></div></div>
     <div class="load-text" id="load-text">Initializing engine...</div>
   </div>
@@ -111,18 +129,22 @@
 
   <!-- Main Menu -->
   <div class="overlay" id="mainmenu">
-    <div class="panel">
-      <h1>Tribes</h1>
-      <h2>Browser Edition</h2>
-      <div style="margin-top:20px;">
-        <button class="btn" onclick="showScreen('gamesetup')">Play CTF</button>
-        <button class="btn" onclick="showScreen('gamesetup')">Quick Match</button>
-        <button class="btn" onclick="showScreen('options')">Options</button>
-        <button class="btn" onclick="showScreen('credits')">Credits</button>
+    <div class="panel" style="min-width:420px; text-align:center; background:rgba(12,12,10,0.97);">
+      <div class="tab-strip">
+        <span class="tab-item active">PLAY</span>
+        <span class="tab-item" onclick="showScreen('options')">OPTIONS</span>
+        <span class="tab-item" onclick="showScreen('credits')">CREDITS</span>
       </div>
-      <div style="text-align:center;margin-top:20px;font-size:0.7em;color:#3a5a7a;letter-spacing:2px;">
-        DARKSTAR ENGINE / WEBASSEMBLY
+      <div class="subtitle">STARSIEGE</div>
+      <div class="wordmark">TRIBES</div>
+      <div class="menu-grid">
+        <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
+        <div class="menu-item" onclick="window.open('https://github.com/uptuse/tribes','_blank')">WEBSITE</div>
+        <div class="menu-item" onclick="showScreen('gamesetup')">QUICK START</div>
+        <div class="menu-item" onclick="showScreen('options')">OPTIONS</div>
       </div>
+      <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.3</div>
     </div>
   </div>
 
@@ -130,41 +152,37 @@
   <div class="overlay" id="gamesetup">
     <div class="panel panel-wide">
       <h3>Game Setup</h3>
-      <div style="display:flex;gap:20px;">
+      <div style="display:flex;gap:18px;">
         <div style="flex:1;">
-          <label style="color:#5a9ad5;font-size:0.85em;letter-spacing:2px;">GAME MODE</label>
-          <div style="margin:8px 0;">
-            <button class="btn-small btn-selected" id="mode-ctf">Capture The Flag</button>
-            <button class="btn-small" disabled style="opacity:0.4;">Deathmatch</button>
-            <button class="btn-small" disabled style="opacity:0.4;">Defend & Destroy</button>
+          <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Game Mode</div>
+          <div style="margin:6px 0;">
+            <button class="btn-small btn-selected">Capture The Flag</button>
           </div>
-          <label style="color:#5a9ad5;font-size:0.85em;letter-spacing:2px;margin-top:15px;display:block;">TEAM SIZE</label>
-          <div style="margin:8px 0;">
+          <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Team Size</div>
+          <div style="margin:6px 0;">
             <button class="btn-small" onclick="setBotCount(2)">2v2</button>
             <button class="btn-small btn-selected" id="size-4" onclick="setBotCount(4)">4v4</button>
             <button class="btn-small" onclick="setBotCount(6)">6v6</button>
             <button class="btn-small" onclick="setBotCount(8)">8v8</button>
           </div>
-          <label style="color:#5a9ad5;font-size:0.85em;letter-spacing:2px;margin-top:15px;display:block;">SCORE LIMIT</label>
-          <div style="margin:8px 0;">
+          <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Score Limit</div>
+          <div style="margin:6px 0;">
             <button class="btn-small" onclick="setScoreLimit(3)">3 Caps</button>
-            <button class="btn-small btn-selected" id="sl-5" onclick="setScoreLimit(5)">5 Caps</button>
+            <button class="btn-small btn-selected" onclick="setScoreLimit(5)">5 Caps</button>
             <button class="btn-small" onclick="setScoreLimit(10)">10 Caps</button>
           </div>
         </div>
         <div style="flex:1;">
-          <label style="color:#5a9ad5;font-size:0.85em;letter-spacing:2px;">MAP</label>
-          <div style="margin:8px 0;">
-            <button class="btn-small btn-selected">Highlands (Procedural)</button>
-          </div>
-          <div style="margin-top:20px;padding:15px;background:rgba(10,20,35,0.6);border-radius:3px;font-size:0.85em;color:#6a8aaa;line-height:1.6;">
-            Procedurally generated terrain with hills, valleys, and two opposing bases. Full CTF with bots using Tribes-accurate physics and weapon stats.
+          <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Map</div>
+          <button class="btn-small btn-selected">Raindance</button>
+          <div style="margin-top:14px;padding:12px;background:rgba(18,18,16,0.7);border:1px solid #3A3020;font-size:0.82em;color:#9A8A6A;line-height:1.5;">
+            Real Raindance terrain heightmap. CTF with AI opponents. Original weapon and armor stats.
           </div>
         </div>
       </div>
-      <div style="margin-top:20px;display:flex;gap:10px;">
-        <button class="btn" onclick="showScreen('teamselect')" style="flex:1;">Next</button>
-        <button class="btn btn-red" onclick="showScreen('mainmenu')" style="flex:0.4;">Back</button>
+      <div style="margin-top:15px;display:flex;gap:8px;">
+        <button class="btn" onclick="showScreen('teamselect')" style="flex:1;">Continue</button>
+        <button class="btn btn-back" onclick="showScreen('mainmenu')" style="flex:0.35;">Back</button>
       </div>
     </div>
   </div>
@@ -175,19 +193,17 @@
       <h3>Choose Your Team</h3>
       <div class="team-row">
         <div class="team-card team-red selected" id="team-red-card" onclick="selectTeam(0)">
-          <div class="team-name" style="color:#ff6666;">Blood Eagle</div>
-          <div style="font-size:2.5em;margin:10px 0;">&#9876;</div>
+          <div class="team-name" style="color:#C8302C;">Blood Eagle</div>
           <div class="team-roster" id="red-roster">Player (You)<br>Fury<br>Storm<br>Blaze</div>
         </div>
         <div class="team-card team-blue" id="team-blue-card" onclick="selectTeam(1)">
-          <div class="team-name" style="color:#6666ff;">Diamond Sword</div>
-          <div style="font-size:2.5em;margin:10px 0;">&#9830;</div>
+          <div class="team-name" style="color:#2C5AC8;">Diamond Sword</div>
           <div class="team-roster" id="blue-roster">Viper<br>Ghost<br>Raptor<br>Shadow</div>
         </div>
       </div>
-      <div style="display:flex;gap:10px;">
-        <button class="btn" onclick="showScreen('armorselect')" style="flex:1;">Next</button>
-        <button class="btn btn-red" onclick="showScreen('gamesetup')" style="flex:0.4;">Back</button>
+      <div style="display:flex;gap:8px;">
+        <button class="btn" onclick="showScreen('armorselect')" style="flex:1;">Continue</button>
+        <button class="btn btn-back" onclick="showScreen('gamesetup')" style="flex:0.35;">Back</button>
       </div>
     </div>
   </div>
@@ -198,42 +214,36 @@
       <h3>Select Armor</h3>
       <div class="armor-row">
         <div class="armor-card selected" id="armor-0" onclick="selectArmor(0)">
-          <div class="armor-name">Scout</div>
-          <div class="armor-icon">&#9823;</div>
-          <div class="armor-stat">HP: 66% &bull; Speed: Fast</div>
-          <div class="armor-stat">Energy: 60 &bull; Weapons: 3</div>
-          <div class="armor-stat">Jet Force: Low &bull; Can Crouch</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:50%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">ARMOR</div>
+          <div class="armor-name">Light</div>
+          <div class="armor-stat">HP: 66% | Speed: Fast</div>
+          <div class="armor-stat">Energy: 60 | Weapons: 3</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:40%"></div></div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">ARMOR</div>
           <div class="stat-bar"><div class="stat-fill" style="width:100%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">SPEED</div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">SPEED</div>
         </div>
         <div class="armor-card" id="armor-1" onclick="selectArmor(1)">
-          <div class="armor-name">Assault</div>
-          <div class="armor-icon">&#9822;</div>
-          <div class="armor-stat">HP: 100% &bull; Speed: Medium</div>
-          <div class="armor-stat">Energy: 80 &bull; Weapons: 4</div>
-          <div class="armor-stat">Jet Force: Medium</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:75%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">ARMOR</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:65%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">SPEED</div>
+          <div class="armor-name">Medium</div>
+          <div class="armor-stat">HP: 100% | Speed: Medium</div>
+          <div class="armor-stat">Energy: 80 | Weapons: 4</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:70%"></div></div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">ARMOR</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:60%"></div></div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">SPEED</div>
         </div>
         <div class="armor-card" id="armor-2" onclick="selectArmor(2)">
-          <div class="armor-name">Juggernaut</div>
-          <div class="armor-icon">&#9820;</div>
-          <div class="armor-stat">HP: 132% &bull; Speed: Slow</div>
-          <div class="armor-stat">Energy: 110 &bull; Weapons: 5</div>
-          <div class="armor-stat">Jet Force: High &bull; Mortar</div>
+          <div class="armor-name">Heavy</div>
+          <div class="armor-stat">HP: 132% | Speed: Slow</div>
+          <div class="armor-stat">Energy: 110 | Weapons: 5</div>
           <div class="stat-bar"><div class="stat-fill" style="width:100%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">ARMOR</div>
-          <div class="stat-bar"><div class="stat-fill" style="width:35%"></div></div>
-          <div style="font-size:0.7em;color:#557;margin-top:5px;">SPEED</div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">ARMOR</div>
+          <div class="stat-bar"><div class="stat-fill" style="width:30%"></div></div>
+          <div style="font-size:0.65em;color:#5A4A3A;margin-top:3px;">SPEED</div>
         </div>
       </div>
-      <div style="display:flex;gap:10px;margin-top:15px;">
-        <button class="btn" onclick="startGame()" style="flex:1;font-size:1.1em;padding:16px;">Deploy</button>
-        <button class="btn btn-red" onclick="showScreen('teamselect')" style="flex:0.4;">Back</button>
+      <div style="display:flex;gap:8px;margin-top:10px;">
+        <button class="btn" onclick="startGame()" style="flex:1;">DEPLOY</button>
+        <button class="btn btn-back" onclick="showScreen('teamselect')" style="flex:0.35;">Back</button>
       </div>
     </div>
   </div>
@@ -242,19 +252,19 @@
   <div class="overlay" id="options">
     <div class="panel">
       <h3>Options</h3>
-      <div style="margin:10px 0;">
-        <label style="color:#5a9ad5;font-size:0.85em;">MOUSE SENSITIVITY</label>
-        <input type="range" min="1" max="10" value="5" id="sens-slider" style="width:100%;margin:5px 0;">
+      <div style="margin:8px 0;">
+        <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;">MOUSE SENSITIVITY</div>
+        <input type="range" min="1" max="10" value="5" id="sens-slider" style="width:100%;margin:4px 0;accent-color:#D4A030;">
       </div>
-      <div style="margin:10px 0;">
-        <label style="color:#5a9ad5;font-size:0.85em;">FIELD OF VIEW</label>
-        <input type="range" min="60" max="110" value="75" id="fov-slider" style="width:100%;margin:5px 0;">
+      <div style="margin:8px 0;">
+        <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;">FIELD OF VIEW</div>
+        <input type="range" min="60" max="110" value="75" id="fov-slider" style="width:100%;margin:4px 0;accent-color:#D4A030;">
       </div>
-      <div style="margin:10px 0;">
-        <label style="color:#5a9ad5;font-size:0.85em;">INVERT MOUSE Y</label>
+      <div style="margin:8px 0;">
+        <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;">INVERT MOUSE Y</div>
         <button class="btn-small" id="invert-btn" onclick="toggleInvert()">OFF</button>
       </div>
-      <button class="btn" onclick="showScreen('mainmenu')" style="margin-top:15px;">Back</button>
+      <button class="btn btn-back" onclick="showScreen('mainmenu')" style="margin-top:12px;">Back</button>
     </div>
   </div>
 
@@ -262,23 +272,21 @@
   <div class="overlay" id="credits">
     <div class="panel" style="text-align:center;">
       <h3>Credits</h3>
-      <div style="line-height:2;color:#6a8aaa;">
-        <div style="color:#8cc4ff;">Original Game</div>
+      <div style="line-height:1.8;color:#9A8A6A;font-size:0.9em;">
+        <div style="color:#D4A030;">Original Game</div>
         Dynamix / Sierra Studios (1998)<br><br>
-        <div style="color:#8cc4ff;">Engine</div>
+        <div style="color:#D4A030;">Engine</div>
         Darkstar Engine (Open Source)<br><br>
-        <div style="color:#8cc4ff;">Browser Port</div>
-        WebAssembly + WebGL2 via Emscripten<br><br>
-        <div style="color:#8cc4ff;">Built With</div>
-        Claude Code + Human Creativity<br>
+        <div style="color:#D4A030;">Browser Port</div>
+        WebAssembly + WebGL2<br><br>
       </div>
-      <button class="btn" onclick="showScreen('mainmenu')" style="margin-top:20px;">Back</button>
+      <button class="btn btn-back" onclick="showScreen('mainmenu')" style="margin-top:12px;">Back</button>
     </div>
   </div>
 
-  <!-- Scoreboard (Tab overlay) -->
+  <!-- Scoreboard -->
   <div id="scoreboard">
-    <div class="panel panel-wide" style="min-width:600px;">
+    <div class="panel panel-wide">
       <div class="score-header">
         <div class="score-team red" id="sc-red">0</div>
         <div class="score-vs">CAPTURE THE FLAG</div>
@@ -301,171 +309,96 @@
   <div id="victoryscreen">
     <div class="panel" style="text-align:center;">
       <div class="victory-text" id="victory-text">VICTORY</div>
-      <div class="victory-sub" id="victory-sub">Your team captured 5 flags</div>
-      <div style="margin-top:20px;">
+      <div class="victory-sub" id="victory-sub"></div>
+      <div style="margin-top:15px;">
         <button class="btn" onclick="restartGame()">Play Again</button>
-        <button class="btn btn-red" onclick="toMainMenu()">Main Menu</button>
+        <button class="btn btn-back" onclick="toMainMenu()">Main Menu</button>
       </div>
     </div>
   </div>
 
   <!-- Kill Feed -->
   <div id="killfeed"></div>
-
   <!-- Flag Status -->
   <div id="flagstatus"></div>
 
   <script>
-    // --- Menu System ---
-    var currentScreen = 'loading';
-    var selectedTeam = 0;
-    var selectedArmor = 0;
-    var gameSettings = { botCount:4, scoreLimit:5, sensitivity:5, fov:75, invertY:false };
-    var gameStarted = false;
+    var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
+    var gameSettings={botCount:4,scoreLimit:5,sensitivity:5,fov:75,invertY:false};
 
-    function showScreen(id) {
-      document.querySelectorAll('.overlay').forEach(function(el) { el.classList.remove('active'); });
-      var el = document.getElementById(id);
-      if (el) el.classList.add('active');
-      currentScreen = id;
+    function showScreen(id){
+      document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
+      var el=document.getElementById(id);if(el)el.classList.add('active');currentScreen=id;
     }
-
-    function selectTeam(t) {
-      selectedTeam = t;
-      document.getElementById('team-red-card').classList.toggle('selected', t===0);
-      document.getElementById('team-blue-card').classList.toggle('selected', t===1);
+    function selectTeam(t){
+      selectedTeam=t;
+      document.getElementById('team-red-card').classList.toggle('selected',t===0);
+      document.getElementById('team-blue-card').classList.toggle('selected',t===1);
     }
-
-    function selectArmor(a) {
-      selectedArmor = a;
-      for (var i=0; i<3; i++) document.getElementById('armor-'+i).classList.toggle('selected', i===a);
+    function selectArmor(a){
+      selectedArmor=a;
+      for(var i=0;i<3;i++)document.getElementById('armor-'+i).classList.toggle('selected',i===a);
     }
-
-    function setBotCount(n) {
-      gameSettings.botCount = n;
-      document.querySelectorAll('#gamesetup .btn-small').forEach(function(b) {
-        if (b.textContent.includes('v')) b.classList.remove('btn-selected');
-      });
-      event.target.classList.add('btn-selected');
+    function setBotCount(n){gameSettings.botCount=n;}
+    function setScoreLimit(n){gameSettings.scoreLimit=n;}
+    function toggleInvert(){
+      gameSettings.invertY=!gameSettings.invertY;
+      document.getElementById('invert-btn').textContent=gameSettings.invertY?'ON':'OFF';
     }
-
-    function setScoreLimit(n) {
-      gameSettings.scoreLimit = n;
-    }
-
-    function toggleInvert() {
-      gameSettings.invertY = !gameSettings.invertY;
-      document.getElementById('invert-btn').textContent = gameSettings.invertY ? 'ON' : 'OFF';
-    }
-
-    function startGame() {
-      showScreen(null);
-      gameStarted = true;
-      // Pass settings to WASM via globals
-      if (Module._setGameSettings) {
-        Module._setGameSettings(selectedTeam, selectedArmor, gameSettings.botCount, gameSettings.scoreLimit);
-      }
+    function startGame(){
+      showScreen(null);gameStarted=true;
+      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit);
       canvas.requestPointerLock();
     }
-
-    function restartGame() {
+    function restartGame(){
       document.getElementById('victoryscreen').classList.remove('active');
-      if (Module._restartGame) Module._restartGame();
-      gameStarted = true;
-      canvas.requestPointerLock();
+      if(Module._restartGame)Module._restartGame();
+      gameStarted=true;canvas.requestPointerLock();
     }
-
-    function toMainMenu() {
+    function toMainMenu(){
       document.getElementById('victoryscreen').classList.remove('active');
-      gameStarted = false;
-      showScreen('mainmenu');
+      gameStarted=false;showScreen('mainmenu');
     }
-
-    // --- Scoreboard (Tab key) ---
-    document.addEventListener('keydown', function(e) {
-      if (e.keyCode === 9 && gameStarted) { // Tab
-        e.preventDefault();
-        document.getElementById('scoreboard').classList.add('active');
-        updateScoreboard();
-      }
-      if (e.keyCode === 27) { // Escape
-        if (gameStarted) {
-          document.exitPointerLock();
-          showScreen('mainmenu');
-          gameStarted = false;
-        }
-      }
+    document.addEventListener('keydown',function(e){
+      if(e.keyCode===9&&gameStarted){e.preventDefault();document.getElementById('scoreboard').classList.add('active');}
+      if(e.keyCode===27&&gameStarted){document.exitPointerLock();showScreen('mainmenu');gameStarted=false;}
     });
-    document.addEventListener('keyup', function(e) {
-      if (e.keyCode === 9) {
-        document.getElementById('scoreboard').classList.remove('active');
-      }
+    document.addEventListener('keyup',function(e){
+      if(e.keyCode===9)document.getElementById('scoreboard').classList.remove('active');
     });
-
-    function updateScoreboard() {
-      // Will be called from WASM with player data
+    function addKillMsg(msg){
+      var feed=document.getElementById('killfeed'),div=document.createElement('div');
+      div.className='kill-msg';div.innerHTML=msg;feed.appendChild(div);
+      setTimeout(function(){div.classList.add('fade');},4000);
+      setTimeout(function(){div.remove();},5000);
+      while(feed.children.length>5)feed.removeChild(feed.firstChild);
     }
-
-    // --- Kill Feed ---
-    function addKillMsg(msg) {
-      var feed = document.getElementById('killfeed');
-      var div = document.createElement('div');
-      div.className = 'kill-msg';
-      div.innerHTML = msg;
-      feed.appendChild(div);
-      setTimeout(function() { div.classList.add('fade'); }, 4000);
-      setTimeout(function() { div.remove(); }, 5000);
-      while (feed.children.length > 5) feed.removeChild(feed.firstChild);
+    function setFlagStatus(msg){
+      var el=document.getElementById('flagstatus');
+      el.innerHTML='<div class="flag-msg">'+msg+'</div>';
+      setTimeout(function(){el.innerHTML='';},3000);
     }
+    var canvas=document.getElementById('canvas');
+    canvas.width=1024;canvas.height=768;
+    canvas.addEventListener('click',function(){if(gameStarted)canvas.requestPointerLock();});
 
-    // --- Flag Status ---
-    function setFlagStatus(msg) {
-      var el = document.getElementById('flagstatus');
-      el.innerHTML = '<div class="flag-msg">' + msg + '</div>';
-      setTimeout(function() { el.innerHTML = ''; }, 3000);
-    }
-
-    // --- Canvas & Module ---
-    var canvas = document.getElementById('canvas');
-    canvas.width = 1024;
-    canvas.height = 768;
-
-    canvas.addEventListener('click', function() {
-      if (gameStarted) canvas.requestPointerLock();
-    });
-
-    var Module = {
-      canvas: canvas,
-      print: function(text) {
-        console.log(text);
-        // Parse game events for UI
-        if (text.indexOf('[CTF]') === 0) setFlagStatus(text.substring(5));
-        if (text.indexOf('[KILL]') === 0) addKillMsg(text.substring(6));
+    var Module={
+      canvas:canvas,
+      print:function(t){console.log(t);if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));},
+      printErr:function(t){console.error(t);},
+      setStatus:function(t){
+        var lt=document.getElementById('load-text'),lb=document.getElementById('load-bar');
+        if(!t){document.getElementById('loading').classList.add('hidden');showScreen('mainmenu');return;}
+        if(lt)lt.textContent=t;
+        var m=t.match(/\((\d+)\/(\d+)\)/);if(m&&lb)lb.style.width=(parseInt(m[1])/parseInt(m[2])*100)+'%';
       },
-      printErr: function(text) { console.error(text); },
-      setStatus: function(text) {
-        var lt = document.getElementById('load-text');
-        var lb = document.getElementById('load-bar');
-        if (!text) {
-          document.getElementById('loading').classList.add('hidden');
-          showScreen('mainmenu');
-          return;
-        }
-        if (lt) lt.textContent = text;
-        var m = text.match(/\((\d+)\/(\d+)\)/);
-        if (m && lb) lb.style.width = (parseInt(m[1])/parseInt(m[2])*100)+'%';
+      totalDependencies:0,
+      monitorRunDependencies:function(left){
+        this.totalDependencies=Math.max(this.totalDependencies,left);
+        Module.setStatus(left?'Loading... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')':'');
       },
-      totalDependencies: 0,
-      monitorRunDependencies: function(left) {
-        this.totalDependencies = Math.max(this.totalDependencies, left);
-        Module.setStatus(left ? 'Loading... ('+( this.totalDependencies-left)+'/'+this.totalDependencies+')' : '');
-      },
-      onRuntimeInitialized: function() {
-        document.getElementById('loading').classList.add('hidden');
-        showScreen('mainmenu');
-      }
+      onRuntimeInitialized:function(){document.getElementById('loading').classList.add('hidden');showScreen('mainmenu');}
     };
-
     Module.setStatus('Downloading...');
   </script>
   <script async type="text/javascript" src="tribes.js"></script>
