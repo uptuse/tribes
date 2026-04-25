@@ -3,4 +3,9 @@
 2026-04-25 18:50 | 1e5c10f | feat(terrain): replace procedural noise with real Raindance heightmap + Tribes 1 palette/fog/sky
 2026-04-25 19:10 | 05df784 | fix(visual): neutralize red artifact — grey base platforms and tower tint per spec palette
 2026-04-25 19:30 | d85002d | feat(ui): replace blue sci-fi shell with Tribes 1 gold/brass/military styling
-2026-04-25 19:55 | pending | feat(model): DTS skeletal hierarchy — parse nodes/transforms, apply to mesh vertices
+2026-04-25 19:55 | d7c7089 | feat(model): DTS skeletal hierarchy — parse nodes/transforms, apply to mesh vertices
+2026-04-25 20:10 | 1adcc91 | fix(model): correct axis mapping — DTS Z-up to WebGL Y-up (gz = dy not -dy)
+2026-04-25 20:15 | 7a02049 | chore(comms): add Darkstar terrain source excerpts for Manus heightmap decoder
+2026-04-25 20:25 | 600c3a2 | feat(physics): rewrite movement to match original playerUpdate.cpp (jet split, jump normal, skiing traction)
+2026-04-25 20:35 | aff6d09 | feat(weapons): disc acceleration 65→80 m/s + splash impulse for disc jumping
+2026-04-25 20:45 | pending | chore(comms): comprehensive status handoff for session continuity
