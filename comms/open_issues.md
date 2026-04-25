@@ -4,12 +4,14 @@
 
 ## Priority 1 — Real terrain
 
-- [ ] Load `raindance_heightmap.h` (257×257) into the WASM build, replacing procedural noise. World scale: 8 m per terrain square, ~2 km square map.
+- [x] Load `raindance_heightmap.h` (257×257) into the WASM build, replacing procedural noise. World scale: 8 m per terrain square, ~2 km square map. *(Round 2: heightmap tiling artifact needs fix — see Issue 2.2 in manus_feedback.md)*
 - [ ] Hide procedural noise terrain behind a debug flag.
-- [ ] Apply original Raindance terrain textures from `/Users/jkoshy/Darkstar/assets/tribes/` (BMP→PNG at build time).
-- [ ] Linear fog: start 600 m, end 1500 m, color `#B8C4C8`.
-- [ ] Sky vertical gradient `#7A8A9A` (horizon) → `#5A6A7A` (zenith) + a few hazy cloud sprites.
-- [ ] Place real flag stands and base anchor positions from `raindance_mission.h`.
+- [ ] Apply original Raindance terrain textures from `/Users/jkoshy/Darkstar/assets/tribes/` (BMP→PNG at build time). *(Round 2: now in scope to finish Priority 1)*
+- [x] Linear fog: start 600 m, end 1500 m, color `#B8C4C8`.
+- [x] Sky vertical gradient `#7A8A9A` (horizon) → `#5A6A7A` (zenith) + a few hazy cloud sprites. *(sprites still missing, gradient correct)*
+- [x] Place real flag stands and base anchor positions from `raindance_mission.h`.
+- [ ] **Issue 2.1:** Investigate and remove the red/coral polygonal artifact floating mid-screen on the right (see review_1e5c10f_terrain.webp).
+- [ ] **Issue 2.2:** Re-extract Raindance heightmap — current decoder produces 4× column repetition. Use Darkstar `terrData.cc` as reference.
 
 ## Priority 2 — Tribes 1 UI shell
 
