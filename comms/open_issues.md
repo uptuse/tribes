@@ -10,23 +10,23 @@
 - [x] Linear fog: start 600 m, end 1500 m, color `#B8C4C8`.
 - [x] Sky vertical gradient `#7A8A9A` (horizon) → `#5A6A7A` (zenith) + a few hazy cloud sprites. *(sprites still missing, gradient correct)*
 - [x] Place real flag stands and base anchor positions from `raindance_mission.h`.
-- [ ] **Issue 2.1:** Investigate and remove the red/coral polygonal artifact floating mid-screen on the right (see review_1e5c10f_terrain.webp).
+- [x] **Issue 2.1:** Red artifact fixed — base platforms and tower tint neutralized to grey per spec palette.
 - [ ] **Issue 2.2:** Re-extract Raindance heightmap — current decoder produces 4× column repetition. Use Darkstar `terrData.cc` as reference.
 
 ## Priority 2 — Tribes 1 UI shell
 
-- [ ] Remove Orbitron and Rajdhani font imports from `index.html`.
-- [ ] Add Cinzel + Barlow Condensed (or self-hosted equivalents).
-- [ ] Strip blue gradients, blue glows, and `border-radius` > 2px from `index.html`.
-- [ ] Rebuild main menu to match `comms/references/ref_main_menu_v130.png` (gold wordmark + 2×2 plain text grid).
-- [ ] Rebuild Game Setup, Team Select, Loadout panels in brass-bordered near-black dialog style.
+- [x] Remove Orbitron and Rajdhani font imports from `index.html`.
+- [x] Add Cinzel + Barlow Condensed (or self-hosted equivalents).
+- [x] Strip blue gradients, blue glows, and `border-radius` > 2px from `index.html`.
+- [x] Rebuild main menu to match `comms/references/ref_main_menu_v130.png` (gold wordmark + 2×2 plain text grid).
+- [x] Rebuild Game Setup, Team Select, Loadout panels in brass-bordered near-black dialog style.
 
 ## Priority 3 — DTS skeletal hierarchy
 
-- [ ] Parse `nodes[]` and `transforms[]` chunks; build parent/child tree.
-- [ ] Apply accumulated world transform per mesh on render.
+- [x] Parse `nodes[]` and `transforms[]` chunks; build parent/child tree.
+- [x] Apply accumulated world transform per mesh on render.
 - [ ] Add `?debug=model_viewer` URL flag to inspect single armors.
-- [ ] Verify L/M/H armor and tower silhouettes are humanoid / tower-shaped.
+- [ ] Verify L/M/H armor and tower silhouettes are humanoid / tower-shaped. *(Pushed, awaiting Manus visual review)*
 
 ## Priority 4 — Model textures
 
