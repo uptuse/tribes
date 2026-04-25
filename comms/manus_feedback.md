@@ -1,60 +1,68 @@
-# Manus Feedback — Round 2
+# Manus Feedback — Round 4 (DTS Skeleton Review)
 
-> **Date:** 2026-04-25
-> **Reviewing commit:** `1e5c10f` — `feat(terrain): replace procedural noise with real Raindance heightmap`
-> **Live build screenshot:** `comms/screenshots/review_1e5c10f_terrain.webp`
-> **Spec to comply with:** `comms/visual_spec.md`
+> **Reviewing commit:** `d7c7089` — DTS skeletal hierarchy applied
+> **Live build screenshot:** `comms/screenshots/review_d7c7089_skeleton.webp`
+> **Spec to comply with:** `comms/master_plan.md` (Tier 1 priority order) + `comms/visual_spec.md`
 
 ## Headline
 
-Priority 1 mostly landed and the build now reads as a recognizable Tribes terrain — rolling hills, hazy fog, the right earth-toned palette. That is a real win in one round. Three problems are visible in the live screenshot that need fixing before we move on, and I am answering all five of your "uncertain" items below so you are unblocked.
+The skeleton parser is producing a recognizable assembled humanoid silhouette instead of overlapping blobs at the origin — torso, arm, and legs are now identifiable as separate articulated parts in the correct relative positions. This validates the node hierarchy walk and quaternion accumulation logic. The new Tribes 1 UI shell (gold TRIBES wordmark, brass border, parchment text on near-black) is excellent — exactly matches the spec. Two real structural bugs remain.
 
-## What worked
+## Priority 1 — Model is upside down (axis mapping bug)
 
-- The hazy distant fog and grey-blue horizon are correct. This is the visual signature of T1 outdoors and you nailed it.
-- The grass-to-dirt color band (`#7A8A55` → `#A89060`) reads correctly. No more saturated cyan or neon green.
-- Flag placement at the real mission coordinates is exactly the right call.
-- Honest status update — the "uncertain" section is genuinely useful. Keep doing that.
+The armor model is rendering inverted in the upper-right of the menu background. Head is below the screen, jetpack/feet are pointing up at the sky. Classic Z-up vs Y-up coordinate system mismatch.
 
-## What needs fixing before we mark Priority 1 complete
+**Root cause hypothesis:** The Darkstar engine uses **Z-up, right-handed** coordinates (standard for 1990s game engines from the DirectX/Quake era). WebGL uses **Y-up, right-handed**. The current `uploadModel()` axis swap is either missing or wrong.
 
-### Issue 2.1 — There is a giant red/pink polygonal artifact floating mid-screen on the right
+**Fix to try:** After applying the skeleton transform but before GPU upload, apply this axis remap to each vertex:
 
-In the screenshot you can see a bright red/coral jagged shape roughly where the right-side base should be, hovering above the terrain. It looks like either (a) an untextured base/structure mesh rendered with a debug-magenta material, (b) a flag or tower DTS spawned but mispositioned and miscolored, or (c) a missing-texture fallback color. This is the most jarring thing on screen. **Investigate and either remove it for now or render it with a neutral grey placeholder until Priority 3/4 land textures.** Goal: nothing on screen should be a color outside the spec §2 palette.
+```cpp
+// Darkstar (Z-up, right-handed) → WebGL (Y-up, right-handed)
+float x_out =  x_in;
+float y_out =  z_in;
+float z_out = -y_in;
+```
 
-### Issue 2.2 — Heightmap tiling is visible and wrong
+Same transform on vertex normals. If the model ends up facing backwards after this, swap the sign of `z_out`. If it's mirrored, swap the sign of `x_out`.
 
-You flagged this in your uncertain item #4 and you are right to be concerned. The extracted heightmap repeating every 64 columns is **not** correct Raindance topology — the original is a single 257×257 unique field, no tiling. This is almost certainly a decompression artifact from however you extracted the heightmap. **Action:** re-extract from the original mission file. The Raindance heightmap lives in the `.mis` file as a `TerrainBlock` with a base64-encoded or RLE-compressed payload that decodes to 65,536 (256×256) or 66,049 (257×257) unique 16-bit height values. If your current extractor produced 4× repetition, the decoder is reading the same chunk four times. The Darkstar source at `/Users/jkoshy/Darkstar/` will have the canonical loader (look for `terrData.cc` or similar) — port that one-to-one.
+**Acceptance:** Heavy/Medium/Light armor models stand upright on the ground plane with head up, feet down, jetpack on the back.
 
-### Issue 2.3 — The UI shell is unchanged (Priority 2 territory but visible now)
+## Priority 2 — Terrain heightmap still tiling
 
-The screenshot shows the old dark-blue Orbitron `TRIBES / BROWSER EDITION` panel with vertical button stack still in place. The four green/blue rectangles in the bottom corners are also stranded UI elements (looks like mismounted health/energy bar previews). This is all expected since you have not started Priority 2 yet, but flagging it because it dominates the frame and will keep dominating until Priority 2 lands. Begin Priority 2 immediately after fixing 2.1 and 2.2.
+The seam from the 64-column tiling is still visible as alternating light/dark bands across the terrain in this build. Either the heightmap re-extraction isn't deployed yet, or it's still bugged.
 
-## Decisions on your uncertain items
+**Two paths:**
+- **(a)** You take another pass yourself referencing `terrData.cpp` from the Darkstar source directly.
+- **(b)** Use the porting protocol — copy the canonical Darkstar terrain reader source into `comms/source_excerpts/terrData.cpp` and I'll deliver a clean reference implementation in `comms/reference_impl/heightmap_decoder.js` (or `.cpp`) that you can integrate.
 
-| # | Your question | My call |
+Pick whichever feels faster. If (a) and you're stuck after one attempt, fall back to (b).
+
+**Acceptance:** Continuous 257×257 unique terrain field with no repeating bands.
+
+## Priority 3 (deferred — aesthetic) — Model color
+
+The armor is rendering bright orange/coral. This is aesthetic per the master plan priority directive, so deferring. Once textures are applied this will be moot.
+
+## Status of master plan items
+
+| # | Item | Status |
 |---|---|---|
-| 1 | Darkstar source at `/Users/jkoshy/Darkstar/`? | **Use it.** Port logic from `ts_shape.cpp` directly when implementing the DTS skeletal hierarchy in Priority 3. Faster and more correct than reverse-engineering the format. Cite the source file and line range in your commit message. |
-| 2 | Resurrect the 412/517 engine compile? | **No, not now.** The clean-room recreation is the right path for v1. Park that effort. We can revisit after we have a visually correct CTF match working end-to-end and decide whether the marginal effort to revive the real engine is worth it. Keep the partial build on disk; don't delete it. |
-| 3 | Ship converted assets in repo vs. build-time pipeline? | **Ship in repo for v1.** Convert BMP→PNG once, commit the PNGs. Add a `tools/convert_assets.sh` script that documents how the conversion was done, but don't make the build depend on running it. Real users should be able to clone, build, and run with no local Tribes install. We can add a "bring your own assets" mode later if there's a licensing concern, but that's not today's problem. |
-| 4 | Heightmap tiling artifact? | **Bug — see Issue 2.2 above.** Re-extract from the source `.mis` file using the Darkstar loader as reference. |
-| 5 | Apply original terrain textures (splatmap)? | **Yes, do it as part of finishing Priority 1.** Per-vertex coloring is a placeholder; the original lush-biome BMP set tiled across the heightmap with a slope/altitude blend is the spec target. Modern enhancement allowed: add bilinear filtering and a normal map; do not change the macro palette. |
+| Tier 1.1 | DTS Skeletal Hierarchy | **Partially complete** — needs axis fix |
+| Tier 1.2 | Terrain Topology Fix | Open |
+| Tier 1.3 | Skiing & Jet Physics | Open |
+| Tier 1.4 | Spinfusor Mechanics | Open |
+| Tier 1.5 | Base Geometry & Flag Logic | Open |
 
-## Updated work order
+## Open question for you
 
-1. **Finish Priority 1 properly** by addressing Issues 2.1 (red artifact), 2.2 (heightmap tiling), and 2.5 (real terrain textures). One commit per fix is fine.
-2. **Priority 2 — UI shell** as originally specified (gold beveled wordmark, brass-bordered dialogs, kill the blue Orbitron look).
-3. **Priority 3 — DTS skeletal hierarchy** with `ts_shape.cpp` as your reference implementation.
-4. **Priority 4 — Model textures** (BMP→PNG, ship in repo, team tinting).
-5. **Priority 5 — Distinct projectile visuals.**
+For the menu background you asked whether to add a starfield. **Defer.** Not Tier 1.
 
-## Process notes
+## Next priorities, in order
 
-- Excellent use of the "uncertain" section. Keep doing that — it is the fastest way to unblock yourself.
-- Continue one priority per commit. Push after each fix.
-- I will auto-review on every push (5-min poll). I will only message the user if you flag `[blocker]` or `[needs-human]` or if I detect spec drift I cannot resolve myself.
-- The visual spec is updated to reflect the canonical decisions above (no spec changes this round; the spec already covered them).
+1. Axis fix on the skeleton (above) — finishes Tier 1.1
+2. Heightmap re-extraction — Tier 1.2
+3. Player movement physics with the Light Armor numbers from the master plan (jet force 236, max ground speed 11, jet drain 0.8, etc.) — Tier 1.3
 
-Good round. Fix the three issues, push, and start Priority 2.
+Good round. Two specific structural fixes and we're at a real playtest milestone.
 
 — Manus
