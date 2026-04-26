@@ -121,6 +121,7 @@ export async function start() {
     initTerrain();
     initBuildings();
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
+    await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
     initProjectiles();
     initFlags();
@@ -768,6 +769,151 @@ async function initInteriorShapes() {
         }
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);
+    }
+}
+
+// ============================================================
+// R32.2: Base Accents — per-team visual elements not covered by
+// the C++-baked buildings array: VehiclePad ground plates, RepairPack
+// items, and side-mounted flag stand. Reads canonical.json directly
+// (purely renderer-side; no C++ involvement). Visual-only — collision
+// for these is handled by the existing R32.1 interior-shape AABBs and
+// the C++ team-station boxes for surrounding gear.
+// Coordinate convention matches initInteriorShapes:
+//   MIS (x, y, z-up) -> world (x = mis_x, y = mis_z, z = -mis_y)
+//   MIS rotation z-axis (yaw radians) -> Three.js world Y rotation = -mis_rot_z
+// ============================================================
+let baseAccentsGroup = null;
+
+async function initBaseAccents() {
+    try {
+        const res = await fetch('assets/maps/raindance/canonical.json');
+        if (!res.ok) { console.warn('[R32.2] canonical.json missing; skipping'); return; }
+        const canon = await res.json();
+
+        baseAccentsGroup = new THREE.Group();
+        baseAccentsGroup.name = 'RaindanceBaseAccents';
+        scene.add(baseAccentsGroup);
+
+        const toWorld = (mp) => ({ x: mp[0], y: mp[2], z: -mp[1] });
+
+        // Shared materials
+        const padTopMat   = new THREE.MeshStandardMaterial({ color: 0x6b6960, roughness: 0.55, metalness: 0.45 });
+        const padBaseMat  = new THREE.MeshStandardMaterial({ color: 0x3a3833, roughness: 0.85, metalness: 0.15 });
+        const padStripeMat= new THREE.MeshStandardMaterial({ color: 0xC8B070, roughness: 0.7, metalness: 0.1, emissive: 0x6e5c2a, emissiveIntensity: 0.4 });
+        const repairBoxMat= new THREE.MeshStandardMaterial({ color: 0xCC2A2A, roughness: 0.55, metalness: 0.2, emissive: 0x661010, emissiveIntensity: 0.4 });
+        const repairCrossMat = new THREE.MeshStandardMaterial({ color: 0xF0F0F0, roughness: 0.4, metalness: 0.1, emissive: 0x404040, emissiveIntensity: 0.2 });
+        const standMat    = new THREE.MeshStandardMaterial({ color: 0x4a463e, roughness: 0.7, metalness: 0.5 });
+
+        // Helper: VehiclePad — circular landing pad with quadrant stripes
+        const makeVehiclePad = () => {
+            const g = new THREE.Group();
+            const base = new THREE.Mesh(new THREE.CylinderGeometry(5.0, 5.4, 0.35, 24), padBaseMat);
+            base.position.y = -0.10; base.castShadow = false; base.receiveShadow = true; g.add(base);
+            const top = new THREE.Mesh(new THREE.CylinderGeometry(4.6, 4.6, 0.10, 24), padTopMat);
+            top.position.y = 0.10; top.receiveShadow = true; g.add(top);
+            // Cross stripes for landing target
+            for (let q = 0; q < 4; q++) {
+                const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 4.2), padStripeMat);
+                stripe.position.y = 0.16; stripe.rotation.y = q * Math.PI / 4; g.add(stripe);
+            }
+            // Center disc
+            const center = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.06, 16), padStripeMat);
+            center.position.y = 0.18; g.add(center);
+            return g;
+        };
+
+        // Helper: RepairPack item box
+        const makeRepairPack = () => {
+            const g = new THREE.Group();
+            const box = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.55, 0.55), repairBoxMat);
+            box.position.y = 0.275; box.castShadow = true; g.add(box);
+            const crossA = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.10, 0.10), repairCrossMat);
+            crossA.position.y = 0.275; g.add(crossA);
+            const crossB = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.62, 0.10), repairCrossMat);
+            crossB.position.y = 0.275; g.add(crossB);
+            return g;
+        };
+
+        // Helper: side-mounted flag stand (small platform protruding from base tower)
+        // Per user spec: side-mounted at midway height, NOT on roof.
+        const makeFlagStand = (teamIdx) => {
+            const g = new THREE.Group();
+            // Platform plate (circular, slight bevel)
+            const plate = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 1.6, 0.18, 16), standMat);
+            plate.position.y = 0.0; plate.receiveShadow = true; g.add(plate);
+            // Inner team-tinted disc indicates ownership
+            const disc = new THREE.Mesh(
+                new THREE.CylinderGeometry(1.05, 1.05, 0.04, 16),
+                new THREE.MeshStandardMaterial({
+                    color: TEAM_COLORS[teamIdx],
+                    emissive: TEAM_COLORS[teamIdx],
+                    emissiveIntensity: 0.30,
+                    roughness: 0.55, metalness: 0.20,
+                })
+            );
+            disc.position.y = 0.11; g.add(disc);
+            // Two small rim lights (team-tinted dots) at front and back
+            const dotMat = new THREE.MeshBasicMaterial({ color: TEAM_COLORS[teamIdx] });
+            for (let s = 0; s < 4; s++) {
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), dotMat);
+                const a = s * Math.PI / 2;
+                dot.position.set(Math.cos(a) * 1.32, 0.13, Math.sin(a) * 1.32);
+                g.add(dot);
+            }
+            return g;
+        };
+
+        let placed = 0;
+
+        // Per-team: VehiclePad + RepairPack + side-mounted flag stand
+        ['team0', 'team1'].forEach((tk, teamIdx) => {
+            const t = canon[tk];
+            if (!t) return;
+            // VehiclePads (1 per team in canonical) — from team static_shapes
+            (t.static_shapes || []).forEach(s => {
+                if (s.datablock !== 'VehiclePad') return;
+                const pad = makeVehiclePad();
+                const w = toWorld(s.position);
+                pad.position.set(w.x, w.y, w.z);
+                const ry = -(s.rotation?.[2] ?? 0);
+                pad.rotation.y = ry;
+                pad.traverse(c => { c.frustumCulled = false; });
+                baseAccentsGroup.add(pad);
+                placed++;
+            });
+            // RepairPack items — small visual marker so players can see the pickup
+            (t.items || []).forEach(it => {
+                if (it.datablock !== 'RepairPack') return;
+                const rp = makeRepairPack();
+                const w = toWorld(it.position);
+                rp.position.set(w.x, w.y, w.z);
+                rp.traverse(c => { c.frustumCulled = false; });
+                baseAccentsGroup.add(rp);
+                placed++;
+            });
+            // Side-mounted flag stand at canonical flag home position. The flag
+            // mesh itself follows live state from C++ (syncFlags); the stand is
+            // a fixed visual at the home position so even when the flag is
+            // carried away, the base reads as a CTF flag mount point.
+            if (t.flag && t.flag.position) {
+                const stand = makeFlagStand(teamIdx);
+                const w = toWorld(t.flag.position);
+                // Drop the stand 0.1m below the flag base so the flagpole appears
+                // to plant into the platform, not float above it.
+                stand.position.set(w.x, w.y - 0.10, w.z);
+                const ry = -(t.flag.rotation?.[2] ?? 0);
+                stand.rotation.y = ry;
+                stand.traverse(c => { c.frustumCulled = false; });
+                baseAccentsGroup.add(stand);
+                placed++;
+            }
+        });
+
+        console.log('[R32.2] Base accents placed:', placed,
+            '(VehiclePads + RepairPacks + side-mounted flag stands)');
+    } catch (e) {
+        console.error('[R32.2] initBaseAccents failed', e);
     }
 }
 
