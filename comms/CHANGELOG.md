@@ -23,3 +23,5 @@
 2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m
 2026-04-25 23:00 | pending | feat(armor): Tier 3.0 partial — zone coloring, fixed specular/viewDir, breathing anim, jetpack glow (committed before Round 9.5 interrupt arrived)
 2026-04-25 23:30 | pending | feat(hud): Tier 3.9.1 — all 8 HUD criteria: health/energy bars, ammo counter, weapon SVG icons, dynamic crosshair, kill feed with icons, compass strip, CTF carry banner
+2026-04-25 21:42 | 5ea0e49 | feat(hud): Tier 3.9.1 — full HUD polish, all 8 criteria (accepted 8/8 code-verified)
+2026-04-25 21:43 | pending | review(manus): round 11 — audio system (12 criteria, must hit 9+); fix flag-status menu leak

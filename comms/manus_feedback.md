@@ -1,80 +1,87 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — UI/CSS work; no architecture or visual-3D reasoning needed
+> **MODEL: SONNET 4.6 (1M context) OK** — audio integration + small DOM fix; no architecture or visual-3D reasoning needed
 
-# Manus Feedback — Round 10.5 (resume HUD/UI polish; armor pivot dropped)
+# Manus Feedback — Round 11 (Audio system + small HUD leak)
 
-> **Reviewing commit:** `f3039a2` — `feat(armor): Tier 3.0 quality pass — 6/7 acceptance criteria met`
+> **Reviewing commit:** `5ea0e49` — `feat(hud): Tier 3.9.1 — full HUD polish, all 8 criteria`
 > **Live build:** https://uptuse.github.io/tribes/
 
-## Tier 3.0 armor pass — accepted as baseline (6/7, well done)
+## Round 10 (HUD/UI polish) — accepted 8/8
 
-You delivered Tier 3.0 before the Round 9.5 interrupt nudge reached you. Reviewed the diff and status doc — this is **legitimately good work** and we're keeping it as the baseline. Highlights:
+Excellent work. Code-level review passes on all 8 criteria, and the architectural decision to migrate HUD entirely to HTML/CSS overlays (canvas is now 3D-only) is exactly right. Highlights:
 
-- **Real T1 DTS files** (`larmor.dts`, `marmor.dts`, `harmor.DTS`) confirmed loading
-- **Per-team color zones via shader** — model-space Y for zone detection, `smoothstep(-0.1, 0.25, vZone)` blend at waist. Blood Eagle crimson `(0.55,0.06,0.06)` / near-black secondary. Diamond Sword navy `(0.10,0.14,0.52)` / steel-grey secondary. Clean palette, faithful to canon.
-- **Specular fix is the real win** — you correctly identified `viewDir = normalize(-vWorldPos)` was treating world origin as the camera. Replacing with `uCamPos - vWorldPos` is the textbook fix. Warm metallic specular `(1.0, 0.92, 0.82)` exponent 52 + cool rim `(0.45, 0.5, 0.6)` reads convincingly as armor metal.
-- **Idle breathing** with per-player phase offset so they don't sync — small but disproportionately makes models feel alive.
-- **Jetpack twin-thrusters** for all jetting players (not just local), with separate orange core + yellow halo particles. Good.
+- `broadcastHUD()` 14-arg JS bridge per frame — low overhead, clean boundary
+- Kill events parsed from C++ printf format `[KILL]killer~wpnIdx~victim` then rendered with inline weapon SVG
+- Crosshair: dynamic spread `speed/60*10 + 4` + skiing bonus, direct attribute set per frame (correct call vs CSS transition)
+- Compass: cardinals + intercardinals + flag-bearing markers + off-screen edge arrows ◀ ▶ — better than spec
+- Health bar: pulsing animation at HP<10% via CSS keyframe — proper game feel
 
-#6 weapon-in-hand correctly deferred (needs DTS skeleton bone audit; risky for one round). We'll revisit when a real asset pipeline is in place.
+**Visual verification deferred** — automated browser cannot click past the team-select menu (synthetic-click handler issue, confirmed by user as automation-only, real clicks work). Trusting code review + status doc.
 
-## On the model-replacement pivot (Round 9.5 interrupt — dropping)
+## One small leak to fix in Round 11
 
-User attempted to provide custom character models (Tribes: Ascend `.upk` package). Two blockers surfaced:
-1. `.upk` is Unreal Engine 3 binary format — requires UE3 / umodel + Blender pipeline to convert to glTF before we can use anything.
-2. Hi-Rez assets have IP/licensing concerns for a public WebAssembly port.
+The `[CTF]` flag-status text is showing in the **main menu** state (top-center, displays last `setFlagStatus()` result like `Flag 1 (Blue) at world (-379, 33, -641)`). Should only show in-game.
 
-**Decision:** Drop the asset-swap pivot for now. Your Tier 3.0 baseline (real T1 DTS files + good shader work) is the shippable armor for the foreseeable future. If the user later sources legitimate (CC0/CC-BY) sci-fi armored character glTFs, we'll do a real integration round then.
+**Fix:** in JS, hide `#hud-flag-status` (or whatever ID) when `#hud` is hidden / when `startGame()` has not yet been called. One-liner.
 
-Logged in `comms/manus_decisions_log.md`.
+## Tier 3.9.2 — Audio system (primary work this round)
 
-## ACTIVE WORK — Round 10 HUD/UI polish (continues)
+Goal: take the game from "looks like Tribes" to "feels like Tribes". Audio is the single biggest gap remaining.
 
-The Round 10 ask in the previous feedback file (now overwritten by this Round 10.5) **is still the active work**. Restating the full ask here so you don't have to dig through git history.
+### Acceptance criteria — must hit at least 9 of 12
 
-### Tier 3.9.1 — HUD Polish: must hit at least 6 of 8 criteria
+1. **Web Audio API context** initialized lazily on first user interaction (browser autoplay policy). Master volume node, per-category sub-buses (sfx, ui, ambience).
 
-1. **Health bar redesign** — gold/brass border (matches main menu), segmented every 25 HP, color shift to deep red when HP < 25, subtle pulse when HP < 10. Bottom-left.
+2. **Spinfusor fire** — short "thoomp" / disc launch (~150 ms, mid-low pitch).
 
-2. **Energy bar redesign** — same brass-bordered styling. Color: cyan-blue (canonical Tribes energy color). Subtle horizontal "fluid" gradient that depletes leftward when jetpack used. Directly under health bar.
+3. **Chaingun fire** — rapid stuttering brrrt (loop at fire rate, fade-out on release).
 
-3. **Ammo counter** — large primary number + smaller `/max` (e.g., `40 / 80`). Brass-bordered chip in bottom-right. Color codes: green (>50%), amber (25-50%), red (<25%).
+4. **Plasma fire** — sustained high-pitched zap.
 
-4. **Weapon icon** — small SVG line-art pictograph (disc / chaingun / plasma / grenade) above ammo counter. Brass tint. 200ms fade-cross when weapon switches.
+5. **Grenade launcher fire** — hollow "pop" / mortar thud.
 
-5. **Crosshair** — dynamic, opens when moving (running/skiing), closes when stationary. Brass `#C4A14C`. Different shape per weapon: spinfusor = circle with cross, chaingun = small dots in a square, plasma = filled circle, grenade = parabola arc.
+6. **Generic projectile impact** — short percussive thud when projectile hits terrain or building.
 
-6. **Kill feed** — top-right. Stack of recent kills: `[killer] [weapon icon] [victim]` with team color tint. Auto-fade after 5 sec. Max 4 entries.
+7. **Player damage taken** — short grunt / armor-hit metallic clang. Different sound for shield-down vs armor-only hit (optional).
 
-7. **Compass strip** — top-center. Cardinal directions (N/E/S/W) + markers for own flag (gold), enemy flag (gold), nearest teammate (team color), nearest enemy (red, only when in line-of-sight). Updates relative to player facing.
+8. **Jetpack thrust** — looping low hum/whoosh, plays while `jetting && energy > 0`. Volume modulated by thrust intensity. Crossfade on/off (no clicks).
 
-8. **CTF objective banner** — when player picks up enemy flag → screen-edge gold pulse + center text `>>> YOU HAVE THE FLAG — RETURN TO BASE <<<` for 3 sec, then minimize to small "FLAG" indicator near health. Matching banners on capture/drop.
+9. **Footsteps** — single-tap on grounded movement, scaled by velocity. Different sample for grass vs metal (terrain detection optional — single sample acceptable).
+
+10. **Generator destroyed** — large explosion + electrical sparking sustain (~1.5 s).
+
+11. **Flag pickup / drop / capture** — distinct UI cues (rising arpeggio for pickup, single bell for capture).
+
+12. **3D positional audio** — projectile fires and impacts away from local player attenuate by distance (inverse-square, max 80m audible) and pan by left/right relative to player facing. PannerNode-based.
 
 ### Implementation notes
 
-- **Migrate all HUD to HTML/CSS overlays.** Canvas should only render the 3D world. Move the energy bar (currently in canvas around line 988 of `wasm_main.cpp`) out to an HTML overlay.
-- Color palette: gold `#D4AF37`, brass `#C4A14C`, dark border `#2A2010`, panel bg `rgba(15, 12, 5, 0.85)`.
-- SVG weapon icons: inline in HTML (not external files).
-- Crosshair: own absolutely-positioned SVG centered on screen, NOT in canvas (rotation/dilation smoother in SVG).
+- **Asset sourcing:** use **CC0 / public-domain only**. `freesound.org` (CC0 filter), `kenney.nl/assets/audio` (CC0), `mixkit.co/free-sound-effects` (royalty-free with attribution OK). Save to `program/assets/audio/{sfx,ui,ambient}/*.{ogg,wav,mp3}`.
+- **Format:** prefer `.ogg` (smaller, broad browser support). MP3 fine as fallback.
+- **Loading:** preload at game start (or first menu interaction). Decode to `AudioBuffer` once, reuse.
+- **Bridge:** C++ side emits events via `EM_ASM(playSound("sfx_disc_fire", x, y, z))` for positional, or `playSoundUI("ui_pickup")` for non-positional. Build a small JS dispatcher that maps event names to AudioBuffers and routes through the right bus.
+- **Volume:** all audio defaults to 0.5; build a `volume` slider in main menu Options (or stub for Round 13 settings menu).
+- **Avoid clicks:** all sounds with sustain (jetpack, chaingun) must use envelope (linear ramp gain 0→1 over 30 ms attack, 1→0 over 60 ms release).
+- **Don't ship without `mute` keybind** — bind `M` key to toggle master mute. Tribes 1 used `Ctrl+M`. Either is fine.
 
 ### Verification flow
 
-When you push, I'll headless-browser into the live build, click through to in-game, screenshot HUD, and tally criteria met. 6+ → Round 11 advances to audio system. <6 → Round 11 stays on HUD with specific gaps called out.
+When you push, I'll do code review of the bridge + asset list. I cannot meaningfully verify audio without playing — so user will smoke-test. If 9+ criteria are present in code, Round 12 (match flow) advances.
 
-## Out-of-scope for Round 10
+## Out-of-scope for Round 11
 
-- Settings menu (key remap, sensitivity) — Round 13
-- Scoreboard / post-match — Round 12 (match flow)
-- Minimap — wait until terrain final
-- #6 weapon-in-hand armor work — wait until asset pipeline matures
+- Voice chat / VOX — Tribes 1 callouts ("ENEMY FLAG TAKEN!", "BASE UNDER ATTACK!") — defer to Round 13/14
+- Music / dynamic ambience — Round 14
+- Spatial reverb (large-room sound for interiors) — defer
 
 ## Next-up rounds (FYI)
 
-- **Round 11:** Audio system — weapon SFX, jetpack hum, generator destroy, footsteps. I'll source CC0 sound assets.
-- **Round 12:** Match flow — round timer, win conditions, scoreboard, respawn flow.
-- **Round 13:** Settings menu + key remap.
+- **Round 12:** Match flow — round timer, win conditions, scoreboard, respawn flow, post-match screen
+- **Round 13:** Settings menu — sensitivity, key remap, FOV slider, volume sliders (binds to Round 11 audio buses)
+- **Round 14:** Bot AI v2 — pathfinding, CTF behavior, target prioritization
+- **Round 15:** Polish + bug sweep + mobile/touch input fallback
 
 ## Token budget
 
-Sonnet 4.6 (1M context). Estimate 1-2 commits, 20-30 min for Claude to deliver 6+ criteria.
+Sonnet 4.6 (1M context). Estimate 2-3 commits, 30-45 min for Claude to deliver 9+ criteria (longer than HUD because asset sourcing + decoder pipeline).
 
-— Manus, Round 10.5 (re-confirm HUD work after armor accept + asset pivot drop)
+— Manus, Round 11 (audio system)
