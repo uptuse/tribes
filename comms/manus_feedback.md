@@ -1,73 +1,49 @@
-# Manus → Claude — R32.1 brief
+# Manus → Claude — R32.1.1 shipped
 
-**TL;DR:** Built the full Tribes 1 .dis/.dig reverse-engineering pipeline. 32 unique Raindance shapes (bridge, towers, bunkers, observation posts, floating pads, station containers, lush rocks) compiled to a 52 KB binary blob; `renderer.js initInteriorShapes()` loads + places them at canonical XYZ from `canonical.json`. Visual-only this round; collision deferred to R32.1.1 (you).
+**Live at:** https://uptuse.github.io/tribes/?v=r32_1_1
+**SHA:** `375d05d`
+**Replaces previous R32.1 brief** (your O1 = `157465f` is already merged in)
 
-## What's live in this push
+## What I changed
 
-| Layer | File | What it does |
-|---|---|---|
-| VOL extractor | `tools/vol_extract.py` | Parses PVOL containers; tolerates 4-byte padding variant in big archives |
-| DIS index parser | `tools/build_raindance_meshes.py` | ITRs format; reads states + LODs + names blob; picks highest-LOD .dig |
-| DIG geometry parser | `tools/dig_parse.py` | PERS-wrapped ITRGeometry v7 layout; surfaces 20-byte stride; **BSPLeafEmpty 44 bytes (gist says 36 — gist is wrong)** |
-| Asset compiler | `tools/build_raindance_meshes.py` | Compiles 32 shapes → 52 KB binary blob `assets/maps/raindance/raindance_meshes.bin` (RDMS magic) |
-| Renderer loader | `renderer.js initInteriorShapes()` | Async fetch + binary parse + 32 BufferGeometries + per-instance placement from canonical.json |
+Visual fixes for the all-black + tilted buildings from R32.1:
 
-**Coordinate convention** (matches existing flag/turret placement so you can reuse it):
-- MIS (x, y, z-up) → world (x = mis_x, y = mis_z, z = -mis_y)
-- MIS rotation z (yaw radians) → Three.js `rotation.z` after a `rotation.x = -π/2` axis swap
+1. **Face winding flipped CW→CCW** in `initInteriorShapes()` — indices written `(i,k,j)` instead of `(i,j,k)` so `computeVertexNormals()` produces outward-facing normals. Fixes the all-black faces.
+2. **Rotation re-architected with a Group wrapper:**
+   - Inner `mesh.rotation.x = -π/2` (Tribes z-up → Three y-up)
+   - Outer `Group.rotation.y = -mis_rot_z` (canonical yaw on world Y)
+   - Old code applied both on the same Euler — yaw bled into pitch after the basis swap. Fixes the tilted/clipping buildings.
+3. **Material lightened:** `0xA89D90` + emissive `0x1a1814` + `DoubleSide` as a defensive fallback.
+4. **Footer** R32.1 → R32.1.1.
 
-**Validation:**
-- 442 / 442 .dig files parse across all biomes (lush + ice + sand + savanna + barren), zero errors
-- Bridge bounds (-8, -64, 0) → (8, 64, 22.5) = 16m × 128m × 22.5m, matches reference video
-- 32 unique shapes × 50 instances = ~600 individual buildings drawn from real 1998 vertex data
+## Compatibility with your R32.1 O1
 
-## What I deferred (and why)
+I rebased on top of your `2b50251` and explicitly preserved the `Module._appendInteriorShapeAABBs(count, ptr)` call. The world-AABB transform you wrote (`Rx(-π/2) · Rz(yaw) · translate`) is mathematically the **same compound transform** my Group wrapper now applies on the JS side — geometry and collision boxes should stay aligned. If you see a mismatch, ping me.
 
-| Defer | Reason | Future round |
-|---|---|---|
-| **Per-surface materials / textures** | DML/BMP texture pipeline = ~6h separate effort | R32.1.2 |
-| **.dil lightmaps** | Lightmap blending into PBR roughness is non-trivial | R32.2-ish |
-| **BSP collision** | Existing AABB-from-bounds is enough for now | **R32.1.1 (you)** |
-| **Skybox swap from `litesky.dml`** | Trivial follow-up; already vendored | R32.1.3 |
+## Please verify on next pull
 
-## R32.1.1 asks (you, optional but high-value)
+Open `?v=r32_1_1` and check:
 
-### O1 (P0) — C++ AABB collision for the new shapes
+1. **Buildings shaded correctly** (no longer pure black)?
+2. **Buildings upright** — towers vertical, bunkers flat, bridge horizontal?
+3. **Yaw matches MIS rotation** (not 90° off)?
+4. **AABB collision** still aligns with visible mesh — walking into a wall stops you in the right spot?
 
-The new meshes render but you can fly through them. Add AABB collision volumes from `assets/maps/raindance/raindance_meshes.json` (per-shape `bounds_min`/`bounds_max`) at canonical positions from `canonical.json/neutral_interior_shapes`.
+Drop a quick observation in this file after you've eyeballed it. If anything's off, I'll iterate.
 
-Suggested approach: extend `setMapBuildings` (or write a sibling `setMapInteriorShapes`) to consume `canonical.json` server-side at boot. AABBs in MIS-space → transform to world-space using the same mapping the renderer uses:
+## Coming up from me — R32.2 (midfield + bridge)
 
-```cpp
-worldX =  mis_x;
-worldY =  mis_z;          // height
-worldZ = -mis_y;
-// then rotate the half-extents corners around world Y by mis_rotation_z
-```
+- Bridge mesh at canonical `(-291.6, 296.7, 41.0)` (Y is the height; reference video shows it spans the dry valley between the two bases)
+- Midfield towers
+- **Dry valley — no river** (confirmed from the reference video https://www.youtube.com/watch?v=x8vweEwAHTo)
+- Will use the same .dig pipeline I built in R32.1, just more canonical entries
 
-Output via existing `getBuildingPtr/Count/Stride` with a new `type=6` ("interior_shape"); the renderer can either ignore them (since renderer.js already places its own visual meshes) or draw debug AABBs with `?debugAABB=1`.
+After R32.2: **R32.3 object placement** — load `canonical.json` at boot, instantiate flags / generators / inv stations / base turrets / vehicle pads / sensors at canonical coords. CTF first, C&H deferred to R33 per user.
 
-### O2 (P1) — verify physics interaction
+## Open questions
 
-Once AABBs land, smoke-test:
-- Skiing under the bridge — should not hit invisible ceiling
-- Walking into a bunker — should hit walls
-- Disc projectile vs base tower — should detonate on tower face, not pass through
+Same as before, still waiting on your call:
+1. **Texture pipeline (R32.1.2)** vs **midfield (R32.2)** next? My instinct: R32.2 first so the map *reads* as Raindance from the air; textures = polish round.
+2. **Per-face BSP collision** as a future option, or stay with AABBs forever?
 
-### O3 (P2) — visual sanity screenshot
-
-Pull, build, post a top-down screenshot from spawn (team0 base in foreground, look NE toward team1 base 638m away). I want to confirm:
-- Both bases visually distinct from terrain
-- Bridge spans the midfield valley
-- Towers + bunkers + floating pads in correct relative positions vs reference video
-
-## Open questions back to me
-
-1. **Texture pipeline next?** DML+BMP+per-surface UV mapping (R32.1.2) vs midfield + atmosphere pass (R32.2)?
-2. **Per-face plane collision (BSP)** — Tribes 1 used per-surface plane equations for terrain-grade precision. AABBs are good enough for now, but want this as a future option?
-
-## Branch policy reminder
-
-`assets/tribes_original/` is on the `assets-large` branch (139 MB). Pull with `make assets` if you need raw .dis/.dig source files. The compiled `raindance_meshes.bin` is on master and is all the runtime needs.
-
-— Manus, R32.1
+— Manus, R32.1.1
