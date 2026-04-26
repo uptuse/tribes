@@ -1,121 +1,105 @@
-# Manus Feedback — Round 23: Voice Chat + R22 Deferred + Balance Pass (SONNET)
+# Manus Feedback — Round 24: Matchmaking + Real Balance Instrumentation + In-Match Settings (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
 **Severity:** Standard
-**Type:** Implementation — close R22 deferred items (per-class loadouts, settings export/import), add voice chat (WebRTC mesh layered on existing WebSocket signaling), and apply a first balance pass driven by simulated playtest data
+**Type:** Implementation — add matchmaking infrastructure (skill-based pairing, friend invites, party system), capture real balance telemetry to replace synthetic baselines, allow in-match settings access without quitting
 
 ---
 
 ## 1. Context
 
-R22 shipped real A* bots, 14-sound procedural audio, spawn shields, match countdown, damage arcs (8/10 hard-implemented). Two items deferred to R23 per priority-order shipping discipline: settings export/import (#8) and per-class loadouts (#9).
+R23 closed the social loop with class loadouts, WebRTC voice chat, settings v2, and server-authoritative damage tracking. The project is technically ready for public playtesting once the user runs `wrangler deploy`.
 
-R23 closes those, adds the missing-feature most likely to determine whether playtesters actually have fun together (voice chat — without it the social loop dies), and applies an evidence-based balance pass to fix any obvious imbalances surfaced by the loadtest harness.
+R24 adds the matchmaking and telemetry layers that turn a "you-can-play-it" demo into a "you-want-to-play-tomorrow" experience. Three concerns drive R24's scope. First, casual players bouncing into a public lobby with veterans will have a poor first match — skill-based matchmaking solves this. Second, R23's balance pass was synthetic because no real telemetry existed yet — R24 instruments the server to capture per-match data in a queryable format. Third, the current ESC menu only opens from the main menu — players who want to adjust mouse sensitivity mid-match must quit, an unforgivable friction point.
 
 ---
 
 ## 2. Concrete tasks
 
-### 2.1 P0 — Per-class loadouts with server validation (~30 min)
+### 2.1 P0 — Skill-based matchmaking with ELO-lite (~40 min)
 
-R22 deferred this. Implementation lives in three places:
+The server adds a `Player.skillRating: number` field that defaults to 1000 (configurable via `SKILL_INITIAL` env var). After every match the lobby updates ratings using a simplified ELO where the expected outcome is computed from team-average rating differential and the actual outcome is the score-margin ratio bounded to [0, 1]. The K-factor starts at 32 and decays to 16 after 20 matches played to stabilize ratings of regular players.
 
-The deploy-screen UI in `shell.html` and `index.html` adds a class picker (Light / Medium / Heavy) shown after team selection. Each class displays its weapon list and grenade count in a 3-column comparison panel. The selected class is sent to the server in the `joinAck` request.
+Persistence lives in Cloudflare Durable Object storage. `lobby_do.ts` writes `player_<uuid>` keys after each match with the rating, matches-played count, and last-active timestamp. The DO storage API supports the access patterns we need without requiring a separate database. Cold-start lookup happens on connect (the client sends its UUID; the DO loads the rating row or creates a default one).
 
-The server in `server/sim.ts` validates the class on join and stores `Player.classId`. The respawn function gives the player only the weapons in that class's loadout (replaces the current weapon-give-all logic). Definition lives in `client/constants.js` (and re-exported via `server/constants.ts`):
+The lobby browser endpoint `GET /lobbies` extends each lobby entry with `avgSkillRating` and `skillRange`. The Quick Match path on the client now picks the lobby whose `avgSkillRating` is closest to the requesting player's rating, falling back to most-recent-active if no lobby is within 200 points.
 
-> Light: blaster, disc, chaingun, grenade. 3 grenades. Spawn time 4s. Energy regen 1.0×.
-> Medium: blaster, disc, chaingun, plasma, grenade. 5 grenades. Spawn time 6s. Energy regen 0.85×.
-> Heavy: blaster, plasma, mortar, grenade. 8 grenades. Spawn time 9s. Energy regen 0.6×. Repair pack inventory item.
+The client UI exposes the rating in two places: the player's own rating shown on the main menu under their name (with a delta indicator after each match — "+18" green or "-12" red), and on the in-match scoreboard next to each player's nameplate.
 
-The anti-cheat layer adds a fire-input check: if the input's `weaponSelect` is not in the player's class loadout, drop with `[CHEAT-LOADOUT] playerId=X selected=Y class=Z`. Three sustained violations in 10s kicks the player.
+A safety rail prevents matchmaking abuse: the rating only updates if the match ran more than 4 minutes and at least 4 humans participated (excludes bot-stuffed sandbox matches). Document in `comms/matchmaking_design.md`.
 
-### 2.2 P0 — Settings export/import + reset (~20 min)
+### 2.2 P0 — Real balance telemetry capture (~25 min)
 
-R22 deferred this. Add three buttons to the existing settings modal: "Reset to Defaults", "Export Settings", "Import Settings". Reset clears all `tribes:*` localStorage keys and reloads. Export downloads `tribes_settings.json` containing the current `ST` object plus a `version: 2` field. Import accepts a JSON file, validates against the v2 schema (field names + types), applies via `Module._setSettings(JSON.stringify(parsed))`, and persists.
+Replace R23's synthetic baseline with structured per-match telemetry. The server in `lobby.ts` writes a row per completed match to a `balance_telemetry.csv` file (or the DO storage equivalent on CF Workers) with columns capturing per-weapon kills/shots, per-class K/D, average jet airtime, average ski distance, average match duration, score-differential at end, average ping, count of slow-ticks, count of cheat events.
 
-Document the schema-versioning approach in `network_architecture.md` §11. Add a v1→v2 migration path that tags any pre-v2 settings with `version: 1` on first load and translates fields (`fov` field renamed `viewFov`, `audio` split into `audioMaster`/`audioSfx`/`audioMusic`).
+The existing `analyze.ts` from R23 reads this CSV and outputs proposed constant tweaks with their evidence rows. The analyze script gains a `--apply` flag that, when run with confirmation, writes proposed tweaks into `client/constants.js` and `comms/balance_log.md` as a git-friendly diff.
 
-### 2.3 P0 — Voice chat: WebRTC mesh layered on WebSocket signaling (~50 min)
+The instrumentation hooks live in `sim.ts`: every fire input increments a per-weapon shot counter, every kill increments a per-weapon kill counter and per-class kill/death counters, jet/ski usage stamps tick durations into accumulators. Match end snapshot writes the row.
 
-The existing WebSocket lobby is a natural signaling channel for WebRTC peer-to-peer voice. Don't build a SFU — direct mesh works fine for 8-player teams.
+### 2.3 P0 — In-match settings access (~20 min)
 
-The server in `server/lobby.ts` adds three message types: `voiceOffer`, `voiceAnswer`, `voiceCandidate`. Each gets routed from sender to addressee without server interpretation. Server logs `[VOICE] from=X to=Y` for diagnostics. No voice data flows through the server itself — only signaling.
+The ESC menu currently only opens from the main menu. Extend the existing settings modal in `shell.html` so it opens from any state with `Ctrl+,` (cross-platform settings shortcut convention) or via a gear icon in the top-right corner of the HUD. When opened mid-match, the modal pauses input forwarding to the WASM module but the network loop keeps running so the player doesn't disconnect. Settings changes apply immediately. Closing the modal resumes input.
 
-The client in `client/voice.js` (~200L target) wraps `RTCPeerConnection` per opponent. On match start, the client creates one `RTCPeerConnection` to each teammate (mesh = 7 connections in 8-player team, manageable). It captures local `getUserMedia({audio: true})`, attaches the track, and renders incoming tracks via `<audio autoplay>` elements positioned via Web Audio API `MediaStreamAudioSourceNode` → `PannerNode` for 3D voice positional spatialization (same HRTF model as R22 audio).
+Additionally, expose a quick-access settings panel on the match-end screen between matches. Players often want to tweak mouse sensitivity or audio levels right after a match without having to navigate menus.
 
-Push-to-talk: hold `V` to enable mic, release to mute. Open mic toggle in settings (`ST.voiceMode = 'pushToTalk' | 'open'`).
+### 2.4 P1 — Friend invites via shareable lobby URL with persistence (~25 min)
 
-Visual indicator in the HUD: speaking teammates get a cyan pulse on their nameplate (extend R20 nameplate Sprite with an `speaking` flag fed from RTC stats `audioLevel > threshold`).
+The current INVITE FRIENDS button copies the page URL. Extend this so when a player clicks INVITE FRIENDS while in a custom lobby, the URL includes the lobby ID and reserves a slot for the invited friend (timeout 60s for friend to join before slot reverts to public). Server in `lobby.ts` adds `Match.reservedSlots: Map<uuid, expiresAt>` and the join handler honors reservations.
 
-Decision authority: if WebRTC NAT traversal fails (~10% of users behind symmetric NAT), document fallback to a Cloudflare-hosted TURN relay in `open_issues.md`; defer implementation to R24+.
+The friend system itself: client persists a friends list in localStorage as `tribes:friends` (uuid + last-seen-name array). The match-end screen shows a "+ FRIEND" button next to non-friend players. The main menu adds a "FRIENDS" tab showing the list with online/offline status (via lobby polling: `GET /friends-status?uuids=...` returns presence). Online friends get a "JOIN GAME" button if they're in a public lobby.
 
-### 2.4 P1 — Balance pass v1 driven by loadtest data (~25 min)
+### 2.5 P1 — Party system: invite friends to queue together (~30 min)
 
-Run `server/loadtest/run.sh` against a local instance for 5 minutes. Capture per-weapon kill-rate, per-class K/D, and ski-vs-walk movement distribution into `loadtest_balance.csv`. Feed these into the analysis script `server/loadtest/analyze.ts` (~80L) that prints suggested constants tweaks. Apply only the changes with high confidence:
+A party is a client-side group of UUIDs that joins lobbies together. The host (party leader) creates a party via the FRIENDS tab → "CREATE PARTY" button. Other members accept the invite. When the host clicks Quick Match, the server reserves N slots (party size) in the chosen lobby before any other player can fill them.
 
-The likely tweaks (calibrate from data, don't ship blind):
-> Mortar damage 80→70 if mortar K/D > 1.5× weapon median.
-> Chaingun spread cone 0.05→0.07 rad if chaingun kill share > 35%.
-> Light armor max HP 100→110 if light class K/D < 0.85× class median.
-> Jet energy cost 1.0→0.85 if average jet airtime per match < 15s (suggests too punitive).
-> Ski friction 0.02→0.018 if ski distance per match < 200m median (too sticky).
+Server changes: `POST /party-create` returns a party ID. `POST /party-join` adds a member. `POST /party-disband` clears it. Quick Match queries `?partyId=` and the matchmaking algorithm finds a lobby with enough open slots (or creates one). The `avgSkillRating` for matchmaking averages all party members' ratings and matches against that.
 
-Document each shipped change in `comms/balance_log.md` with the data-driven rationale and the source CSV row.
+### 2.6 P2 — Tutorial completion tracking + onboarding flow (~15 min)
 
-### 2.5 P1 — Server-broadcast `lastDamageFrom` for accurate damage arcs (~15 min)
+The R21 tutorial overlay currently sets `localStorage.tribes:tutorialDone` after first completion. Extend with a step-completion flag that's set only if the player both watched the step AND performed the demonstrated action (movement step requires the player to have moved at least 10m, jetpack step requires at least 1 jet activation, combat step requires at least 1 fire input). Players who skip via ESC don't get the completion flag and the tutorial reshows on next visit (unless dismissed via "Don't show again" checkbox).
 
-R22 used a nearest-enemy heuristic for damage arcs. Replace with server-authoritative source: when the server applies damage to a player in `server/sim.ts`, it stamps `Player.lastDamageFromId = attackerId, lastDamageAtTick = currentTick`. The snapshot wire format (`server/wire.ts`) extends per-player payload by 1 byte (`lastDamageFromIdx` packed into existing reserved slot — no new bandwidth). Client `client/wire.js` decodes and feeds to `showDamageArc(attackerWorldPos)`.
+The first match a player participates in (real or vs-bots) marks `firstMatchComplete: true`. After 3 completed matches, a feedback prompt appears: "Enjoying Tribes? Share with a friend → INVITE FRIENDS button highlighted." Single show, dismissable.
 
-### 2.6 P2 — Repair pack inventory + use (~20 min)
+### 2.7 P2 — Connection quality indicator + auto-reconnect resilience (~15 min)
 
-Heavy class spawns with one repair pack (+50 HP over 5s, single use). Bind to `R` key when pickup available. Server tracks `Player.inventory: { repairPack: 0|1 }`. Use input is a new `keys` bit `USE_REPAIR`. Pickup spawn at inventory-station-equivalent locations (server picks 4 fixed map points). Visual: floating cyan box on terrain + whoosh sound on pickup + chime on use.
+The HUD currently shows a numeric ping. Add a 4-bar quality indicator (excellent <50ms, good <100ms, fair <200ms, poor >=200ms or packet-loss >5%). Color-code: green / yellow / orange / red. Position: top-right corner under the gear icon.
 
-### 2.7 P2 — Replay recording (local only, R23 scaffold) (~25 min)
+Auto-reconnect from R20 currently retries every 3 seconds for 30 seconds. Extend with exponential backoff (3s, 5s, 8s, 12s, 20s, 30s, 30s, 30s) and capture reconnect-success metric to telemetry. After 8 failed attempts, show a "RECONNECT" button instead of auto-retry to avoid wasting the player's time.
 
-Server records every snapshot + delta + input arrival to a `Match.replayBuffer: ArrayBuffer[]` while the match is live. On match end, server offers a `GET /replay/:matchId` endpoint that streams the buffer as a `.tribes-replay` binary file. Client's match-end overlay adds a "Save Replay" button.
+### 2.8 P3 — Per-match feedback collection (~10 min)
 
-Don't implement playback yet (R25+). Just capture and download. Document the binary format in `network_architecture.md` §12.
-
-### 2.8 P3 — Color-blind mode (~10 min)
-
-The team-color red/blue choice is friendly to most users but ~8% of men have red/green deficiency that can confuse blue/red distinction with the game's brown terrain. Add `ST.colorBlindMode = 'off' | 'deuteranopia' | 'protanopia' | 'tritanopia'` setting. When enabled, swap team colors:
-> deuteranopia: red→orange (255, 140, 0), blue stays.
-> protanopia: red→yellow (255, 220, 0), blue stays.
-> tritanopia: blue→magenta (255, 0, 255), red stays.
-
-Apply at render time in `renderer.js` and HUD CSS via CSS variables (`--team-red`, `--team-blue`). Test by toggling each mode against a screenshot of the play-screen.
+After each match, the match-end screen adds a 1-5 star rating prompt: "How was that match?" Players can also tag specific issues from a fixed list: "Lag", "Imbalanced teams", "Toxic player", "Bot felt fake", "Voice chat broken". Ratings and tags are sent to `POST /match-feedback` and aggregated server-side for the dashboard. This drives the next round's prioritization.
 
 ---
 
 ## 3. Acceptance criteria (must hit 6 of 8)
 
-The first six lines below capture what must function end-to-end. Lines 7-8 capture polish that is nice-to-have but not gating.
+The first six lines below capture what must function end-to-end. The last two are nice-to-have polish.
 
-A class picker with three options renders during deploy and Light/Medium/Heavy spawn with the documented loadouts and energy regen modifiers. Server validates fire inputs against the player's class loadout and kicks on three sustained violations. Settings export downloads a v2 JSON, import validates and applies, reset wipes localStorage. Two browser tabs join the same lobby, opt into voice chat with `V` push-to-talk, and hear each other with 3D positional audio (close → loud, far → quiet). The HUD nameplate of a speaking teammate pulses cyan. The balance log records at least one data-driven constant change with CSV evidence. Damage arcs point at the actual attacker (verifiable by triggering damage from a known direction). Heavy class can pick up and use a repair pack. Color-blind mode swaps team colors when enabled.
+A new player connecting receives the default skill rating and after their first match the rating updates by a delta visible on the main menu. The Quick Match button routes to a lobby whose avgSkillRating is within 200 points of the player's rating when one exists. The server writes one row per completed match to `balance_telemetry.csv` (or DO storage equivalent on CF) and the analyze script produces tweaks driven by real data when the file has at least 5 rows. Mid-match `Ctrl+,` opens the settings modal, changes apply immediately, closing resumes input. The friend system persists across sessions in localStorage with online/offline indicators driven by server polling. A party leader can invite a friend, both join the same lobby together when Quick Match fires, and matchmaking pairs them against a balanced opponent pool. The tutorial only marks complete when the demonstrated action was performed. The connection quality bar reflects reality with the documented thresholds.
 
 ---
 
 ## 4. Compile/grep guardrails
 
-The standard guardrails apply: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any` in public APIs, all new client files as ES modules, dependencies pinned, vanilla-JS client, `bun build` and `bun run test` clean.
+Standard guardrails apply: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any` in public APIs, all new client files as ES modules, dependencies pinned, vanilla-JS client, `bun build` and `bun run test` clean. New telemetry rows must not increase per-match wire bandwidth (the CSV write is server-local).
 
 ---
 
 ## 5. Time budget
 
-A reasonable Sonnet round is 150-200 minutes. The voice chat work is the longest pole because WebRTC requires careful state management around offer/answer/candidate exchange and stream lifecycle. Class loadouts and settings export/import are both mechanical follow-throughs from R22. Balance pass is fast if the loadtest harness already runs cleanly from R21.
+A reasonable Sonnet round at 150-200 minutes covers all P0 and P1 items. Skill-based matchmaking is the largest piece due to the rating math, persistence layer, and integration with both lobby browsing and Quick Match. Telemetry is small but touches multiple files. In-match settings is mechanical. Friends and party are independent and can be shipped in priority order.
 
 ---
 
 ## 6. Decision authority for ambiguities
 
-If voice chat reveals echo or feedback issues, enable `RTCRtpSender.setParameters` with `degradationPreference: 'maintain-framerate'` and add a server-side per-track audio-level threshold filter; document any audible-quality compromises in `open_issues.md`. If balance changes feel too aggressive in self-play, halve the magnitude and re-run loadtest. If repair pack pickup spawns conflict with existing buildings or terrain features, snap to the nearest open ground tile within a 4m radius. If color-blind mode breaks any HUD readability, default the affected element to a neutral white outline.
+If skill rating produces volatile results in early matches due to small sample size, increase the K-factor decay threshold from 20 matches to 30 and shrink the initial K from 32 to 24. If the DO storage cost projection exceeds $10/month at 100 CCU, switch persistence to a daily-flushed JSON snapshot and accept the rare race-window. If WebRTC mesh voice chat conflicts with party voice grouping, party voice gets a separate dedicated mesh channel that excludes non-party teammates. If the friend system reveals stalking concerns (player A repeatedly joining player B's matches against B's wishes), add a "blocked" list that takes priority over friend status. If telemetry grows too large for the DO storage limit, rotate to a 7-day rolling window and archive older rows to R2 (Cloudflare object storage).
 
 ---
 
 ## 7. Roadmap context
 
-R23 is the first round that closes the social loop end-to-end: people can hear each other, pick a class, and play with sensible balance. R24 will implement matchmaking improvements (skill-based pairing, friend lists), R25 will add custom maps and replay playback, R26+ enters mod-loader and ranked-mode territory.
+R24 is the matchmaking and telemetry foundation. R25 will add custom maps and replay playback (the replay capture from R23 is currently capture-only). R26 will introduce ranked-mode tiers built on the skill rating. R27+ enters mod-loader, custom skins, and community-content territory.
 
-After R23 lands and the user has run the actual CF Workers deploy, the project is ready for a public Day-1 playtest. That is the milestone.
+After R24 lands, the public playtest experience scales from "playable demo" to "I'd play this with my friends regularly." That is the threshold that determines whether the project earns organic player retention versus needing aggressive marketing to grow.
