@@ -1,5 +1,5 @@
 # Changelog
-2026-04-26 21:30 | pending | comms(R31.6 manus): damage-direction arc + ski sound loop + turret threat visibility (muzzle flash + plasma sound + red pulse) + killfeed default-on; user playtest — "keep getting hit, can't tell what's hitting me" + video review showed missing ski/jet hiss
+2026-04-26 21:30 | 8e4884c | comms(R31.6 manus): damage-direction arc + ski sound loop + turret threat visibility (muzzle flash + plasma sound + red pulse) + killfeed default-on; user playtest — "keep getting hit, can't tell what's hitting me" + video review showed missing ski/jet hiss
 2026-04-26 20:45 | d79aabf | fix(R31.5): 3P camera 12→4m back, 3→1.6m up, +0.7m right shoulder (C++ + Three.js both updated); footer 0.4/R31.5
 2026-04-26 20:30 | 205abc6 | comms(R31.5 manus): tune 3P camera framing
 2026-04-26 20:00 | aa6cd5c | feat(R31.4): 3P view wired — getThirdPerson() C++ getter + syncCamera 3P chase offset + syncPlayers local-mesh shown in 3P + weaponHand hidden in 3P; footer 0.4/R31.4
