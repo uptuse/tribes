@@ -15,4 +15,4 @@
 2026-04-25 21:30 | pending | feat(weapons/visuals): Tier 2.6 — distinct projectile visuals: disc white+cyan trail, chaingun yellow tracer, plasma red-orange jitter, grenade dark+bounce+red blink
 2026-04-25 22:00 | pending | feat(base): Tier 2.7 complete — turret auto-aim AI (plasma, 80m, 120°/s), destructible generators (cascade offline+sparks+repair), inventory station UI (armor/weapon/pack, F key, offline state)
 2026-04-25 21:05 | pending | feat(base): Tier 2.7 — turret AI, destructible generators, inventory station UI (commit 4c2179a)
-2026-04-25 21:05 | pending | review(manus): round 8 — Tier 2.7 verified, Tier 2.x heightmap greenlit, 4 polish items (turret LoS, gen alive-state visual, turret HUD msg, station UI close-on-move)
+2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m

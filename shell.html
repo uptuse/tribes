@@ -457,7 +457,8 @@
         console.log(t);
         if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));
         if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));
-        if(t.indexOf('[STATION:')===0&&t.indexOf('APPLIED')<0){
+        if(t.indexOf('[STATION:CLOSE]')===0){stClose();}
+        else if(t.indexOf('[STATION:')===0&&t.indexOf('APPLIED')<0){
           var parts=t.slice(9).replace(']','').split(':');
           openStation(parseInt(parts[0]),parts[1]==='1');
         }

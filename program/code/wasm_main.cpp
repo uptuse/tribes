@@ -1053,6 +1053,19 @@ static void drawHUD(){
 // ============================================================
 // Turret + Generator update
 // ============================================================
+static bool hasLoS(Vec3 from, Vec3 to){
+    Vec3 d=to-from;float dist=d.len();
+    if(dist<0.1f)return true;
+    d=d*(1.0f/dist);
+    int steps=(int)(dist/5.0f)+2;
+    for(int s=1;s<steps;s++){
+        Vec3 pt=from+d*((float)s/steps*dist);
+        if(pt.y<getH(pt.x,pt.z))return false;
+        if(projectileHitsBuilding(pt))return false;
+    }
+    return true;
+}
+
 static void updateTurrets(float dt){
     for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
         Turret&t=turrets[i];
@@ -1077,18 +1090,22 @@ static void updateTurrets(float dt){
         float yawDiff=targetYaw-t.aimYaw;
         while(yawDiff>M_PI)yawDiff-=2*M_PI;while(yawDiff<-M_PI)yawDiff+=2*M_PI;
         t.aimYaw+=(yawDiff>0?1:-1)*fminf(fabsf(yawDiff),maxRot);
-        // Fire plasma when within 15° and cooldown ready
+        // Fire plasma when within 15° and cooldown ready, with LoS check
         if(fabsf(yawDiff)<15.0f*DEG2RAD&&t.fireCooldown<=0){
-            Vec3 dir={sinf(t.aimYaw),0.05f,-cosf(t.aimYaw)};
-            dir=dir.normalized();
-            for(int k=0;k<MAX_PROJ;k++){
-                if(!projs[k].active){
-                    projs[k]={t.pos+Vec3(0,2.5f,0),dir*weapons[WPN_PLASMA].muzzleVel,
-                               weapons[WPN_PLASMA].projLife,WPN_PLASMA,t.team,true};
-                    break;
+            Vec3 firePos=t.pos+Vec3(0,2.5f,0);
+            Vec3 tgtPos=players[t.targetIdx].pos+Vec3(0,1.2f,0);
+            if(hasLoS(firePos,tgtPos)){
+                Vec3 dir={sinf(t.aimYaw),0.05f,-cosf(t.aimYaw)};
+                dir=dir.normalized();
+                for(int k=0;k<MAX_PROJ;k++){
+                    if(!projs[k].active){
+                        projs[k]={firePos,dir*weapons[WPN_PLASMA].muzzleVel,
+                                   weapons[WPN_PLASMA].projLife,WPN_PLASMA,t.team,true};
+                        break;
+                    }
                 }
             }
-            t.fireCooldown=1.5f;
+            t.fireCooldown=1.5f; // reset regardless (don't rapid-fire when blocked)
         }
     }
 }
@@ -1096,28 +1113,38 @@ static void updateTurrets(float dt){
 static void updateGenerators(float dt){
     for(int i=0;i<RAINDANCE_GENERATOR_COUNT;i++){
         Generator&g=generators[i];
-        if(g.alive)continue;
-        // Sparking visual
         g.sparkTimer-=dt;
-        if(g.sparkTimer<=0){
-            g.sparkTimer=0.5f;
-            spawnPart(g.pos+Vec3(0,1,0),Vec3(0,3,0),1.0f,0.7f,0.1f,0.8f,0.15f);
-        }
-        // Regenerate if no enemies within 30m
-        bool enemyNear=false;
-        for(int j=0;j<MAX_PLAYERS;j++){
-            if(!players[j].active||!players[j].alive||players[j].team==g.team)continue;
-            if((players[j].pos-g.pos).lenSq()<900.0f){enemyNear=true;break;}
-        }
-        if(!enemyNear){
-            g.hp+=5.0f*dt;
-            if(g.hp>=800.0f){
-                g.hp=800.0f;g.alive=true;generatorAlive[g.team]=true;
-                printf("[CTF] >>> %s generator repaired — turrets online <<<\n",g.team==0?"RED":"BLUE");
+        if(g.alive){
+            // Alive state: ambient team-colored pulse every 2s
+            if(g.sparkTimer<=0){
+                g.sparkTimer=2.0f;
+                float pr=(g.team==0?0.9f:0.15f),pg=0.15f,pb=(g.team==0?0.1f:0.8f);
+                spawnPart(g.pos+Vec3(0,2.2f,0),Vec3(0,1.5f,0),pr,pg,pb,1.2f,0.22f);
+            }
+        }else{
+            // Destroyed state: yellow sparks every 0.5s
+            if(g.sparkTimer<=0){
+                g.sparkTimer=0.5f;
+                spawnPart(g.pos+Vec3(0,1,0),Vec3(0,3,0),1.0f,0.7f,0.1f,0.8f,0.15f);
+            }
+            // Regenerate if no enemies within 30m
+            bool enemyNear=false;
+            for(int j=0;j<MAX_PLAYERS;j++){
+                if(!players[j].active||!players[j].alive||players[j].team==g.team)continue;
+                if((players[j].pos-g.pos).lenSq()<900.0f){enemyNear=true;break;}
+            }
+            if(!enemyNear){
+                g.hp+=5.0f*dt;
+                if(g.hp>=800.0f){
+                    g.hp=800.0f;g.alive=true;generatorAlive[g.team]=true;
+                    printf("[CTF] >>> %s generator repaired — turrets online <<<\n",g.team==0?"RED":"BLUE");
+                }
             }
         }
     }
 }
+
+static int openStationIdx=-1; // -1 = no station UI open
 
 // Exported: apply inventory station loadout (called from JS)
 extern "C" void applyLoadout(int armor,int weapon,int pack){
@@ -1128,6 +1155,7 @@ extern "C" void applyLoadout(int armor,int weapon,int pack){
     me.energy=enCap;
     if(pack==2)me.healTimer=10.0f;
     for(int i=0;i<WPN_COUNT;i++)me.ammo[i]=(pack==3?40:20);
+    openStationIdx=-1;
     printf("[STATION:APPLIED]\n");
 }
 
@@ -1186,12 +1214,24 @@ static void mainLoop(){
             Vec3 spos={sx,sy,sz};
             if((me.pos-spos).lenSq()<16.0f){ // 4m radius
                 int genOk=generatorAlive[stTeam]?1:0;
+                openStationIdx=i;
                 printf("[STATION:%d:%d]\n",i,genOk);
                 break;
             }
         }
     }
     fWas=keys[70];
+
+    // Auto-close station if player moved >6m away
+    if(openStationIdx>=0&&me.alive){
+        float sx=RAINDANCE_STATIONS[openStationIdx].x;
+        float sz=-RAINDANCE_STATIONS[openStationIdx].y;
+        float sy=RAINDANCE_STATIONS[openStationIdx].z;
+        if((me.pos-Vec3(sx,sy,sz)).lenSq()>36.0f){ // 6m radius
+            openStationIdx=-1;
+            printf("[STATION:CLOSE]\n");
+        }
+    }
 
     if(me.alive){
         Vec3 fwd={sinf(me.yaw)*cosf(me.pitch),sinf(me.pitch),-cosf(me.yaw)*cosf(me.pitch)};
@@ -1385,7 +1425,7 @@ static void mainLoop(){
                    fabsf(projs[i].pos.z-tp.z)<1.3f){
                     turrets[t].hp-=w.damage*100.0f;
                     if(turrets[t].hp<=0){turrets[t].hp=0;turrets[t].alive=false;
-                        printf("[CTF] %s turret destroyed!\n",turrets[t].team==0?"RED":"BLUE");}
+                        printf("[CTF] %s turret #%d destroyed\n",turrets[t].team==0?"RED":"BLUE",t+1);}
                     hitPlayer=true;break; // treat as hit to trigger explosion
                 }
             }
