@@ -13,3 +13,4 @@
 2026-04-25 21:15 | pending | feat(buildings): AABB collision for 30+ mission buildings — interiors, generators, turrets, stations
 2026-04-25 21:30 | pending | fix(hud): hide canvas during menu (no blue HUD behind main menu); energy bar amber not blue
 2026-04-25 21:30 | pending | feat(weapons/visuals): Tier 2.6 — distinct projectile visuals: disc white+cyan trail, chaingun yellow tracer, plasma red-orange jitter, grenade dark+bounce+red blink
+2026-04-25 20:55 | pending | review(manus): round 7 — Tier 2.6 verified, Tier 2.7 base infrastructure greenlit (turret AI, destructible generators, inventory station UI)
