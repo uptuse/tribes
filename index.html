@@ -1492,6 +1492,13 @@
           // becomes visible and we have a meaningful local player to follow
           window.__tribesUseThree = true;
         }
+        // R16: opt-in network client via ?multiplayer=local|remote URL flag
+        var mp = new URLSearchParams(location.search).get('multiplayer');
+        if(mp === 'local' || mp === 'remote'){
+          console.log('[R16] ?multiplayer=' + mp + ' detected — loading network client');
+          import('./client/network.js').then(function(m){m.start();window.__tribesNet = m;})
+            .catch(function(err){console.error('[R16] network.js import failed:', err);});
+        }
       }
     };
     Module.setStatus('Downloading...');

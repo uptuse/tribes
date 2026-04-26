@@ -1,0 +1,17 @@
+{
+  "name": "tribes-lobby-server",
+  "version": "0.1.0",
+  "description": "Lobby + matchmaking WebSocket server for Tribes Browser Edition (R16 scaffold)",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "bun run lobby.ts",
+    "dev": "bun --hot run lobby.ts"
+  },
+  "engines": {
+    "bun": ">=1.1.0"
+  },
+  "devDependencies": {
+    "bun-types": "1.1.34"
+  }
+}
