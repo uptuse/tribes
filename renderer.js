@@ -264,7 +264,10 @@ function initSky() {
 // If the fetch fails (CORS, missing asset, GitHub Pages path) the THREE.Sky
 // fallback is already initialised by initSky() and we log + continue.
 function loadHDRISky() {
-    const hdrPath = 'assets/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
+    // R32.10: switched to overcast 'puresky' HDRI for moody Raindance valley feel.
+    // overcast_soil_puresky has no ground in the lower hemisphere so it works as
+    // a pure skybox over our terrain mesh. CC0 from polyhaven.com.
+    const hdrPath = 'assets/hdri/overcast_soil_puresky_2k.hdr';
     const pmrem = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
     new RGBELoader().load(
@@ -660,23 +663,47 @@ function initTerrain() {
     const hRange = Math.max(0.01, hMax - hMin);
     const half = span * 0.5;
 
-    // Splat weights as a vertex attribute (RGBA = grass/rock/dirt/sand).
-    // Computed per vertex from local slope (using neighbors) + height.
-    const splatAttr = new Float32Array(size * size * 4);
-    // Watercolor wash color as a vertex attribute (RGB only — multiplied over texture).
-    const washAttr = new Float32Array(size * size * 3);
+    // R32.10 — Splat weights + grass-A/B blend + wash with macro variation,
+    // path zones (dirt threading from each base toward basin/bridge), and wet patches.
+    const splatAttr    = new Float32Array(size * size * 4);  // (grass, rock, dirt, sand)
+    const grassMixAttr = new Float32Array(size * size);       // 0=Grass001, 1=Grass002
+    const washAttr     = new Float32Array(size * size * 3);
     function H(i, j) {
         i = Math.max(0, Math.min(size - 1, i));
         j = Math.max(0, Math.min(size - 1, j));
         return heights[j * size + i];
     }
-    // Low-freq painter's noise (smooth, large-scale) for color variation
-    function painterlyNoise(x, z) {
-        const s = Math.sin(x * 0.0021 + z * 0.0017 + 3.7) * 0.5
-                + Math.sin(x * 0.0083 + z * 0.0069 - 1.2) * 0.3
-                + Math.sin(x * 0.0301 - z * 0.0274 + 5.1) * 0.2;
-        return s * 0.5 + 0.5; // 0..1
+    // Three independent low-freq noise fields, all in 0..1.
+    function noiseA(x, z) {  // grass color macro variation — slow broad zones
+        const s = Math.sin(x * 0.0017 + z * 0.0019 + 3.7) * 0.55
+                + Math.sin(x * 0.0061 + z * 0.0048 - 1.2) * 0.30
+                + Math.sin(x * 0.0204 - z * 0.0223 + 5.1) * 0.15;
+        return s * 0.5 + 0.5;
     }
+    function noiseB(x, z) {  // grass species (A/B) selector
+        const s = Math.sin(x * 0.0028 - z * 0.0024 + 8.4) * 0.50
+                + Math.sin(x * 0.0098 + z * 0.0089 + 0.7) * 0.35
+                + Math.sin(x * 0.0273 + z * 0.0319 - 4.6) * 0.15;
+        return s * 0.5 + 0.5;
+    }
+    function noiseC(x, z) {  // wet patches — sharp threshold mask
+        const s = Math.sin(x * 0.0042 + z * 0.0038 - 2.3) * 0.65
+                + Math.sin(x * 0.0119 - z * 0.0107 + 1.6) * 0.35;
+        return s * 0.5 + 0.5;
+    }
+    // Distance from point to segment (path zones).
+    function distToSegment(px, pz, ax, az, bx, bz) {
+        const ddx = bx - ax, ddz = bz - az;
+        const len2 = ddx*ddx + ddz*ddz;
+        if (len2 < 1e-3) return Math.hypot(px-ax, pz-az);
+        let t = ((px-ax)*ddx + (pz-az)*ddz) / len2;
+        t = Math.max(0, Math.min(1, t));
+        return Math.hypot(px - (ax + t*ddx), pz - (az + t*ddz));
+    }
+    const BASE_T0 = [286.6, -286.7];
+    const BASE_T1 = [-296.5, 296.7];
+    const BRIDGE  = [-291.6, 296.7];
+    const BASIN   = [0, 0];
     for (let j = 0; j < size; j++) {
         for (let i = 0; i < size; i++) {
             const idx = j * size + i;
@@ -687,11 +714,50 @@ function initTerrain() {
             const slope = Math.sqrt(dx*dx + dz*dz);
             const slopeN = Math.min(1, slope * 1.4);
 
-            // Splat weights (slope + height classify)
-            let g = Math.max(0, 1 - slopeN * 2.5) * Math.max(0.35, 1 - hN * 0.55);
-            let r = Math.max(0, slopeN * 1.7 - 0.18);
+            const wx = (i / (size - 1) - 0.5) * span;
+            const wz = (j / (size - 1) - 0.5) * span;
+            const nA = noiseA(wx, wz);
+            const nB = noiseB(wx, wz);
+            const nC = noiseC(wx, wz);
+
+            // ---- Base splat (slope + height) ----
+            let g  = Math.max(0, 1 - slopeN * 2.5) * Math.max(0.35, 1 - hN * 0.55);
+            let r  = Math.max(0, slopeN * 1.7 - 0.18);
             let dt = Math.max(0, 0.5 - Math.abs(slopeN - 0.4) * 1.8) * 0.7;
             let sd = Math.max(0, (1 - hN) * 0.55 - slopeN * 1.5);
+
+            // ---- Path zones: dirt threading along base→basin/bridge routes ----
+            const pathDist = Math.min(
+                distToSegment(wx, wz, BASE_T0[0], BASE_T0[1], BASIN[0],  BASIN[1]),
+                distToSegment(wx, wz, BASE_T1[0], BASE_T1[1], BRIDGE[0], BRIDGE[1])
+            );
+            const pathW = Math.max(0, 1 - pathDist / 24);
+            const pathRagged = pathW * (0.55 + 0.45 * nB);
+            if (slopeN < 0.5) {
+                dt += pathRagged * 0.95;
+                g  *= 1 - pathRagged * 0.7;
+            }
+
+            // ---- Wet patches: low+flat where noiseC peaks ----
+            let wetness = 0;
+            if (slopeN < 0.35 && hN < 0.55) {
+                const tWet = Math.max(0, nC - 0.62) * 2.6;
+                wetness = Math.min(1, tWet) * (0.65 + 0.35 * (1 - hN));
+                dt += wetness * 0.35;
+                g  *= 1 - wetness * 0.30;
+            }
+
+            // ---- Trampled near each base ----
+            const baseDist = Math.min(
+                Math.hypot(wx - BASE_T0[0], wz - BASE_T0[1]),
+                Math.hypot(wx - BASE_T1[0], wz - BASE_T1[1])
+            );
+            if (baseDist < 35) {
+                const tT = 1 - baseDist / 35;
+                dt += tT * 0.6;
+                g  *= 1 - tT * 0.5;
+            }
+
             const sum = g + r + dt + sd + 1e-4;
             const aIdx = idx * 4;
             splatAttr[aIdx]   = g / sum;
@@ -699,47 +765,43 @@ function initTerrain() {
             splatAttr[aIdx+2] = dt / sum;
             splatAttr[aIdx+3] = sd / sum;
 
-            // Watercolor wash — Bob Ross painted Tribes
-            // Macro story: cooler in valleys, warmer on ridges, painter's noise breaks uniformity
-            const wx = (i / (size - 1) - 0.5) * span;
-            const wz = (j / (size - 1) - 0.5) * span;
-            const pn = painterlyNoise(wx, wz);                         // 0..1
-            const ridgeWarmth = Math.pow(hN, 1.8);                     // 0..1, ramps up at peaks
-            const valleyCool  = Math.pow(1 - hN, 1.4) * 0.6;           // 0..0.6 in basin
-            // Base wash starts white-ish (so it just modulates the texture),
-            // then we tilt it toward warm/cool/painter's noise.
+            // ---- Grass A/B blend ----
+            const tMix = (nB - 0.30) / 0.40;
+            grassMixAttr[idx] = Math.max(0, Math.min(1, tMix));
+
+            // ---- Watercolor wash with macro grass color drift + wet darkening ----
+            const ridgeWarmth = Math.pow(hN, 1.8);
+            const valleyCool  = Math.pow(1 - hN, 1.4) * 0.6;
             let wR = 1.00, wG = 1.00, wB = 1.00;
-            // Ridge warmth: subtle golden tint at peaks (sun-kissed)
-            wR += ridgeWarmth * 0.18;
-            wG += ridgeWarmth * 0.10;
-            wB -= ridgeWarmth * 0.05;
-            // Valley cool: subtle blue-green tint in basins
-            wR -= valleyCool * 0.10;
-            wG += valleyCool * 0.04;
-            wB += valleyCool * 0.12;
-            // Painter's noise: ±5% color jitter so adjacent vertices aren't identical
-            const jitter = (pn - 0.5) * 0.18;
-            wR += jitter * 0.6;
-            wG += jitter * 0.9;
-            wB += jitter * 0.4;
-            // Trampled-zone tint near the bases (z near ±296)
-            const baseDist = Math.min(
-                Math.hypot(wx - 286.6, wz + 286.7),
-                Math.hypot(wx + 296.5, wz - 296.7)
-            );
-            if (baseDist < 60) {
-                const t = 1 - baseDist / 60;
-                wR += t * 0.10; wG += t * 0.06; wB -= t * 0.06; // dustier
+            wR += ridgeWarmth * 0.18; wG += ridgeWarmth * 0.10; wB -= ridgeWarmth * 0.05;
+            wR -= valleyCool * 0.10;  wG += valleyCool * 0.04;  wB += valleyCool * 0.12;
+            // Macro grass color drift (noiseA) — broader amplitude than R32.9.
+            const grassDom = splatAttr[aIdx];
+            wR += (nA - 0.5) * 0.14 * grassDom;
+            wG += -(nA - 0.5) * 0.08 * grassDom + (1 - nA) * 0.06 * grassDom;
+            wB += (0.5 - nA) * 0.08 * grassDom;
+            // Wet patch darkening
+            if (wetness > 0.05) {
+                wR -= wetness * 0.18; wG -= wetness * 0.20; wB -= wetness * 0.22;
             }
-            // Clamp
+            // Painter's noise jitter
+            const pn = noiseA(wx * 1.7, wz * 1.7);
+            const jitter = (pn - 0.5) * 0.14;
+            wR += jitter * 0.5; wG += jitter * 0.7; wB += jitter * 0.3;
+            // Trampled dust tint near bases
+            if (baseDist < 60) {
+                const tD = 1 - baseDist / 60;
+                wR += tD * 0.08; wG += tD * 0.05; wB -= tD * 0.05;
+            }
             const wIdx = idx * 3;
-            washAttr[wIdx]   = Math.max(0.5, Math.min(1.4, wR));
-            washAttr[wIdx+1] = Math.max(0.5, Math.min(1.4, wG));
-            washAttr[wIdx+2] = Math.max(0.5, Math.min(1.4, wB));
+            washAttr[wIdx]   = Math.max(0.45, Math.min(1.40, wR));
+            washAttr[wIdx+1] = Math.max(0.45, Math.min(1.40, wG));
+            washAttr[wIdx+2] = Math.max(0.45, Math.min(1.40, wB));
         }
     }
-    geom.setAttribute('aSplat', new THREE.BufferAttribute(splatAttr, 4));
-    geom.setAttribute('aWash',  new THREE.BufferAttribute(washAttr, 3));
+    geom.setAttribute('aSplat',    new THREE.BufferAttribute(splatAttr, 4));
+    geom.setAttribute('aGrassMix', new THREE.BufferAttribute(grassMixAttr, 1));
+    geom.setAttribute('aWash',     new THREE.BufferAttribute(washAttr, 3));
     _splatData = { splatAttr, size };
 
     // ---- 3. Bake per-vertex AO ---- 
@@ -808,14 +870,16 @@ function initTerrain() {
         if (isColor) t.colorSpace = THREE.SRGBColorSpace;
         return t;
     }
-    const grassC = loadTex('assets/textures/terrain/grass001_color.jpg', true);
-    const grassN = loadTex('assets/textures/terrain/grass001_normal.jpg', false);
-    const rockC  = loadTex('assets/textures/terrain/rock030_color.jpg', true);
-    const rockN  = loadTex('assets/textures/terrain/rock030_normal.jpg', false);
-    const dirtC  = loadTex('assets/textures/terrain/ground037_color.jpg', true);
-    const dirtN  = loadTex('assets/textures/terrain/ground037_normal.jpg', false);
-    const sandC  = loadTex('assets/textures/terrain/ground003_color.jpg', true);
-    const sandN  = loadTex('assets/textures/terrain/ground003_normal.jpg', false);
+    const grassC  = loadTex('assets/textures/terrain/grass001_color.jpg', true);
+    const grassN  = loadTex('assets/textures/terrain/grass001_normal.jpg', false);
+    const grassC2 = loadTex('assets/textures/terrain/grass002_color.jpg', true);   // R32.10 second grass tile
+    const grassN2 = loadTex('assets/textures/terrain/grass002_normal.jpg', false);
+    const rockC   = loadTex('assets/textures/terrain/rock030_color.jpg', true);
+    const rockN   = loadTex('assets/textures/terrain/rock030_normal.jpg', false);
+    const dirtC   = loadTex('assets/textures/terrain/ground037_color.jpg', true);
+    const dirtN   = loadTex('assets/textures/terrain/ground037_normal.jpg', false);
+    const sandC   = loadTex('assets/textures/terrain/ground003_color.jpg', true);
+    const sandN   = loadTex('assets/textures/terrain/ground003_normal.jpg', false);
 
     const mat = new THREE.MeshStandardMaterial({
         map: grassC,                             // fallback if shader injection ever fails
@@ -825,49 +889,56 @@ function initTerrain() {
         metalness: 0.0,
         envMapIntensity: 0.30,
     });
-    mat.userData.tiles = { grassC, grassN, rockC, rockN, dirtC, dirtN, sandC, sandN };
+    mat.userData.tiles = { grassC, grassN, grassC2, grassN2, rockC, rockN, dirtC, dirtN, sandC, sandN };
     mat.onBeforeCompile = (shader) => {
-        shader.uniforms.uTileGrassC = { value: grassC };
-        shader.uniforms.uTileGrassN = { value: grassN };
-        shader.uniforms.uTileRockC  = { value: rockC };
-        shader.uniforms.uTileRockN  = { value: rockN };
-        shader.uniforms.uTileDirtC  = { value: dirtC };
-        shader.uniforms.uTileDirtN  = { value: dirtN };
-        shader.uniforms.uTileSandC  = { value: sandC };
-        shader.uniforms.uTileSandN  = { value: sandN };
+        shader.uniforms.uTileGrassC  = { value: grassC };
+        shader.uniforms.uTileGrassN  = { value: grassN };
+        shader.uniforms.uTileGrassC2 = { value: grassC2 };  // R32.10
+        shader.uniforms.uTileGrassN2 = { value: grassN2 };
+        shader.uniforms.uTileRockC   = { value: rockC };
+        shader.uniforms.uTileRockN   = { value: rockN };
+        shader.uniforms.uTileDirtC   = { value: dirtC };
+        shader.uniforms.uTileDirtN   = { value: dirtN };
+        shader.uniforms.uTileSandC   = { value: sandC };
+        shader.uniforms.uTileSandN   = { value: sandN };
         shader.uniforms.uTerrainSize = { value: span };
-        shader.uniforms.uTileMeters  = { value: 6.0 };  // 1 texture repeat = 6m of terrain
+        shader.uniforms.uTileMeters  = { value: 9.0 };  // R32.10: was 6m, bumping to 9m so each variation zone covers more ground (less obvious tile loop)
 
-        // Vertex shader: pass aSplat / aWash / aAO + world XY (for tile UVs)
+        // Vertex shader: pass aSplat / aWash / aAO / aGrassMix + world XZ (for tile UVs)
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>',
                 `#include <common>
                  attribute vec4 aSplat;
                  attribute vec3 aWash;
                  attribute float aAO;
+                 attribute float aGrassMix;
                  varying vec4 vSplat;
                  varying vec3 vWash;
                  varying float vAO;
+                 varying float vGrassMix;
                  varying vec2 vWorldXZ;`)
             .replace('#include <begin_vertex>',
                 `#include <begin_vertex>
                  vSplat = aSplat;
                  vWash = aWash;
                  vAO = aAO;
+                 vGrassMix = aGrassMix;
                  vWorldXZ = position.xz;`);
 
-        // Fragment shader: stochastic anti-tiling sampling + wash + AO
+        // Fragment shader: stochastic anti-tiling sampling + grass A/B blend + wash + AO
         shader.fragmentShader = shader.fragmentShader
             .replace('uniform vec3 diffuse;',
                 `uniform vec3 diffuse;
-                 uniform sampler2D uTileGrassC; uniform sampler2D uTileGrassN;
-                 uniform sampler2D uTileRockC;  uniform sampler2D uTileRockN;
-                 uniform sampler2D uTileDirtC;  uniform sampler2D uTileDirtN;
-                 uniform sampler2D uTileSandC;  uniform sampler2D uTileSandN;
+                 uniform sampler2D uTileGrassC;  uniform sampler2D uTileGrassN;
+                 uniform sampler2D uTileGrassC2; uniform sampler2D uTileGrassN2;
+                 uniform sampler2D uTileRockC;   uniform sampler2D uTileRockN;
+                 uniform sampler2D uTileDirtC;   uniform sampler2D uTileDirtN;
+                 uniform sampler2D uTileSandC;   uniform sampler2D uTileSandN;
                  uniform float uTileMeters;
                  varying vec4 vSplat;
                  varying vec3 vWash;
                  varying float vAO;
+                 varying float vGrassMix;
                  varying vec2 vWorldXZ;
                  // 2D hash → angle in [0..2π)
                  float th_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -901,10 +972,13 @@ function initTerrain() {
                  float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
-                 vec4 cG = stochasticSample(uTileGrassC, tUv);
-                 vec4 cR = stochasticSample(uTileRockC,  tUv);
-                 vec4 cD = stochasticSample(uTileDirtC,  tUv);
-                 vec4 cS = stochasticSample(uTileSandC,  tUv);
+                 // R32.10: blend two grass tiles by vGrassMix so adjacent regions read as different species.
+                 vec4 cG1 = stochasticSample(uTileGrassC,  tUv);
+                 vec4 cG2 = stochasticSample(uTileGrassC2, tUv * 0.83 + vec2(13.7, 7.1));  // offset+scale break shared loop
+                 vec4 cG  = mix(cG1, cG2, vGrassMix);
+                 vec4 cR  = stochasticSample(uTileRockC,  tUv);
+                 vec4 cD  = stochasticSample(uTileDirtC,  tUv);
+                 vec4 cS  = stochasticSample(uTileSandC,  tUv);
                  vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
                  // Multiply by watercolor wash + AO
                  sampledDiffuseColor.rgb *= vWash;
@@ -912,7 +986,9 @@ function initTerrain() {
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
-                 vec3 nG = stochasticSample(uTileGrassN, nUv).xyz * 2.0 - 1.0;
+                 vec3 nG1 = stochasticSample(uTileGrassN,  nUv).xyz * 2.0 - 1.0;
+                 vec3 nG2 = stochasticSample(uTileGrassN2, nUv * 0.83 + vec2(13.7, 7.1)).xyz * 2.0 - 1.0;
+                 vec3 nG  = mix(nG1, nG2, vGrassMix);
                  vec3 nR = stochasticSample(uTileRockN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nD = stochasticSample(uTileDirtN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
@@ -925,7 +1001,7 @@ function initTerrain() {
     terrainMesh = new THREE.Mesh(flatGeom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
-    console.log('[R32.9] Painterly terrain: faceted ' + size + 'x' + size + ', vertex AO + watercolor wash + stochastic splat (CC0 PBR x4)');
+    console.log('[R32.10] Painterly terrain: faceted ' + size + 'x' + size + ', dual-grass blend + path zones + wet patches + stochastic splat (CC0 PBR x5)');
 }
 
 // ============================================================
@@ -2054,12 +2130,16 @@ function initWeaponViewmodel() {
 // the view regardless of player position.
 // ============================================================
 let _rainGeom = null, _rainSystem = null;
-const RAIN_COUNT = 5000;
+// R32.10: longer streak lines instead of round dots. Lines render as classic
+// Tribes/Counter-Strike rain — thin vertical streaks tilted by wind, much more
+// readable in motion than circular point sprites.
+const RAIN_COUNT = 6000;                 // 6k streaks
 const RAIN_WIND_X = -0.22, RAIN_WIND_Z = 0.15;
-const RAIN_SPEED = 30; // m/s downward (from MIS wind Z magnitude ~75; scaled for feel)
-const RAIN_SPREAD = 80; // half-width of the rain volume around camera (meters)
-const RAIN_HEIGHT = 60; // rain volume above camera
-let _rainPos = null;
+const RAIN_SPEED = 32;                    // m/s downward
+const RAIN_SPREAD = 80;                   // half-width of rain volume around camera
+const RAIN_HEIGHT = 60;                   // rain volume above camera
+const RAIN_STREAK_LEN = 1.4;              // meters — length of each streak line
+let _rainPos = null;                      // Float32 array, 2 verts per streak (head + tail)
 
 // R32.8 — round soft-edge raindrop sprite (canvas-generated, no asset fetch).
 // PointsMaterial without a `map` renders square pixels, which read as snow at
@@ -2083,22 +2163,35 @@ function _makeRaindropTexture() {
 }
 function initRain() {
     _rainGeom = new THREE.BufferGeometry();
-    _rainPos = new Float32Array(RAIN_COUNT * 3);
+    // 2 verts per streak (head + tail) × 3 components = 6 floats per streak
+    _rainPos = new Float32Array(RAIN_COUNT * 6);
+    // Tilt the streak per wind so streaks aren't perfectly vertical (matches feel of Tribes 1)
+    const tiltX = RAIN_WIND_X * 0.4;
+    const tiltZ = RAIN_WIND_Z * 0.4;
     for (let i = 0; i < RAIN_COUNT; i++) {
-        _rainPos[i * 3]     = (Math.random() - 0.5) * RAIN_SPREAD * 2;
-        _rainPos[i * 3 + 1] = (Math.random() - 0.5) * RAIN_HEIGHT + RAIN_HEIGHT * 0.5;
-        _rainPos[i * 3 + 2] = (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        const x = (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        const y = (Math.random() - 0.5) * RAIN_HEIGHT + RAIN_HEIGHT * 0.5;
+        const z = (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        const off = i * 6;
+        // Head (top of streak)
+        _rainPos[off    ] = x;
+        _rainPos[off + 1] = y + RAIN_STREAK_LEN * 0.5;
+        _rainPos[off + 2] = z;
+        // Tail (bottom, slight wind-tilt offset)
+        _rainPos[off + 3] = x + tiltX * RAIN_STREAK_LEN;
+        _rainPos[off + 4] = y - RAIN_STREAK_LEN * 0.5;
+        _rainPos[off + 5] = z + tiltZ * RAIN_STREAK_LEN;
     }
     _rainGeom.setAttribute('position', new THREE.BufferAttribute(_rainPos, 3));
-    const mat = new THREE.PointsMaterial({
-        // R32.8: round textured droplet, smaller (0.12→0.06), slightly lower opacity
-        // so 5000 droplets don't read as a wall of grey.
-        color: 0xc8d6e6, size: 0.06, transparent: true, opacity: 0.45,
-        depthWrite: false, sizeAttenuation: true,
-        map: _makeRaindropTexture(), alphaTest: 0.04,
+    const mat = new THREE.LineBasicMaterial({
+        color: 0xbcd2e8,
+        transparent: true,
+        opacity: 0.45,
+        depthWrite: false,
         blending: THREE.NormalBlending,
+        fog: true,
     });
-    _rainSystem = new THREE.Points(_rainGeom, mat);
+    _rainSystem = new THREE.LineSegments(_rainGeom, mat);
     _rainSystem.frustumCulled = false;
     scene.add(_rainSystem);
 }
@@ -2108,15 +2201,28 @@ function updateRain(dt, camPos) {
     const fall = RAIN_SPEED * dt;
     const driftX = RAIN_WIND_X * dt * 10;
     const driftZ = RAIN_WIND_Z * dt * 10;
+    const tiltX = RAIN_WIND_X * 0.4;
+    const tiltZ = RAIN_WIND_Z * 0.4;
     for (let i = 0; i < RAIN_COUNT; i++) {
-        _rainPos[i * 3]     += driftX;
-        _rainPos[i * 3 + 1] -= fall;
-        _rainPos[i * 3 + 2] += driftZ;
-        // Wrap back to top when streak exits bottom of volume
-        if (_rainPos[i * 3 + 1] < camPos.y - RAIN_HEIGHT * 0.5) {
-            _rainPos[i * 3]     = camPos.x + (Math.random() - 0.5) * RAIN_SPREAD * 2;
-            _rainPos[i * 3 + 1] = camPos.y + RAIN_HEIGHT * 0.5;
-            _rainPos[i * 3 + 2] = camPos.z + (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        const off = i * 6;
+        // Move both endpoints (head + tail) together so the streak stays a streak.
+        _rainPos[off    ] += driftX;
+        _rainPos[off + 1] -= fall;
+        _rainPos[off + 2] += driftZ;
+        _rainPos[off + 3] += driftX;
+        _rainPos[off + 4] -= fall;
+        _rainPos[off + 5] += driftZ;
+        // When the head exits the bottom of the volume, recycle the streak to top.
+        if (_rainPos[off + 1] < camPos.y - RAIN_HEIGHT * 0.5) {
+            const x = camPos.x + (Math.random() - 0.5) * RAIN_SPREAD * 2;
+            const y = camPos.y + RAIN_HEIGHT * 0.5;
+            const z = camPos.z + (Math.random() - 0.5) * RAIN_SPREAD * 2;
+            _rainPos[off    ] = x;
+            _rainPos[off + 1] = y + RAIN_STREAK_LEN * 0.5;
+            _rainPos[off + 2] = z;
+            _rainPos[off + 3] = x + tiltX * RAIN_STREAK_LEN;
+            _rainPos[off + 4] = y - RAIN_STREAK_LEN * 0.5;
+            _rainPos[off + 5] = z + tiltZ * RAIN_STREAK_LEN;
         }
     }
     _rainGeom.attributes.position.needsUpdate = true;
