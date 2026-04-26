@@ -134,6 +134,8 @@ export async function start() {
     initParticles();
     initWeaponViewmodel();
     initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall
+    initGrass();        // R32.8: instanced cross-quad grass tufts (splat-driven)
+    initDetailProps();  // R32.8: scattered rocks/scrub on rock+dirt terrain
     // R29.2: initStateViews() must run BEFORE initPostProcessing() because the
     // RenderPass(scene, camera) constructor captures the camera reference, and
     // initStateViews() is where `camera` is actually created. Previously the
@@ -449,6 +451,174 @@ function generateTerrainTextures() {
     return { diffTex, normTex };
 }
 
+// R32.8 — procedurally generated PBR tile textures for splat shader.
+// Each surface (grass / rock / dirt / sand) gets its own diffuse + normal at
+// 256². They tile in world space; the shader picks the right one per pixel
+// based on the splat map (slope + height auto-classified).
+function _makeNoiseTexture(baseColor, variance, freq) {
+    const N = 256;
+    const c = document.createElement('canvas'); c.width = c.height = N;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(N, N);
+    const d = img.data;
+    // Multi-octave value noise
+    function valueNoise(x, y, scale) {
+        const xi = Math.floor(x * scale), yi = Math.floor(y * scale);
+        const xf = x * scale - xi, yf = y * scale - yi;
+        // Hash
+        const h = (a, b) => {
+            const s = Math.sin(a * 12.9898 + b * 78.233 + 17.0) * 43758.5453;
+            return s - Math.floor(s);
+        };
+        const v00 = h(xi, yi), v10 = h(xi+1, yi);
+        const v01 = h(xi, yi+1), v11 = h(xi+1, yi+1);
+        const u = xf * xf * (3 - 2 * xf), w = yf * yf * (3 - 2 * yf);
+        return (v00 * (1-u) + v10 * u) * (1-w) + (v01 * (1-u) + v11 * u) * w;
+    }
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+            const u = x / N, v = y / N;
+            // 3 octaves
+            const n = (valueNoise(u, v, freq) * 0.5
+                     + valueNoise(u, v, freq * 2) * 0.3
+                     + valueNoise(u, v, freq * 4) * 0.2);
+            const t = (n - 0.5) * variance * 2;
+            const idx = (y * N + x) * 4;
+            d[idx]   = Math.max(0, Math.min(255, baseColor[0] + t * 255));
+            d[idx+1] = Math.max(0, Math.min(255, baseColor[1] + t * 255));
+            d[idx+2] = Math.max(0, Math.min(255, baseColor[2] + t * 255));
+            d[idx+3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.anisotropy = 4;
+    return tex;
+}
+function _makeNormalFromNoise(freq, intensity) {
+    const N = 256;
+    const c = document.createElement('canvas'); c.width = c.height = N;
+    const ctx = c.getContext('2d');
+    // Sample height noise then derive normals via central differences
+    function valueNoise(x, y, scale) {
+        const xi = Math.floor(x * scale), yi = Math.floor(y * scale);
+        const xf = x * scale - xi, yf = y * scale - yi;
+        const h = (a, b) => {
+            const s = Math.sin(a * 12.9898 + b * 78.233 + 17.0) * 43758.5453;
+            return s - Math.floor(s);
+        };
+        const v00 = h(xi, yi), v10 = h(xi+1, yi);
+        const v01 = h(xi, yi+1), v11 = h(xi+1, yi+1);
+        const u = xf * xf * (3 - 2 * xf), w = yf * yf * (3 - 2 * yf);
+        return (v00 * (1-u) + v10 * u) * (1-w) + (v01 * (1-u) + v11 * u) * w;
+    }
+    const heights = new Float32Array(N * N);
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+            const u = x / N, v = y / N;
+            heights[y*N+x] = (valueNoise(u, v, freq) * 0.5
+                            + valueNoise(u, v, freq*2) * 0.3
+                            + valueNoise(u, v, freq*4) * 0.2);
+        }
+    }
+    const img = ctx.createImageData(N, N);
+    const d = img.data;
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+            const xL = (x - 1 + N) % N, xR = (x + 1) % N;
+            const yU = (y - 1 + N) % N, yD = (y + 1) % N;
+            const dx = (heights[y*N+xR] - heights[y*N+xL]) * intensity;
+            const dy = (heights[yD*N+x] - heights[yU*N+x]) * intensity;
+            const nx = -dx, ny = -dy, nz = 1.0;
+            const len = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+            const idx = (y * N + x) * 4;
+            d[idx]   = (nx / len * 0.5 + 0.5) * 255;
+            d[idx+1] = (ny / len * 0.5 + 0.5) * 255;
+            d[idx+2] = (nz / len * 0.5 + 0.5) * 255;
+            d[idx+3] = 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    return tex;
+}
+
+// R32.8 — generate splat map by classifying every cell by slope and height.
+// R = grass weight (flat, mid-low elevation)
+// G = rock weight  (steep slopes)
+// B = dirt weight  (mid slopes / building-adjacent)
+// A = sand weight  (low elevation flats, e.g. dry valley near bridge)
+function _generateSplatMap(heights, size, worldScale) {
+    const N = 257; // splat resolution; doesn't need to be huge
+    const c = document.createElement('canvas'); c.width = c.height = N;
+    const ctx = c.getContext('2d');
+    const img = ctx.createImageData(N, N);
+    const d = img.data;
+    // Find h range
+    let hMin = Infinity, hMax = -Infinity;
+    for (let i = 0; i < heights.length; i++) {
+        if (heights[i] < hMin) hMin = heights[i];
+        if (heights[i] > hMax) hMax = heights[i];
+    }
+    const hRange = hMax - hMin;
+    function sampleH(u, v) {
+        // u,v in [0,1]
+        const x = u * (size - 1), y = v * (size - 1);
+        const xi = Math.min(size - 2, Math.floor(x)), yi = Math.min(size - 2, Math.floor(y));
+        const xf = x - xi, yf = y - yi;
+        const h00 = heights[yi*size+xi], h10 = heights[yi*size+xi+1];
+        const h01 = heights[(yi+1)*size+xi], h11 = heights[(yi+1)*size+xi+1];
+        return h00*(1-xf)*(1-yf) + h10*xf*(1-yf) + h01*(1-xf)*yf + h11*xf*yf;
+    }
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < N; x++) {
+            const u = x / (N - 1), v = y / (N - 1);
+            const h = sampleH(u, v);
+            const hN = (h - hMin) / Math.max(0.01, hRange); // 0..1 elevation
+            // Slope estimate via central diff
+            const eps = 1 / (N - 1);
+            const hL = sampleH(Math.max(0, u - eps), v);
+            const hR = sampleH(Math.min(1, u + eps), v);
+            const hU = sampleH(u, Math.max(0, v - eps));
+            const hD = sampleH(u, Math.min(1, v + eps));
+            const dx = (hR - hL) / (2 * eps * (size - 1) * worldScale);
+            const dy = (hD - hU) / (2 * eps * (size - 1) * worldScale);
+            const slope = Math.sqrt(dx * dx + dy * dy); // slope as rise/run
+            const slopeN = Math.min(1, slope * 1.5);
+            // Add a bit of noise so transitions aren't perfectly smooth
+            const ns = (Math.sin(x * 12.7 + y * 7.3) * 43758.5453);
+            const noise = (ns - Math.floor(ns) - 0.5) * 0.15;
+            // Classify
+            let grass = Math.max(0, 1 - slopeN * 2.5);              // flat surfaces
+            let rock  = Math.max(0, slopeN * 1.8 - 0.2);            // steep
+            let dirt  = Math.max(0, 0.5 - Math.abs(slopeN - 0.4) * 2); // mid slope
+            let sand  = Math.max(0, (1 - hN) * 0.7 - slopeN);        // low + flat
+            // Add noise variation
+            grass = Math.max(0, grass + noise);
+            dirt  = Math.max(0, dirt + noise * 0.5);
+            // Bias grass less in mountains
+            grass *= Math.max(0.3, 1 - hN * 0.6);
+            // Normalize so they sum to ~1
+            const sum = grass + rock + dirt + sand + 1e-4;
+            const idx = (y * N + x) * 4;
+            d[idx]   = (grass / sum) * 255;
+            d[idx+1] = (rock / sum) * 255;
+            d[idx+2] = (dirt / sum) * 255;
+            d[idx+3] = (sand / sum) * 255;
+        }
+    }
+    ctx.putImageData(img, 0, 0);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+    return { tex, splatRGBA: d, splatSize: N };
+}
+
+// R32.8 — expose splat data for the grass scatterer (filled in initTerrain)
+let _splatData = null;
+
 function initTerrain() {
     const ptr = Module._getHeightmapPtr();
     const size = Module._getHeightmapSize();
@@ -459,44 +629,145 @@ function initTerrain() {
     _htData = new Float32Array(heights);   // owned copy, safe after WASM GC
 
     const span = (size - 1) * worldScale;
-    const segs = size - 1;
 
-    const geom = new THREE.PlaneGeometry(span, span, segs, segs);
+    // R32.8: bicubic upsample 257→1025 (4x density) so the visible mesh is
+    // smooth instead of faceted. Original 257 sample points stay exact; the
+    // 3 in-between points per axis are bicubic-interpolated. Triples vertex
+    // count from 66k→~1M but Three.js handles it at 60fps with frustum culling.
+    const upScale = 4;
+    const upSize = (size - 1) * upScale + 1;
+    const upSegs = upSize - 1;
+    const upHeights = new Float32Array(upSize * upSize);
+    function H(i, j) {
+        i = Math.max(0, Math.min(size - 1, i));
+        j = Math.max(0, Math.min(size - 1, j));
+        return heights[j * size + i];
+    }
+    function cubic(p0, p1, p2, p3, t) {
+        const a = -0.5 * p0 + 1.5 * p1 - 1.5 * p2 + 0.5 * p3;
+        const b = p0 - 2.5 * p1 + 2 * p2 - 0.5 * p3;
+        const c = -0.5 * p0 + 0.5 * p2;
+        return ((a * t + b) * t + c) * t + p1;
+    }
+    for (let j = 0; j < upSize; j++) {
+        for (let i = 0; i < upSize; i++) {
+            const fx = i / upScale, fy = j / upScale;
+            const ix = Math.floor(fx), iy = Math.floor(fy);
+            const tx = fx - ix, ty = fy - iy;
+            // bicubic interp
+            const c0 = cubic(H(ix-1,iy-1), H(ix,iy-1), H(ix+1,iy-1), H(ix+2,iy-1), tx);
+            const c1 = cubic(H(ix-1,iy  ), H(ix,iy  ), H(ix+1,iy  ), H(ix+2,iy  ), tx);
+            const c2 = cubic(H(ix-1,iy+1), H(ix,iy+1), H(ix+1,iy+1), H(ix+2,iy+1), tx);
+            const c3 = cubic(H(ix-1,iy+2), H(ix,iy+2), H(ix+1,iy+2), H(ix+2,iy+2), tx);
+            upHeights[j * upSize + i] = cubic(c0, c1, c2, c3, ty);
+        }
+    }
+
+    const geom = new THREE.PlaneGeometry(span, span, upSegs, upSegs);
     geom.rotateX(-Math.PI / 2);
 
     const pos = geom.attributes.position;
-    for (let j = 0; j < size; j++) {
-        for (let i = 0; i < size; i++) {
-            const linear = j * size + i;
-            pos.setY(linear, heights[linear]);
+    for (let j = 0; j < upSize; j++) {
+        for (let i = 0; i < upSize; i++) {
+            pos.setY(j * upSize + i, upHeights[j * upSize + i]);
         }
     }
     pos.needsUpdate = true;
     geom.computeVertexNormals();
 
-    // UV tile so textures repeat ~64x across the 2048-unit terrain
+    // R32.8 — splat shader needs world-space UVs (0..1 across the entire terrain)
+    // for sampling the splat map, plus tiled UVs (e.g. 64x) for sampling the
+    // detail tiles. We'll compute both in the shader from `position`.
     const uv = geom.attributes.uv;
     for (let i = 0; i < uv.count; i++) {
-        uv.setXY(i, uv.getX(i) * 64, uv.getY(i) * 64);
+        uv.setXY(i, uv.getX(i), uv.getY(i)); // keep as 0..1 splat UVs; shader scales for tiling
     }
     uv.needsUpdate = true;
 
-    const { diffTex, normTex } = generateTerrainTextures();
+    // R32.8 — generate per-surface PBR tiles (procedural, no asset fetch).
+    const grassTex = _makeNoiseTexture([78, 110, 50],  0.18, 8);   // mossy green
+    const grassNrm = _makeNormalFromNoise(8, 0.6);
+    const rockTex  = _makeNoiseTexture([110, 100, 88], 0.22, 6);   // grey rock
+    const rockNrm  = _makeNormalFromNoise(6, 1.0);
+    const dirtTex  = _makeNoiseTexture([120, 92, 64],  0.20, 7);   // brown dirt
+    const dirtNrm  = _makeNormalFromNoise(7, 0.7);
+    const sandTex  = _makeNoiseTexture([180, 165, 130], 0.12, 9);  // pale sand
+    const sandNrm  = _makeNormalFromNoise(9, 0.4);
+    [grassTex, rockTex, dirtTex, sandTex].forEach(t => { t.repeat.set(64, 64); });
+    [grassNrm, rockNrm, dirtNrm, sandNrm].forEach(t => { t.repeat.set(64, 64); t.wrapS = t.wrapT = THREE.RepeatWrapping; });
+
+    const splat = _generateSplatMap(heights, size, worldScale);
+    _splatData = splat; // grass scatter reads this
+
+    // Custom splat shader. Built on MeshStandardMaterial via onBeforeCompile so
+    // we keep PBR lighting + shadow receiving + envMap, just replace the diffuse
+    // and normal sampling with weighted blends from 4 layers.
     const mat = new THREE.MeshStandardMaterial({
-        map: diffTex,
-        normalMap: normTex,
-        // R31.2: normalScale 1.2→0.8 reduces harsh micro-spec glints;
-        // envMapIntensity 1.0→0.35 prevents HDRI reflections from blowing
-        // out the roughness=0.95 terrain surface into white blobs.
-        normalScale: new THREE.Vector2(0.8, 0.8),
-        roughness: 0.95,
+        map: grassTex,                       // fallback when shader injection fails
+        normalMap: grassNrm,
+        normalScale: new THREE.Vector2(0.5, 0.5), // softer than R31.2's 0.8
+        roughness: 0.92,
         metalness: 0.0,
         envMapIntensity: 0.35,
     });
+    mat.userData.splatTex = splat.tex;
+    mat.userData.tiles = { grass: grassTex, rock: rockTex, dirt: dirtTex, sand: sandTex };
+    mat.userData.tileNrms = { grass: grassNrm, rock: rockNrm, dirt: dirtNrm, sand: sandNrm };
+    mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uSplat   = { value: splat.tex };
+        shader.uniforms.uTileGrass = { value: grassTex };
+        shader.uniforms.uTileRock  = { value: rockTex };
+        shader.uniforms.uTileDirt  = { value: dirtTex };
+        shader.uniforms.uTileSand  = { value: sandTex };
+        shader.uniforms.uNrmGrass  = { value: grassNrm };
+        shader.uniforms.uNrmRock   = { value: rockNrm };
+        shader.uniforms.uNrmDirt   = { value: dirtNrm };
+        shader.uniforms.uNrmSand   = { value: sandNrm };
+        shader.uniforms.uTileScale = { value: 64.0 };
+        // Inject in fragment shader: replace diffuseColor sampling and normal
+        shader.fragmentShader = shader.fragmentShader
+            .replace('uniform vec3 diffuse;',
+                `uniform vec3 diffuse;
+                 uniform sampler2D uSplat;
+                 uniform sampler2D uTileGrass;
+                 uniform sampler2D uTileRock;
+                 uniform sampler2D uTileDirt;
+                 uniform sampler2D uTileSand;
+                 uniform sampler2D uNrmGrass;
+                 uniform sampler2D uNrmRock;
+                 uniform sampler2D uNrmDirt;
+                 uniform sampler2D uNrmSand;
+                 uniform float uTileScale;`)
+            .replace('#include <map_fragment>',
+                `vec4 splatW = texture2D(uSplat, vMapUv);
+                 // Re-normalize in case bilinear interp broke the unity sum
+                 float wSum = max(1e-4, splatW.r + splatW.g + splatW.b + splatW.a);
+                 splatW /= wSum;
+                 vec2 tUv = vMapUv * uTileScale;
+                 vec4 cG = texture2D(uTileGrass, tUv);
+                 vec4 cR = texture2D(uTileRock,  tUv);
+                 vec4 cD = texture2D(uTileDirt,  tUv);
+                 vec4 cS = texture2D(uTileSand,  tUv);
+                 vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
+                 #ifdef DECODE_VIDEO_TEXTURE
+                     sampledDiffuseColor = vec4( mix( pow( sampledDiffuseColor.rgb * 0.9478672986 + vec3( 0.0521327014 ), vec3( 2.4 ) ), sampledDiffuseColor.rgb * 0.0773993808, vec3( lessThanEqual( sampledDiffuseColor.rgb, vec3( 0.04045 ) ) ) ), sampledDiffuseColor.w );
+                 #endif
+                 diffuseColor *= sampledDiffuseColor;`)
+            .replace('#include <normal_fragment_maps>',
+                `vec3 nG = texture2D(uNrmGrass, vNormalMapUv * uTileScale).xyz * 2.0 - 1.0;
+                 vec3 nR = texture2D(uNrmRock,  vNormalMapUv * uTileScale).xyz * 2.0 - 1.0;
+                 vec3 nD = texture2D(uNrmDirt,  vNormalMapUv * uTileScale).xyz * 2.0 - 1.0;
+                 vec3 nS = texture2D(uNrmSand,  vNormalMapUv * uTileScale).xyz * 2.0 - 1.0;
+                 vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
+                 mapN.xy *= normalScale;
+                 normal = normalize( tbn * mapN );`);
+        mat.userData.shader = shader;
+    };
+
     terrainMesh = new THREE.Mesh(geom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
-    console.log('[R18] Terrain built: PBR with procedural noise diffuse + normal');
+    console.log('[R32.8] Terrain rebuilt: bicubic upsample (' + size + '→' + upSize + '), splat-mapped PBR (grass/rock/dirt/sand)');
 }
 
 // ============================================================
@@ -1632,6 +1903,26 @@ const RAIN_SPREAD = 80; // half-width of the rain volume around camera (meters)
 const RAIN_HEIGHT = 60; // rain volume above camera
 let _rainPos = null;
 
+// R32.8 — round soft-edge raindrop sprite (canvas-generated, no asset fetch).
+// PointsMaterial without a `map` renders square pixels, which read as snow at
+// our sizes. A radial alpha gradient gives circular silhouettes that blur
+// nicely with motion.
+function _makeRaindropTexture() {
+    const c = document.createElement('canvas'); c.width = c.height = 64;
+    const ctx = c.getContext('2d');
+    const g = ctx.createRadialGradient(32, 32, 0, 32, 32, 30);
+    // Slight vertical streak: slightly elliptical falloff so falling drops
+    // read as drops, not as round pellets.
+    g.addColorStop(0.0,  'rgba(255,255,255,1.0)');
+    g.addColorStop(0.25, 'rgba(220,232,245,0.85)');
+    g.addColorStop(0.6,  'rgba(180,200,220,0.25)');
+    g.addColorStop(1.0,  'rgba(180,200,220,0.0)');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, 64, 64);
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
+    return tex;
+}
 function initRain() {
     _rainGeom = new THREE.BufferGeometry();
     _rainPos = new Float32Array(RAIN_COUNT * 3);
@@ -1642,8 +1933,12 @@ function initRain() {
     }
     _rainGeom.setAttribute('position', new THREE.BufferAttribute(_rainPos, 3));
     const mat = new THREE.PointsMaterial({
-        color: 0xb8c8d8, size: 0.12, transparent: true, opacity: 0.55,
+        // R32.8: round textured droplet, smaller (0.12→0.06), slightly lower opacity
+        // so 5000 droplets don't read as a wall of grey.
+        color: 0xc8d6e6, size: 0.06, transparent: true, opacity: 0.45,
         depthWrite: false, sizeAttenuation: true,
+        map: _makeRaindropTexture(), alphaTest: 0.04,
+        blending: THREE.NormalBlending,
     });
     _rainSystem = new THREE.Points(_rainGeom, mat);
     _rainSystem.frustumCulled = false;
@@ -2300,6 +2595,7 @@ function loop() {
     syncTurretBarrels(t);
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
+    updateGrassWind(t);                  // R32.8 grass sway
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
@@ -2510,3 +2806,192 @@ export function loadMap(doc) {
     }
 }
 window.__tribesLoadMap = loadMap;
+
+
+// ============================================================
+// R32.8 — Instanced cross-quad grass + scattered detail props
+// One InstancedMesh of an X-shape per grass tuft, GPU-distributed across
+// the terrain. Density driven by splat.r (grass weight). Wind sway via
+// vertex shader injection. LOD via per-frame distance fade.
+// ============================================================
+let _grassMesh = null;
+let _grassMat = null;
+let _propsMeshes = []; // [InstancedMesh,...] for rocks/scrub
+
+function _makeGrassBladeTexture() {
+    const W = 64, H = 64;
+    const c = document.createElement('canvas'); c.width = W; c.height = H;
+    const ctx = c.getContext('2d');
+    // Tapered blade silhouette
+    ctx.clearRect(0, 0, W, H);
+    const grad = ctx.createLinearGradient(0, H, 0, 0);
+    grad.addColorStop(0.0, 'rgba(60, 90, 35, 1.0)');   // base (dark)
+    grad.addColorStop(0.6, 'rgba(110, 150, 70, 1.0)');
+    grad.addColorStop(1.0, 'rgba(160, 200, 110, 1.0)'); // tip (light)
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.moveTo(W * 0.45, H);
+    ctx.lineTo(W * 0.55, H);
+    ctx.quadraticCurveTo(W * 0.6, H * 0.3, W * 0.5, 0);
+    ctx.quadraticCurveTo(W * 0.4, H * 0.3, W * 0.45, H);
+    ctx.closePath();
+    ctx.fill();
+    const tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    return tex;
+}
+
+function initGrass() {
+    if (!_splatData || !_htData) return;
+    const tier = (window.__qualityTier || 'mid');
+    if (tier === 'low') return; // skip on low
+
+    const TARGET = (tier === 'high' || tier === 'ultra') ? 80000 : 30000;
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+
+    // Cross-quad blade: two 1x1 quads forming an X
+    const bladeGeom = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+        // Quad A
+        -0.5, 0, 0,   0.5, 0, 0,   0.5, 1, 0,
+        -0.5, 0, 0,   0.5, 1, 0,  -0.5, 1, 0,
+        // Quad B (90° rotated)
+         0, 0, -0.5,  0, 0, 0.5,  0, 1, 0.5,
+         0, 0, -0.5,  0, 1, 0.5,  0, 1, -0.5,
+    ]);
+    const uvs = new Float32Array([
+        0,0, 1,0, 1,1,
+        0,0, 1,1, 0,1,
+        0,0, 1,0, 1,1,
+        0,0, 1,1, 0,1,
+    ]);
+    bladeGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    bladeGeom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    bladeGeom.computeVertexNormals();
+
+    const bladeTex = _makeGrassBladeTexture();
+    _grassMat = new THREE.MeshStandardMaterial({
+        map: bladeTex,
+        transparent: true,
+        alphaTest: 0.4,
+        side: THREE.DoubleSide,
+        roughness: 0.95,
+        metalness: 0.0,
+    });
+    // Inject wind sway via onBeforeCompile
+    _grassMat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime = { value: 0 };
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>',
+                `#include <common>\n uniform float uTime;`)
+            .replace('#include <begin_vertex>',
+                `#include <begin_vertex>
+                 // Sway only the upper part of the blade (uv.y high)
+                 float sway = sin(uTime * 1.4 + (instanceMatrix[3].x + instanceMatrix[3].z) * 0.05) * 0.15;
+                 transformed.x += sway * uv.y;
+                 transformed.z += sway * 0.5 * uv.y;`);
+        _grassMat.userData.shader = shader;
+    };
+
+    _grassMesh = new THREE.InstancedMesh(bladeGeom, _grassMat, TARGET);
+    _grassMesh.frustumCulled = false; // we manage culling via distance + per-frame visibility
+    _grassMesh.receiveShadow = false;
+    _grassMesh.castShadow = false;
+
+    // Sample positions across terrain weighted by splat.r (grass weight).
+    // Rejection sampling: pick random world point, look up splat, accept if random<grass.
+    const splat = _splatData.splatRGBA;
+    const splatN = _splatData.splatSize;
+    const dummy = new THREE.Object3D();
+    let placed = 0;
+    let attempts = 0;
+    while (placed < TARGET && attempts < TARGET * 12) {
+        attempts++;
+        const wx = (Math.random() - 0.5) * span;
+        const wz = (Math.random() - 0.5) * span;
+        const u = (wx + half) / span, v = (wz + half) / span;
+        const sx = Math.min(splatN - 1, Math.max(0, Math.floor(u * (splatN - 1))));
+        const sy = Math.min(splatN - 1, Math.max(0, Math.floor(v * (splatN - 1))));
+        const grassW = splat[(sy * splatN + sx) * 4] / 255;
+        if (Math.random() > grassW * 1.1) continue;
+        const wy = sampleTerrainH(wx, wz);
+        if (!Number.isFinite(wy)) continue;
+        const scale = 0.4 + Math.random() * 0.5; // 0.4–0.9m tall tufts
+        dummy.position.set(wx, wy, wz);
+        dummy.rotation.y = Math.random() * Math.PI * 2;
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        _grassMesh.setMatrixAt(placed, dummy.matrix);
+        placed++;
+    }
+    _grassMesh.count = placed;
+    _grassMesh.instanceMatrix.needsUpdate = true;
+    scene.add(_grassMesh);
+    console.log('[R32.8] Grass instanced:', placed, 'tufts (target', TARGET + ')');
+}
+
+// Detail props: scatter low-poly rock/scrub instances on rock-weighted terrain
+function initDetailProps() {
+    if (!_splatData || !_htData) return;
+    const tier = (window.__qualityTier || 'mid');
+    if (tier === 'low') return;
+
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+    const splat = _splatData.splatRGBA;
+    const splatN = _splatData.splatSize;
+
+    // Rocks
+    const rockGeom = new THREE.IcosahedronGeometry(1, 0);
+    // Distort for variation
+    const pos = rockGeom.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+        const x = pos.getX(i), y = pos.getY(i), z = pos.getZ(i);
+        const j = (Math.sin(i * 12.9898) * 43758.5453);
+        const noise = (j - Math.floor(j) - 0.5) * 0.4;
+        pos.setXYZ(i, x + noise * x, y + noise * y * 0.6, z + noise * z);
+    }
+    rockGeom.computeVertexNormals();
+    const rockMat = new THREE.MeshStandardMaterial({
+        color: 0x6f6660, roughness: 0.9, metalness: 0.05, flatShading: true,
+    });
+    const ROCK_COUNT = (tier === 'high' || tier === 'ultra') ? 1200 : 500;
+    const rockMesh = new THREE.InstancedMesh(rockGeom, rockMat, ROCK_COUNT);
+    rockMesh.castShadow = true; rockMesh.receiveShadow = true;
+    const dummy = new THREE.Object3D();
+    let placed = 0, attempts = 0;
+    while (placed < ROCK_COUNT && attempts < ROCK_COUNT * 20) {
+        attempts++;
+        const wx = (Math.random() - 0.5) * span;
+        const wz = (Math.random() - 0.5) * span;
+        const u = (wx + half) / span, v = (wz + half) / span;
+        const sx = Math.min(splatN - 1, Math.max(0, Math.floor(u * (splatN - 1))));
+        const sy = Math.min(splatN - 1, Math.max(0, Math.floor(v * (splatN - 1))));
+        const rockW = splat[(sy * splatN + sx) * 4 + 1] / 255;
+        const dirtW = splat[(sy * splatN + sx) * 4 + 2] / 255;
+        const acceptW = rockW * 0.9 + dirtW * 0.2;
+        if (Math.random() > acceptW * 0.8) continue;
+        const wy = sampleTerrainH(wx, wz);
+        if (!Number.isFinite(wy)) continue;
+        const scale = 0.3 + Math.random() * 1.4;
+        dummy.position.set(wx, wy + scale * 0.2, wz);
+        dummy.rotation.set(Math.random() * 0.4, Math.random() * Math.PI * 2, Math.random() * 0.4);
+        dummy.scale.set(scale, scale * (0.6 + Math.random() * 0.5), scale);
+        dummy.updateMatrix();
+        rockMesh.setMatrixAt(placed, dummy.matrix);
+        placed++;
+    }
+    rockMesh.count = placed;
+    rockMesh.instanceMatrix.needsUpdate = true;
+    scene.add(rockMesh);
+    _propsMeshes.push(rockMesh);
+    console.log('[R32.8] Rock props instanced:', placed);
+}
+
+// Per-frame grass wind tick (called from animate loop)
+function updateGrassWind(t) {
+    if (_grassMat && _grassMat.userData.shader) {
+        _grassMat.userData.shader.uniforms.uTime.value = t;
+    }
+}
