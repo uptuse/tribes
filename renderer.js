@@ -26,6 +26,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -113,7 +114,10 @@ export async function start() {
     console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
     initScene();
     initLights();
-    initSky();
+    // R31.2: HDRI replaces THREE.Sky. initSky() is kept as fallback in case
+    // the HDRI fetch fails; loadHDRISky() triggers that fallback via its error arm.
+    loadHDRISky();   // async — sky + env set when HDRI loads; Sky fallback on error
+    initSky();       // always runs for immediate Sky fallback, hidden if HDRI succeeds
     initTerrain();
     initBuildings();
     initPlayers();
@@ -204,6 +208,38 @@ function initSky() {
 // receive proper image-based ambient lighting instead of looking flat or
 // dark when not directly hit by the sun. This is what makes the difference
 // between "unlit-looking PBR" and "properly grounded PBR".
+// R31.2: Real HDRI sky. Loads the vendored PolyHaven HDR, sets it as both
+// scene.background (visible sky) and scene.environment (PBR ambient env map).
+// If the fetch fails (CORS, missing asset, GitHub Pages path) the THREE.Sky
+// fallback is already initialised by initSky() and we log + continue.
+function loadHDRISky() {
+    const hdrPath = 'assets/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr';
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    new RGBELoader().load(
+        hdrPath,
+        (hdrTex) => {
+            hdrTex.mapping = THREE.EquirectangularReflectionMapping;
+            const envRT = pmrem.fromEquirectangular(hdrTex);
+            scene.environment = envRT.texture;
+            scene.background  = envRT.texture;   // real HDRI as visible sky
+            hdrTex.dispose();
+            pmrem.dispose();
+            // Hide the THREE.Sky procedural dome — it would double-draw behind HDRI
+            if (sky) sky.visible = false;
+            // R31.2: HDRI is brighter than procedural sky; drop exposure slightly.
+            if (renderer) renderer.toneMappingExposure = 0.6;
+            console.log('[R31.2] HDRI sky loaded — real clouds + sun from PolyHaven HDRI');
+        },
+        undefined,  // progress not needed
+        (err) => {
+            // Graceful fallback: THREE.Sky remains visible (initSky already ran)
+            pmrem.dispose();
+            console.warn('[R31.2] HDRI load failed — falling back to THREE.Sky procedural:', err.message || err);
+        }
+    );
+}
+
 function buildEnvironmentFromSky() {
     if (!sky || !renderer) return;
     try {
@@ -408,9 +444,13 @@ function initTerrain() {
     const mat = new THREE.MeshStandardMaterial({
         map: diffTex,
         normalMap: normTex,
-        normalScale: new THREE.Vector2(1.2, 1.2),
+        // R31.2: normalScale 1.2→0.8 reduces harsh micro-spec glints;
+        // envMapIntensity 1.0→0.35 prevents HDRI reflections from blowing
+        // out the roughness=0.95 terrain surface into white blobs.
+        normalScale: new THREE.Vector2(0.8, 0.8),
         roughness: 0.95,
         metalness: 0.0,
+        envMapIntensity: 0.35,
     });
     terrainMesh = new THREE.Mesh(geom, mat);
     terrainMesh.receiveShadow = true;
@@ -895,23 +935,49 @@ function initFlags() {
 }
 
 function initWeaponViewmodel() {
-    // R30.2: scaled up the simple viewmodel so it's actually visible in the
-    // lower-right of the screen. The previous (0.15, 0.10, 0.45) box was so
-    // small at near-plane=0.5 that it was below 1 pixel.
-    const geom = new THREE.BoxGeometry(0.06, 0.05, 0.30);
+    // R31.2: composite FPS weapon so it reads as a firearm, not a paddle.
+    // Five-part group: stock, body, grip, barrel, sight.
+    // Material is shared — single StandardMaterial with metallic finish.
     const mat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.45, metalness: 0.55 });
-    weaponHand = new THREE.Mesh(geom, mat);
-    // R31: standard FPS weapon position — firmly lower-right, barrel forward.
-    // Three.js camera looks down -Z, so -z is into the screen.
-    weaponHand.position.set(0.25, -0.20, -0.45);
-    weaponHand.rotation.set(0.0, 0.05, 0.0);
-    // Tiny barrel detail so it actually reads as a weapon
-    const barrelGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.18, 8);
-    const barrel = new THREE.Mesh(barrelGeom, mat);
+    const group = new THREE.Group();
+
+    // Stock — butt-end of the weapon (rear)
+    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.10), mat);
+    stock.position.set(0, -0.02, 0.06);
+    group.add(stock);
+
+    // Body — receiver/chassis (main volume, taller than wide)
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.18), mat);
+    body.position.set(0, 0.00, -0.05);
+    group.add(body);
+
+    // Grip — pistol grip below body
+    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.04), mat);
+    grip.position.set(0, -0.06, -0.02);
+    group.add(grip);
+
+    // Barrel — forward-pointing cylinder
+    const barrel = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.012, 0.012, 0.20, 8),
+        mat
+    );
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0.0, 0.01, -0.22);
-    weaponHand.add(barrel);
-    // (Set up after camera is initialized in initStateViews/loop)
+    barrel.position.set(0, 0.02, -0.20);
+    group.add(barrel);
+
+    // Sight — rear-sight bump for silhouette
+    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.025), mat);
+    sight.position.set(0, 0.07, -0.08);
+    group.add(sight);
+
+    // Mount in lower-right of camera local space; slight upward tilt so barrel
+    // angles toward center-screen, stock toward bottom-right corner.
+    group.position.set(0.18, -0.16, -0.32);
+    group.rotation.set(-0.05, 0.08, 0.0);
+    group.traverse(child => { child.frustumCulled = false; });
+
+    weaponHand = group;
+    // (camera.add(weaponHand) happens in initStateViews after camera is created)
 }
 
 // ============================================================

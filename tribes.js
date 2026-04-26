@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpe772iv47.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuhubl6my.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -161,6 +161,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
       }
 Module['FS_createPath']("/", "assets", true, true);
 Module['FS_createPath']("/assets", "tribes", true, true);
+Module['FS_createPath']("/assets/tribes", "hdri", true, true);
 
     for (var file of metadata['files']) {
       var name = file['filename']
@@ -201,25 +202,25 @@ Module['FS_createPath']("/assets", "tribes", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/assets/tribes/CREDITS.md", "start": 0, "end": 2346}, {"filename": "/assets/tribes/chaingun.DTS", "start": 2346, "end": 29086}, {"filename": "/assets/tribes/discb.DTS", "start": 29086, "end": 33158}, {"filename": "/assets/tribes/grenade.DTS", "start": 33158, "end": 35922}, {"filename": "/assets/tribes/harmor.DTS", "start": 35922, "end": 446068}, {"filename": "/assets/tribes/larmor.dts", "start": 446068, "end": 762514}, {"filename": "/assets/tribes/marmor.dts", "start": 762514, "end": 1159656}, {"filename": "/assets/tribes/tower.DTS", "start": 1159656, "end": 1174514}], "remote_package_size": 1174514});
+    loadPackage({"files": [{"filename": "/assets/tribes/CREDITS.md", "start": 0, "end": 2346}, {"filename": "/assets/tribes/chaingun.DTS", "start": 2346, "end": 29086}, {"filename": "/assets/tribes/discb.DTS", "start": 29086, "end": 33158}, {"filename": "/assets/tribes/grenade.DTS", "start": 33158, "end": 35922}, {"filename": "/assets/tribes/harmor.DTS", "start": 35922, "end": 446068}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 446068, "end": 1881187}, {"filename": "/assets/tribes/larmor.dts", "start": 1881187, "end": 2197633}, {"filename": "/assets/tribes/marmor.dts", "start": 2197633, "end": 2594775}, {"filename": "/assets/tribes/tower.DTS", "start": 2594775, "end": 2609633}], "remote_package_size": 2609633});
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpe772iv47.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvhge4om0.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuhubl6my.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpxvaqfsq0.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvhge4om0.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcs4qagmo.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpxvaqfsq0.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvft_hf7u.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcs4qagmo.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvft_hf7u.js
 
 
 var arguments_ = [];
