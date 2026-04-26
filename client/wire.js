@@ -90,7 +90,9 @@ export function encodeSnapshot(snap) {
         view.setUint8(o + 21, p.weaponIdx & 0xFF);
         view.setInt8(o + 22,  p.carryingFlag === -1 || p.carryingFlag == null ? -1 : (p.carryingFlag & 0xFF));
         view.setUint8(o + 23, p.botRole === -1 || p.botRole == null ? 0xFF : (p.botRole & 0xFF));
-        // 24..31 reserved
+        // R23: lastDamageFromIdx in byte 24 (was reserved); 0xFF = none
+        view.setInt8(o + 24, p.lastDamageFromIdx == null || p.lastDamageFromIdx === -1 ? -1 : (p.lastDamageFromIdx & 0xFF));
+        // 25..31 reserved
         o += SIZE_PLAYER;
     }
     for (const proj of snap.projectiles) {
@@ -145,6 +147,7 @@ export function decodeSnapshot(buf) {
         const fbits = view.getUint8(o + 1);
         const carrierByte = view.getInt8(o + 22);
         const roleByte = view.getUint8(o + 23);
+        const lastDmgFromByte = view.getInt8(o + 24);   // R23
         players.push({
             id:      view.getUint8(o),
             alive:   (fbits & 0x01) !== 0,
@@ -162,6 +165,7 @@ export function decodeSnapshot(buf) {
             weaponIdx:    view.getUint8(o + 21),
             carryingFlag: carrierByte,
             botRole:      roleByte === 0xFF ? -1 : roleByte,
+            lastDamageFromIdx: lastDmgFromByte,    // R23: -1 or attacker player id
         });
         o += SIZE_PLAYER;
     }

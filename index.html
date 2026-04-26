@@ -66,6 +66,8 @@
     .team-card { flex:1; padding:18px; cursor:pointer; transition:all 0.15s; text-align:center; }
     .team-red { background:rgba(50,18,18,0.6); border:1px solid #6A2A2A; }
     .team-red:hover,.team-red.selected { border-color:#C8302C; }
+    /* R23: team color CSS vars (color-blind mode swaps via applyColorBlind()) */
+    :root { --team-red: #C8302C; --team-blue: #2C5AC8; }
     .team-blue { background:rgba(18,18,50,0.6); border:1px solid #2A2A6A; }
     .team-blue:hover,.team-blue.selected { border-color:#2C5AC8; }
     .team-name { font-family:'Cinzel',serif; font-size:1.2em; letter-spacing:2px; margin-bottom:8px; }
@@ -848,10 +850,23 @@
         <div class="s-row"><div class="s-label">Damage Numbers</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-dmgnum" onchange="sSave('showDamageNumbers',this.checked)"></div></div>
         <div class="s-row"><div class="s-label">Kill Feed</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-killfeed" onchange="sSave('showKillFeed',this.checked);document.getElementById('killfeed').style.display=this.checked?'block':'none'"></div></div>
         <div class="s-row"><div class="s-label">Auto-pickup Ammo</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-ammoauto" onchange="sSave('autoPickupAmmo',this.checked)"></div></div>
+        <div class="s-row"><div class="s-label">Color-Blind Mode</div><div class="s-ctrl">
+          <select id="s-colorblind" onchange="sSave('colorBlindMode',this.value);applyColorBlind()" style="background:rgba(20,18,14,0.9);color:#D4A030;border:1px solid #5A4A2A;padding:3px 8px;font-family:'Barlow Condensed',sans-serif;font-size:0.85em;letter-spacing:1px;">
+            <option value="off">Off</option>
+            <option value="deuteranopia">Deuteranopia (red→orange)</option>
+            <option value="protanopia">Protanopia (red→yellow)</option>
+            <option value="tritanopia">Tritanopia (blue→magenta)</option>
+          </select>
+        </div></div>
       </div>
 
       <hr class="s-divider">
-      <button class="btn btn-back" onclick="resetAllSettings()" style="margin-top:4px">Reset All Settings to Defaults</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
+        <button class="btn btn-back" onclick="resetAllSettings()" style="flex:1">Reset to Defaults</button>
+        <button class="btn btn-back" onclick="exportSettings()" style="flex:1">Export</button>
+        <button class="btn btn-back" onclick="importSettingsClick()" style="flex:1">Import</button>
+      </div>
+      <input type="file" id="s-import-file" accept=".json,application/json" style="display:none" onchange="onSettingsFileChosen(event)">
     </div>
   </div>
 
@@ -1670,14 +1685,16 @@
       {id:'weapNext',label:'Next Weapon',def:69,defKey:'E'}
     ];
     var DEFAULT_SETTINGS={
-      _v:1,
+      _v:2,
       masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:60,muted:false,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
       graphicsQuality:'high',
       crosshairColor:'amber',crosshairScale:1.0,
-      showDamageNumbers:true,showKillFeed:true,autoPickupAmmo:true
+      showDamageNumbers:true,showKillFeed:true,autoPickupAmmo:true,
+      colorBlindMode:'off',         // R23: off | deuteranopia | protanopia | tritanopia
+      voiceMode:'pushToTalk'        // R23: pushToTalk | open
     };
     // Populate default keybindings
     KB_ACTIONS.forEach(function(a){DEFAULT_SETTINGS.keybindings[a.id]=a.def;});
@@ -1689,6 +1706,17 @@
         var raw=localStorage.getItem(SETTINGS_KEY);if(!raw)return;
         var saved=JSON.parse(raw);
         if(!saved._v){console.warn('tribes: settings missing version, using defaults');return;}
+        // R23: v1→v2 migration — rename fov→viewFov, split audio
+        if(saved._v === 1){
+          if(saved.fov !== undefined && saved.viewFov === undefined){saved.viewFov = saved.fov;}
+          if(saved.audio !== undefined){
+            saved.audioMaster = saved.audioMaster ?? saved.audio;
+            saved.audioSfx = saved.audioSfx ?? saved.audio;
+            saved.audioMusic = saved.audioMusic ?? saved.audio;
+          }
+          saved._v = 2;
+          console.log('[settings] migrated v1 → v2 on load');
+        }
         Object.keys(DEFAULT_SETTINGS).forEach(function(k){
           if(saved.hasOwnProperty(k))ST[k]=saved[k];
         });
@@ -1727,10 +1755,25 @@
       var scale=ST.crosshairScale;
       // Applied in updateHUD spread calculation
     }
+    // R23: color-blind team-color swap via CSS vars; also exposed as window.__teamColors for renderer
+    function applyColorBlind(){
+      var red='#C8302C', blue='#2C5AC8';
+      switch(ST.colorBlindMode){
+        case 'deuteranopia': red='#FF8C00'; break;          // red→orange
+        case 'protanopia':   red='#FFDC00'; break;          // red→yellow
+        case 'tritanopia':   blue='#FF00FF'; break;         // blue→magenta
+      }
+      document.documentElement.style.setProperty('--team-red',red);
+      document.documentElement.style.setProperty('--team-blue',blue);
+      // Renderer reads these on next syncPlayers
+      window.__teamColors = { red: parseInt(red.slice(1),16), blue: parseInt(blue.slice(1),16) };
+    }
     function applySettings(){
       applyAudio();
       // Crosshair color
       applyCrosshair();
+      // R23: color-blind team-color swap
+      applyColorBlind();
       // Kill feed
       var kf=document.getElementById('killfeed');
       if(kf)kf.style.display=ST.showKillFeed?'block':'none';
@@ -1792,6 +1835,7 @@
       buildColorSwatches();
       sv('s-xscale',Math.round(ST.crosshairScale*10));sVal('s-xscale-v',ST.crosshairScale.toFixed(1)+'×');
       sc('s-dmgnum',ST.showDamageNumbers);sc('s-killfeed',ST.showKillFeed);sc('s-ammoauto',ST.autoPickupAmmo);
+      var cb=document.getElementById('s-colorblind');if(cb)cb.value=ST.colorBlindMode||'off';
     }
 
     var _listeningAction=null;
@@ -1891,10 +1935,86 @@
     }
     function resetAllSettings(){
       if(!confirm('Reset all settings to defaults? This cannot be undone.'))return;
-      localStorage.removeItem(SETTINGS_KEY);
+      // R23: clear ALL tribes:* keys (settings + UUID + tutorialDone)
+      try {
+        var keys = [];
+        for(var i=0;i<localStorage.length;i++){
+          var k = localStorage.key(i);
+          if(k && (k.indexOf('tribes_') === 0 || k.indexOf('tribes:') === 0)) keys.push(k);
+        }
+        keys.forEach(function(k){ localStorage.removeItem(k); });
+      } catch(e){}
       ST=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
       KB_ACTIONS.forEach(function(a){ST.keybindings[a.id]=a.def;});
       populateSettingsUI();applySettings();
+      showToast('SETTINGS RESET — reloading…',2500);
+      setTimeout(function(){location.reload();},1500);
+    }
+
+    // R23: Export current settings as v2 JSON
+    function exportSettings(){
+      try {
+        var payload = JSON.parse(JSON.stringify(ST));
+        payload._v = 2;
+        var blob = new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+        var url = URL.createObjectURL(blob);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'tribes_settings.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(function(){URL.revokeObjectURL(url);},1000);
+        showToast('SETTINGS EXPORTED to tribes_settings.json',3000);
+      } catch(e){
+        showToast('Export failed — see console',3000);
+        console.error('[settings] export failed:',e);
+      }
+    }
+    function importSettingsClick(){
+      document.getElementById('s-import-file').click();
+    }
+    function onSettingsFileChosen(ev){
+      var file = ev.target.files && ev.target.files[0];
+      if(!file) return;
+      var reader = new FileReader();
+      reader.onload = function(e){
+        try {
+          var parsed = JSON.parse(e.target.result);
+          if(!parsed || typeof parsed !== 'object'){throw new Error('not an object');}
+          // R23: schema validation — check version field, migrate if v1
+          if(parsed._v !== 1 && parsed._v !== 2){
+            throw new Error('unknown schema version: '+parsed._v);
+          }
+          if(parsed._v === 1){
+            // Migrate v1 → v2 (rename fov→viewFov, split audio)
+            if(parsed.fov !== undefined && parsed.viewFov === undefined){parsed.viewFov = parsed.fov; delete parsed.fov;}
+            if(parsed.audio !== undefined){
+              parsed.audioMaster = parsed.audioMaster ?? parsed.audio;
+              parsed.audioSfx = parsed.audioSfx ?? parsed.audio;
+              parsed.audioMusic = parsed.audioMusic ?? parsed.audio;
+              delete parsed.audio;
+            }
+            parsed._v = 2;
+            console.log('[settings] migrated v1 → v2');
+          }
+          // Apply only known keys; don't blast unknown fields
+          Object.keys(DEFAULT_SETTINGS).forEach(function(k){
+            if(parsed.hasOwnProperty(k)) ST[k] = parsed[k];
+          });
+          if(parsed.keybindings) Object.keys(DEFAULT_SETTINGS.keybindings).forEach(function(k){
+            if(parsed.keybindings.hasOwnProperty(k)) ST.keybindings[k] = parsed.keybindings[k];
+          });
+          saveSettings();
+          if(Module._setSettings){
+            try { Module._setSettings(JSON.stringify(ST)); } catch(e){}
+          }
+          populateSettingsUI();applySettings();
+          showToast('SETTINGS IMPORTED — '+Object.keys(parsed).length+' fields applied',3500);
+        } catch(err){
+          console.error('[settings] import failed:',err);
+          showToast('Import failed: '+err.message,4500);
+        }
+        ev.target.value=''; // reset file input so same file can be re-selected
+      };
+      reader.readAsText(file);
     }
 
     // FPS counter
@@ -1983,6 +2103,7 @@
               if(mpKeys[68]||mpKeys[39]) btn |= 0x08; // right D/right
               if(mpKeys[32]) btn |= 0x10; // jump/jet space
               if(mpKeys[16]) btn |= 0x20; // ski shift
+              if(mpKeys[82]) btn |= 0x400; // R23: USE_REPAIR (R key)
               if(mpFire) btn |= 0x40;     // fire mouse-1
               var input = { buttons: btn, mouseDX: mpMouseDX, mouseDY: mpMouseDY, weaponSelect: mpWeapon };
               mpMouseDX = 0; mpMouseDY = 0; mpWeapon = 0xFF;

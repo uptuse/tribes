@@ -966,12 +966,29 @@ function syncPlayers(t) {
             np.visible = true;
             // Fade alpha from 1.0 at 30m to 0 at 60m
             np.material.opacity = Math.max(0, Math.min(1, (60 - dist) / 30));
+            // R23: speaking pulse — cyan tint when voice peer is speaking
+            const speaking = window.__voice && window.__voice.speaking && window.__voice.speaking[i];
+            if (speaking) {
+                const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 4); // 2Hz
+                np.material.color.setRGB(0.6 + pulse * 0.4, 1.0, 1.0);
+            } else {
+                np.material.color.setRGB(1, 1, 1);
+            }
         } else if (nameplateSprites[i]) {
             nameplateSprites[i].visible = false;
         }
+        // R23: feed peer position to voice module for HRTF spatialization
+        if (window.__voice && i !== localIdx) {
+            // updatePeerPosition is exported on the imported module; access via window proxy
+            // (network.js doesn't re-export voice; we access via global.)
+            if (window.__voiceUpdatePeer) window.__voiceUpdatePeer(i, playerView[o], playerView[o+1], playerView[o+2]);
+        }
 
-        // Team color update
-        const teamHex = TEAM_TINT_HEX[team] ?? TEAM_TINT_HEX[2];
+        // Team color update — R23: respect color-blind mode override
+        const cbColors = window.__teamColors;
+        const teamHex = cbColors
+            ? (team === 0 ? cbColors.red : (team === 1 ? cbColors.blue : TEAM_TINT_HEX[2]))
+            : (TEAM_TINT_HEX[team] ?? TEAM_TINT_HEX[2]);
         if (_lastPlayerColors[i] !== teamHex) {
             mesh.userData.armorMat.color.setHex(teamHex);
             _lastPlayerColors[i] = teamHex;

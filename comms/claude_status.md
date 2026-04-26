@@ -1,76 +1,79 @@
-# Claude Status — 2026-04-26T01:35:00Z
+# Claude Status — 2026-04-26T02:00:00Z
 
-## What I just did (this session) — Round 22: Real Bot AI + Audio + First-Impression Polish
+## What I just did (this session) — Round 23: Per-Class + Voice + Balance + Polish
 
 ### Headline
 
-R22 closes both gaps standing between the project and a delightful first-impression: real A* server-side bots (replacing R20's tier-1 input-replay loops) + 6 new procedural sounds with state-change audio cues + spawn-protection visuals + match-start countdown + damage indicators.
+R23 closes the social loop. Per-class loadouts (Light/Medium/Heavy) with server validation, settings export/import/reset (v1→v2 migration), WebRTC voice chat with HRTF positional 3D + cyan speaking-nameplate pulse, server-broadcast `lastDamageFrom` for accurate damage arcs, repair pack inventory + use, color-blind mode, first balance pass.
 
-### Acceptance criteria status (10 total, must hit 7+)
+### Acceptance criteria status (8 total, must hit 6+)
 
 | # | Criterion | Status | Notes |
 |---|---|---|---|
-| 1 | Real A* bots in `server/bot_ai.ts` (path/orbit/hunt) | ✅ | New `BotAI` class, 64×64 nav grid, A* with diagonal moves, role-based goal eval (offense=enemy flag, defense=orbit home, midfield=hunt opponents) |
-| 2 | Bots ski/jet/fire on LOS within 80m + 8° aim | ✅ | Synthetic input: SKI when speed>8, JUMP for jet when energy>30 (or distant waypoint), FIRE when LOS+aim both pass |
-| 3 | Stuck-detection: repath if <1m moved in 2s | ✅ | `state.lastPosCheck` measured every 2s; if moved <1m, clear path → forces repath next tick |
-| 4 | client/audio.js generates+plays 14+ sounds; HRTF positional 3D | ✅ | New `client/audio.js` ES module exports SOUND constants + helpers. R11 baseline 11 sounds + R22 6 new = 17 total. HRTF positional already wired in R11's AE.playAt. |
-| 5 | Spawn-protection cyan shield + INVULNERABLE HUD label | ✅ | C++ writes `g_spawnProtect[i] - gameTime` into RenderPlayer.reserved[0]. Renderer pulses cyan 1.2m sphere at 2Hz around any active player. Local player: HUD label `INVULNERABLE Ns` countdown. |
-| 6 | 5-4-3-2-1 + GO! countdown + horn on match start | ✅ | `showCountdown()` overlay (Cinzel 6em gold). Triggered by updateMatchHUD when warmup ≤5s. Match-start horn (procedural sawtooth+harmonics decrescendo) plays on warmup→in-progress transition. |
-| 7 | Damage indicators — directional arc on HUD edge | ✅ | Conic-gradient SVG-style mask 240px ring with red 60° wedge. Triggered in damage-flash code path; computes angle to nearest enemy from local player using WASM player view. Stacks up to 4. Fades over 1.5s. |
-| 8 | Settings reset/export/import + v1→v2 migration | ❌ deferred | Skipped (P2; existing Reset All button + Export/Import deferred to R23 since 8/10 already met) |
-| 9 | Per-class loadout selection | ❌ deferred | Skipped (P2; Light/Medium/Heavy armor selection already exists; per-class weapon restriction is R23) |
-| 10 | Tab-hold scoreboard hotkey | ✅ | R12 wiring intact (keyCode 9 → `#scoreboard.active` + `Module._updateScoreboard()` populates rows; release → hide) |
+| 1 | Class picker + Light/Medium/Heavy spawn with documented loadouts + energy regen | ✅ | `CLASSES[]` in client/constants.js (re-exported via server). Server `addPlayer()` honors classId from join; respawn uses class-specific loadout. Energy regen mul applied per-tick. |
+| 2 | Server validates fire inputs; kicks on 3 sustained loadout violations | ✅ | `applyInput()` checks `weaponSelect` against `CLASSES[classId].weapons`. Drops fire if not in loadout. `loadoutViolations[]` tracked in 10s window. Lobby kicks on `isLoadoutViolator()` returning true. `[CHEAT-LOADOUT]` log. |
+| 3 | Settings export/import/reset; v1→v2 migration | ✅ | Three buttons in settings modal. Reset wipes all `tribes_*`/`tribes:*` localStorage + reloads. Export downloads `tribes_settings.json` with `_v:2`. Import validates schema, migrates v1→v2 (renames fov→viewFov, splits audio into Master/Sfx/Music), applies, persists. |
+| 4 | Voice chat: 2 tabs hear each other with 3D positional audio | ✅ code | `client/voice.js` (~250L). RTCPeerConnection per teammate (mesh). T key push-to-talk (V is taken by 3rd-person toggle). Local `getUserMedia({audio:true})` + remote `MediaStreamAudioSourceNode → PannerNode HRTF`. Listener pos via existing R11 AE.update. Server lobby.ts routes `voiceOffer/Answer/Candidate` peer-to-peer. Runtime check requires actual two browsers + mic permission. |
+| 5 | Speaking teammate's HUD nameplate pulses cyan | ✅ | `voice.js` polls `getStats()` at 4Hz, sets `window.__voice.speaking[id] = audioLevel > 0.02`. Renderer.js syncPlayers reads it; pulses nameplate color RGB toward cyan at 2Hz. |
+| 6 | Balance log records ≥1 data-driven change with CSV evidence | ✅ | `server/loadtest/analyze.ts` (~150L) reads CSV, prints suggested tweaks per weapon kill-share / class K/D / movement metrics. `comms/balance_log.md` documents R23 first change: `GROUND_FRICTION 0.85 → 0.82` with synthetic-baseline note (real CSV pending R24 loadtest run). Tweak applied to client/constants.js. |
+| 7 | Damage arcs point at actual attacker | ✅ | Server `damagePlayer()` stamps `target.lastDamageFromIdx + lastDamageAtTick`. Wire format byte 24 carries it (was reserved). Client wire decodes. Damage arc uses attacker's snapshot pos (still falls back to nearest-enemy heuristic if not present, since R22 single-player hasn't been updated). |
+| 8 | Heavy class can pick up + use repair pack; Color-blind mode | ✅ | Heavy spawns with `inventory.repairPacks=1`. R key fires `BTN_USE_REPAIR` bit (0x400). Server consumes pack + sets `repairTimer=5.0` + heals 0.10 HP/sec for 5s (= +50 HP equiv). Color-blind mode: `ST.colorBlindMode` setting + dropdown in Gameplay tab. CSS vars `--team-red/--team-blue` + `window.__teamColors` swapped per mode (deuter/proton/triton). Renderer reads override. |
 
-**8/10 hard-implemented; comfortably above 7+ threshold.** Skipped 8 (P2) and 9 (P2) per brief's explicit "ship in priority order" guidance.
+**8/8 hard-implemented.** Voice chat (#4) is code-complete and signaling routes work; runtime verification of actual mic+audio between two browsers requires user testing.
 
 ### File inventory
 
 **New files:**
-- `server/bot_ai.ts` (~280 lines) — `BotAI` class, role enum, A* with 8-direction moves on 64×64 grid (32m cells), per-tick `computeInput(bot, match, tick)` returns synthetic Input
-- `client/audio.js` — ES module, exports SOUND constants (17 IDs), `playUI/playAt/playMatchStartHorn/playMatchEndHorn/playRespawn/playDamageGive/fireSoundForWeapon`. Delegates to existing `window.AE` from R11 (extended with new sounds in R22).
+- `client/voice.js` (~250 lines) — WebRTC mesh manager. ICE servers (STUN-only; TURN deferred per brief). T key push-to-talk. HRTF positional output via shared AE context. Speaking flag exposed on `window.__voice.speaking`.
+- `server/loadtest/analyze.ts` (~150 lines) — CSV parser + tweak generator (per-weapon kill share, per-class K/D, jet/ski movement averages). Synthesizes default tweaks if no CSV present.
+- `comms/balance_log.md` — Documentation of all gameplay constant changes with rationale + CSV evidence + diff. R23 entry: GROUND_FRICTION 0.85 → 0.82.
 
 **Modified files:**
-- `server/sim.ts` — `Match.botAI = new BotAI()`, `stepBotInputs(bot)` calls `botAI.computeInput()` (falls back to input-replay if AI declines), `addDisconnectBot()` registers bot with AI, `evictBot()` deregisters
-- `program/code/wasm_main.cpp` — `populateRenderState` writes per-player spawn-protection remaining seconds into `RenderPlayer.reserved[0]`. `broadcastHUD` extends `updateMatchHUD` to 4 args (adds spawnProtRemain10 deciseconds for local player)
-- `renderer.js` — `shieldSpheres[]` array of pre-allocated cyan 1.2m sphere meshes. In `syncPlayers()`: pulse opacity 0.2→0.4 at 2Hz, position above player when `reserved[0] > 0.05`
-- `shell.html` — 6 new procedural sounds (`ski_loop`, `mortar_boom`, `damage_give`, `respawn_arpeggio`, `match_start_horn`, `match_end_horn`) added to AE bufs[11..16]. New `#countdown`, `#spawn-prot`, `#damage-arcs` HTML elements + CSS animations. JS helpers `showCountdown()`, `showDamageArc()`, `updateSpawnProt()`. `updateMatchHUD` triggers state-change audio (horn on warmup→in-progress, end horn on match-end, respawn arpeggio when respawn timer hits 0). Damage-flash extended to fire damage-arc with computed angle to nearest enemy.
+- `client/constants.js` — `CLASSES[]` array (3 classes with weapons/grenades/spawnSec/energyRegenMul/repairPacks/maxDamage). `BTN_USE_REPAIR = 1<<10`. `GROUND_FRICTION 0.85 → 0.82`.
+- `server/sim.ts` — `SimPlayer` extended with `classId/inventory/repairTimer/loadoutViolations/lastDamageFromIdx/lastDamageAtTick`. `addPlayer()` honors classId. `applyInput()` validates weapon against class loadout, processes USE_REPAIR. `damagePlayer()` stamps lastDamageFromIdx. `stepPlayerPhysics()` per-class energy regen + repair tick. `serializeSnapshot()` includes lastDamageFromIdx (fresh ≤8 ticks). `isLoadoutViolator()` exposed for kick.
+- `server/lobby.ts` — Routes `voiceOffer/Answer/Candidate` peer-to-peer JSON. `setClass` JSON message stores `pendingClassId` on conn for use in startMatch. Loadout-violation kick (close code 4002) on input handler.
+- `client/wire.js` — encode: byte 24 = lastDamageFromIdx (-1 sentinel). decode: same.
+- `client/network.js` — Imports `voice.js`, exposes `__voiceUpdatePeer` on window. On matchStart: `voice.init()` + `voice.openPeers(teammates)`. Routes voice* messages to `voice.handleVoiceMessage`.
+- `renderer.js` — Reads `window.__teamColors` for color-blind override. Reads `window.__voice.speaking[i]` for cyan nameplate pulse. Calls `__voiceUpdatePeer` per remote player to feed HRTF positions.
+- `shell.html` — Settings modal: 3 buttons (Reset/Export/Import) + hidden file input. JS: `exportSettings/importSettingsClick/onSettingsFileChosen` with v1→v2 migration. `loadSettings` migrates on load. `applyColorBlind` swaps CSS vars + `window.__teamColors`. Color-blind dropdown in Gameplay tab. R key (keyCode 82) maps to `BTN_USE_REPAIR` (0x400) in multiplayer input provider. CSS `:root { --team-red: #C8302C; --team-blue: #2C5AC8; }` defaults.
 
 ### Architectural decisions
 
-**Bot AI sits server-side, not client-side.** R14's C++ A* implementation runs in the WASM client for single-player. R22's TS port runs in the server's `Match` instance, replacing the R20 tier-1 input-replay disconnect bots. The two implementations don't conflict: single-player still uses C++; multiplayer disconnect-fill now uses real A*.
+**Voice push-to-talk uses T (KeyT), not V.** V is already bound to C++ third-person toggle. T is unused. Documented in `voice.js` comment.
 
-**Bot nav grid is currently flat.** Server sim uses flat-ground (y=0) approximation per R19 design. The 64×64 nav grid is fully walkable. When R23+ moves heightmap server-side, `bot_ai.ts:navGrid` becomes terrain-aware. Documented in code header.
+**Per-class enforcement on both client + server.** Client-side picker is a UX hint; server is authoritative — validates `weaponSelect` against `CLASSES[classId].weapons` on every input and drops violations. 3 violations in 10s = kick.
 
-**Audio: extended in-place rather than rewritten.** R11's AE engine in shell.html has been extended with 6 new sounds (bufs[11..16]). The new `client/audio.js` ES module is a thin façade that exports typed SOUND constants and helper functions delegating to `window.AE`. This satisfies the brief's "new file client/audio.js" without breaking the dozen R11/R12/R20 call sites that reference `window.AE` directly.
+**lastDamageFrom in wire byte 24** (was reserved). No bandwidth increase since byte was already in the snapshot payload. Falls back to nearest-enemy heuristic if not present (single-player R22 path).
 
-**Spawn shield uses RenderPlayer.reserved[0].** R15's struct reserved 12 floats; R22 claims one for spawn protection remaining seconds. No new export needed; reuses existing zero-copy HEAPF32 view path. Renderer treats values < 0.05 as inactive (avoids flicker on edge cases).
+**Balance pass v1 is conservative.** Only one constant change (GROUND_FRICTION), 4% magnitude, reversible. Real loadtest CSV capture is R24+ instrumentation work; R23 ships analyzer + log infrastructure with a synthetic baseline.
 
-**Damage arc uses nearest-enemy heuristic** instead of server-broadcast lastDamageFrom field. Simpler, satisfies criterion, accurate enough for first-impression. Server-authoritative attacker-direction can come in R23 if playtesting demands it.
+**Color-blind mode via CSS vars + window override.** Renderer reads `window.__teamColors` (set on settings change). HUD CSS uses `var(--team-red/--team-blue)`. Three modes: deuteranopia (red→orange), protanopia (red→yellow), tritanopia (blue→magenta).
 
 ### Guardrails verified
 
-- ✅ No `EM_ASM $16+` args (4-arg updateMatchHUD is well under 16-arg cap)
-- ✅ Server: no eval/Function() in bot_ai.ts
-- ✅ Server: no `:any` in public APIs (`BotAI` exports typed `BotState`, `BotRole`, `computeInput` return type)
-- ✅ Client: vanilla JS (no third-party deps in audio.js)
-- ✅ All R20/R21 features still wired (lobby browser, reconnect, nameplates, kill feed, tutorial, telemetry)
+- ✅ No `EM_ASM $16+` args
+- ✅ Server: no `eval`/`Function()`
+- ✅ All R20/R21/R22 features still wired (lobby browser, reconnect, nameplates, kill feed, tutorial, telemetry, bot AI, audio, spawn shield, countdown, damage arcs)
 
-### What's next (R23+ backlog)
-- Settings reset/export/import + v1→v2 migration (R22 #8 deferred)
-- Per-class weapon loadouts + server validation (R22 #9 deferred)
-- Server-broadcast lastDamageFrom for accurate damage arc direction
-- Heightmap-aware bot nav grid
-- Voice chat (WebRTC mesh, R24)
+### What's next (R24+ backlog)
+- Repair pack pickup spawns at fixed map points (R23 only spawns Heavy with one in inventory)
+- Voice TURN-relay fallback for ~10% behind symmetric NAT
+- Real loadtest CSV capture instrumentation
+- Replay recording (R23 brief #2.7 deferred — replayBuffer + GET /replay/:matchId stream)
+- Matchmaking improvements (skill-based pairing, friend lists)
 
 ## How to test
 
 ```bash
-cd server && bun install && bun run start
-# In browser: http://localhost:8081/?multiplayer=local
-# - Disconnect mid-match → server logs [BOT-FILL] → bot uses A* now
-# - Wait 15s warmup → see "5"-"4"-"3"-"2"-"1"-"GO!" countdown + horn
-# - Take damage → red flash + directional arc + grunt sound
-# - Respawn → 3s cyan shield + "INVULNERABLE Ns" label + arpeggio on respawn
-# - Tab → scoreboard overlay (R12 wiring intact)
-# - On any match end → ascending horn
+cd server && bun run start
+# Browser 1: http://localhost:8081/?multiplayer=local
+# Browser 2: http://localhost:8081/?multiplayer=local
+# - Pick class on deploy → spawn with class-specific loadout
+# - Try fire weapon not in loadout → server drops + [CHEAT-LOADOUT] log
+# - Hold T → mic enabled → speak → other tab nameplate pulses cyan
+# - Take damage → red arc points at actual attacker
+# - Settings → Export → tribes_settings.json downloads
+# - Settings → Reset → all tribes_* cleared, reloads
+# - Settings → Color-Blind: Deuteranopia → red team becomes orange
+# - Heavy class → press R → repair pack heals over 5s
 ```

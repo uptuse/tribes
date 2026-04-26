@@ -172,7 +172,8 @@ function startMatch(lobby: LobbyState) {
     if (team === 0) teamA++; else teamB++;
     conn.team = team;
     const uuid = (conn.ws as any).data?.uuid || '';
-    lobby.match.addPlayer(conn.numericId, conn.name, team, 0, uuid);
+    const classId = (conn as any).pendingClassId ?? 0;
+    lobby.match.addPlayer(conn.numericId, conn.name, team, classId, uuid, classId);
   }
   console.log(`[match] start lobby=${lobby.id} players=${lobby.match.players.size}`);
 
@@ -479,7 +480,13 @@ const server = Bun.serve({
           if (player) {
             const prevPos = [...player.pos] as [number, number, number];
             lobby.match.applyInput(conn.numericId, input);
-            // Anti-cheat aim/input rate (speed/cooldown checked elsewhere)
+            // R23: loadout-violation kick on 3 sustained
+            if (lobby.match.isLoadoutViolator(player)) {
+              recordCheat(conn.numericId, 'loadout', `class=${player.classId} kicks=3+`);
+              console.log(`[CHEAT] kicking ${playerId} for loadout violation`);
+              try { ws.close(4002, 'loadout violation'); } catch {}
+              return;
+            }
             const violation = lobby.anticheat.checkInput(player, input, prevPos, 1 / 60, lobby.match.tick);
             if (violation === 'inputRate') {
               console.log(`[CHEAT] kicking ${playerId} for inputRate`);
@@ -519,6 +526,32 @@ const server = Bun.serve({
             lobby.rematchVotes.add(conn.numericId);
             broadcastJSON(lobby, { type: 'rematchVote', votes: lobby.rematchVotes.size, eligible: lobby.match.players.size });
             checkPlayAgainVote(lobby);
+          }
+          break;
+        case 'setClass':
+          // R23: client picks Light/Medium/Heavy on deploy screen, sent here
+          if (typeof msg.classId === 'number' && msg.classId >= 0 && msg.classId <= 2) {
+            (conn as any).pendingClassId = msg.classId;
+            // If match already running, respawn the player into the new class on next death
+            if (lobby.match) {
+              const player = lobby.match.players.get(conn.numericId);
+              if (player) player.classId = msg.classId;
+            }
+          }
+          break;
+        // R23: voice chat WebRTC signaling — server is dumb relay
+        case 'voiceOffer':
+        case 'voiceAnswer':
+        case 'voiceCandidate':
+          if (typeof msg.to === 'number') {
+            for (const otherPid of lobby.members) {
+              const other = connections.get(otherPid);
+              if (other && other.numericId === msg.to) {
+                try { other.ws.send(JSON.stringify({ ...msg, from: conn.numericId })); } catch {}
+                console.log(`[VOICE] ${msg.type} from=${conn.numericId} to=${msg.to}`);
+                break;
+              }
+            }
           }
           break;
         default:

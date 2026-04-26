@@ -13,11 +13,11 @@
 // ============================================================
 
 import {
-    TICK_DT, TICK_HZ, ARMORS, WEAPONS, GRAVITY,
+    TICK_DT, TICK_HZ, ARMORS, WEAPONS, CLASSES, GRAVITY,
     LAGCOMP_BUFFER_TICKS,
     MATCH_WARMUP_SEC, RESPAWN_TIMER_SEC, SPAWN_PROTECTION_SEC,
     MATCH_WARMUP, MATCH_IN_PROGRESS, MATCH_END,
-    BTN_FORWARD, BTN_BACK, BTN_LEFT, BTN_RIGHT, BTN_JUMP, BTN_SKI, BTN_FIRE,
+    BTN_FORWARD, BTN_BACK, BTN_LEFT, BTN_RIGHT, BTN_JUMP, BTN_SKI, BTN_FIRE, BTN_USE_REPAIR,
     WORLD_HALF,
 } from './constants.js';
 import { encodeSnapshot, encodeDelta } from './wire.js';
@@ -63,6 +63,13 @@ export interface SimPlayer {
     kills: number;                      // for MVP calculation
     deaths: number;
     uuid: string;                       // stable across reconnect
+    // R23 additions:
+    classId: number;                    // 0=light,1=medium,2=heavy (mirrors armor)
+    inventory: { repairPacks: number };
+    repairTimer: number;                // seconds remaining of active repair-pack heal
+    loadoutViolations: number[];        // wallTime stamps for kick on 3-in-10s
+    lastDamageFromIdx: number;          // -1 or attacker player id (R23 lastDamageFrom)
+    lastDamageAtTick: number;           // server tick of last damage taken
 }
 
 export interface SimProjectile {
@@ -139,10 +146,12 @@ export class Match {
     lagCompBuffer: LagCompFrame[] = [];
     cheatLog: { playerId: number; reason: string; tick: number }[] = [];
 
-    addPlayer(id: number, name: string, team: number, armor = 0, uuid = ''): SimPlayer {
+    addPlayer(id: number, name: string, team: number, armor = 0, uuid = '', classId = -1): SimPlayer {
         const flagPos = this.flags[team].homePos;
+        // R23: classId defaults to armor (backward compat with R22 callers)
+        const klass = CLASSES[classId >= 0 ? classId : armor] || CLASSES[0];
         const p: SimPlayer = {
-            id, name, team, armor,
+            id, name, team, armor: klass.id,
             pos: [flagPos[0] + (Math.random() * 6 - 3), flagPos[1] + 5, flagPos[2] + (Math.random() * 6 - 3)],
             vel: [0, 0, 0],
             rot: [0, 0, 0],
@@ -151,7 +160,7 @@ export class Match {
             onGround: false,
             jetting: false,
             skiing: false,
-            weaponIdx: 2, // disc default
+            weaponIdx: klass.weapons[1] ?? klass.weapons[0],   // start on second weapon if exists (e.g., Disc for light)
             fireCooldown: 0,
             carryingFlag: -1,
             spawnProtectUntil: Date.now() + SPAWN_PROTECTION_SEC * 1000,
@@ -164,6 +173,12 @@ export class Match {
             divergeViolations: [],
             kills: 0, deaths: 0,
             uuid,
+            classId: klass.id,
+            inventory: { repairPacks: klass.repairPacks },
+            repairTimer: 0,
+            loadoutViolations: [],
+            lastDamageFromIdx: -1,
+            lastDamageAtTick: -1,
         };
         this.players.set(id, p);
         return p;
@@ -198,9 +213,38 @@ export class Match {
         p.rot[0] = Math.max(-1.4, Math.min(1.4, p.rot[0] + input.mouseDY));
         p.rot[1] += input.mouseDX;
 
-        // Weapon switch
+        // Weapon switch — R23: validate against class loadout
+        const klass = CLASSES[p.classId] || CLASSES[0];
         if (input.weaponSelect != null && input.weaponSelect !== 0xFF && input.weaponSelect < WEAPONS.length) {
-            p.weaponIdx = input.weaponSelect;
+            if (klass.weapons.indexOf(input.weaponSelect) >= 0) {
+                p.weaponIdx = input.weaponSelect;
+            } else {
+                // Loadout violation — drop input + record for kick threshold
+                const nowMs = Date.now();
+                p.loadoutViolations.push(nowMs);
+                while (p.loadoutViolations.length > 0 && p.loadoutViolations[0] < nowMs - 10_000) {
+                    p.loadoutViolations.shift();
+                }
+                console.log(`[CHEAT-LOADOUT] playerId=${p.id} selected=${input.weaponSelect} class=${klass.name}`);
+            }
+        }
+
+        // R23: also validate fire input weapon-of-fire against class
+        if ((input.buttons & BTN_FIRE) && klass.weapons.indexOf(p.weaponIdx) < 0) {
+            const nowMs = Date.now();
+            p.loadoutViolations.push(nowMs);
+            while (p.loadoutViolations.length > 0 && p.loadoutViolations[0] < nowMs - 10_000) {
+                p.loadoutViolations.shift();
+            }
+            console.log(`[CHEAT-LOADOUT] playerId=${p.id} fired=${p.weaponIdx} class=${klass.name}`);
+            return;  // drop fire
+        }
+
+        // R23: Repair pack use (R key)
+        if ((input.buttons & BTN_USE_REPAIR) && p.alive && p.inventory.repairPacks > 0 && p.repairTimer <= 0) {
+            p.inventory.repairPacks--;
+            p.repairTimer = 5.0;   // 5s of healing
+            console.log(`[REPAIR] playerId=${p.id} used repair pack (remaining=${p.inventory.repairPacks})`);
         }
 
         // Hitscan: if firing chaingun (or other hitscan), do lag-comp raycast
@@ -212,6 +256,11 @@ export class Match {
                 p.fireCooldown = cooldown;
             }
         }
+    }
+
+    // R23: caller (lobby.ts) checks this after applyInput; kicks on violation
+    isLoadoutViolator(p: SimPlayer): boolean {
+        return p.loadoutViolations.length >= 3;
     }
 
     // Step physics for one player based on their last input (or zero if none)
@@ -298,7 +347,14 @@ export class Match {
         if (!p.onGround) p.vel[1] += GRAVITY * dt;
 
         // Energy recharge
-        p.energy = Math.min(1, p.energy + 0.15 * dt);
+        // R23: per-class energy regen mul
+        const klassEnergyMul = (CLASSES[p.classId] || CLASSES[0]).energyRegenMul;
+        p.energy = Math.min(1, p.energy + 0.15 * klassEnergyMul * dt);
+        // R23: repair pack heal — +10 HP/sec for 5 sec (caps at full)
+        if (p.repairTimer > 0) {
+            p.repairTimer -= dt;
+            p.health = Math.min(1, p.health + 0.10 * dt);
+        }
 
         // Apply velocity
         p.pos[0] += p.vel[0] * dt;
@@ -400,6 +456,11 @@ export class Match {
 
     damagePlayer(target: SimPlayer, dmg: number, attacker?: SimPlayer) {
         target.health -= dmg;
+        // R23: stamp last-damage-from for client damage-arc directional accuracy
+        if (attacker && attacker.id !== target.id) {
+            target.lastDamageFromIdx = attacker.id;
+            target.lastDamageAtTick = this.tick;
+        }
         if (target.health <= 0) {
             target.health = 0;
             target.alive = false;
@@ -705,7 +766,10 @@ export class Match {
             team: p.team, armor: p.armor,
             pos: p.pos, rot: p.rot, vel: p.vel,
             health: p.health, energy: p.energy,
-            weaponIdx: p.weaponIdx, carryingFlag: p.carryingFlag, botRole: -1,
+            weaponIdx: p.weaponIdx, carryingFlag: p.carryingFlag,
+            botRole: p.isBot ? 0 : -1,
+            // R23: damage-from-idx is fresh (within last 8 ticks) so client can show arc
+            lastDamageFromIdx: (p.lastDamageAtTick > 0 && this.tick - p.lastDamageAtTick < 8) ? p.lastDamageFromIdx : -1,
         }));
         const projsArr = this.projectiles.filter(p => p.alive).slice(0, 200).map(p => ({
             id: p.id, type: p.type, team: p.team, alive: p.alive, pos: p.pos, age: p.age,

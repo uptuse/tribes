@@ -9,6 +9,8 @@
 import { decodeSnapshot, decodeDelta, encodeInput } from './wire.js';
 import { MSG_SNAPSHOT, MSG_DELTA, INPUT_HZ } from './constants.js';
 import * as prediction from './prediction.js';
+import * as voice from './voice.js';
+window.__voiceUpdatePeer = voice.updatePeerPosition;
 
 let socket = null;
 let connectedAt = 0;
@@ -143,6 +145,12 @@ export function start() {
             log('matchStart in ' + msg.lobbyId + ' players=' + msg.players.length);
             telemetry.inMatch = true;
             startInputLoop();
+            // R23: open voice peers to all teammates
+            voice.setLocalNumericId(myNumericId);
+            voice.init(send);
+            const myTeam = msg.players.find(p => p.id === myNumericId)?.team;
+            const teammateIds = msg.players.filter(p => p.team === myTeam && p.id !== myNumericId).map(p => p.id);
+            voice.openPeers(teammateIds).catch(e => console.warn('[VOICE] openPeers failed', e));
             if (window.__tribesOnMatchStart) window.__tribesOnMatchStart(msg);
         } else if (msg.type === 'matchEnd') {
             log('matchEnd score=' + msg.teamScore.join('-') + ' winner=' + msg.winner);
@@ -160,6 +168,9 @@ export function start() {
         } else if (msg.type === 'rematchVote') {
             const ve = document.getElementById('me-vote');
             if (ve) ve.textContent = 'PLAY AGAIN votes: ' + msg.votes + ' / ' + msg.eligible + ' (need 75%)';
+        } else if (msg.type === 'voiceOffer' || msg.type === 'voiceAnswer' || msg.type === 'voiceCandidate') {
+            // R23: route to voice module
+            voice.handleVoiceMessage(msg).catch(e => console.warn('[VOICE]', e));
         } else if (msg.type === 'chat') {
             log('chat ' + msg.from + ': ' + msg.text);
         } else {

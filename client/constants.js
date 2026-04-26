@@ -22,7 +22,7 @@ export const WORLD_HALF = 1024;               // map is 2048×2048
 export const GRAVITY = -20;                   // m/s²
 export const JET_THRUST = 200;                // base jet force; scaled by armor
 export const SKI_FRICTION = 0.005;            // very low while skiing
-export const GROUND_FRICTION = 0.85;          // walking friction
+export const GROUND_FRICTION = 0.82;          // R23 balance tweak (was 0.85; see comms/balance_log.md)
 export const MAX_GROUND_SPEED = 11;           // light armor base
 export const MAX_HORIZONTAL_SPEED_HARD_CAP = 60; // anti-cheat cap
 
@@ -42,6 +42,29 @@ export const WEAPONS = [
     { name: 'GrenadeL',    damage: 0.4,   fireTime: 0.5,  reloadTime: 0.5,  muzzleVel: 40,  splashRadius: 15,   kickback: 150, gravity: 25, hitscan: false },
     { name: 'Plasma',      damage: 0.45,  fireTime: 0.5,  reloadTime: 0.1,  muzzleVel: 55,  splashRadius: 4,    kickback: 0,   gravity: 3,  hitscan: false },
     { name: 'Mortar',      damage: 1.0,   fireTime: 2.0,  reloadTime: 0.5,  muzzleVel: 50,  splashRadius: 20,   kickback: 250, gravity: 20, hitscan: false },
+];
+
+// R23: Per-class loadouts. Class index → { weapons[], grenades, spawnSec, energyRegenMul, repairPacks }
+// Weapon ids match WEAPONS table indices: 0=Blaster 1=Chaingun 2=Disc 3=Grenade(launcher) 4=Plasma 5=Mortar
+export const CLASSES = [
+    {
+        id: 0, name: 'light',
+        weapons: [0, 1, 2, 3],          // Blaster, Chaingun, Disc, Grenade
+        grenades: 3, spawnSec: 4, energyRegenMul: 1.0, repairPacks: 0,
+        maxDamage: 0.66,                // matches ARMORS[0]
+    },
+    {
+        id: 1, name: 'medium',
+        weapons: [0, 1, 2, 3, 4],       // + Plasma
+        grenades: 5, spawnSec: 6, energyRegenMul: 0.85, repairPacks: 0,
+        maxDamage: 1.00,
+    },
+    {
+        id: 2, name: 'heavy',
+        weapons: [0, 3, 4, 5],          // Blaster, Grenade, Plasma, Mortar
+        grenades: 8, spawnSec: 9, energyRegenMul: 0.6, repairPacks: 1,
+        maxDamage: 1.32,
+    },
 ];
 
 // Match
@@ -87,3 +110,4 @@ export const BTN_FIRE        = 1 << 6;
 export const BTN_ALT_FIRE    = 1 << 7;
 export const BTN_USE         = 1 << 8;
 export const BTN_RELOAD      = 1 << 9;
+export const BTN_USE_REPAIR  = 1 << 10;   // R23: Heavy class repair pack (R key)
