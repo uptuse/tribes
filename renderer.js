@@ -1342,24 +1342,106 @@ function syncCamera() {
     // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
     camera.rotation.set(pitch, -yaw, 0, 'YXZ');
 
-    // R31.4: 3rd-person — chase camera mirrors C++ wasm_main.cpp:2264
-    // eye = pos + (0,3,0) - fwd*12, where fwd = {sin(yaw), 0, -cos(yaw)}.
+    // R31.7-manus: 3rd-person chase camera — Tribes Ascend reference is
+    // a centered chase (no shoulder offset), camera follows aim, crosshair
+    // is dead-center for clean aim convergence.
+    //
+    // Improvements over R31.5:
+    //   - Removed +0.7m right-shoulder offset (Ascend uses centered chase)
+    //   - Smooth 200ms lerp on V-toggle so view doesn't snap
+    //   - Terrain/building collision: pulls camera in if it would clip
+    //   - Exposes window._tribesAimPoint3P (world point under crosshair) so
+    //     C++ aim-convergence (Claude work) can read it via JS callback
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
-    if (is3P) {
-        // R31.5: 4m back, 1.6m up, 0.7m right-shoulder — matches C++ wasm_main.cpp
+
+    // Smooth toggle: animate from prev distance to target over ~200ms.
+    if (typeof _camDistTarget === 'undefined') {
+        // module-scope state — initialize on first call
+        window._tribesCamDist = 0; // will hot-snap to target on first frame
+        window._tribesCamHeight = 1.7;
+    }
+    const targetDist = is3P ? 4.0 : 0.0;
+    const targetHeight = is3P ? 1.6 : 1.7;
+    // Frame-rate-independent lerp toward target (~200ms time constant)
+    const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
+    window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * lerpAlpha;
+    window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * lerpAlpha;
+    const camDist = window._tribesCamDist;
+    const camH = window._tribesCamHeight;
+
+    if (camDist > 0.05) {
+        // 3P (or transitioning): place camera behind player, no shoulder offset
         const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
-        const rightX = Math.cos(yaw), rightZ = Math.sin(yaw);
-        camera.position.set(
-            px - fwdX * 4.0 + rightX * 0.7,
-            py + 1.6,
-            pz - fwdZ * 4.0 + rightZ * 0.7
-        );
+        let cx = px - fwdX * camDist;
+        let cy = py + camH;
+        let cz = pz - fwdZ * camDist;
+        // Terrain collision: if camera would be below ground, lift it; if it
+        // would clip a steep slope behind the player, also pull it in along
+        // the back-vector. Sample 3 candidate points along the back ray.
+        const terrH = sampleTerrainH(cx, cz);
+        if (cy < terrH + 0.6) {
+            // Re-shoot: pull camera in along back-axis until clear, or floor it
+            const minClearance = 0.6;
+            // Try at progressively shorter distances
+            let found = false;
+            for (let d = camDist - 0.5; d > 0.5; d -= 0.5) {
+                const tx = px - fwdX * d, tz = pz - fwdZ * d;
+                const th = sampleTerrainH(tx, tz);
+                if (py + camH - th > minClearance) {
+                    cx = tx; cz = tz; cy = py + camH;
+                    found = true; break;
+                }
+            }
+            if (!found) {
+                // Even at d=0 we're stuck; fall back to player head + tiny back
+                cx = px - fwdX * 0.5;
+                cz = pz - fwdZ * 0.5;
+                cy = Math.max(py + 1.7, terrH + 0.6);
+            }
+        }
+        camera.position.set(cx, cy, cz);
     } else {
+        // 1P
         camera.position.set(px, py + 1.7, pz);
     }
 
-    // Hide/show weapon viewmodel based on view mode (R31.4)
-    if (weaponHand) weaponHand.visible = !is3P;
+    // R31.7-manus: compute and expose world aim point under crosshair.
+    // Camera-forward * 1000m, then ray-march against terrain to find first hit.
+    // Available as window._tribesAimPoint3P for C++ aim-convergence readback.
+    {
+        const cf = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        let hitX = camera.position.x + cf.x * 1000;
+        let hitY = camera.position.y + cf.y * 1000;
+        let hitZ = camera.position.z + cf.z * 1000;
+        // Coarse ray-march against terrain heightfield (32 steps)
+        for (let i = 1; i <= 32; i++) {
+            const t = (i / 32) * 1000;
+            const wx = camera.position.x + cf.x * t;
+            const wy = camera.position.y + cf.y * t;
+            const wz = camera.position.z + cf.z * t;
+            const th = sampleTerrainH(wx, wz);
+            if (wy <= th) {
+                // Walk back one step and refine with binary search (4 iters)
+                let lo = (i - 1) / 32 * 1000, hi = t;
+                for (let j = 0; j < 4; j++) {
+                    const m = (lo + hi) * 0.5;
+                    const mx = camera.position.x + cf.x * m;
+                    const my = camera.position.y + cf.y * m;
+                    const mz = camera.position.z + cf.z * m;
+                    if (my <= sampleTerrainH(mx, mz)) hi = m; else lo = m;
+                }
+                hitX = camera.position.x + cf.x * hi;
+                hitY = camera.position.y + cf.y * hi;
+                hitZ = camera.position.z + cf.z * hi;
+                break;
+            }
+        }
+        window._tribesAimPoint3P = { x: hitX, y: hitY, z: hitZ };
+    }
+
+    // Hide/show weapon viewmodel based on view mode (R31.4); use camDist so
+    // viewmodel fades in/out smoothly rather than snapping at toggle moment.
+    if (weaponHand) weaponHand.visible = (camDist < 0.5);
 
     const fov = Module._getCameraFov();
     if (Math.abs(camera.fov - fov) > 0.5) {
