@@ -881,8 +881,12 @@ static void fireWeapon(int pi){
     if(w.usesAmmo)p.ammo[p.curWeapon]--;
     else p.energy-=w.energyCost;
     p.fireCooldown=w.fireTime+w.reloadTime;
-    // Kickback
     if(w.kickback>0)p.vel-=fwd*(w.kickback*0.01f);
+    // Fire sound (local player only — UI bus, not positional)
+    if(pi==localPlayer){
+        int sndId=p.curWeapon; // weapon enum matches sound slot 0-8
+        EM_ASM({ if(window.playSoundUI)window.playSoundUI($0); }, sndId);
+    }
 }
 
 static void respawnPlayer(int pi){
@@ -1439,6 +1443,8 @@ static void mainLoop(){
                         generatorAlive[generators[g].team]=false;
                         printf("[CTF] >>> %s GENERATOR DESTROYED — turrets offline <<<\n",
                                generators[g].team==0?"RED":"BLUE");
+                        EM_ASM({ if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },
+                               (int)generators[g].pos.x,(int)generators[g].pos.y,(int)generators[g].pos.z);
                     }
                     hitPlayer=true;break;
                 }
@@ -1480,6 +1486,9 @@ static void mainLoop(){
             }else{
                 spawnBurst(projs[i].pos,5,0.5f,10,w.r,w.g,w.b,0.3f);
             }
+            // Positional impact sound
+            EM_ASM({ if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },
+                   (int)projs[i].pos.x,(int)projs[i].pos.y,(int)projs[i].pos.z);
             projs[i].active=false;
         }
     }
@@ -1524,6 +1533,7 @@ static void mainLoop(){
                     players[i].score+=5;
                     printf("[CTF] %s CAPTURED the flag! Score: Red %d - Blue %d\n",
                            players[i].name,teamScore[0],teamScore[1]);
+                    if(i==localPlayer)EM_ASM({ if(window.playSoundUI)window.playSoundUI(7); },0);
                     if(teamScore[players[i].team]>=SCORE_LIMIT)
                         printf("[CTF] === %s TEAM WINS! ===\n",players[i].team==0?"RED":"BLUE");
                 }
@@ -1533,6 +1543,7 @@ static void mainLoop(){
                     fl.carried=true;fl.carrierIdx=i;fl.atHome=false;
                     players[i].carryingFlag=f;
                     printf("[CTF] %s grabbed the %s flag!\n",players[i].name,f==0?"Red":"Blue");
+                    if(i==localPlayer)EM_ASM({ if(window.playSoundUI)window.playSoundUI(6); },0);
                 }
             }
         }
@@ -1707,6 +1718,8 @@ static void mainLoop(){
 
     drawHUD();
     broadcastHUD();
+    EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },
+           me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000));
 
     if(frameCount%1800==1){
         printf("[Game] Score: Red %d - Blue %d | %s: HP=%.0f%% EN=%.0f%% SPD=%.0f WPN=%s\n",
