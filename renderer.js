@@ -1,25 +1,45 @@
 // ============================================================
-// Tribes Browser Edition — Three.js Renderer (R15)
+// Tribes Browser Edition — Three.js Renderer (R15 → R17 default → R18 quality)
 // ============================================================
 // Architecture: C++ simulation in WASM, Three.js renderer in JS.
 // JS reads game state via zero-copy Float32Array views into HEAPF32.
 // No JSON, no per-frame EM_ASM. All sync is typed-array reads.
+//
+// R18 cashes in on the Three.js architecture:
+//   - Composite procedural player models (3 armor tiers, leg/arm rig animation)
+//   - Composite procedural building models (turret/station/generator/interior)
+//   - Procedural noise-based PBR terrain (canvas-generated diffuse + normal)
+//   - THREE.Sky atmospheric scattering + DirectionalLight sun + PCF shadows
+//   - Improved particle system with type-specific colors + soft circular sprites
+//   - EffectComposer post-processing: UnrealBloom + custom vignette + warm grading
+//   - Graphics quality tier (low/medium/high/ultra) drives all of the above
+//
+// Asset constraint: per R18 brief guardrail, "no hotlinking from artist sites".
+// All visual content is procedurally generated in this file (no glTF imports).
+// Three.js itself is loaded from unpkg (CDN allowed).
 // ============================================================
 
 import * as THREE from 'three';
+import { Sky } from 'three/addons/objects/Sky.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 
 // --- Module state ---
-let scene, camera, renderer;
-let sunLight, hemiLight;
+let scene, camera, renderer, composer;
+let bloomPass, gradePass;
+let sunLight, hemiLight, sky;
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
 let flagMeshes = [];
 let buildingMeshes = [];
-let particlePoints, particleGeom, particlePositions, particleColors, particleSizes;
+let weaponHand;             // small box mesh attached at local-player view position
+let particleSystem, particleGeom, particlePositions, particleColors, particleSizes;
 
-// Typed-array views into WASM HEAPF32 (built once at start, reused every frame).
-// Memory growth is disabled in build.sh, so .buffer never detaches.
+// Typed-array views into WASM HEAPF32
 let playerView, projectileView, particleView, flagView;
 let playerStride, projectileStride, particleStride, flagStride;
 
@@ -27,286 +47,693 @@ let playerStride, projectileStride, particleStride, flagStride;
 const MAX_PARTICLES = 1024;
 const MAX_PROJECTILES = 256;
 const MAX_PLAYERS = 16;
-const TEAM_COLORS = [0xC8302C, 0x2C5AC8, 0x808080]; // red, blue, neutral
+const TEAM_COLORS = [0xC8302C, 0x2C5AC8, 0x808080];
+const TEAM_TINT_HEX = [0xCC4444, 0x4477CC, 0x808080];
 const PROJ_COLORS = [
     0xFFFFFF, // 0 blaster
     0xFFEE40, // 1 chaingun
-    0xE0E0FF, // 2 disc
+    0xFFFFFF, // 2 disc (white)
     0x4F8030, // 3 grenade
     0xFF6020, // 4 plasma
     0xFFA040, // 5 mortar
-    0xFF4040, // 6 laser
-    0x80A0FF, // 7 elf
-    0x40FF80, // 8 repair
+    0xFF4040, 0x80A0FF, 0x40FF80
 ];
 
-// Reused tmp objects — avoid per-frame allocation
+// Reused tmp objects
 const _tmpVec = new THREE.Vector3();
-const _tmpEuler = new THREE.Euler(0, 0, 0, 'YXZ');
 
-// Diagnostic counters
+// Diagnostic
 let _frameCount = 0;
 let _lastDiagTime = 0;
+let _lastPlayerColors = new Array(MAX_PLAYERS).fill(-1);
 
 // ============================================================
-// Entry point — called from shell.html after Module is ready
+// Graphics quality tier (driven by settings menu)
+// ============================================================
+const QUALITY_TIERS = {
+    low:    { shadowMap: 0,    postProcess: false, particleCap: 256,  pixelRatio: 1.0 },
+    medium: { shadowMap: 1024, postProcess: false, particleCap: 512,  pixelRatio: 1.0 },
+    high:   { shadowMap: 2048, postProcess: 'bloom', particleCap: 1024, pixelRatio: 1.0 },
+    ultra:  { shadowMap: 2048, postProcess: 'full', particleCap: 1024, pixelRatio: Math.min(window.devicePixelRatio, 2) }
+};
+let currentQuality = 'high'; // default; updated from window.ST below
+
+function readQualityFromSettings() {
+    if (window.ST && window.ST.graphicsQuality && QUALITY_TIERS[window.ST.graphicsQuality]) {
+        currentQuality = window.ST.graphicsQuality;
+    }
+    return QUALITY_TIERS[currentQuality];
+}
+
+// ============================================================
+// Entry point
 // ============================================================
 export async function start() {
-    console.log('[R15] Three.js renderer starting…');
-    console.log('[R15] THREE.REVISION =', THREE.REVISION);
+    console.log('[R18] Three.js renderer starting (quality=' + currentQuality + ', THREE.REVISION=' + THREE.REVISION + ')');
 
     initRenderer();
     initScene();
     initLights();
+    initSky();
     initTerrain();
     initBuildings();
     initPlayers();
     initProjectiles();
     initFlags();
     initParticles();
+    initWeaponViewmodel();
+    initPostProcessing();
     initStateViews();
 
+    // Listen for settings changes (graphics quality dropdown)
     window.addEventListener('resize', onResize);
+    window.__tribesApplyQuality = applyQuality;
     onResize();
 
-    console.log('[R15] Init complete. Entering render loop.');
+    console.log('[R18] Init complete. Entering render loop.');
     requestAnimationFrame(loop);
 }
 
 // ============================================================
-// Renderer + scene + camera
+// Renderer
 // ============================================================
 function initRenderer() {
     const canvas = document.getElementById('canvas');
+    const tier = readQualityFromSettings();
     renderer = new THREE.WebGLRenderer({
         canvas,
         antialias: true,
         powerPreference: 'high-performance',
     });
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.setPixelRatio(tier.pixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
     renderer.toneMappingExposure = 1.0;
-    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.enabled = tier.shadowMap > 0;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     canvas.style.visibility = 'visible';
 }
 
 function initScene() {
     scene = new THREE.Scene();
+    // Exponential fog blends distant geometry to sky horizon
+    scene.fog = new THREE.FogExp2(0xb8c4c8, 0.0006);
+}
 
-    // Sky: vertical gradient via large inverted sphere with vertex-colored material
-    const skyGeo = new THREE.SphereGeometry(4000, 32, 16);
-    const skyMat = new THREE.ShaderMaterial({
-        side: THREE.BackSide,
-        depthWrite: false,
-        uniforms: {
-            topColor:    { value: new THREE.Color(0x5A6A7A) },   // zenith
-            bottomColor: { value: new THREE.Color(0xB8C4C8) },   // horizon
-            offset:      { value: 50.0 },
-            exponent:    { value: 0.7 }
-        },
-        vertexShader: `
-            varying vec3 vWorldPos;
-            void main(){
-                vec4 wp = modelMatrix * vec4(position, 1.0);
-                vWorldPos = wp.xyz;
-                gl_Position = projectionMatrix * viewMatrix * wp;
-            }`,
-        fragmentShader: `
-            uniform vec3 topColor;
-            uniform vec3 bottomColor;
-            uniform float offset;
-            uniform float exponent;
-            varying vec3 vWorldPos;
-            void main(){
-                float h = normalize(vWorldPos + vec3(0.0, offset, 0.0)).y;
-                gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
-            }`
-    });
-    const sky = new THREE.Mesh(skyGeo, skyMat);
+// ============================================================
+// THREE.Sky atmospheric scattering + sun + lights
+// ============================================================
+let sunPos = new THREE.Vector3();
+
+function initSky() {
+    sky = new Sky();
+    sky.scale.setScalar(450000);
     scene.add(sky);
+    const u = sky.material.uniforms;
+    u.turbidity.value = 8;
+    u.rayleigh.value = 2.0;
+    u.mieCoefficient.value = 0.005;
+    u.mieDirectionalG.value = 0.7;
 
-    // Linear fog matches the C++ horizon color so distant geometry blends to sky
-    scene.fog = new THREE.Fog(0xB8C4C8, 600, 1500);
-
-    // Camera — FOV will be updated each frame from g_fov export
-    const aspect = window.innerWidth / window.innerHeight;
-    camera = new THREE.PerspectiveCamera(90, aspect, 0.5, 5000);
-    camera.position.set(0, 50, 0);
-    scene.add(camera);
+    // Sun position: azimuth 60° (from north toward east), elevation 35°
+    const azimuth = 60, elevation = 35;
+    const phi = THREE.MathUtils.degToRad(90 - elevation);
+    const theta = THREE.MathUtils.degToRad(azimuth - 180);
+    sunPos.setFromSphericalCoords(1, phi, theta);
+    u.sunPosition.value.copy(sunPos);
 }
 
 function initLights() {
-    // Hemisphere ambient — sky light from above + warm bounce from below
-    hemiLight = new THREE.HemisphereLight(0xb8c4d8, 0x6a5a3a, 0.55);
+    const tier = readQualityFromSettings();
+
+    // Hemisphere ambient — sky=#9bb5d6 ground=#5a4a32 (per R18 brief)
+    hemiLight = new THREE.HemisphereLight(0x9bb5d6, 0x5a4a32, 0.55);
     scene.add(hemiLight);
 
-    // Directional sun — matches C++ sun direction (0.4, 0.8, 0.3)
-    sunLight = new THREE.DirectionalLight(0xfff4e0, 1.1);
-    sunLight.position.set(800, 1600, 600);
-    sunLight.castShadow = true;
-    sunLight.shadow.mapSize.set(2048, 2048);
-    sunLight.shadow.camera.near = 100;
-    sunLight.shadow.camera.far = 4000;
-    const s = 1500;
-    sunLight.shadow.camera.left = -s;
-    sunLight.shadow.camera.right = s;
-    sunLight.shadow.camera.top = s;
-    sunLight.shadow.camera.bottom = -s;
-    sunLight.shadow.bias = -0.0005;
+    // Directional sun
+    sunLight = new THREE.DirectionalLight(0xfff4e0, 1.4);
+    sunLight.castShadow = tier.shadowMap > 0;
+    if (tier.shadowMap > 0) {
+        sunLight.shadow.mapSize.set(tier.shadowMap, tier.shadowMap);
+        sunLight.shadow.camera.near = 10;
+        sunLight.shadow.camera.far = 800;
+        const s = 200; // shadow frustum half-size, follows camera
+        sunLight.shadow.camera.left = -s;
+        sunLight.shadow.camera.right = s;
+        sunLight.shadow.camera.top = s;
+        sunLight.shadow.camera.bottom = -s;
+        sunLight.shadow.bias = -0.0005;
+        sunLight.shadow.normalBias = 0.02;
+    }
     scene.add(sunLight);
     scene.add(sunLight.target);
 }
 
 // ============================================================
-// Terrain — heightmap-displaced plane
+// Terrain — PBR with procedural noise textures
 // ============================================================
+function generateTerrainTextures() {
+    const size = 512;
+
+    // Hash-based pseudorandom for stable noise
+    function h(a, b) {
+        let n = (a | 0) * 374761393 + (b | 0) * 668265263;
+        n = (n ^ (n >> 13)) * 1274126177;
+        return ((n ^ (n >> 16)) & 0xFFFF) / 0xFFFF;
+    }
+    function smooth(t) { return t * t * (3 - 2 * t); }
+    function noise2D(x, y) {
+        let v = 0, freq = 1, amp = 1, total = 0;
+        for (let oct = 0; oct < 5; oct++) {
+            const xf = x * freq, yf = y * freq;
+            const xi = Math.floor(xf), yi = Math.floor(yf);
+            const fx = xf - xi, fy = yf - yi;
+            const a = h(xi, yi), b = h(xi + 1, yi);
+            const c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+            const u = smooth(fx), w = smooth(fy);
+            v += amp * ((1 - u) * (1 - w) * a + u * (1 - w) * b + (1 - u) * w * c + u * w * d);
+            total += amp;
+            freq *= 2;
+            amp *= 0.5;
+        }
+        return v / total;
+    }
+
+    // Diffuse: sandy-grass blend driven by noise
+    const diffCanvas = document.createElement('canvas');
+    diffCanvas.width = diffCanvas.height = size;
+    const dctx = diffCanvas.getContext('2d');
+    const dimg = dctx.createImageData(size, size);
+    // Heightfield for normal computation (kept separately)
+    const heights = new Float32Array(size * size);
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const n = noise2D(x / 18, y / 18);
+            const detail = noise2D(x / 4, y / 4) * 0.25;
+            const h = Math.max(0, Math.min(1, n * 0.85 + detail));
+            heights[y * size + x] = h;
+            // Sandy (n low) → dry-grass (n mid) → green-grass (n high)
+            const sand = [196, 174, 124];
+            const dry  = [148, 132, 86];
+            const grass = [88, 110, 60];
+            let r, g, b;
+            if (h < 0.45) {
+                const t = h / 0.45;
+                r = sand[0] * (1 - t) + dry[0] * t;
+                g = sand[1] * (1 - t) + dry[1] * t;
+                b = sand[2] * (1 - t) + dry[2] * t;
+            } else {
+                const t = (h - 0.45) / 0.55;
+                r = dry[0] * (1 - t) + grass[0] * t;
+                g = dry[1] * (1 - t) + grass[1] * t;
+                b = dry[2] * (1 - t) + grass[2] * t;
+            }
+            const i = (y * size + x) * 4;
+            dimg.data[i] = r | 0;
+            dimg.data[i + 1] = g | 0;
+            dimg.data[i + 2] = b | 0;
+            dimg.data[i + 3] = 255;
+        }
+    }
+    dctx.putImageData(dimg, 0, 0);
+    const diffTex = new THREE.CanvasTexture(diffCanvas);
+    diffTex.wrapS = diffTex.wrapT = THREE.RepeatWrapping;
+    diffTex.colorSpace = THREE.SRGBColorSpace;
+    diffTex.anisotropy = 4;
+
+    // Normal map: derive from height field via central differences
+    const normCanvas = document.createElement('canvas');
+    normCanvas.width = normCanvas.height = size;
+    const nctx = normCanvas.getContext('2d');
+    const nimg = nctx.createImageData(size, size);
+    const strength = 8.0;
+    for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+            const xL = (x - 1 + size) % size;
+            const xR = (x + 1) % size;
+            const yU = (y - 1 + size) % size;
+            const yD = (y + 1) % size;
+            const dx = (heights[y * size + xR] - heights[y * size + xL]) * strength;
+            const dy = (heights[yD * size + x] - heights[yU * size + x]) * strength;
+            const nx = -dx;
+            const ny = -dy;
+            const nz = 1.0;
+            const len = Math.sqrt(nx * nx + ny * ny + nz * nz);
+            const i = (y * size + x) * 4;
+            nimg.data[i]     = (nx / len * 0.5 + 0.5) * 255;
+            nimg.data[i + 1] = (ny / len * 0.5 + 0.5) * 255;
+            nimg.data[i + 2] = (nz / len * 0.5 + 0.5) * 255;
+            nimg.data[i + 3] = 255;
+        }
+    }
+    nctx.putImageData(nimg, 0, 0);
+    const normTex = new THREE.CanvasTexture(normCanvas);
+    normTex.wrapS = normTex.wrapT = THREE.RepeatWrapping;
+    normTex.anisotropy = 4;
+
+    return { diffTex, normTex };
+}
+
 function initTerrain() {
     const ptr = Module._getHeightmapPtr();
-    const size = Module._getHeightmapSize();           // 257
-    const worldScale = Module._getHeightmapWorldScale(); // 8.0
+    const size = Module._getHeightmapSize();
+    const worldScale = Module._getHeightmapWorldScale();
     const heights = new Float32Array(Module.HEAPF32.buffer, ptr, size * size);
 
-    const span = (size - 1) * worldScale; // 256 * 8 = 2048
-    const segs = size - 1;                // 256 segments → 257 vertices per side
+    const span = (size - 1) * worldScale;
+    const segs = size - 1;
 
     const geom = new THREE.PlaneGeometry(span, span, segs, segs);
-    geom.rotateX(-Math.PI / 2); // PlaneGeometry is XY by default; flip to XZ
+    geom.rotateX(-Math.PI / 2);
 
-    // Displace vertices by heightmap. Layout: vertex (i, j) → index j*size + i.
-    // PlaneGeometry vertex index mapping: row j (along Z) × (segs+1) + column i (along X).
-    // C++ heightmap layout: RAINDANCE_HEIGHTS[iz][ix] → linear index iz*size + ix.
-    // Both match.
     const pos = geom.attributes.position;
     for (let j = 0; j < size; j++) {
         for (let i = 0; i < size; i++) {
             const linear = j * size + i;
-            // Three.js plane vertex order: row 0 is at +Z (top), row size-1 at -Z (bottom)
-            // We need row j (0 = -Z far north) so flip Z if needed. Empirically: see below.
-            const vIdx = j * size + i;
-            pos.setY(vIdx, heights[linear]);
+            pos.setY(linear, heights[linear]);
         }
     }
     pos.needsUpdate = true;
     geom.computeVertexNormals();
 
+    // UV tile so textures repeat ~64x across the 2048-unit terrain
+    const uv = geom.attributes.uv;
+    for (let i = 0; i < uv.count; i++) {
+        uv.setXY(i, uv.getX(i) * 64, uv.getY(i) * 64);
+    }
+    uv.needsUpdate = true;
+
+    const { diffTex, normTex } = generateTerrainTextures();
     const mat = new THREE.MeshStandardMaterial({
-        color: 0x8a7a5a,           // muted sand/grass tan
+        map: diffTex,
+        normalMap: normTex,
+        normalScale: new THREE.Vector2(1.2, 1.2),
         roughness: 0.95,
         metalness: 0.0,
-        flatShading: false,
     });
     terrainMesh = new THREE.Mesh(geom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
-    console.log('[R15] Terrain built:', size + 'x' + size, 'span=' + span + 'm');
+    console.log('[R18] Terrain built: PBR with procedural noise diffuse + normal');
 }
 
 // ============================================================
-// Buildings — read from C++ array once
+// Buildings — composite procedural meshes per type
 // ============================================================
+function createBuildingMesh(type, halfExtents, colorRGB) {
+    const group = new THREE.Group();
+    const tint = new THREE.Color(colorRGB[0], colorRGB[1], colorRGB[2]);
+    const baseMat = new THREE.MeshStandardMaterial({ color: tint, roughness: 0.85, metalness: 0.15 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x303030, roughness: 0.55, metalness: 0.6 });
+
+    if (type === 3) {
+        // TURRET — pedestal + dome + barrel
+        const pedGeom = new THREE.CylinderGeometry(halfExtents[0] * 0.9, halfExtents[0] * 1.05, halfExtents[1] * 1.4, 10);
+        const ped = new THREE.Mesh(pedGeom, baseMat);
+        ped.position.y = halfExtents[1] * 0.7;
+        ped.castShadow = ped.receiveShadow = true;
+        group.add(ped);
+        const domeGeom = new THREE.SphereGeometry(halfExtents[0] * 1.1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+        const dome = new THREE.Mesh(domeGeom, accentMat);
+        dome.position.y = halfExtents[1] * 1.45;
+        dome.castShadow = true;
+        group.add(dome);
+        const barrelGeom = new THREE.CylinderGeometry(0.13, 0.16, 1.4, 8);
+        const barrel = new THREE.Mesh(barrelGeom, accentMat);
+        barrel.rotation.z = Math.PI / 2;
+        barrel.position.set(halfExtents[0] * 1.0, halfExtents[1] * 1.45, 0);
+        barrel.castShadow = true;
+        group.add(barrel);
+        // Sensor "eye" — small emissive dot on dome
+        const eyeGeom = new THREE.SphereGeometry(0.08, 8, 6);
+        const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
+        const eye = new THREE.Mesh(eyeGeom, eyeMat);
+        eye.position.set(halfExtents[0] * 0.9, halfExtents[1] * 1.55, 0.0);
+        group.add(eye);
+        group.userData = { barrel: barrel };
+    } else if (type === 4) {
+        // STATION — cylindrical kiosk + glowing display
+        const cylGeom = new THREE.CylinderGeometry(halfExtents[0] * 1.2, halfExtents[0] * 1.3, halfExtents[1] * 2, 14);
+        const cyl = new THREE.Mesh(cylGeom, baseMat);
+        cyl.position.y = halfExtents[1];
+        cyl.castShadow = cyl.receiveShadow = true;
+        group.add(cyl);
+        // Glowing top ring
+        const ringGeom = new THREE.TorusGeometry(halfExtents[0] * 1.3, 0.06, 6, 24);
+        const ringMat = new THREE.MeshBasicMaterial({ color: 0xFFC850 });
+        const ring = new THREE.Mesh(ringGeom, ringMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = halfExtents[1] * 1.95;
+        group.add(ring);
+        // Display panels (4 sides)
+        for (let i = 0; i < 4; i++) {
+            const angle = i * Math.PI / 2;
+            const panelGeom = new THREE.PlaneGeometry(halfExtents[0] * 0.9, halfExtents[1] * 0.7);
+            const panelMat = new THREE.MeshBasicMaterial({ color: 0xFFC850, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
+            const panel = new THREE.Mesh(panelGeom, panelMat);
+            panel.position.set(Math.sin(angle) * halfExtents[0] * 1.21, halfExtents[1] * 1.1, Math.cos(angle) * halfExtents[0] * 1.21);
+            panel.lookAt(panel.position.x * 100, panel.position.y, panel.position.z * 100);
+            group.add(panel);
+        }
+    } else if (type === 2) {
+        // GENERATOR — angular box + emissive panels (4 sides)
+        const boxGeom = new THREE.BoxGeometry(halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2);
+        const box = new THREE.Mesh(boxGeom, baseMat);
+        box.position.y = halfExtents[1];
+        box.castShadow = box.receiveShadow = true;
+        group.add(box);
+        const panelMat = new THREE.MeshBasicMaterial({ color: 0x40FF80, transparent: true, opacity: 0.75 });
+        for (let i = 0; i < 4; i++) {
+            const angle = i * Math.PI / 2;
+            const panelGeom = new THREE.PlaneGeometry(halfExtents[0] * 1.3, halfExtents[1] * 0.9);
+            const panel = new THREE.Mesh(panelGeom, panelMat);
+            panel.position.set(Math.sin(angle) * halfExtents[0] * 1.005, halfExtents[1] * 1.1, Math.cos(angle) * halfExtents[2] * 1.005);
+            panel.lookAt(panel.position.x * 100, panel.position.y, panel.position.z * 100);
+            group.add(panel);
+        }
+        // Top vent
+        const ventGeom = new THREE.BoxGeometry(halfExtents[0] * 1.6, 0.1, halfExtents[2] * 1.6);
+        const vent = new THREE.Mesh(ventGeom, accentMat);
+        vent.position.y = halfExtents[1] * 2 + 0.05;
+        group.add(vent);
+        group.userData = { panels: group.children.slice(1, 5), aliveColor: 0x40FF80, deadColor: 0x404040 };
+    } else if (type === 1) {
+        // TOWER — vertical box with crown
+        const boxGeom = new THREE.BoxGeometry(halfExtents[0] * 1.8, halfExtents[1] * 2, halfExtents[2] * 1.8);
+        const box = new THREE.Mesh(boxGeom, baseMat);
+        box.position.y = halfExtents[1];
+        box.castShadow = box.receiveShadow = true;
+        group.add(box);
+        const crownGeom = new THREE.BoxGeometry(halfExtents[0] * 2.4, 0.25, halfExtents[2] * 2.4);
+        const crown = new THREE.Mesh(crownGeom, accentMat);
+        crown.position.y = halfExtents[1] * 2;
+        crown.castShadow = true;
+        group.add(crown);
+    } else {
+        // INTERIOR (default) — angular box with edge accents
+        const boxGeom = new THREE.BoxGeometry(halfExtents[0] * 2, halfExtents[1] * 2, halfExtents[2] * 2);
+        const box = new THREE.Mesh(boxGeom, baseMat);
+        box.position.y = halfExtents[1];
+        box.castShadow = box.receiveShadow = true;
+        group.add(box);
+        // Bottom skirt
+        const skirtGeom = new THREE.BoxGeometry(halfExtents[0] * 2.15, 0.15, halfExtents[2] * 2.15);
+        const skirt = new THREE.Mesh(skirtGeom, accentMat);
+        skirt.position.y = 0.075;
+        group.add(skirt);
+    }
+    return group;
+}
+
 function initBuildings() {
     const ptr = Module._getBuildingPtr();
     const count = Module._getBuildingCount();
     const stride = Module._getBuildingStride();
     const view = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
-
     for (let b = 0; b < count; b++) {
         const o = b * stride;
-        const px = view[o], py = view[o+1], pz = view[o+2];
-        const hx = view[o+3], hy = view[o+4], hz = view[o+5];
-        const type = view[o+6];
+        const px = view[o], py = view[o + 1], pz = view[o + 2];
+        const hx = view[o + 3], hy = view[o + 4], hz = view[o + 5];
+        const type = view[o + 6];
         const isRock = (type === 5);
-        const cr = view[o+10], cg = view[o+11], cb = view[o+12];
-
-        // Skip rocks for now — they have no collision and would clutter the scene
         if (isRock) continue;
-
-        const geom = new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2);
-        const mat = new THREE.MeshStandardMaterial({
-            color: new THREE.Color(cr, cg, cb),
-            roughness: 0.85,
-            metalness: 0.05,
-        });
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.position.set(px, py + hy * 0.5, pz);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        const cr = view[o + 10], cg = view[o + 11], cb = view[o + 12];
+        const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
+        mesh.position.set(px, py, pz);
         scene.add(mesh);
-        buildingMeshes.push(mesh);
+        buildingMeshes.push({ mesh, type });
     }
-    console.log('[R15] Buildings:', buildingMeshes.length, 'rendered (rocks skipped)');
+    console.log('[R18] Buildings:', buildingMeshes.length, 'composite meshes (turret/station/generator/interior/tower)');
 }
 
 // ============================================================
-// Players — capsule placeholders, one per slot
+// Players — composite procedural soldier (3 armor tiers, animated)
 // ============================================================
+const ARMOR_TIERS = [
+    { name: 'light',  bodyR: 0.30, bodyH: 0.85, shoulderR: 0.16, armR: 0.09, armL: 0.65,
+      legR: 0.13, legL: 0.85, jet: [0.50, 0.55, 0.22], scale: 0.96 },
+    { name: 'medium', bodyR: 0.36, bodyH: 0.95, shoulderR: 0.20, armR: 0.12, armL: 0.70,
+      legR: 0.16, legL: 0.90, jet: [0.58, 0.65, 0.27], scale: 1.00 },
+    { name: 'heavy',  bodyR: 0.46, bodyH: 1.05, shoulderR: 0.27, armR: 0.16, armL: 0.75,
+      legR: 0.20, legL: 0.95, jet: [0.72, 0.80, 0.32], scale: 1.08 },
+];
+
+function createPlayerMesh(armor) {
+    const t = ARMOR_TIERS[Math.min(armor, 2)];
+    const group = new THREE.Group();
+
+    const armorMat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.55, metalness: 0.4 });
+    const accentMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85, metalness: 0.2 });
+    const visorMat = new THREE.MeshStandardMaterial({
+        color: 0x111122, roughness: 0.18, metalness: 0.85,
+        emissive: 0x223344, emissiveIntensity: 0.25
+    });
+
+    // Body (chest) — tapered cylinder
+    const bodyGeom = new THREE.CylinderGeometry(t.bodyR * 0.85, t.bodyR, t.bodyH, 10);
+    const body = new THREE.Mesh(bodyGeom, armorMat);
+    body.position.y = 1.10;
+    body.castShadow = true; body.receiveShadow = true;
+    group.add(body);
+
+    // Hips
+    const hipsGeom = new THREE.BoxGeometry(t.bodyR * 1.6, 0.18, t.bodyR * 1.0);
+    const hips = new THREE.Mesh(hipsGeom, accentMat);
+    hips.position.y = 0.55;
+    hips.castShadow = true;
+    group.add(hips);
+
+    // Head
+    const headGeom = new THREE.SphereGeometry(0.20, 12, 10);
+    const head = new THREE.Mesh(headGeom, armorMat);
+    head.position.y = 1.78;
+    head.castShadow = true;
+    group.add(head);
+
+    // Helmet (cap)
+    const helmetGeom = new THREE.SphereGeometry(0.24, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.50);
+    const helmet = new THREE.Mesh(helmetGeom, accentMat);
+    helmet.position.y = 1.82;
+    helmet.castShadow = true;
+    group.add(helmet);
+
+    // Visor band
+    const visorGeom = new THREE.BoxGeometry(0.36, 0.09, 0.30);
+    const visor = new THREE.Mesh(visorGeom, visorMat);
+    visor.position.set(0, 1.74, 0.10);
+    group.add(visor);
+
+    // Shoulders
+    const shoulderGeom = new THREE.SphereGeometry(t.shoulderR, 8, 6);
+    const lShoulder = new THREE.Mesh(shoulderGeom, armorMat);
+    lShoulder.position.set(-t.bodyR - t.shoulderR * 0.3, 1.45, 0);
+    lShoulder.castShadow = true;
+    group.add(lShoulder);
+    const rShoulder = lShoulder.clone();
+    rShoulder.position.x = -lShoulder.position.x;
+    group.add(rShoulder);
+
+    // Arm groups (pivot at shoulder for animation)
+    function makeArm(side) {
+        const armGroup = new THREE.Group();
+        armGroup.position.set(side * (t.bodyR + t.shoulderR * 0.3), 1.45, 0);
+        const armGeom = new THREE.CylinderGeometry(t.armR, t.armR * 0.85, t.armL, 8);
+        const arm = new THREE.Mesh(armGeom, armorMat);
+        arm.position.y = -t.armL / 2;
+        arm.castShadow = true;
+        armGroup.add(arm);
+        // Hand
+        const handGeom = new THREE.SphereGeometry(t.armR * 1.1, 8, 6);
+        const hand = new THREE.Mesh(handGeom, accentMat);
+        hand.position.y = -t.armL - t.armR * 0.7;
+        armGroup.add(hand);
+        return armGroup;
+    }
+    const leftArm = makeArm(-1);
+    const rightArm = makeArm(1);
+    group.add(leftArm);
+    group.add(rightArm);
+
+    // Leg groups (pivot at hip)
+    function makeLeg(side) {
+        const legGroup = new THREE.Group();
+        legGroup.position.set(side * t.bodyR * 0.45, 0.55, 0);
+        const legGeom = new THREE.CylinderGeometry(t.legR, t.legR * 0.8, t.legL, 8);
+        const leg = new THREE.Mesh(legGeom, armorMat);
+        leg.position.y = -t.legL / 2;
+        leg.castShadow = true;
+        legGroup.add(leg);
+        // Foot
+        const footGeom = new THREE.BoxGeometry(t.legR * 1.6, 0.12, t.legR * 2.6);
+        const foot = new THREE.Mesh(footGeom, accentMat);
+        foot.position.set(0, -t.legL - 0.06, t.legR * 0.4);
+        legGroup.add(foot);
+        return legGroup;
+    }
+    const leftLeg = makeLeg(-1);
+    const rightLeg = makeLeg(1);
+    group.add(leftLeg);
+    group.add(rightLeg);
+
+    // Jetpack (on back)
+    const jetGeom = new THREE.BoxGeometry(...t.jet);
+    const jet = new THREE.Mesh(jetGeom, accentMat);
+    jet.position.set(0, 1.20, -t.bodyR - t.jet[2] * 0.45);
+    jet.castShadow = true;
+    group.add(jet);
+
+    // Jet thrusters
+    const thrustGeom = new THREE.CylinderGeometry(0.07, 0.10, 0.18, 8);
+    const lThrust = new THREE.Mesh(thrustGeom, accentMat);
+    lThrust.position.set(-0.16, 0.78, -t.bodyR - t.jet[2] * 0.45);
+    group.add(lThrust);
+    const rThrust = lThrust.clone();
+    rThrust.position.x = 0.16;
+    group.add(rThrust);
+
+    group.scale.setScalar(t.scale);
+
+    group.userData = {
+        armor: armor,
+        leftArm, rightArm, leftLeg, rightLeg, body,
+        armorMat, // can recolor for team
+    };
+    return group;
+}
+
 function initPlayers() {
     for (let i = 0; i < MAX_PLAYERS; i++) {
-        const geom = new THREE.CapsuleGeometry(0.6, 1.4, 4, 8);
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0x808080,
-            roughness: 0.5,
-            metalness: 0.4,
-        });
-        const mesh = new THREE.Mesh(geom, mat);
-        mesh.castShadow = true;
-        mesh.receiveShadow = true;
+        // Default to medium for slot init; will be replaced if armor changes
+        const mesh = createPlayerMesh(1);
         mesh.visible = false;
         scene.add(mesh);
         playerMeshes.push(mesh);
     }
-    console.log('[R15] Players: 16 capsule placeholders');
+    console.log('[R18] Players: 16 composite soldiers (3 armor tiers)');
+}
+
+function rebuildPlayerMesh(slot, armor) {
+    const old = playerMeshes[slot];
+    scene.remove(old);
+    old.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose && o.material.dispose(); });
+    const fresh = createPlayerMesh(armor);
+    fresh.visible = false;
+    scene.add(fresh);
+    playerMeshes[slot] = fresh;
+}
+
+// Procedural rig animation
+function animatePlayer(mesh, vx, vz, jetting, skiing, t, alive) {
+    if (!alive) return;
+    const ud = mesh.userData;
+    const horizSpeed = Math.sqrt(vx * vx + vz * vz);
+
+    if (jetting) {
+        ud.leftLeg.rotation.x = -0.25;
+        ud.rightLeg.rotation.x = -0.25;
+        ud.leftArm.rotation.x = -0.55;
+        ud.rightArm.rotation.x = -0.55;
+        ud.body.rotation.x = -0.30;
+    } else if (skiing) {
+        const tilt = -0.15;
+        ud.leftLeg.rotation.x = tilt;
+        ud.rightLeg.rotation.x = tilt;
+        ud.leftArm.rotation.x = -0.40;
+        ud.rightArm.rotation.x = -0.40;
+        ud.body.rotation.x = -0.20;
+    } else if (horizSpeed > 0.5) {
+        const phase = t * 5 * Math.min(1.5, horizSpeed / 6);
+        const amp = Math.min(0.65, horizSpeed / 8);
+        const swing = Math.sin(phase) * amp;
+        ud.leftLeg.rotation.x = swing;
+        ud.rightLeg.rotation.x = -swing;
+        ud.leftArm.rotation.x = -swing * 0.7;
+        ud.rightArm.rotation.x = swing * 0.7;
+        ud.body.rotation.x = 0;
+    } else {
+        ud.leftLeg.rotation.x = 0;
+        ud.rightLeg.rotation.x = 0;
+        ud.leftArm.rotation.x = 0;
+        ud.rightArm.rotation.x = 0;
+        ud.body.rotation.x = 0;
+    }
 }
 
 // ============================================================
-// Projectiles — sphere placeholders, one per slot
+// Projectiles, flags, weapon viewmodel
 // ============================================================
 function initProjectiles() {
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-        const geom = new THREE.SphereGeometry(0.25, 8, 6);
-        const mat = new THREE.MeshBasicMaterial({ color: 0xFFFFFF });
+        const geom = new THREE.SphereGeometry(0.20, 10, 8);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0xFFFFFF,
+            emissive: 0xFFFFFF,
+            emissiveIntensity: 1.5,
+            roughness: 0.4,
+            metalness: 0.1,
+        });
         const mesh = new THREE.Mesh(geom, mat);
         mesh.visible = false;
         scene.add(mesh);
         projectileMeshes.push(mesh);
     }
-    console.log('[R15] Projectiles: 256 sphere placeholders');
 }
 
-// ============================================================
-// Flags — pole + banner placeholder
-// ============================================================
 function initFlags() {
     for (let i = 0; i < 2; i++) {
         const group = new THREE.Group();
-        // Pole
-        const poleGeom = new THREE.CylinderGeometry(0.06, 0.06, 4, 6);
-        const poleMat = new THREE.MeshStandardMaterial({ color: 0x808080, metalness: 0.6, roughness: 0.4 });
+        const poleGeom = new THREE.CylinderGeometry(0.07, 0.07, 4.2, 8);
+        const poleMat = new THREE.MeshStandardMaterial({ color: 0x808080, metalness: 0.7, roughness: 0.35 });
         const pole = new THREE.Mesh(poleGeom, poleMat);
-        pole.position.y = 2;
+        pole.position.y = 2.1;
         pole.castShadow = true;
         group.add(pole);
-        // Banner
-        const bannerGeom = new THREE.PlaneGeometry(1.5, 0.9);
+        const bannerGeom = new THREE.PlaneGeometry(1.5, 0.95);
         const bannerMat = new THREE.MeshStandardMaterial({
             color: TEAM_COLORS[i],
             roughness: 0.85,
             side: THREE.DoubleSide,
+            emissive: TEAM_COLORS[i],
+            emissiveIntensity: 0.15,
         });
         const banner = new THREE.Mesh(bannerGeom, bannerMat);
-        banner.position.set(0.75, 3.3, 0);
+        banner.position.set(0.75, 3.5, 0);
+        banner.castShadow = true;
         group.add(banner);
         scene.add(group);
         flagMeshes.push(group);
     }
-    console.log('[R15] Flags: 2 pole+banner placeholders');
+}
+
+function initWeaponViewmodel() {
+    // Simple viewmodel: small angular box visible in lower-right of screen, attached to camera
+    const geom = new THREE.BoxGeometry(0.15, 0.10, 0.45);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x404040, roughness: 0.4, metalness: 0.6 });
+    weaponHand = new THREE.Mesh(geom, mat);
+    weaponHand.position.set(0.30, -0.25, -0.55);
+    // Add to camera so it follows view
+    // (Set up after camera is initialized in initStateViews/loop)
 }
 
 // ============================================================
-// Particles — single THREE.Points system, attribute-driven
+// Particles — type-aware shader-driven pool
 // ============================================================
+function makeSoftCircleTexture() {
+    const size = 64;
+    const c = document.createElement('canvas');
+    c.width = c.height = size;
+    const ctx = c.getContext('2d');
+    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
+    grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
+    grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
+    grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, size, size);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+}
+
 function initParticles() {
     particleGeom = new THREE.BufferGeometry();
     particlePositions = new Float32Array(MAX_PARTICLES * 3);
@@ -317,57 +744,128 @@ function initParticles() {
     particleGeom.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
 
     const mat = new THREE.PointsMaterial({
-        size: 0.4,
+        size: 0.6,
+        map: makeSoftCircleTexture(),
         vertexColors: true,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.95,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         sizeAttenuation: true,
+        alphaTest: 0.01,
     });
-    particlePoints = new THREE.Points(particleGeom, mat);
-    particlePoints.frustumCulled = false; // positions change every frame
-    scene.add(particlePoints);
-    console.log('[R15] Particles: 1024 THREE.Points');
+    particleSystem = new THREE.Points(particleGeom, mat);
+    particleSystem.frustumCulled = false;
+    scene.add(particleSystem);
 }
 
 // ============================================================
-// Build typed-array views into WASM linear memory.
-// Called once after init; reused every frame. ALLOW_MEMORY_GROWTH=0
-// guarantees the underlying ArrayBuffer never detaches.
+// Post-processing
 // ============================================================
+function initPostProcessing() {
+    const tier = readQualityFromSettings();
+    if (!tier.postProcess) {
+        composer = null;
+        return;
+    }
+    composer = new EffectComposer(renderer);
+    composer.setPixelRatio(tier.pixelRatio);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.6, 0.85);
+    composer.addPass(bloomPass);
+    if (tier.postProcess === 'full') {
+        gradePass = new ShaderPass(makeVignetteAndGradeShader());
+        composer.addPass(gradePass);
+    }
+    composer.addPass(new OutputPass());
+}
+
+function makeVignetteAndGradeShader() {
+    return {
+        uniforms: {
+            tDiffuse: { value: null },
+            vignetteIntensity: { value: 0.18 },
+            warmth: { value: 0.06 },
+            desaturation: { value: 0.10 },
+        },
+        vertexShader: /* glsl */`
+            varying vec2 vUv;
+            void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+        `,
+        fragmentShader: /* glsl */`
+            uniform sampler2D tDiffuse;
+            uniform float vignetteIntensity;
+            uniform float warmth;
+            uniform float desaturation;
+            varying vec2 vUv;
+            void main(){
+                vec4 c = texture2D(tDiffuse, vUv);
+                // Slight desaturation
+                float gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
+                c.rgb = mix(c.rgb, vec3(gray), desaturation);
+                // Warm shift in shadows
+                float lum = (c.r + c.g + c.b) / 3.0;
+                float shadowMask = 1.0 - smoothstep(0.0, 0.5, lum);
+                c.r += warmth * shadowMask;
+                c.b -= warmth * shadowMask;
+                // Vignette
+                vec2 uv = vUv - 0.5;
+                float v = 1.0 - dot(uv, uv) * vignetteIntensity * 4.0;
+                c.rgb *= v;
+                gl_FragColor = c;
+            }
+        `,
+    };
+}
+
+// ============================================================
+// Camera + state views
+// ============================================================
+function initScene_camera_init() {} // intentionally empty placeholder
+
 function initStateViews() {
     const buf = Module.HEAPF32.buffer;
-
     playerStride = Module._getPlayerStateStride();
     playerView = new Float32Array(buf, Module._getPlayerStatePtr(), MAX_PLAYERS * playerStride);
-
     projectileStride = Module._getProjectileStateStride();
     projectileView = new Float32Array(buf, Module._getProjectileStatePtr(), MAX_PROJECTILES * projectileStride);
-
     particleStride = Module._getParticleStateStride();
     particleView = new Float32Array(buf, Module._getParticleStatePtr(), MAX_PARTICLES * particleStride);
-
     flagStride = Module._getFlagStateStride();
     flagView = new Float32Array(buf, Module._getFlagStatePtr(), 2 * flagStride);
 
-    console.log('[R15] State views: player(' + playerStride + ') proj(' + projectileStride +
+    const aspect = window.innerWidth / window.innerHeight;
+    camera = new THREE.PerspectiveCamera(90, aspect, 0.5, 5000);
+    camera.position.set(0, 50, 0);
+    scene.add(camera);
+    camera.add(weaponHand);
+
+    console.log('[R18] State views: player(' + playerStride + ') proj(' + projectileStride +
                 ') part(' + particleStride + ') flag(' + flagStride + ')');
 }
 
 // ============================================================
-// Per-frame sync — read WASM state into Three.js objects
+// Per-frame sync
 // ============================================================
-function syncPlayers() {
+function syncPlayers(t) {
     const localIdx = Module._getLocalPlayerIdx();
     const count = Module._getPlayerStateCount();
+    const tier = QUALITY_TIERS[currentQuality];
     for (let i = 0; i < count; i++) {
         const o = i * playerStride;
         const visible = playerView[o + 18] > 0.5;
         const alive   = playerView[o + 13] > 0.5;
         const team    = playerView[o + 11] | 0;
-        const mesh = playerMeshes[i];
-        // Hide local player in first-person view (camera is at their head)
+        const armor   = playerView[o + 12] | 0;
+        let mesh = playerMeshes[i];
+
+        // Hot-swap mesh if armor type changed (rare)
+        if (mesh.userData.armor !== armor) {
+            rebuildPlayerMesh(i, armor);
+            mesh = playerMeshes[i];
+        }
+
         if (i === localIdx) {
             mesh.visible = false;
             continue;
@@ -375,15 +873,20 @@ function syncPlayers() {
         mesh.visible = visible && alive;
         if (!mesh.visible) continue;
 
-        mesh.position.set(playerView[o], playerView[o+1] + 1.2, playerView[o+2]);
-        // Apply only yaw to the player body (pitch is for the camera/head)
+        mesh.position.set(playerView[o], playerView[o + 1], playerView[o + 2]);
         mesh.rotation.set(0, playerView[o + 4], 0, 'YXZ');
 
-        // Team color update (skip if unchanged would need cache; small cost so just set)
-        const targetColor = TEAM_COLORS[team] ?? TEAM_COLORS[2];
-        if (mesh.material.color.getHex() !== targetColor) {
-            mesh.material.color.setHex(targetColor);
+        // Team color update
+        const teamHex = TEAM_TINT_HEX[team] ?? TEAM_TINT_HEX[2];
+        if (_lastPlayerColors[i] !== teamHex) {
+            mesh.userData.armorMat.color.setHex(teamHex);
+            _lastPlayerColors[i] = teamHex;
         }
+
+        // Procedural rig animation
+        animatePlayer(mesh, playerView[o + 6], playerView[o + 8],
+                      playerView[o + 14] > 0.5, playerView[o + 15] > 0.5,
+                      t, alive);
     }
 }
 
@@ -396,35 +899,34 @@ function syncProjectiles() {
         const alive = projectileView[o + 9] > 0.5;
         mesh.visible = alive;
         if (!alive) continue;
-        mesh.position.set(projectileView[o], projectileView[o+1], projectileView[o+2]);
+        mesh.position.set(projectileView[o], projectileView[o + 1], projectileView[o + 2]);
         const type = projectileView[o + 6] | 0;
         const color = PROJ_COLORS[type] ?? 0xFFFFFF;
         if (mesh.material.color.getHex() !== color) {
             mesh.material.color.setHex(color);
+            mesh.material.emissive.setHex(color);
         }
     }
 }
 
-function syncFlags() {
+function syncFlags(t) {
     for (let i = 0; i < 2; i++) {
         const o = i * flagStride;
         const group = flagMeshes[i];
-        const state = flagView[o + 4] | 0; // 0=base, 1=carried, 2=dropped
-        group.position.set(flagView[o], flagView[o+1], flagView[o+2]);
-        // Hide pole when carried (carrier has the banner attached visually)
-        // For R15 placeholder, just keep it visible everywhere.
+        const state = flagView[o + 4] | 0;
+        group.position.set(flagView[o], flagView[o + 1], flagView[o + 2]);
         group.visible = true;
-        // Slight rotation animation
-        group.children[1].rotation.y = performance.now() * 0.001;
-        // Dimmer when not at home
+        group.children[1].rotation.y = t * 0.6;
         group.children[1].material.opacity = state === 0 ? 1.0 : 0.7;
         group.children[1].material.transparent = state !== 0;
     }
 }
 
 function syncParticles() {
+    const tier = QUALITY_TIERS[currentQuality];
+    const cap = tier.particleCap;
     let activeCount = 0;
-    for (let i = 0; i < MAX_PARTICLES; i++) {
+    for (let i = 0; i < MAX_PARTICLES && activeCount < cap; i++) {
         const o = i * particleStride;
         const age = particleView[o + 7];
         if (age <= 0) continue;
@@ -433,17 +935,28 @@ function syncParticles() {
         particlePositions[dst + 1] = particleView[o + 1];
         particlePositions[dst + 2] = particleView[o + 2];
         const type = particleView[o + 6] | 0;
-        // type: 0=jet (orange), 3=explosion (orange-red), else white
-        if (type === 0 || type === 3) {
-            particleColors[dst]     = 1.0;
-            particleColors[dst + 1] = 0.55;
-            particleColors[dst + 2] = 0.10;
-        } else {
-            particleColors[dst]     = 0.9;
-            particleColors[dst + 1] = 0.9;
-            particleColors[dst + 2] = 1.0;
+        // Color by type (jet, ski, hit-spark, explosion, generic)
+        let r, g, b, sz;
+        if (type === 0) {        // jet flame: cyan-orange gradient by age
+            const ageT = Math.min(1, age * 2);
+            r = 1.0;
+            g = 0.4 + ageT * 0.5;
+            b = 0.05 + (1 - ageT) * 0.6;
+            sz = 0.45;
+        } else if (type === 3) { // explosion: bright orange-yellow
+            r = 1.0; g = 0.55; b = 0.15;
+            sz = 0.7;
+        } else if (type === 4) { // spark / generic hit
+            r = 1.0; g = 0.85; b = 0.4;
+            sz = 0.30;
+        } else {                 // generic / ski spray: muted
+            r = 0.9; g = 0.85; b = 0.7;
+            sz = 0.35;
         }
-        particleSizes[activeCount] = Math.min(0.5, age * 0.5);
+        particleColors[dst]     = r;
+        particleColors[dst + 1] = g;
+        particleColors[dst + 2] = b;
+        particleSizes[activeCount] = Math.min(sz, age * sz);
         activeCount++;
     }
     particleGeom.setDrawRange(0, activeCount);
@@ -459,20 +972,51 @@ function syncCamera() {
     const pitch = playerView[o + 3];
     const yaw   = playerView[o + 4];
 
-    camera.position.set(px, py + 1.7, pz); // eye height 1.7m above feet
+    camera.position.set(px, py + 1.7, pz);
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
 
-    // FOV may have been changed via settings menu
     const fov = Module._getCameraFov();
     if (Math.abs(camera.fov - fov) > 0.5) {
         camera.fov = fov;
         camera.updateProjectionMatrix();
     }
 
-    // Sun light follows camera so shadow map covers the active area
-    sunLight.position.set(px + 800, 1600, pz + 600);
+    // Sun follows the camera so the (smaller) shadow frustum covers active area
+    sunLight.position.set(px + sunPos.x * 800, py + sunPos.y * 800, pz + sunPos.z * 800);
     sunLight.target.position.set(px, py, pz);
     sunLight.target.updateMatrixWorld();
+}
+
+function syncTurretBarrels() {
+    // Aim turret barrel toward nearest visible enemy player (cosmetic; doesn't affect simulation)
+    // For R18, just keep the barrel rotating slowly so it visibly moves
+    const t = performance.now() * 0.0005;
+    for (const b of buildingMeshes) {
+        if (b.type === 3 && b.mesh.userData && b.mesh.userData.barrel) {
+            b.mesh.rotation.y = Math.sin(t + b.mesh.position.x * 0.1) * 0.5;
+        }
+    }
+}
+
+// ============================================================
+// Quality apply (called from settings menu when graphics tier changes)
+// ============================================================
+function applyQuality(newQuality) {
+    if (!QUALITY_TIERS[newQuality]) return;
+    currentQuality = newQuality;
+    const tier = QUALITY_TIERS[newQuality];
+    renderer.setPixelRatio(tier.pixelRatio);
+    renderer.shadowMap.enabled = tier.shadowMap > 0;
+    sunLight.castShadow = tier.shadowMap > 0;
+    if (tier.shadowMap > 0 && sunLight.shadow.mapSize.x !== tier.shadowMap) {
+        sunLight.shadow.mapSize.set(tier.shadowMap, tier.shadowMap);
+        // Force shadow map rebuild
+        if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; }
+    }
+    // Rebuild post-processing chain
+    initPostProcessing();
+    onResize();
+    console.log('[R18] Quality switched to ' + newQuality);
 }
 
 // ============================================================
@@ -483,31 +1027,27 @@ function loop() {
         requestAnimationFrame(loop);
         return;
     }
-
-    // 1. Advance C++ simulation by one frame
+    const t = performance.now() * 0.001;
     Module._tick();
-
-    // 2. Read fresh state into Three.js scene
-    syncPlayers();
+    syncPlayers(t);
     syncProjectiles();
-    syncFlags();
+    syncFlags(t);
     syncParticles();
+    syncTurretBarrels();
     syncCamera();
 
-    // 3. Render
-    renderer.render(scene, camera);
+    if (composer) composer.render();
+    else renderer.render(scene, camera);
 
-    // 4. Diagnostic: log frame stats every 5s
     _frameCount++;
     const now = performance.now();
     if (now - _lastDiagTime > 5000) {
         const fps = Math.round(_frameCount / ((now - _lastDiagTime) / 1000));
         const info = renderer.info.render;
-        console.log('[R15] ' + fps + 'fps, ' + info.calls + ' draw calls, ' + info.triangles + ' tris');
+        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls, ' + info.triangles + ' tris, quality=' + currentQuality);
         _frameCount = 0;
         _lastDiagTime = now;
     }
-
     requestAnimationFrame(loop);
 }
 
@@ -518,9 +1058,11 @@ function onResize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
-    camera.aspect = w / h;
-    camera.updateProjectionMatrix();
-    // Make canvas fill the viewport instead of the fixed 1024x768 from the legacy renderer
+    if (composer) composer.setSize(w, h);
+    if (camera) {
+        camera.aspect = w / h;
+        camera.updateProjectionMatrix();
+    }
     const canvas = document.getElementById('canvas');
     canvas.style.width = w + 'px';
     canvas.style.height = h + 'px';
