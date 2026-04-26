@@ -1,92 +1,72 @@
-# Manus Feedback — Round 26: Custom-map Collision + R2 Replay Sharing + Ranked Tiers + Polish (SONNET)
+# Manus Feedback — Round 27: Public Playtest Hardening + Content Moderation (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
 **Severity:** Standard
-**Type:** Implementation — close R25's known limitation (C++ collision honors custom maps), ship the deferred R2 replay sharing, layer ranked-mode tiers on R24's ELO foundation, finish map preview videos, and clean up post-launch quality-of-life
+**Type:** Implementation — harden the build for public playtest exposure with anti-cheat improvements, content moderation primitives, observability deepening, and post-playtest survey instrumentation
 
 ---
 
 ## 1. Context
 
-R25 delivered the entire custom-map system, replay playback engine, and basic map editor in one round (1915 insertions, 6/8 hard-implemented). Two items were appropriately deferred (R2 replay sharing and map preview videos) to keep the critical path moving. One known limitation surfaced: the C++ WASM physics tick still uses hardcoded Raindance building AABBs for collision detection, so on Dangercrossing or Iceridge or any custom map, players visually see the Three.js-rendered buildings but their bullets pass through and their movement ignores them.
+R17→R26 delivered a feature-complete multiplayer experience with classes, voice, custom maps, replays, ranked tiers, and a fully wired social layer. The build is technically ready to handle public exposure, but going public introduces categories of risk the synthetic playtest hasn't surfaced: account abuse (multiple accounts farming rating), text-channel abuse (slurs, harassment in usernames or chat), bot/cheat sophistication (more than the divergence anti-cheat catches), and operational blindness (not knowing what's actually happening in production).
 
-R26 closes that gap, ships the two deferred items, layers ranked-mode tiers on top of R24's skill rating, and addresses the small handful of post-launch QoL findings that have surfaced from synthetic playtesting and code review.
+R27 hardens these surfaces before public exposure. Expect smaller-scoped items than recent rounds — the work is mostly defensive and observability-focused rather than feature-additive.
 
 ---
 
 ## 2. Concrete tasks
 
-### 2.1 P0 — WASM custom-map building collision (~30 min)
+### 2.1 P0 — Anti-cheat: speed/jet-energy server-side validation (~25 min)
 
-The C++ WASM module exports a new function `setMapBuildings(int count, float* aabbData)` where `aabbData` is a flat array of `[minX, minY, minZ, maxX, maxY, maxZ]` per building, packed into 6 floats per AABB. The renderer in `renderer.js` already constructs the building meshes from the map JSON; extend its `loadMap(doc)` to also call `Module._setMapBuildings(count, ptrToHeapF32)` after writing the AABB array into a `Module._malloc`-allocated buffer.
+The R20 divergence anti-cheat catches gross client-server position drift but doesn't catch sophisticated cheats that respect the server's authoritative position while abusing client-side reported velocity. Add server-side velocity bounds checking in `sim.ts`: max horizontal velocity 60 m/s (sustained ski, downhill), max vertical jet velocity +20 m/s, max jet energy consumption rate matches class regen rate. If a player's reported velocity exceeds bounds for >3 consecutive ticks, log a warning to telemetry with the player UUID and clamp the velocity server-side.
 
-The C++ side stores the array in a global `g_mapBuildings: AABB[64]` (max 64 buildings, gracefully truncate above that with a console warning) and replaces the hardcoded Raindance AABB array used in `playerVsBuildingCollide()` and `projectileVsBuildingCollide()`. The first call to `setMapBuildings()` overrides the default; if no call is made (Raindance default), behavior is unchanged.
+Three strikes within 60 seconds = soft-kick (close 4003 with reason "speed-validation-failed"). The kick is logged to a server-only audit file `comms/audit_log.jsonl` with timestamp + UUID + violation details. UUIDs accumulating ≥5 kicks in 7 days are added to a `BLOCKED_UUIDS` server set with daily review surfacing in `/dashboard`.
 
-Verification: load Dangercrossing, fire a disc at a tower, confirm the disc detonates against the tower instead of passing through. Document in `comms/open_issues.md` that this also fixes any latent bullet-pass-through reports.
+### 2.2 P0 — Username & chat moderation (~20 min)
 
-### 2.2 P0 — R2 replay sharing (~25 min)
+Profanity-filter username on creation. Use a small bundled wordlist (the standard `naughty-words` or equivalent, ~1500 entries) plus l33t-speak normalization. Block username creation that matches; show "Username contains restricted content" with no further detail. The wordlist file ships in `client/moderation.js` and runs both client-side (UX feedback before submission) and server-side (definitive enforcement).
 
-Wire up Cloudflare R2 (S3-compatible object storage) for shared replay storage. Server endpoint `POST /replay-upload` accepts the binary replay blob (Content-Type: `application/octet-stream`) and stores it at key `replays/<random16hex>.tribes-replay` with a 30-day lifetime metadata tag. Returns JSON `{shareUrl: "https://<worker>.workers.dev/replay/<hash>"}`.
+For text chat (R23 didn't include chat — chat is the next logical add but defer to R28), the moderation primitive should be ready to drop in. Add `client/moderation.js` `sanitizeText(text): {clean, blocked: boolean}` exporting both functions.
 
-GET endpoint `/replay/<hash>` streams the binary back. Client extends the match-end "Save Replay" with a "Share Replay" sibling button that uploads and copies the share URL to clipboard. The MAIN MENU's "WATCH REPLAY" extends to also accept a URL paste (textbox in addition to file picker).
+Reporting: Add a "REPORT PLAYER" button on right-click of a player's nameplate (or via the scoreboard's three-dot menu). Submitting a report sends `POST /report` with the reporter's UUID, the reported UUID, the offense category (cheating, harassment, slurs, voice-abuse, other), and an optional 200-char description. Reports accumulate in DO storage; the `/dashboard` shows top 10 reported UUIDs with action buttons (warn / kick / blocklist 7d).
 
-R2 setup uses the standard AWS S3 SDK pinned to the latest stable, configured with R2 endpoint and credentials from environment variables `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ACCOUNT_ID`. Document setup in `server/cloudflare/README.md`. R2 free tier is 10GB storage and 1M Class A operations per month — sufficient for 1000+ replays.
+### 2.3 P0 — Voice-chat moderation: mute UI (~15 min)
 
-If R2 setup proves more than 25 minutes of work, fall back to storing replays in the lobby Durable Object's storage with a 7-day rotation. Document the trade-off.
+R23 shipped WebRTC mesh voice chat without moderation surfaces. Add a per-player mute control: each remote player's nameplate gets a small voice icon when they speak, and clicking it toggles mute for that player on the local client only (sets the audio gain to 0). Muted state persists in `tribes:mutedUUIDs` localStorage so the player stays muted across sessions.
 
-### 2.3 P0 — Ranked-mode tiers (~25 min)
+Bulk action: settings has a "MUTE ALL" toggle that mutes all incoming voice (default off). Server reporting integrates: clicking "REPORT PLAYER" with category "voice-abuse" auto-mutes that player.
 
-Layer a tier system on R24's ELO. Tiers: Bronze (0-999), Silver (1000-1199), Gold (1200-1399), Platinum (1400-1599), Diamond (1600-1799), Master (1800+). Each tier has a distinctive color (CSS variable) and a small badge icon (procedural SVG, no external assets).
+### 2.4 P1 — Observability: structured event log (~25 min)
 
-Display: the player's tier badge appears next to their name on the main menu, in the in-match scoreboard, and on nameplates above their head in-game. The end-of-match overlay shows tier promotions/demotions with a brief animation — "Promoted to Gold!" with a 2-second pulse highlight.
+Extend the existing `/metrics` endpoint with structured event logs. Define a small set of events: `match.started`, `match.ended`, `player.connected`, `player.disconnected`, `player.kicked`, `player.reported`, `cheat.detected`, `error.5xx`. Each event has a JSON payload with relevant fields (UUIDs, match ID, timestamp, error message).
 
-Mode segregation: the lobby browser splits Quick Match into "CASUAL" (no rating change, anyone can join) and "RANKED" (rating updates apply, requires player has played ≥3 casual matches first as a sanity gate). Casual matches don't update ratings even if the rated-match criteria are met — explicit opt-in required for rating changes via choosing the RANKED button.
+Endpoint `GET /events?since=<timestamp>&type=<event>&limit=100` (token-auth gated like /dashboard) returns recent events filtered by type. The `/dashboard` adds a tail-events panel showing the last 50 events live (poll every 5s). Filter dropdown for event type.
 
-Tier-restricted matchmaking: the existing 200-point window from R24 still applies, but additionally for ranked mode, the matchmaker prefers same-tier matches when the queue size allows. Cross-tier matches still happen if no same-tier opponent is available within 30 seconds of queueing.
+This unblocks debugging real production issues — a player reports "lost connection mid-match," you check the dashboard for that match ID's events and see "player.disconnected reason=ws-close-1006" with the timestamp, and triangulate from there.
 
-### 2.4 P1 — Map preview videos (deferred from R25) (~20 min)
+### 2.5 P1 — Auto-restart server on crash (~15 min)
 
-When a player hovers over a lobby in the lobby browser for >500ms, the lobby's map thumbnail enlarges and a 5-second autoplay loop renders. Implementation: precompute these videos at map publish time. For each launch map, run a script `tools/genpreview.ts` that loads the map in a headless Three.js context (using the `three` npm package + `node-canvas` or similar), captures 150 frames at 30 FPS along a predefined fly-through camera path, encodes via FFmpeg to H.264 mp4 at 480×270 ~150KB per clip.
+The Cloudflare Workers Durable Object should auto-recover on crash, but verify and document the behavior. Add a top-level try-catch in the main lobby tick loop in `lobby.ts` that catches any uncaught exception, logs `error.5xx` event, persists the current match state to DO storage, and restarts the tick loop after a 100ms cooldown. Players experience a brief stall but stay connected.
 
-Pre-rendered clips ship in `client/maps/preview/<mapId>.mp4`. The lobby browser hover-preview reads from `/maps/<mapId>.mp4` (served by the static file CDN, not the worker). Custom user-uploaded maps don't get auto-generated previews in R26 — that's an R27+ scope item.
+For local development (Bun server), add a basic process supervisor: `server/run.sh` starts the server, monitors for crashes, restarts within 5 seconds with exponential backoff capping at 60s. Crashes are logged to `server/crashlog.txt` with timestamp + stack trace + last 100 events from the structured log.
 
-If headless Three.js rendering is too brittle (Node + Three.js + node-canvas is a known-fragile stack), generate the previews as animated GIFs from a top-down 2D rendering using the same path the replay engine uses for its top-down view. Smaller (~80KB) and dead-simple to produce. Acceptable trade-off.
+### 2.6 P1 — Post-match survey + sentiment tracking (~15 min)
 
-### 2.5 P1 — Open-issues triage + fix-up (~25 min)
+R24's per-match feedback (1-5 stars + tag list) is a good foundation. Extend with a trailing question after the rating: "What's the one thing you'd change about Tribes?" — free-text 280 chars, optional submit. Aggregated sentiment lives in DO storage with a daily summary at `/dashboard`: total responses, average rating, top 5 most-cited issues from the tag list, sample of free-text submissions (first 20 chars + ellipsis to preserve writer privacy in the dashboard view, full text only via a "VIEW FULL" gate that requires admin token).
 
-Several low-severity items have accumulated in `comms/open_issues.md` (or similar). Triage and fix the top 5 by user-impact:
+This is the highest-leverage instrument we can add — it captures what players actually care about, not what we think they should care about.
 
-1. The compass UI element shows "N/NE/E/SE/S/SW/W/NW" but the player's actual facing direction is reflected with a small lag of ~3 frames due to the snapshot interpolation. Read the local prediction state for the compass (no network round-trip), syncing only the corrections from server snapshots.
+### 2.7 P2 — GDPR-lite: data export + delete (~15 min)
 
-2. The "INVITE FRIENDS" button copies the wrong URL when the player is in a custom lobby vs the public quick-match queue. Fix: when in a custom lobby, the URL includes `?lobby=<id>`; when in quick-match, just the bare URL.
+Add `/account/export?uuid=<uuid>&token=<oneTimeToken>` returning a JSON dump of all stored data for that UUID (skill rating, match history, reports made, reports received, mute list, friends list). The token is a 32-char random string emailed... wait, no email — instead, the token is generated client-side and only works if presented by the same UUID it's claiming, with a 5-minute expiry, fired via the in-game settings "EXPORT MY DATA" button.
 
-3. The match-end overlay's "PLAY AGAIN" vote sometimes stalls if a player has disconnected. Server: ignore disconnected players in the vote-quorum calculation.
+`POST /account/delete?uuid=<uuid>&token=<oneTimeToken>` removes all stored data for that UUID after a 7-day grace period. Settings adds "DELETE MY ACCOUNT" with a confirmation modal. After 7 days the player's data is purged; if they reconnect within 7 days the delete is auto-cancelled.
 
-4. The settings modal's "RESET" button doesn't restore the per-class loadout selection (Light/Medium/Heavy). Fix: include `tribes:classId` in the keys cleared by reset.
+### 2.8 P2 — Help & support page (~15 min)
 
-5. The replay timeline's kill-event markers can overlap when many kills happen within ~1 tick of each other. Cluster-render: when two markers are within 5px on the timeline, show a single marker with a count indicator ("3 kills").
+The main menu adds a "HELP" tab (next to PROFILE from R26). Static page with: keybindings reference, troubleshooting (mic permission denied → instructions, low FPS → suggest graphics tier change, lag → check ping, crashes → link to support discord), report-a-bug button (opens a templated email to `tribes-bugs@<your-domain>` or a GitHub issue link if you've created one), credits, fan-project disclaimer.
 
-If the open-issues list is shorter than 5 items, fix what's there and use the remaining time to write a quick `CONTRIBUTING.md` covering how a player could submit a custom map for inclusion in the official map registry.
-
-### 2.6 P2 — Stats & profile page (~20 min)
-
-The main menu adds a "PROFILE" tab next to the existing tabs. The profile page shows the player's username (set in settings), their UUID, their current tier badge + rating, lifetime stats from the per-match telemetry CSV (total matches, K/D, captures, win rate, time played, favorite class, favorite map), and a recent-matches list with per-match summary cards (5 most recent).
-
-Click a recent-match card to open the replay (if the replay was saved or shared). The profile is fully client-side with no new server endpoints — the data is queried from the existing `/maps-list` and `/replay-list` endpoints plus a new `/player-stats?uuid=<uuid>` endpoint that aggregates from the telemetry CSV.
-
-Privacy: profiles are only visible to the player themselves and to friends in the friends list (R24). Public-stats opt-in toggle in settings.
-
-### 2.7 P2 — Performance dashboard (~15 min)
-
-The existing `/dashboard` from R21 currently shows real-time CCU and tick latency. Extend with: per-region average ping (assuming CF Workers edge latency hints), per-map play counts last 24h, top 10 players by rating, current ranked queue depth per tier. Token-auth gate stays as configured in R21.
-
-This is operationally useful for monitoring health during the public playtest phase — lets you see at a glance if the server's healthy and players are engaging.
-
-### 2.8 P3 — Discoverability: web crawler/SEO meta tags (~10 min)
-
-Add proper SEO meta tags to `shell.html` and `index.html`: `<meta name="description">`, OpenGraph tags for social-share previews (Twitter/Discord/LinkedIn), Canonical URL, Schema.org VideoGame markup. Target: when someone shares the URL on Twitter/Discord, the preview shows a screenshot of the game with a compelling description, not the raw URL.
-
-Bonus: register the project at `https://search.google.com/search-console` (manual user step, document in README) so Google indexes the public playtest URL within 24-48 hours.
+The static content lives in `client/help/` as Markdown files compiled to HTML at build time, or just inline in `shell.html`. Either approach acceptable.
 
 ---
 
@@ -94,30 +74,30 @@ Bonus: register the project at `https://search.google.com/search-console` (manua
 
 The first six lines below capture what must function end-to-end. The last two are nice-to-have polish.
 
-A bullet fired at a custom-map building (Dangercrossing tower, Iceridge bunker) detonates against the building rather than passing through. The match-end "Share Replay" button uploads the binary file to R2, returns a share URL, and pasting that URL into the main menu's "WATCH REPLAY" successfully retrieves and plays the replay. A player choosing RANKED mode in the lobby browser has their rating updated after each match and the appropriate tier badge displays consistently in all three locations (main menu, scoreboard, in-game nameplate). Map preview clips auto-play on hover for the three launch maps. The top 5 open-issues fixes verifiably function as described. The PROFILE tab shows the player's lifetime stats and at least 1 recent-match card. The performance dashboard shows the new metrics. SEO meta tags pass a basic Twitter Card validator preview.
+A player reporting unrealistic velocity (>60 m/s sustained for >3 ticks) gets server-clamped and after 3 violations in 60s, soft-kicked with audit log entry. Profanity in usernames is blocked at creation time both client and server-side. Right-click on a player's nameplate opens a report menu and selecting a category sends a `/report` request that appears in the dashboard. Voice mute persists across sessions and the auto-mute on report-voice-abuse works. The `/events` endpoint returns recent events with filter support, and the dashboard tail panel updates every 5s. The post-match survey collects free-text feedback and the daily summary appears on the dashboard. The GDPR export and delete flows work end-to-end. The HELP page covers all listed sections.
 
 ---
 
 ## 4. Compile/grep guardrails
 
-Standard guardrails: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any`, all new client files as ES modules, dependencies pinned. R2 client should use the standard AWS S3 SDK pinned version. Bun build clean. The new `setMapBuildings()` C++ export must not be called with count > 64 — graceful truncation with `printf` warning.
+Standard guardrails: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any`, all new client files as ES modules, dependencies pinned. The bundled profanity wordlist must be UTF-8 and ≤50KB compressed. Server-side moderation must run before client-side feedback (defense-in-depth: never trust client feedback as authoritative).
 
 ---
 
 ## 5. Time budget
 
-A reasonable Sonnet round at 150-180 minutes covers all P0 and P1 items. The C++ collision wiring is small but precise; the R2 setup is mostly boilerplate; ranked tiers are mostly UI-side. Map previews are the biggest unknown — fall back to GIFs if headless 3D doesn't pan out. Stats and dashboard are mostly client-side aggregation with one new endpoint each.
+A reasonable Sonnet round at 130-160 minutes covers all P0 and P1 items. P0 anti-cheat + moderation are mechanical; observability is mostly endpoint plumbing; auto-restart is small. P2 items are independent and ship if budget allows. The post-match survey free-text is the highest user-impact small item — prioritize over stretch P2.
 
 ---
 
 ## 6. Decision authority for ambiguities
 
-If R2 SDK setup proves brittle on Cloudflare Workers (the R2 SDK has occasionally had Workers-runtime compatibility issues), fall back to storing replays in the lobby DO storage with 7-day rotation; document this in `comms/open_issues.md` for R27 to revisit. If the headless Three.js stack for map preview videos proves brittle, ship animated GIFs from the top-down 2D replay-engine view instead — smaller and simpler, accept the lower visual fidelity. If the ranked queue is empty for a tier and matchmaking would block forever, drop the tier-preference within 30 seconds of queueing and accept a cross-tier match. If the player's tier demotion would put them below Bronze, clamp at Bronze and note "rating floor reached" in the match-end overlay. If `setMapBuildings()` reveals collision bugs in non-Raindance maps (e.g., AABBs misaligned with mesh visuals), document the issue in `comms/open_issues.md` and fix in R27 — don't block R26.
+If the bundled profanity wordlist licensing is unclear (most are MIT or CC), pick the MIT-licensed list (commonly `bad-words` or `naughty-words`) and document the source in `client/moderation.js` header. If the velocity bounds prove too tight in legitimate gameplay (Tribes ski + downhill can hit 80+ m/s), bump max horizontal to 80 m/s and add a graduated warning system: 60-80 = log only, 80-100 = warn, >100 = clamp. If GDPR delete grace-period reverts cause race conditions with active matches, just hard-delete after 7 days and note in policy that 7 days is the window for cancellation. If the dashboard's tail-events panel causes performance issues (poll-rate too high), drop poll rate to 30s with a manual refresh button. If `/report` is abused (e.g., a single UUID report-spamming), rate-limit to 10 reports per UUID per day with a soft block after.
 
 ---
 
 ## 7. Roadmap context
 
-R26 closes the loop on R25's deferred items and elevates the matchmaking and social experience to ranked-mode-quality. After R26, the player experience is feature-complete for a public v1.0. R27+ enters mod-loader, tournament/event infrastructure, and content-creation tools that distinguish a sustainable hobby project from a one-off demo.
+R27 is the safety + observability layer for going public. R28 will add text chat + emoji + chat moderation reading from the R27 sanitizer primitive. R29 will iterate on what the public playtest reveals — bug fixes, balance, performance issues. R30 enters mod-loader / Steam Workshop-style content sharing.
 
-The next 2-3 rounds (R26-R28) should focus exclusively on stability and observability — running the public playtest, capturing user feedback, fixing the issues that surface, and tightening the experience based on real usage. R28+ can resume feature additions once the foundation is proven.
+After R27 lands, you can confidently share the URL widely without worrying that the first abusive player crashes the experience for everyone else. That's the threshold to actually start marketing the project.
