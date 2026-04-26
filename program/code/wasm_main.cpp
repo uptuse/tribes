@@ -2126,7 +2126,13 @@ extern "C" void mainLoop(){
     // R15: populate render-state for JS consumers (always runs, regardless of mode)
     populateRenderState();
 
-    // --- Render --- (LEGACY WebGL path; skipped when Three.js renderer is active)
+    // ============================================================
+    // LEGACY RENDERER — SUNSET PLANNED R18.1 (~1 week from R17 cutover).
+    // Active only when ?renderer=legacy or g_renderMode==0.
+    // All NEW feature work goes to renderer.js (Three.js path).
+    // Bug fixes here only if they affect data also exposed to renderer.js.
+    // Do NOT add visual quality improvements; R18 cashes in on Three.js.
+    // ============================================================
     if(g_renderMode != 0) {
         // Three.js mode: still broadcast HUD + audio state to JS overlays
         broadcastHUD();

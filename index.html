@@ -236,6 +236,22 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* Damage flash — red tint pulse when local player takes damage */
+    #damage-flash { position:fixed; top:0; left:0; width:100%; height:100%; z-index:14;
+      pointer-events:none; background:radial-gradient(circle at center, rgba(192,16,16,0) 30%, rgba(180,0,0,0.55) 100%);
+      opacity:0; transition:opacity 0.4s ease-out; mix-blend-mode:multiply; }
+    #damage-flash.hit { opacity:1; transition:opacity 0.05s ease-in; }
+
+    /* Pointer-lock state — subtle border + dim when pointer is unlocked mid-game */
+    #ptr-lock-hint { position:fixed; top:0; left:0; width:100%; height:100%; z-index:13;
+      pointer-events:none; box-shadow:inset 0 0 0 3px rgba(212,160,48,0.5);
+      background:rgba(0,0,0,0.18); display:none;
+      align-items:center; justify-content:center; }
+    #ptr-lock-hint.show { display:flex; }
+    #ptr-lock-hint > div { font-family:'Barlow Condensed',sans-serif; font-size:1em;
+      letter-spacing:3px; color:#FFC850; background:rgba(10,8,4,0.85);
+      border:1px solid #5A4A2A; padding:6px 16px; }
+
     /* Settings modal */
     #settings-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
       z-index:35; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; }
@@ -352,6 +368,10 @@
     <!-- Game-event log -->
     <div id="eventlog"></div>
   </div>
+
+  <!-- Damage flash + pointer-lock visual overlays -->
+  <div id="damage-flash"></div>
+  <div id="ptr-lock-hint"><div>CLICK TO RESUME</div></div>
 
   <!-- Respawn overlay -->
   <div id="respawn-overlay">
@@ -746,7 +766,17 @@
     ];
 
     var lastWpn=-1;
+    var lastHpForFlash=-1, _flashTimeout=null;
+    function triggerDamageFlash(){
+      var df=document.getElementById('damage-flash');if(!df)return;
+      df.classList.add('hit');
+      if(_flashTimeout)clearTimeout(_flashTimeout);
+      _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
+    }
     window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
+      // Damage flash on HP drop (>= 2 HP loss to filter noise / regen)
+      if(lastHpForFlash>=0 && hp<lastHpForFlash-2 && hp>0){triggerDamageFlash();}
+      lastHpForFlash=hp;
       // Health bar
       var hf=document.getElementById('hp-fill');
       if(hf){
@@ -1455,6 +1485,17 @@
     var canvas=document.getElementById('canvas');
     canvas.width=1024;canvas.height=768;
     canvas.addEventListener('click',function(){if(gameStarted)canvas.requestPointerLock();});
+    // Pointer-lock visualization: subtle dim + brass border + "CLICK TO RESUME" prompt
+    document.addEventListener('pointerlockchange',function(){
+      var hint=document.getElementById('ptr-lock-hint');if(!hint)return;
+      var locked=document.pointerLockElement===canvas;
+      // Show hint only when in-game AND no modal is open AND pointer is unlocked
+      var modalOpen=document.getElementById('settings-modal').classList.contains('active')
+                || document.getElementById('escmenu').classList.contains('active')
+                || document.getElementById('matchend').classList.contains('active')
+                || document.getElementById('stationui').classList.contains('active');
+      hint.classList.toggle('show',gameStarted && !locked && !modalOpen);
+    });
 
     var Module={
       canvas:canvas,
@@ -1484,13 +1525,16 @@
       onRuntimeInitialized:function(){
         document.getElementById('loading').classList.add('hidden');
         showScreen('mainmenu');
-        // R15: opt-in Three.js renderer via ?renderer=three URL flag
-        var useThree = new URLSearchParams(location.search).get('renderer') === 'three';
+        // R17 cutover: Three.js is the DEFAULT renderer.
+        // Opt out via ?renderer=legacy (sunsetting in R18.1).
+        var rendererFlag = new URLSearchParams(location.search).get('renderer');
+        var useLegacy = rendererFlag === 'legacy';
+        var useThree  = !useLegacy;
         if(useThree){
-          console.log('[R15] ?renderer=three detected — switching to Three.js renderer');
-          // Wait for the user to click Play (start the game) so that the canvas
-          // becomes visible and we have a meaningful local player to follow
+          console.log('[R17] Three.js renderer (default). Use ?renderer=legacy to fall back.');
           window.__tribesUseThree = true;
+        }else{
+          console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
         }
         // R16: opt-in network client via ?multiplayer=local|remote URL flag
         var mp = new URLSearchParams(location.search).get('multiplayer');

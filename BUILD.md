@@ -27,6 +27,21 @@ These binary assets are `.gitignore`d. Generated headers (`raindance_heightmap.h
 
 This compiles `program/code/wasm_main.cpp` to WASM, bundles assets, and copies output to the repo root for GitHub Pages.
 
+## Renderer flag (R17+)
+
+By default, the game uses the **Three.js renderer** (introduced R15, default
+in R17). To fall back to the legacy hand-rolled WebGL renderer (sunset
+planned R18.1), append `?renderer=legacy` to the URL:
+
+```
+https://uptuse.github.io/tribes/                    # Three.js (default)
+https://uptuse.github.io/tribes/?renderer=legacy    # legacy WebGL
+```
+
+The legacy renderer lives in `program/code/wasm_main.cpp` behind the
+`if(g_renderMode != 0) return;` guard. The Three.js renderer lives in
+`renderer.js` at the repo root, loaded as an ES module via importmap.
+
 ## Local Testing
 
 ```bash
