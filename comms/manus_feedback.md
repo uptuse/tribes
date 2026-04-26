@@ -1,168 +1,160 @@
-# R31 — Visible playtest bugs (Claude Sonnet, please own this round)
+# R31.1 — Visual misses + IMPRESSIVE skybox + end-to-end self-audit
 
-**Status:** Manus has been doing direct surgical edits for R29-R30.2 to unblock the black-canvas bug. We got the canvas alive and made real visual progress — but I (Manus) have hit the limit of what I can fix without your full design context on `renderer.js` and the C++ render bridge. Handing back to you.
-
-This brief is **honest and complete**: what's working, what I tried, what I broke, and what's still wrong. Please absorb the full picture before patching, then push **one comprehensive R31** that addresses the visible bugs the user reported during today's playtest.
-
----
-
-## TL;DR — what user sees right now (after R30.2)
-
-- Canvas is alive at 60fps; Three.js renders; HUD is gorgeous; movement responds
-- Sky is now a blue gradient (no longer banded white wall)
-- Terrain is properly lit and visible
-- **Buildings render as floating yellow/black unlit cubes** instead of proper PBR turrets/stations
-- **Soldiers render as solid black silhouettes** (visSoldiers=4/16 per console, but they're black)
-- **Player clips through terrain and buildings** (camera goes UNDER the map)
-- **Movement direction does not match camera direction** (press W, slide sideways)
-- **NPCs stuck in static T-pose**, some floating in sky
-- **`renderer.info` reports `1 draw call, 1 tri` continuously** — likely an EffectComposer artifact (render passes report only the last pass) but should be confirmed
-- **Weapon viewmodel** is small + barely visible + not in expected lower-right hand position
-- Buildings spawn floating in the air (positions don't account for terrain height)
-
-User quote: "Movement is all weird... when I hit left I expect to move left, right right, etc. but it's awkward."
+**Model:** Sonnet 4.6
+**Round type:** Polish + self-audit (NOT an emergency)
+**Estimated scope:** 90–180 min; multiple small fixes + skybox quality bump + comprehensive code audit
+**Acceptance threshold:** 8/10 hard criteria (raised from R31's 6/9 because the bar is "user can actually playtest and enjoy it")
 
 ---
 
-## What I (Manus) did across R29-R30.2 — full audit trail
+## TL;DR for Claude
 
-Every commit is on `origin/master`. Read `comms/CHANGELOG.md` for the one-line audit log.
+Great work on R31 — soldiers ARE visible, ground clamp held, yaw fixed. But the user just played and the verdict is mixed. Buildings still float as yellow blocks, soldiers still T-pose AND float above ground, weapon viewmodel still invisible, and **the user explicitly called the skybox "really disappointing."**
 
-| Round | Hash | What I changed | Status |
-|---|---|---|---|
-| R29 | `20e6b6c` (you) | shader precision highp + Three.js init in onRuntimeInitialized + vendored Three.js r170 | Landed |
-| R29.1 | `b7b7424` | vendored 5 missing transitive Three.js addon deps + map fetch path GitHub-Pages-friendly | Landed |
-| R29.2 | `cabf922` | swapped `initStateViews()` ↔ `initPostProcessing()` order in `renderer.js` start() so camera exists before RenderPass captures it | Landed; was a real bug |
-| R29.3 | `65009a3` | added `Module.calledRun` guard on 5 unguarded WASM call sites (compass poll + 4 others) so ASSERTIONS-mode build doesn't spam Aborted | Landed; cosmetic but real |
-| R30.0 | `cca2992` | added one-shot `scene.traverse()` diagnostic dump on first frame to see ground truth | Diagnostic only |
-| R30.1 | `6a0e97e` | hardened `syncCamera`: bail on invalid localIdx OR finite-but-zero player position; raised initial cam to (0,200,0) lookAt(-300,30,-300); set `scene.background = #9bb5d6` fallback; bumped HemisphereLight intensity 0.55→1.1 | Landed |
-| R30.2 | `c40eac5` | rebalanced THREE.Sky uniforms (turbidity 8→2, rayleigh 2.0→1.0, mieG 0.7→0.8); ACESFilmic tone mapping exposure=0.5; PMREM env from Sky → `scene.environment`; positioned sun at boot in initStateViews; resized weapon viewmodel; explicit SRGBColorSpace | Landed; partial fix |
+Three asks for R31.1:
 
-**I did NOT touch C++ code.** All my edits were in `renderer.js` (~13 small surgical changes) + `index.html` (~5 calledRun guards + 2 map paths) + `shell.html` (mirror) + vendoring of Three.js files. I did NOT recompile WASM (kept `tribes.js`/`tribes.wasm` from your R29 build).
+1. **Fix the remaining visual misses** (5 items, listed below)
+2. **Make the skybox actually impressive** — not just a blue gradient, a real atmospheric sky worthy of a 2026-era browser game
+3. **End-to-end self-audit your own R18-R31 renderer code** — find dead code, inconsistencies, silently-failing branches, accidental MeshBasicMaterials, etc.
+
+User quote: "The skybox is still really disappointing."
 
 ---
 
-## Console diagnostic — current ground truth (post R30.2)
+## Direct evidence — user's R31 playtest video (analyzed)
 
-The user pasted a console after R30.2. Key data:
+> 1. Sky: pale, hazy blue/off-white, lacking detail like clouds
+> 2. Terrain: rolling hills, repetitive low-resolution grass/dirt texture, lighting flat and uniform without distinct shadows
+> 3. Buildings: NO complex buildings — just simple, large, yellow rectangular block structures, floating slightly above the ground
+> 4. Soldiers: red and blue characters visible, blocky humanoid figures, completely static T-pose, floating above the ground, no animation
+> 5. Weapon/hand: NOT visible anywhere on screen
+> 6. Movement: appears disconnected — camera looks around but character slides independently of camera orientation
+> 7. HUD: complete and good (crosshair, health/energy bars, ammo counter, scoreboard, event log)
+> 8. Glitches: numerous yellow cubes and rectangular blocks floating in the air; a large flat green triangle floating near beginning
+> 9. No falling through ground (R31 ground clamp held — good)
 
-```
-[R30.2] PMREM environment built from Sky shader; PBR materials now lit   ← landed
-[R30.0] === SCENE DIAGNOSTIC DUMP (one-shot) ===
-[R30.0] scene root has 336 immediate children:
-  [0] HemisphereLight visible=true
-  [1] DirectionalLight visible=true
-  [3] Mesh ShaderMaterial bbox=[-1,-1,-1 → 1,1,1]                      ← Sky shader, correct
-  [4] Mesh MeshStandardMaterial bbox=[-1024,7,-1024 → 1024,77,1024]    ← terrain, correct
-  [5..43] Group +2 children                                             ← 39 buildings, OK shape
-  [44..70] Mesh MeshBasicMaterial color=#9ddcff bbox=[-1,-1,-1 → 1,1,1] ← spawn shield bubbles, fine
-  [71..86] Mesh MeshStandardMaterial color=#ffffff bbox=[0,0,0]         ← ⚠️ ALL ZERO BBOX
-  ...
-[R30.0] renderer.info: 1 calls, 1 tris, 141 geom, 17 tex, programs=17
-[R30.0] scene.background: #9bb5d6  scene.fog: undefined density=0.0006
-[R18] 60fps, 1 draw calls, 1 tris, quality=high | cam=(-260,21,-11) localIdx=0 visSoldiers=4/16
-```
-
-Camera position moves correctly with player input (going from -232,26,-26 → -271,33,63 → -260,21,-11 as user plays). So **input is reaching WASM and WASM is updating the player position**. But the rendered scene shows almost nothing of the world.
-
-**Two big mysteries Claude needs to verify:**
-
-1. **`renderer.info` says 1 draw call, 1 tri.** Is this a real symptom (almost nothing being drawn) or an EffectComposer artifact (only counting the final composite pass)? My hypothesis: it's the latter (composer with bloom/output passes resets the stats per pass and `info.render.calls` only reflects the last). To prove/disprove: temporarily disable post-processing OR sum `renderer.info.render.calls` across passes via callbacks. If it's truly 1 draw call, then 95% of the scene is being culled.
-
-2. **Many sub-meshes have bbox `[0,0,0 → 0,0,0]`** — including soldiers ([71..86]) and several other items. Three.js frustum-culls anything whose `geometry.boundingSphere.radius === 0` once the bbox is at origin. **Soldiers may be invisible because their bounding sphere is wrong**, not because `mesh.visible=false`. Your skeletal-rig setup needs a `geometry.computeBoundingSphere()` after the first skin update, OR a generous manual `boundingSphere` set at construction time.
+So R31 wins (per acceptance criteria): **player ground-clamp ✓, soldiers visible ✓, movement direction better ✓ (3/9 fully)**.
+R31 misses or partial: **buildings, NPC animation, weapon, skybox, sky exposure, entity ground-clamp (6/9 still bad)**.
 
 ---
 
-## Specific bugs to fix (ranked by visual impact)
+## Bug list for R31.1 (ranked)
 
-### 1. Soldiers render as solid black silhouettes (CRITICAL)
+### 1. Buildings still floating yellow blocks (CRITICAL)
 
-User screenshot (today's playtest) shows them as dark unlit figures. Two possible causes:
-- Skeletal mesh `material` is `MeshStandardMaterial` color #ffffff but receives no light because **the rig hasn't been bound** correctly to the geometry → no normals → no PBR shading → reads as black
-- OR the frustum culling kills them via the bbox=(0,0,0) issue, so what we see is leaked accent meshes from another source
+R31 added `frustumCulled=false` traverse to building groups. Body meshes still don't render — only the unlit yellow accents.
 
-Fix path: in `addSoldier()` / wherever soldiers are constructed in `renderer.js`, set `mesh.frustumCulled = false` on the rig root, OR `geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 5)` (5m radius around origin), AND ensure normals are computed/recomputed after vertex skinning.
+Likely root cause: building body MeshStandardMaterial cylinders/cubes are constructed with bbox=(0,0,0) (per R30.0 diagnostic), and even with `frustumCulled=false`, Three.js may skip them in shadow or transparency passes. OR — more likely — they have `visible=false` set somewhere, OR they're being added to a scene-detached Group that itself has visible=false.
 
-### 2. Buildings render as floating yellow/black blocks (CRITICAL)
+**Diagnostic-first approach:**
+- Add a one-shot per-building dump on first frame: `for (b of buildingMeshes) console.log('[R31.1] bldg', i, 'pos', b.position, 'visible', b.visible, 'children:', b.children.map(c => ({type: c.type, mat: c.material?.type, visible: c.visible, opacity: c.material?.opacity})))`
+- Confirm whether body meshes have `visible=true` AND `opacity=1` AND a non-null `material.color` — if any of these is wrong, that's the bug.
+- If diagnosis confirms body meshes look correct on the JS side, the issue is rendering: try `mesh.material.transparent = false; mesh.material.depthWrite = true; mesh.material.depthTest = true; mesh.material.needsUpdate = true;`
 
-User's screenshot shows a **yellow rectangular box floating in the air**. From `renderer.js` (around line 441/450 in `createBuildingMesh`): stations have `MeshBasicMaterial({ color: 0xFFC850 })` for ring + display panels — these are **unlit accent decorations**. They get drawn **but the parent body** (a `MeshStandardMaterial` cylinder/cube) is **not visible** because it has bbox=(0,0,0) and is being frustum-culled.
+### 2. Buildings & soldiers float above terrain (HIGH — C++)
 
-Same root cause as soldiers: PBR sub-meshes are getting culled, only the unlit accents survive.
+C++ `setMapBuildings()` and `_getPlayerStatePtr()` are returning Y values that don't account for the heightmap. R31 fixed the local player ground-clamp but not the spawn positions for entities.
 
-Fix path: walk every Group in `buildingMeshes`, recursively `child.frustumCulled = false` OR set sane bounding spheres at construction.
+Fix in C++ `loadMission()` (or wherever buildings are placed): for each building, sample `terrainHeightAt(b.x, b.z)` from the heightmap and set `b.y = max(b.y, terrainHeight + 0.5)`. Same for player/bot spawn points: clamp to `terrainHeight + 1.7` at spawn, not just every-frame.
 
-### 3. Buildings spawn floating in air (HIGH)
+### 3. The "really disappointing" skybox (HIGH)
 
-Per the screenshot, the yellow cube hovers ~30m up. C++ side `setMapBuildings` reads positions from mission data, but probably places them at flat Y from the map JSON without sampling the terrain heightmap at that X,Z. Need to either (a) clamp Y to `terrainHeight(X,Z)` in C++, or (b) accept the design intent that some buildings ARE supposed to be on tall pillars.
+User explicitly called this out. Current state per video: pale, hazy blue/off-white, no clouds, no sun visible, no atmospheric depth.
 
-Recommend: in C++ `loadMission()`, sample heightmap at building (X,Z) and add a small offset so the foundation sits on terrain.
+What we have now: THREE.Sky with rebalanced uniforms (turbidity 2, rayleigh 1.0, mieG 0.8) + ACESFilmic tone mapping at exposure 0.5. The 0.5 exposure is *too low* — it kills the dynamic range of the sky shader and makes everything washed out.
 
-### 4. Movement direction ≠ camera direction (HIGH)
+**Real upgrade options (pick one or layer them):**
 
-User reports: "press W, slide sideways." Combined with the fact that the camera position IS updating correctly per WASM, and the C++ side is doing the movement math, this is almost certainly a **yaw-convention mismatch** between Three.js camera (Y-up, looks down -Z, yaw rotates around Y) and WASM player (likely Z-up or some other handedness).
+a) **Tune Sky uniforms back up + raise exposure.** Try turbidity=4, rayleigh=2, mieCoefficient=0.005, mieDirectionalG=0.85, exposure=0.8. This gives Mie scattering halo around the sun, deeper blue at zenith, warm tint near horizon. Position sun at high-noon-but-slightly-west so users see it.
 
-Look at `renderer.js` syncCamera around line 1133:
-```js
-camera.rotation.set(pitch, yaw, 0, 'YXZ');
-```
+b) **Add procedural cloud layer.** A simple 2D plane at high altitude with a Worley/Perlin-noise-based shader, scrolling slowly. Doesn't need to be 3D — even a flat layered cloud texture rendered at z=skybox_radius * 0.7 with `depthWrite=false` looks great. Lots of Three.js examples (search "three.js procedural clouds shader").
 
-Possible fix: try `camera.rotation.set(pitch, yaw + Math.PI, 0, 'YXZ')` (180° yaw flip), OR negate pitch, OR change rotation order. The C++ side controls movement based on its own yaw, so the camera needs to MATCH that yaw — not the other way around. Test by walking forward and confirming camera moves the same way as crosshair points.
+c) **Use a real HDRI.** Vendor a single 2K equirectangular HDR sky into `assets/sky/`. CC0 sources: PolyHaven (sweeping mountain skies, perfect for Tribes vibes). Load via `RGBELoader` and assign to both `scene.background` and `scene.environment`. This is the highest-quality option and would also replace our current PMREM-from-Sky pipeline (the HDRI directly drives PBR ambient lighting).
 
-### 5. Player clips through terrain (HIGH — C++ work)
+**Recommend (a) + (b)** — keep the Sky shader for atmospheric scattering, layer clouds on top. Don't add an HDRI dependency until R32.
 
-User can fall through the ground. C++ side either has no terrain collision check or the heightmap lookup is broken. Look in `wasm_main.cpp` for player physics tick — there should be a `playerY = max(playerY, terrainHeightAt(playerX, playerZ) + 1.7)` or similar ground clamp. If missing, add it. If present, check the lookup is in correct world units.
+Whatever you do, **raise exposure to at least 0.8**. The current 0.5 makes everything look like a 2003 game with a flat ambient pass.
 
-### 6. NPCs stuck in static pose (MEDIUM — C++ AI)
+### 4. Weapon viewmodel still invisible (MEDIUM)
 
-Bots load (Fury/Viper/Storm/Ghost/Blaze/Raptor/Shadow) and the `[KILL]` log shows kills happen, so the AI brains are running. But visually they don't animate. Two possible causes:
-- (a) The skeleton transforms aren't being driven by the simulation tick — animation system disconnected from C++ → JS bridge
-- (b) The animation system runs in C++ (legacy) but R15 disabled the C++ render loop, and the new Three.js path doesn't pull animation state
+R31 repositioned to (0.25, -0.20, -0.45) but it's still not on screen. Three things to check:
 
-Fix path likely: add to renderer.js `syncSoldiers()` a call to `Module._getPlayerAnimState(idx)` and apply to the skeleton bones each frame.
+a) Is the weaponHand actually parented to the camera? `console.log(weaponHand.parent === camera)` — if false, it's in scene root and won't move with the view.
+b) Does the weapon material have `color`/`map` and `opacity=1`?
+c) Is the camera's near-plane causing it to clip? Currently near=0.5 — try near=0.01 + the (0.25, -0.20, -0.45) position.
 
-### 7. Weapon viewmodel position (MEDIUM)
+If the answer is "all good and still invisible", then the weapon has `visible=false` set somewhere OR the geometry is degenerate. Add a one-shot dump on first frame to print weapon's bounding box, scale, and material.
 
-I (Manus) made it smaller in R30.2 but it's now in a weird spot. Should be **firmly in lower-right of viewport, gun barrel pointing forward, slightly tilted**. Standard FPS rig: position relative to camera local space `(0.25, -0.20, -0.45)`, rotation `(0, 0.05, 0)`, scale appropriate for camera FOV=90.
+### 5. Mysterious floating green triangle (LOW)
 
-### 8. `renderer.info` "1 draw call, 1 tri" (LOW — just verify it's a measurement artifact)
+Video shows a "large flat green triangle" near the beginning. Probably a debug helper/axis or a half-constructed mesh from the spawn-shield system or HUD overlay. Find and either delete or hide.
 
-Add a single-frame diagnostic that disables EffectComposer and reads `renderer.info.render.calls` directly. If still 1, real bug. If 100+, just measurement artifact and we can remove the misleading log.
+### 6. Soldiers stuck in T-pose (HIGH — C++ animation)
+
+This was deferred from R31. It's the biggest remaining gameplay-feel bug. Two paths:
+- Easy: add at least a basic walk-cycle when the player has horizontal velocity. Even a simple sin-wave-driven leg/arm swing would be huge improvement over T-pose.
+- Proper: bridge C++ animation state (per-bone transforms) to JS skeleton, drive the SkinnedMesh per frame.
+
+If you can do the easy version in this round, do it. The proper version can be R32.
+
+---
+
+## End-to-end self-audit (mandatory)
+
+After patching, **read your own R18-R31 renderer code** with fresh eyes. Specifically grep through `renderer.js` for:
+
+1. **`MeshBasicMaterial`** — every occurrence. For each, ask: is this intentionally unlit? Or did I forget to use MeshStandardMaterial? Many of our visible bugs are MeshBasic accents that should be MeshStandard or that should be deleted entirely.
+
+2. **`visible = false`** — every set site. Are any of these accidentally permanent? Should anything be `visible = true` that isn't?
+
+3. **`frustumCulled = false`** — recent additions. Any meshes that DON'T need this and could be reverted for perf?
+
+4. **`bbox` / `boundingSphere`** computation — for every SkinnedMesh / Group, is the bounding box correct? Should we explicitly call `geometry.computeBoundingSphere()` after construction?
+
+5. **Dead code** — any module-level variables, functions, or branches that are never reached? Any leftover R15/R17 legacy renderer code that could be deleted now that Three.js is the default?
+
+6. **Console log discipline** — too many `[R##]` logs accumulating; consolidate or gate behind a `DEBUG` flag.
+
+7. **`Module._*` calls with no calledRun guard** — any new ones added in R31 that would crash in ASSERTIONS mode?
+
+8. **TODO/FIXME/HACK** comments — collect them, list them, decide which need fixing now.
+
+Write a short audit summary at the top of `claude_status.md` with your findings. Even if you don't fix everything, the inventory itself is valuable for future rounds.
+
+---
+
+## Acceptance criteria (10 items, target 8+)
+
+After R31.1 deploys and user reloads with cache buster, they should see:
+
+1. ✅ **Sky**: visible sun + clear blue gradient + at least subtle atmospheric depth (no longer "really disappointing")
+2. ✅ **Terrain**: lit with visible shadows from sun
+3. ✅ **Buildings**: gray PBR turrets/stations on the ground, NOT floating yellow blocks
+4. ✅ **Soldiers**: visible, correctly colored (red/blue team), on the ground, NOT floating
+5. ✅ **Soldiers**: at least basic limb animation when moving (no full T-pose)
+6. ✅ **Movement**: W goes forward, A/D strafes, mouse looks — feels natural
+7. ✅ **No terrain clipping** (already fixed in R31, must not regress)
+8. ✅ **Weapon viewmodel**: clearly visible in lower-right
+9. ✅ **No mystery floating green triangle**
+10. ✅ **Self-audit summary** in `claude_status.md` listing dead code / suspicious patterns / TODOs found
+
+Land at least 8/10. NPC proper-rig-from-WASM animation can be R32.
 
 ---
 
 ## Things to NOT change
 
-- Don't revert any R29-R30.2 fixes; they're correct (precision, vendoring, init order, calledRun guards, sky uniforms, PMREM env)
-- Don't remove the R30.0 diagnostic dump yet — useful for verifying R31 results
-- Don't touch the comms/CHANGELOG.md format
-- Don't bump version footer past `0.4 / R29 hotfix` — your call when to mark `0.5`
+- Don't revert R29-R31 fixes
+- Don't touch the comms format
+- Don't add new features (no new gear, no new maps, no new chat, etc.) — pure fix + audit round
+- Don't bump version footer past `0.4 / R29 hotfix` until R31.1 actually ships
 
 ---
 
-## Acceptance criteria for R31
+## Open question
 
-User reloads, hits PLAY, plays for 30 seconds. They see:
-
-1. Sky: blue gradient (already fixed) — no regression
-2. Terrain: lit green-brown with shading — no regression
-3. **Buildings**: at least some properly-lit gray turrets/stations visible at proper terrain-grounded positions, NOT floating yellow boxes
-4. **Soldiers**: visible as lit gray armored figures, NOT solid black silhouettes
-5. **Movement**: pressing W moves the camera in the direction it's pointing; A strafes left; D strafes right; mouse looks
-6. **No terrain clipping**: player stays on top of the ground
-7. **NPCs animate** (running animation when moving)
-8. **Weapon viewmodel** clearly visible in lower-right
-9. Console shows R30.0 diagnostic + at least 5+ draw calls in renderer.info (or proof the "1" was a measurement artifact)
-
-If you can land 6/9 you're done; the remaining can be R31.1.
+Should we delete the legacy WebGL renderer in this round (your R30-deferred plan), or wait until after the user does a satisfying playtest? My take: defer to R32. Right now the user just wants to play, not see a clean codebase.
 
 ---
 
-## Open questions for you to decide
-
-1. Is the legacy WebGL renderer still needed? (R30 was originally planned to be "delete legacy renderer entirely" but we never got there because R29 hotfix cascade ate the time. Your call: delete now in R31, or keep until after multiplayer playtest?)
-2. Should `renderer.info` accumulator across composer passes be added to the diagnostic permanently?
-3. C++ collision system — do you want to fix the `loadMission` to clamp building positions to terrain, or change the renderer to clamp visually? Former is correct, latter is faster.
-
----
-
-Cron will trigger you in ~5 min. Take whatever time you need. I'll review the diff and accept or kick a follow-up. Thanks for picking up the round.
+Cron will trigger you in ~5 min. Take whatever time you need; aim for a comprehensive landing rather than another partial fix. Thanks.
