@@ -588,8 +588,22 @@ static GLint tVPLoc,tSunLoc,tCamPosLoc,oVPLoc,oALoc;
 static GLint dtsVPLoc,dtsModelLoc,dtsSunLoc,dtsTintLoc,dtsTint2Loc,dtsCamPosLoc,dtsALoc;
 static GLuint oVAO,oVBO,hVAO,hVBO;
 
-static GLuint compS(GLenum t,const char*s){GLuint sh=glCreateShader(t);glShaderSource(sh,1,&s,0);glCompileShader(sh);return sh;}
-static GLuint linkP(const char*v,const char*f){GLuint p=glCreateProgram();GLuint vs=compS(GL_VERTEX_SHADER,v),fs=compS(GL_FRAGMENT_SHADER,f);glAttachShader(p,vs);glAttachShader(p,fs);glLinkProgram(p);glDeleteShader(vs);glDeleteShader(fs);return p;}
+static GLuint compS(GLenum t,const char*s){
+    GLuint sh=glCreateShader(t);glShaderSource(sh,1,&s,0);glCompileShader(sh);
+    GLint ok=0;glGetShaderiv(sh,GL_COMPILE_STATUS,&ok);
+    if(!ok){char log[512];glGetShaderInfoLog(sh,512,0,log);
+        printf("[SHADER] Compile error (%s):\n%s\n",t==GL_VERTEX_SHADER?"VS":"FS",log);}
+    return sh;
+}
+static GLuint linkP(const char*v,const char*f){
+    GLuint p=glCreateProgram();
+    GLuint vs=compS(GL_VERTEX_SHADER,v),fs=compS(GL_FRAGMENT_SHADER,f);
+    glAttachShader(p,vs);glAttachShader(p,fs);glLinkProgram(p);
+    GLint ok=0;glGetProgramiv(p,GL_LINK_STATUS,&ok);
+    if(!ok){char log[512];glGetProgramInfoLog(p,512,0,log);
+        printf("[SHADER] Link error: %s\n",log);}
+    glDeleteShader(vs);glDeleteShader(fs);return p;
+}
 
 // ============================================================
 // DTS GPU Model
@@ -1083,13 +1097,16 @@ static void broadcastHUD(){
     if(p.pack==3)maxAmmo*=2;
     int speed10=(int)(p.speed*10);
     int timeRemain=g_timeLimit>0?(int)g_roundTimer:(int)g_warmupTimer;
+    // Split into two calls: EM_ASM supports $0-$15 only (max 16 args)
     EM_ASM({
-        if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+        if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
     },(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
        p.skiing?1:0,p.carryingFlag,
        (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
-       teamScore[0],teamScore[1],(int)p.armor,
-       g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
+       teamScore[0],teamScore[1],(int)p.armor);
+    EM_ASM({
+        if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2);
+    },g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
 }
 
 // ============================================================

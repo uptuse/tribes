@@ -733,7 +733,7 @@
     ];
 
     var lastWpn=-1;
-    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor,matchState,timeRemain,respawnTimer10){
+    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
       // Health bar
       var hf=document.getElementById('hp-fill');
       if(hf){
@@ -768,24 +768,27 @@
       AE.lx=px;AE.lz=pz;AE.lyaw=yaw1000/1000;
       // Compass
       updateCompass(px,pz,yaw1000/1000);
-      // Match state handling
+    };
+
+    // Match-state HUD (separate EM_ASM call — EM_ASM cap is $0-$15)
+    var _lastHp=100; // track HP for respawn overlay
+    window.updateMatchHUD=function(matchState,timeRemain,respawnTimer10){
       var timerEl=document.getElementById('hud-timer');
       var warmupEl=document.getElementById('hud-warmup');
       var respawnEl=document.getElementById('respawn-overlay');
       if(matchState===0){ // WARMUP
-        if(timerEl){timerEl.style.display='none';}
-        if(warmupEl){warmupEl.style.display='block';var ws=Math.ceil(timeRemain);warmupEl.textContent='WARMUP — MATCH STARTS IN '+ws;}
+        if(timerEl)timerEl.style.display='none';
+        if(warmupEl){warmupEl.style.display='block';warmupEl.textContent='WARMUP — MATCH STARTS IN '+Math.ceil(timeRemain);}
         if(respawnEl)respawnEl.classList.remove('active');
       }else if(matchState===1){ // IN_PROGRESS
         if(warmupEl)warmupEl.style.display='none';
         if(timerEl){
           timerEl.style.display='block';
           var mins=Math.floor(timeRemain/60),secs=timeRemain%60;
-          timerEl.textContent=(timeRemain>0?(mins+':'+(secs<10?'0':'')+secs):'∞');
+          timerEl.textContent=timeRemain>0?(mins+':'+(secs<10?'0':'')+secs):'∞';
           timerEl.className=(timeRemain>0&&timeRemain<60)?'urgent':'';
         }
-        // Respawn
-        if(hp<=0&&respawnTimer10>0){
+        if(respawnTimer10>0){
           if(respawnEl)respawnEl.classList.add('active');
           var rc=document.getElementById('respawn-count');
           if(rc)rc.textContent=Math.ceil(respawnTimer10/10);
