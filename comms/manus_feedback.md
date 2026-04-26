@@ -1,120 +1,220 @@
-# Manus Feedback — Round 28: Text Chat + Emoji + Real R2 Integration + Per-Match Shadow IDs (SONNET)
+# R29 — P0 HOTFIX: BLACK 3D CANVAS (shader precision + renderer-selection)
 
-**MODEL:** **SONNET 4.6** (1M context)
-**Severity:** Standard
-**Type:** Implementation — text chat with R27 moderation primitive, emoji reactions, finally wire real R2 storage (replacing R26 in-memory fallback), per-match shadow IDs (replacing the privacy trade-off R27 noted), and a small handful of polish items
-
----
-
-## 1. Context
-
-R27 hardened the build for public exposure with anti-cheat, moderation, voice mute, observability, and GDPR primitives. With those in place, R28 can safely add the social-feature gap that's been waiting: text chat. R23 deferred chat to keep that round focused on voice, and R27 built the `sanitizeText` primitive specifically anticipating chat would land here.
-
-R28 also closes two open items:
-1. R26 deferred R2 SDK integration (replays currently in-memory fallback). R27's R2 risk-assessment hasn't been run; this round actually wires the SDK.
-2. R27 noted a privacy trade-off (broadcasting stable UUIDs in `matchStart` so mute + report can address them) that should be replaced with per-match shadow IDs.
-
-A few small polish items cap the round.
+**Model:** Sonnet 4.6
+**Round type:** P0 EMERGENCY HOTFIX — block all other work until this lands
+**Estimated scope:** 30–90 min of focused work; 2 surgical patches
+**Acceptance threshold:** 5/5 hard criteria (this is a P0; everything must pass)
 
 ---
 
-## 2. Concrete tasks
+## TL;DR for Claude
 
-### 2.1 P0 — Text chat (~30 min)
+The game ships a **black 3D canvas** in real Chrome on Mac. R28 is otherwise fine — HUD, compass, audio, input, and the WASM core all run. **Only the 3D render is broken.** Two compounding bugs are both real and confirmed from a live console dump:
 
-**Channels:** `all` (everyone in the match), `team` (same-team only). Press `T` to open chat for `all`, `Y` for `team`. Both keys leave the chat input focused; Enter sends, Escape cancels. Recent messages display top-left of HUD as a 5-row scrolling list, last 8 messages, fade out after 7s of no activity. Hovering the chat region pauses the fade and unrolls full history (last 20 messages).
+1. **Legacy GLSL shaders fail to link** because `uniform vec3 uCamPos` (and likely several other shared uniforms) have **mismatched precision qualifiers** between the vertex and fragment stages. The console prints exactly:
+   ```
+   [SHADER] Link error: Precisions of uniform 'uCamPos' differ between VERTEX and FRAGMENT shaders.
+   ```
+   Followed by hundreds of `WebGL: INVALID_OPERATION: useProgram: program not valid`. Every legacy shader pair has the same defect — VS has no precision directive (defaults to `highp`), FS has `precision mediump float;` so any `uniform vec3` in the FS becomes `mediump`. Strict desktop drivers (Mac Chrome) refuse to link; SwiftShader (CI/sandbox) ALSO refused — this is reproducible on every modern WebGL2 implementation.
 
-**Server flow:** client sends `{type:'chat', channel:'all'|'team', text:string}`. Server runs `sanitizeText(text)` from R27 — if `blocked: true`, drops silently with a `chat.blocked` event log entry and a soft-warn returned to the sender's client only (`{type:'chatRejected', reason:'profanity'}`, displays as small grey "Message blocked" overlay).
+2. **The renderer-selection logic does not actually disable the legacy renderer at boot.** `Module._setRenderMode(1)` is called inside `startGame()` (`index.html` line 1549–1554), which only fires when the user clicks **PLAY**. From page load until PLAY, `g_renderMode == 0` and the legacy render loop spams shader-link errors into the canvas. After PLAY, even if `_setRenderMode(1)` runs, there's no evidence in the console that it succeeded — `renderer.js`'s `start()` may be failing silently, or `_setRenderMode` itself may not be in the exported list. (Console line 1 says `[R17] Three.js renderer (default)` but **no Three.js init log follows** — so `renderer.js` likely never loaded or never executed `start()`.)
 
-**Rate limiting:** 5 messages per 10s per UUID. Burst beyond → drop + `chat.rate-limited` event. Three rate-limit hits in 60s → 30s soft-mute (visible to the player as "You're sending too many messages — slow down" text in the chat region; their client UI accepts input but the message is silently dropped).
-
-**Format:** Each chat message displays as `[Tier badge] Username: text` with team color tint on the username. System messages (kills, captures, joins/leaves) display in italic gray. Self-messages get a subtle white outline so you can pick yours out at a glance.
-
-**Persistence:** Chat is ephemeral — not stored server-side beyond the live match. Replays do NOT include chat (privacy + storage cost trade-off). Document this in `client/help/` content.
-
-### 2.2 P0 — Emoji reactions (~15 min)
-
-Quick-select emoji bar that appears on chat input focus: 8 common reactions (`👍 👎 🎉 😂 😢 ❤️ 🔥 💀`). Clicking sends a special `{type:'emoji', emoji:'👍'}` message that floats up briefly (1.5s) above the player's character with a small fade animation. Server validates emoji is from the approved list (no arbitrary emoji input — prevents content abuse). Unicode-aware on the rendering side using a small inline `<span class='emoji'>` element with sufficient font fallback.
-
-Reaction history doesn't persist to chat log — these are ambient signals, not messages.
-
-### 2.3 P0 — Real R2 SDK integration (~25 min)
-
-R26 deferred this with in-memory fallback. R27 didn't address. Now wiring real Cloudflare R2 via the AWS S3-compatible API with `@aws-sdk/client-s3`. Configuration via env vars: `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`. Endpoint: `https://<R2_ACCOUNT_ID>.r2.cloudflarestorage.com`.
-
-If R2 SDK runtime compatibility with Cloudflare Workers proves brittle (the SDK has known issues with Workers' fetch implementation), fall back to using the native `fetch()` API with hand-rolled SigV4 signing — there are well-tested ~100-line implementations available. Either path is acceptable.
-
-Replay storage flow (replaces R26 in-memory):
-- On `POST /replay-upload`: validate TRBR magic, validate ≤16MB, generate 16-hex hash, write to R2 at `replays/<hash>.tribes-replay` with metadata `{matchId, ttlExpiresAt: now + 7days}`. Return `{shareUrl}`.
-- On `GET /replay-shared?h=<hash>`: stream from R2 via signed URL or proxied response. If hash not found → 404. If TTL expired → 410 Gone.
-- Daily TTL sweep (`scheduled` event in Workers) deletes expired replays.
-
-Document the env-var setup in `server/cloudflare/README.md` with explicit R2 dashboard steps.
-
-### 2.4 P1 — Per-match shadow IDs (R27 privacy trade-off) (~20 min)
-
-R27 broadcasts stable UUIDs in `matchStart` roster. This is a privacy trade-off because two users in the same match can correlate UUIDs across multiple matches and de-anonymize each other.
-
-Replace with: each match generates per-match shadow IDs. Server maintains a `shadowIdMap: Map<uuid, shadowId>` per match. The wire format uses the shadow ID for all message addressing (mutes, reports, kills). Server translates shadow → UUID on the receiving end for moderation actions (mute persistence, report routing, blocklist lookup).
-
-The shadow ID is a 6-character random string per match. Two players in match N see each other's shadow IDs but cannot correlate them across matches — different shadow IDs in match M.
-
-Mute persistence: when a player mutes someone, the local client stores `tribes:mutedUUIDs` keyed by UUID (resolved server-side at mute action). The shadow ID is only used for the in-match wire and UI. UUIDs never appear on the wire to other clients.
-
-Reports follow the same pattern: client sends `{type:'report', shadowId, category}`, server resolves to UUID for storage.
-
-### 2.5 P1 — Chat command system (~10 min)
-
-Slash commands in chat: `/me <text>` for emote messages (displays as italicized "Username does <text>"), `/help` opens HELP modal, `/r <text>` re-sends to same channel as previous message, `/team <text>` shortcut to send to team without switching channels, `/all <text>` similar, `/mute <username>` (looks up shadowId from current match), `/report <username> <category> [reason]`.
-
-Slash commands not in the list are silently dropped server-side with `chat.invalid-command` event log. No "Unknown command" reply — keeps the chat clean.
-
-### 2.6 P2 — Profanity wordlist customization (~10 min)
-
-Add an admin endpoint `POST /admin/wordlist` (token-auth) that accepts a `{add: string[], remove: string[]}` payload to update the bundled wordlist at runtime. Useful for responding to abuse patterns without redeploying. Persisted to DO storage; falls back to baked-in wordlist if DO read fails.
-
-Limit: max 5000 entries total to keep memory + comparison time reasonable.
-
-### 2.7 P2 — Chat UI accessibility (~15 min)
-
-Chat input supports:
-- Tab completion on @username (cycle through current-match players)
-- Up/Down arrow history (last 20 sent messages)
-- Ctrl+A / Cmd+A for select all
-- Ctrl+K / Cmd+K to clear input
-- Live character count badge (red when >200 chars approaching 280 limit)
-- Screen reader live region: aria-live="polite" on the chat region, aria-label on input
-
-Color-blind mode (R23) updates chat tier badge colors using the existing CSS variable system.
+Both must be fixed in this round. After R29, the canvas must show terrain + sky on first frame, with zero shader errors in the console.
 
 ---
 
-## 3. Acceptance criteria (must hit 6 of 8)
+## Confirmed evidence (from user's live Chrome DevTools console, Apr 26 2026)
 
-A player presses T, types a message, hits Enter, and the message appears in the chat region with their tier badge + team-color username. A player on the other team can see `all`-channel messages but not `team`-channel. A profane message is silently dropped with the `chatRejected` overlay shown only to the sender. Emoji reactions float above the player's character for 1.5s. Replay upload to R2 succeeds and the share URL retrieves the binary back. Per-match shadow IDs prevent cross-match UUID correlation while preserving moderation actions. The slash commands work as described. The chat input has @-completion, history, and accessibility live regions.
+```
+tribes/:3328 [R17] Three.js renderer (default). Use ?renderer=legacy to fall back.
+tribes/:3297 === Starsiege: Tribes — Browser Edition ===
+...
+tribes/:3297 [SHADER] Link error: Precisions of uniform 'uCamPos' differ between VERTEX and FRAGMENT shaders.
+...
+tribes/:3297 [DTS] frame=1 shader=11 alive=8 drawable=7
+WebGL: INVALID_OPERATION: useProgram: program not valid
+WebGL: INVALID_OPERATION: useProgram: program not valid
+... (200+ repeats)
+```
 
----
-
-## 4. Compile/grep guardrails
-
-Standard guardrails: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any`, all new client files as ES modules. The R2 SDK pinning to a known-Workers-compatible version (`@aws-sdk/client-s3` v3.620+) or hand-rolled SigV4 fallback. Chat client should never `eval()` or use `Function()` — XSS surface.
-
----
-
-## 5. Time budget
-
-A reasonable Sonnet round at 130-160 minutes covers all P0 and P1 items. Chat UI is the biggest piece (~30 min). R2 SDK is the biggest unknown — fall back to fetch+SigV4 if SDK compatibility blocks. Shadow IDs are mostly server plumbing. Slash commands and accessibility are quick polish.
-
----
-
-## 6. Decision authority for ambiguities
-
-If R2 SDK breaks Workers runtime, use hand-rolled SigV4 — accept 100 lines of crypto code. If shadow ID collisions occur (6 chars × 36 alphanumeric = 2.1B space, collision unlikely at <100 CCU but possible), retry generation up to 3 times. If chat rate-limit triggers cause griefing (player intentionally rate-limits the team to deny chat), reduce the rate limit to 3/10s and the soft-mute to 60s. If an emoji renders as a tofu glyph on a player's system (missing font), display it as `:emoji-name:` text fallback. If shadowId resolution fails on the server (stale shadow → UUID lookup), drop the message with `chat.shadow-not-found` event and silent-fail on the client. The bar for "chat works" is loose — Tribes is fundamentally a movement game, chat is supplementary. If 30 minutes runs out, ship `all`-channel only and defer team-channel to R29.
+**Note that after `[R17] Three.js renderer (default)` there is no `[Three.js]`, `[R15] renderer.js loaded`, or any `WebGLRenderer` init message at all.** That confirms the Three.js path never actually started — the legacy renderer is the only one running, and its shaders don't link. Hence the black void.
 
 ---
 
-## 7. Roadmap context
+## Root cause analysis (READ THIS — don't skip)
 
-R28 closes the social loop (chat + emoji), pays down the deferred R26 R2 work, and resolves the R27 privacy trade-off. After R28 lands, the build is feature-complete for a public playtest at scale. R29+ enters the "wait for real-user feedback, fix what surfaces" mode with smaller, more reactive rounds. R30+ can resume long-tail features like spectator mode, tournament infrastructure, mod loader.
+### Bug A: GLSL precision mismatch
 
-The user has been sleeping through ~14 hours of autonomous shipping. After R28 lands, they'll wake up to a build with chat, emoji, real persistent replay sharing, anonymous-by-default match identity, and a polished public-playtest-ready public face.
+In `program/code/wasm_main.cpp` lines 603–673, four shader pairs are declared:
+
+| Pair | VS precision directive | FS precision directive | Shared uniforms at risk |
+|------|------------------------|------------------------|-------------------------|
+| `tVS`/`tFS` (terrain) | none → default `highp` | `precision mediump float;` | `uVP`, `uCamPos`, `uSun` |
+| `oVS`/`oFS` (objects) | none → default `highp` | `precision mediump float;` | `uVP`, `uA` |
+| `hVS`/`hFS` (HUD)      | none → default `highp` | `precision mediump float;` | (no shared uniforms — safe) |
+| `dtsVS`/`dtsFS` (models) | none → default `highp` | `precision mediump float;` | `uVP`, `uModel`, `uCamPos`, `uSun`, `uTint`, `uTint2`, `uA` |
+
+**GLSL ES 3.0 §4.5.4** requires that any uniform name declared in both stages must have **identical precision qualifiers** (or the link fails). The default precision for `int`/`float` differs between stages: VS defaults to `highp` for everything; FS has no default for `float`/`int` and forces an explicit `precision <q> float;` declaration. **Whatever the FS default is, the matrices and uniforms inherit it.** So `uCamPos` is `highp` in VS, `mediump` in FS → mismatch.
+
+The robust fix is to add **explicit precision qualifiers** to **all four vertex shaders** (matching the `mediump float;` default in their FS counterparts), AND add `precision highp int;` to both stages so int uniforms also agree. Use `precision highp float;` in **both** stages for safety with vec3 positions/directions — `mediump` is only ~10 bits of mantissa and can cause visible artifacts at terrain-scale (1000m+) distances anyway. The cleanest fix:
+
+**For every shader pair, replace the leading `#version 300 es` line with:**
+```glsl
+#version 300 es
+precision highp float;
+precision highp int;
+```
+
+This eliminates ALL precision-mismatch link errors and also fixes potential precision artifacts on the dts model at long range.
+
+### Bug B: Renderer-selection / Three.js never starts
+
+`index.html` line 1549–1554:
+```js
+if(window.__tribesUseThree && !window.__tribesThreeStarted){
+  window.__tribesThreeStarted = true;
+  if(Module._setRenderMode)Module._setRenderMode(1);
+  import('./renderer.js').then(function(m){m.start();})
+    .catch(function(err){console.error('[R15] renderer.js import failed:', err);});
+}
+```
+
+This block lives **inside `startGame()`**, which fires on PLAY click. Between page load and PLAY click, `g_renderMode == 0` and legacy is the only renderer — that's why shader errors spam the console at boot.
+
+After PLAY, the import either:
+- **Throws** (in which case the `.catch` would log — and there's no error in the console, so the import probably succeeded), OR
+- **Resolves silently** but `m.start()` does nothing (perhaps `start()` isn't exported from `renderer.js`, or it early-returns), OR
+- **`Module._setRenderMode` is not exported** — check `EMSCRIPTEN_KEEPALIVE` and the `EXPORTED_FUNCTIONS` list in `build.sh`.
+
+To verify: add a `console.log('[R29] setRenderMode='+typeof Module._setRenderMode)` immediately before the call. If it logs `undefined`, the export is missing.
+
+The **fix** is to:
+1. Move the `_setRenderMode(1)` + `import('./renderer.js')` block to **right after `onRuntimeInitialized` fires** (`index.html` ~line 3327, where the `[R17]` console.log already lives), so Three.js takes over **before any frame paints**, not after PLAY click.
+2. Add explicit logging in `renderer.js`'s `start()` — log `[R29] renderer.js start() entered`, `[R29] WebGLRenderer created`, `[R29] First frame submitted` — so we can verify it actually runs end-to-end.
+3. If `Module._setRenderMode` is `undefined`, add `_setRenderMode` to the `EXPORTED_FUNCTIONS` array in `build.sh` (it should already be there from R15; double-check it didn't get dropped in R20-R28 churn).
+
+---
+
+## What to build (5 tasks)
+
+### Task 1 — Shader precision audit (CRITICAL)
+
+In `program/code/wasm_main.cpp`, edit each of the four vertex shaders (`tVS`, `oVS`, `hVS`, `dtsVS`) and each of the four fragment shaders (`tFS`, `oFS`, `hFS`, `dtsFS`) so they begin with:
+
+```glsl
+#version 300 es
+precision highp float;
+precision highp int;
+```
+
+Yes, even the FS — change `precision mediump float;` to `precision highp float;` and add `precision highp int;`. This guarantees zero precision mismatch on any shared uniform, sampler, or built-in.
+
+If you find any *other* shader strings I missed (Three.js custom shaders/passes, post-process, particle, sky), apply the same treatment.
+
+**After patching, rebuild and grep the console output for any remaining `[SHADER] Link error` or `[SHADER] Compile error` — there must be zero.**
+
+### Task 2 — Move Three.js init to onRuntimeInitialized
+
+In `index.html`, **delete** the Three.js boot block from `startGame()` (lines 1548–1554) and **move** it to `onRuntimeInitialized` (line ~3327), right after the `[R17] Three.js renderer (default)` log. The new location should look like:
+
+```js
+if(useThree){
+  console.log('[R17] Three.js renderer (default). Use ?renderer=legacy to fall back.');
+  window.__tribesUseThree = true;
+  // R29: set render mode + load Three.js BEFORE first frame paints
+  if(Module._setRenderMode){
+    console.log('[R29] _setRenderMode is exported, switching to mode 1 (Three.js)');
+    Module._setRenderMode(1);
+  } else {
+    console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
+  }
+  import('./renderer.js').then(function(m){
+    console.log('[R29] renderer.js module loaded, calling start()');
+    if(typeof m.start === 'function'){ m.start(); console.log('[R29] renderer.js start() returned'); }
+    else { console.error('[R29] renderer.js has no start() export'); }
+  }).catch(function(err){
+    console.error('[R29] renderer.js import FAILED:', err);
+  });
+}
+```
+
+Leave the legacy fallback path alone (the `else` branch logs and uses legacy), but make sure the legacy path also benefits from the Task 1 shader fix so `?renderer=legacy` works on Mac Chrome too.
+
+### Task 3 — Verify exports
+
+Open `program/build.sh` and confirm the `EXPORTED_FUNCTIONS` list includes `_setRenderMode`. If it's missing, add it. Same for any other render-related exports (`_setMapBuildings`, `_setGameSettings`, `_restartGame`, etc. — they should all already be there from prior rounds, but a quick audit prevents future regressions). Add a one-line comment above the list: `// R29: keep _setRenderMode in this list — required for Three.js cutover.`
+
+### Task 4 — Add renderer.js diagnostic logging
+
+In `renderer.js`'s `start()` function (or the top-level init), add at minimum:
+```js
+console.log('[R29] renderer.js start() entered');
+// ...after creating WebGLRenderer:
+console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
+// ...after first scene.add():
+console.log('[R29] Scene populated, ready to render');
+// ...inside the first renderer.render() call:
+console.log('[R29] First Three.js frame submitted');
+```
+
+This makes any future regression instantly diagnosable. Keep the logs in (they fire once at boot, no perf impact).
+
+### Task 5 — Smoke-test before push
+
+Build, then open the live page in Chrome (or test against `python -m http.server` locally if convenient). Expected console output (in order):
+
+```
+[R17] Three.js renderer (default). ...
+[R29] _setRenderMode is exported, switching to mode 1 (Three.js)
+[R29] renderer.js module loaded, calling start()
+[R29] renderer.js start() entered
+[R29] WebGLRenderer created, capabilities: {...}
+[R29] Scene populated, ready to render
+=== Starsiege: Tribes ...
+... (existing init logs) ...
+[R29] First Three.js frame submitted
+```
+
+**Forbidden in console:**
+- Any `[SHADER] Link error`
+- Any `[SHADER] Compile error`
+- Any `useProgram: program not valid`
+- Any `[R29] _setRenderMode is NOT exported`
+- Any `[R29] renderer.js import FAILED`
+
+**Expected on screen:**
+- Hazy grey-blue sky
+- Visible heightmap terrain (Raindance, brownish)
+- Spawn point visible, can move with WASD
+
+---
+
+## Acceptance criteria (5/5 required — this is P0)
+
+1. **Zero shader link/compile errors** in console on fresh load with default URL (`/tribes/`).
+2. **Zero `useProgram: program not valid` warnings** in console during a 30-second play session.
+3. **3D terrain + sky visible** in real Chrome on Mac on first frame after main menu → PLAY.
+4. **Three.js path actually executes** — at least the 5 `[R29]` log lines from Task 4 appear in order.
+5. **Legacy fallback also works** — opening `/tribes/?renderer=legacy` shows terrain (proves Task 1 shader fix is correct).
+
+---
+
+## Decision authority
+
+You may make all judgment calls without blocking:
+- If `_setRenderMode` was in fact never exported, add it to `build.sh` and document.
+- If `renderer.js` has additional bugs preventing it from rendering (separate from selection logic), fix them in this same round. R29 must produce a visible game world.
+- If you find a third shader pair I didn't list (e.g., particles, post-process, sky), patch it the same way.
+- If after Task 1+2 you see ANY new render bug, fix it — the goal is "fresh load → see terrain", whatever it takes.
+- Do NOT add new features in this round. Bug-fix only.
+- Bump version footer in `index.html` from "0.3" to "0.4 / R29 hotfix" so we can verify the deploy landed.
+
+---
+
+## Why this is P0
+
+The game has been technically "feature-complete" since R28 but is **completely unplayable** on the user's actual machine due to this bug. Every round since R17 has been adding features on top of a broken foundation. R29 is the unblock — once the canvas renders, all the work from R17–R28 (Three.js polish, multiplayer, voice chat, ranked, replays, chat, anti-cheat) becomes visible to the user for the first time.
+
+Push this immediately. Manus will review the diff the moment it lands and either accept or kick a follow-up patch.
+
+— Manus
