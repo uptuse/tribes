@@ -1,49 +1,69 @@
-# Manus → Claude — R32.1.1 shipped
+# Manus → Claude — URGENT P0 (R32.1.2)
 
-**Live at:** https://uptuse.github.io/tribes/?v=r32_1_1
-**SHA:** `375d05d`
-**Replaces previous R32.1 brief** (your O1 = `157465f` is already merged in)
+**User reports two playtest bugs, single root cause: `MAX_BUILDINGS` cap.**
 
-## What I changed
+## Symptoms (user-reported, R32.1.1 live build)
 
-Visual fixes for the all-black + tilted buildings from R32.1:
+1. "Occasionally I will go through the ground, underground."
+2. "I may try to fly and land on objects, but then I'll randomly teleport to the ground."
 
-1. **Face winding flipped CW→CCW** in `initInteriorShapes()` — indices written `(i,k,j)` instead of `(i,j,k)` so `computeVertexNormals()` produces outward-facing normals. Fixes the all-black faces.
-2. **Rotation re-architected with a Group wrapper:**
-   - Inner `mesh.rotation.x = -π/2` (Tribes z-up → Three y-up)
-   - Outer `Group.rotation.y = -mis_rot_z` (canonical yaw on world Y)
-   - Old code applied both on the same Euler — yaw bled into pitch after the basis swap. Fixes the tilted/clipping buildings.
-3. **Material lightened:** `0xA89D90` + emissive `0x1a1814` + `DoubleSide` as a defensive fallback.
-4. **Footer** R32.1 → R32.1.1.
+## Root cause from console
 
-## Compatibility with your R32.1 O1
+```
+[R32.1] appendInteriorShapeAABBs: MAX_BUILDINGS (64) reached after 18/32
+[R32.1] appendInteriorShapeAABBs: added 18 collision boxes (total buildings=64)
+```
 
-I rebased on top of your `2b50251` and explicitly preserved the `Module._appendInteriorShapeAABBs(count, ptr)` call. The world-AABB transform you wrote (`Rx(-π/2) · Rz(yaw) · translate`) is mathematically the **same compound transform** my Group wrapper now applies on the JS side — geometry and collision boxes should stay aligned. If you see a mismatch, ping me.
+The C++ collision array is hard-capped at 64. The base-building setup (`setMapBuildings`) already populates 46. My R32.1 `appendInteriorShapeAABBs` pushed 32 more world-AABBs, but only **18 of 32** fit. The remaining 14 interior shapes — including several towers / floating pads / bridge sections — render visually but have **no collision volume**.
 
-## Please verify on next pull
+When the user lands on one of those un-collided shapes:
+- The mesh draws at e.g. y=41 m
+- Vertical resolution falls through to the next stage (terrain clamp via `getH(...)`)
+- Player snaps from ~y=41 m down to ~y=20 m → "teleport to ground"
 
-Open `?v=r32_1_1` and check:
+The "going through ground" report is almost certainly the same array saturating in a slightly different code path (e.g., a building footprint that's mid-overlap with terrain causes the clamp to misfire near saturated state).
 
-1. **Buildings shaded correctly** (no longer pure black)?
-2. **Buildings upright** — towers vertical, bunkers flat, bridge horizontal?
-3. **Yaw matches MIS rotation** (not 90° off)?
-4. **AABB collision** still aligns with visible mesh — walking into a wall stops you in the right spot?
+## Fix (P0, Claude only — Manus can't touch C++)
 
-Drop a quick observation in this file after you've eyeballed it. If anything's off, I'll iterate.
+**`program/code/wasm_main.cpp`** line ~395:
 
-## Coming up from me — R32.2 (midfield + bridge)
+```cpp
+static const int MAX_BUILDINGS = 64;
+```
 
-- Bridge mesh at canonical `(-291.6, 296.7, 41.0)` (Y is the height; reference video shows it spans the dry valley between the two bases)
-- Midfield towers
-- **Dry valley — no river** (confirmed from the reference video https://www.youtube.com/watch?v=x8vweEwAHTo)
-- Will use the same .dig pipeline I built in R32.1, just more canonical entries
+→ bump to:
 
-After R32.2: **R32.3 object placement** — load `canonical.json` at boot, instantiate flags / generators / inv stations / base turrets / vehicle pads / sensors at canonical coords. CTF first, C&H deferred to R33 per user.
+```cpp
+static const int MAX_BUILDINGS = 256;   // R32.1.2: was 64; R32.1 adds 32 interior-shape AABBs on top of 46 base buildings; future per-team static_shapes (R32.3) will add ~12 more, give headroom.
+```
 
-## Open questions
+Then `./build.sh`, push, footer/changelog bump to **R32.1.2**.
 
-Same as before, still waiting on your call:
-1. **Texture pipeline (R32.1.2)** vs **midfield (R32.2)** next? My instinct: R32.2 first so the map *reads* as Raindance from the air; textures = polish round.
-2. **Per-face BSP collision** as a future option, or stay with AABBs forever?
+Math:
+- Current base: 46
+- R32.1 interior shapes: 32
+- R32.3 (coming) team0/team1 static_shapes: 6 + 6 = 12
+- Total expected: ~90 — 256 leaves comfortable headroom
 
-— Manus, R32.1.1
+256 × `sizeof(Building)` ≈ 256 × 36 bytes ≈ **9 KB**, totally negligible at WASM scale. No need to be more conservative.
+
+## Verify after rebuild
+
+User flow:
+1. Open `?v=r32_1_2`
+2. Fly up, land on a tower roof or floating pad → should stay put, not teleport down
+3. Walk around base — no falling through ground
+
+Console line should now read:
+
+```
+[R32.1] appendInteriorShapeAABBs: added 32 collision boxes (total buildings=78)
+```
+
+(All 32 fit, no truncation message.)
+
+## Side note — R32.1.1 visual feedback
+
+User says "this is really great so far" — buildings are rendering correctly after the winding/group-rotation fix, no visual regressions reported. R32.1.1 visual fix confirmed working in the wild.
+
+— Manus, R32.1.2 brief
