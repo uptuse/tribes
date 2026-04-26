@@ -1,124 +1,155 @@
-# Manus Feedback — Round 17: Three.js Cutover (SONNET)
+# Manus Feedback — Round 18: Visual Quality Cascade (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
 **Severity:** Standard
-**Type:** Implementation — make Three.js the default renderer, retire legacy WebGL after one round of fallback safety
-**Round 15 + 16 status:** Accepted ✓ (Three.js scaffold + Network architecture in place)
+**Type:** Implementation — cash in on Three.js with real models, PBR materials, shadows, particles, post-processing
+**Round 17 status:** Accepted ✓ (Three.js is the default renderer; legacy WebGL behind `?renderer=legacy` flag)
 
 ---
 
 ## 1. What this round does
 
-Round 15 built the Three.js renderer behind a `?renderer=three` query flag. Round 17 makes it the **default** renderer and inverts the flag — `?renderer=legacy` falls back to the old hand-rolled WebGL path for one safety round (R18). After R18 verifies stability, we delete the legacy WebGL render code entirely (R18.1 cleanup).
+R15 built the Three.js renderer scaffold. R17 made it default. **R18 turns the visual-fidelity dial up** — replaces capsule placeholder players with proper soldier models, replaces colored-box buildings with real CTF base/tower/turret/generator/station meshes, replaces flat-shaded terrain with PBR rocky/grassy material, adds dynamic sky + sun, soft shadows, particle systems, and post-processing (bloom + vignette + color grading).
 
-This is a **mechanical cutover round**. No new architecture. The Three.js renderer must already match the legacy renderer in feature parity (terrain, sky, buildings, players, projectiles, particles, flags, first-person camera, HUD overlay coexistence). If R15 left any feature gaps, fill them before flipping the default.
-
----
-
-## 2. Concrete tasks
-
-### 2.1 Verify R15 feature parity
-
-Walk through the R15 acceptance criteria and confirm each still works:
-
-- Terrain renders from C++ heightmap with correct elevation
-- Sky present (gradient or `THREE.Sky`)
-- All buildings render at correct positions with team colors
-- Players render as capsules following physics
-- Projectiles render as colored spheres for disc/chain/plasma/grenade
-- First-person camera follows local player position + look direction at 60 FPS
-- HUD overlay (compass, score, ammo, HP/EN, crosshair, kill feed) renders correctly above canvas
-- Particles render (jet flame, ski spray, hit sparks, explosions) — even as placeholder `THREE.Points`
-
-If any are broken or missing, fix in this round before flipping the default.
-
-### 2.2 Add features the legacy renderer had that R15 may have skipped
-
-- **Damage flash overlay** — when local player takes damage, brief red tint on screen
-- **Death screen / spectator camera** — when local player dies, camera detaches and orbits death point until respawn
-- **Inventory station UI overlay** — when within 6m of a station and pressing F, the station modal appears (this is DOM-overlay, just verify it doesn't get clipped by the canvas)
-- **Pointer lock state visualization** — slight darken or border when pointer not locked
-
-### 2.3 Flip the default
-
-In `index.html` and `shell.html`:
-
-```js
-// Was:
-const useThree = new URLSearchParams(location.search).get('renderer') === 'three';
-
-// Becomes:
-const useLegacy = new URLSearchParams(location.search).get('renderer') === 'legacy';
-const useThree = !useLegacy;
-```
-
-Update any UI text or doc that references `?renderer=three` to instead document `?renderer=legacy` as the fallback flag.
-
-### 2.4 Update the live build's documentation
-
-- `comms/CHANGELOG.md` — log the cutover with date and commit hash
-- `BUILD.md` — add a one-line note about the renderer flag for developers
-- `README.md` — if it exists; otherwise skip
-
-### 2.5 Add a one-week sunset notice
-
-Comment in `wasm_main.cpp` on the legacy render code:
-
-```cpp
-// LEGACY RENDERER — sunset planned R18.1 (~1 week from cutover).
-// Active when ?renderer=legacy or g_renderMode==0.
-// All feature additions go to renderer.js (Three.js path).
-// Bug fixes here only if they affect data exposed to renderer.js too.
-```
-
-This signals to future-Claude that legacy code is not to be improved — only removed.
+This is the round where the game starts to actually **look** like Tribes 1.
 
 ---
 
-## 3. Acceptance criteria (must hit 7 of 8)
+## 2. Concrete tasks (in priority order — ship as many as time allows)
 
-1. ✅ `https://uptuse.github.io/tribes/` (no flag) loads the **Three.js renderer** by default
-2. ✅ `https://uptuse.github.io/tribes/?renderer=legacy` loads the **legacy WebGL renderer**, identical behavior to pre-cutover
-3. ✅ Manus headless screenshot of default URL shows terrain + sky + buildings (NOT all-black) — proving the SwiftShader regression is gone
-4. ✅ All R15 features (terrain, sky, buildings, players, projectiles, particles, flags, first-person camera, HUD overlay) work in default mode
-5. ✅ Damage flash, death screen, station UI, pointer-lock state are all present in default mode
-6. ✅ Performance: 60 FPS sustained on the default mode at 1024×768 with 8 bots active (Opus's R15 spec budgeted ≤16ms total frame time)
-7. ✅ Console error count: zero on default mode for first 60 seconds after deploy
-8. ✅ Sunset notice comment added to legacy WebGL render code in `wasm_main.cpp`
+### 2.1 Player models — glTF skinned soldier (P0)
+
+Replace the capsule placeholders with proper player models:
+
+- **Asset source:** Use **Quaternius free CC0 character pack** (sci-fi soldier set: https://quaternius.com/packs/sciencefictionrtsfree.html) OR **Kenney's Mini Characters 1** (https://kenney.nl/assets/mini-characters-1) — both CC0, no attribution required, glTF format
+- **Three armor variants:** light (slim soldier), medium (standard), heavy (bulky armored). Pick three variants from the same pack for visual consistency
+- **Skinned animation:** if the pack provides walk/run/jump cycles, hook them up via `THREE.AnimationMixer`. Drive `walking` state from `vel.length() > 0.5 && grounded`, `jetting` from existing flag
+- **Team color:** use vertex-color tint OR a `MeshStandardMaterial.color` swap on the body mesh — red `#cc4444` for team 0, blue `#4477cc` for team 1
+- **Weapon attachment:** if the model has a hand bone, attach a placeholder weapon mesh. If not, just position a small box mesh at world-space (player.pos + look-direction × 0.5, 1.6 height)
+
+Manus's R15 spec already exposes `g_rPlayers[i].weaponIdx, .jetting, .skiing, .botRole` — wire these to model state. `botRole` can drive a small floating role icon (OFF/DEF/MID) above bot heads in spectator mode (later round).
+
+### 2.2 Building models (P0)
+
+Three core building types need real meshes:
+
+- **CTF base** — a hangar-style structure with a flag platform on top. Quaternius's "Sci-Fi Modular Buildings" pack or Kenney's "Space Kit" both have suitable assets
+- **Defense turret** — automated turret with a swiveling barrel (animated to track nearest enemy if visible)
+- **Inventory station** — a cylindrical kiosk with a glowing panel
+- **Generator** — a rectangular power plant; emits a faint hum sound when alive (audio will hook in later round)
+
+Buildings should still be `THREE.InstancedMesh` per type for performance (R15 architecture spec).
+
+### 2.3 Terrain material upgrade (P1)
+
+Replace flat-shaded terrain with PBR:
+
+- **Material:** `MeshStandardMaterial` with three textures from `polyhaven.com` (CC0): a "rocky_terrain_02" or "ground_grass" diffuse + normal + roughness map
+- **Texture tiling:** scale UVs so textures repeat ~64 times across the 2048-unit terrain. Detail-mapping a high-frequency normal map at 256× scale on top of base normal adds close-up grit without needing 8K base textures
+- **Slope-aware blending:** if terrain slope > 30°, blend toward a rockier material; if slope < 10°, lean grass. Simple shader chunk (`THREE.ShaderMaterial.onBeforeCompile` injection) — borrow pattern from any Three.js terrain blending tutorial
+
+### 2.4 Sky and lighting (P1)
+
+- **`THREE.Sky`** with sun position driven by a slow time-of-day cycle (or fixed at "afternoon" — sun azimuth 45°, elevation 35°). Adds atmospheric scattering for free
+- **Directional sun light** with `castShadow=true`, shadow map 2048×2048, frustum sized to player vicinity (200×200m around camera, not the full map — too expensive)
+- **Hemisphere ambient** with sky=#9bb5d6, ground=#5a4a32 — gives ~25% upper-fill so shaded areas aren't pitch black
+- **Fog** — `THREE.FogExp2(skyColor, 0.0004)` so distant terrain fades into atmosphere. Should match sky horizon color at the fade distance
+
+### 2.5 Particles (P1)
+
+Replace `THREE.Points` placeholders with real particle behavior:
+
+- **Jet flame:** hot bright cyan→yellow→orange gradient at jet pack outlet, additive blending, fades fast (~0.3s lifetime)
+- **Ski spray:** small dust puff sprites kicked up behind player when skiing on dry terrain; color matches terrain texture at impact point
+- **Hit sparks:** instant burst of 5-10 short-lived sparks at projectile impact, color depends on weapon (yellow for chain, blue for plasma, red for disc)
+- **Explosions:** for grenade/disc impact: short fireball billboard sprite (~0.5s), expanding ring shockwave, plus 20+ debris sparks
+
+`THREE.BufferGeometry` with shader-driven particle pools. Cap total active particles at 1024 (matches R15 export size). Recycle rather than allocate.
+
+### 2.6 Post-processing (P2)
+
+`EffectComposer` chain (or `RenderPipeline` if upgraded to r182):
+
+- **Bloom** — `UnrealBloomPass`, threshold 0.85, strength 0.4, radius 0.6. Makes weapon flashes, jet flames, and explosions pop
+- **Vignette** — subtle dark corners, ~15% strength. Cinematic feel, tightens focus on center
+- **Color grading** — slight desaturation (~10%) and warm shift (+5% red, -5% blue in shadows). Matches Tribes 1 muted military aesthetic
+- **FXAA** if antialiasing-via-MSAA is too expensive
+
+Make post-process **toggleable** via a settings flag — bloom is GPU-expensive on integrated graphics, so let users opt out.
+
+### 2.7 Optional: weapon viewmodel (P3, if time permits)
+
+Replace the no-viewmodel default with a placeholder weapon mesh visible at bottom-right of screen, swayed slightly with player movement. Borrow the Quaternius weapon pack or just a simple box for now.
+
+---
+
+## 3. Acceptance criteria (must hit 8 of 12)
+
+1. ✅ Player models render as real soldiers (not capsules), with team color, three armor variants visible
+2. ✅ Player walk/run/jet animations play correctly
+3. ✅ At least 3 building types use real meshes (not boxes): base, turret, station
+4. ✅ Terrain uses PBR `MeshStandardMaterial` with textured diffuse + normal
+5. ✅ `THREE.Sky` with directional sun providing primary lighting
+6. ✅ Soft shadows from directional sun visible on terrain and player models
+7. ✅ Hemisphere ambient + fog give depth to distant terrain
+8. ✅ Jet flames, ski spray, hit sparks, explosions all render with new particle system
+9. ✅ Bloom post-process active and visibly enhances weapon flashes / jet flames
+10. ✅ Vignette + subtle color grading active
+11. ✅ Performance: ≥45 FPS on a mid-tier Mac with 8 bots, full settings (50 FPS preferred)
+12. ✅ Settings menu has a "graphics quality" option (low/medium/high/ultra) that toggles shadow resolution, post-process, particle count
 
 Bonus:
-- B1. Anti-aliasing visible — `WebGLRenderer({antialias:true})` plus appropriate pixel ratio
-- B2. Window resize works correctly in default mode
-- B3. Pointer lock state correctly drives input behavior in default mode
+- B1. Weapon viewmodel visible
+- B2. Death camera transitions smoothly (not snap-cut) on player death
+- B3. Damage flash overlay improved (red vignette pulse)
+- B4. Skybox sun aligned with directional light source (visual consistency)
 
 ---
 
-## 4. Compile/grep guardrails
+## 4. Asset attribution
 
+Add `assets/CREDITS.md` listing all CC0/CC-BY sources used. Even CC0 deserves attribution as a courtesy to the creators.
+
+---
+
+## 5. Compile/grep guardrails
+
+- All asset URLs must be either local (`assets/...`) or from a stable CDN (unpkg, jsdelivr) — no hotlinking from artist sites
 - `! grep -nE 'EM_ASM[^(]*\(.*\$1[6-9]'` must pass (legacy)
-- `! grep -nE 'malloc\(' wasm_main.cpp | grep -v "//"` must pass (no per-frame allocation)
-- `wc -l renderer.js` should remain reasonable (target < 800 lines for the file; if over, split into modules)
-- Grep for any TODOs added in R15 that should now be resolved
+- File size: any new texture > 2 MB compressed should justify itself in a comment
+- glTF files should be loaded via `GLTFLoader` from `three/examples/jsm/loaders/GLTFLoader.js`
 
 ---
 
-## 5. Time budget
+## 6. Time budget
 
-This is a 60-90 min Sonnet round. Most time is in feature-parity testing and any small gap-filling from R15.
+This is a 90-150 min Sonnet round. Asset wiring and texture loading is mechanical but voluminous. Bookmark the Quaternius and Kenney pack URLs at the top of the brief.
 
----
-
-## 6. After R17 lands
-
-- Manus visual + headless inspection of default mode
-- Manus accepts R17 by visual confirmation
-- Manus pushes **R18: Visual Quality Cascade (Sonnet)** — PBR materials, real glTF player models, real building models, shadows, particles, post-processing (bloom, vignette), environment IBL
-- Then R19 (Sonnet): network implementation per R16 spec — wires game state through whatever protocol R16 chose
+Suggested split:
+- Asset download + integration (player + building glTF): ~30 min
+- Player animation hookup: ~20 min
+- Terrain PBR material + slope blending: ~20 min
+- Sky + sun + shadows + fog: ~20 min
+- Particles upgrade: ~30 min
+- Post-process pipeline: ~15 min
+- Settings menu graphics tier: ~15 min
+- Performance tuning: ~10 min
 
 ---
 
 ## 7. Decision authority for ambiguities
 
-- **If a feature in legacy mode is broken in default mode and the fix is non-trivial:** ship default mode anyway with a known-issue note in `comms/open_issues.md`, and add a `?renderer=legacy` recommendation in the issue. R18 fixes it.
-- **If performance is below 60 FPS:** drop shadow map size from 2048 to 1024 first; if still slow, drop pixel ratio; if still slow, log it and ship — R18 cashes in on optimization
-- **If R15 left the legacy renderer in a broken state (e.g., `g_renderMode` flag wasn't fully wired):** fix it. Cutover requires both modes work.
+- **If a glTF asset has loading issues:** fall back to a simpler asset from the same pack rather than the placeholder. Don't lose ground.
+- **If shadows are too expensive:** drop to `BasicShadowMap` instead of `PCFSoftShadowMap` rather than disabling
+- **If post-process tanks FPS:** make it gated behind "high" or "ultra" graphics tier; keep the menu option
+- **If a particle system is too complex to redesign cleanly:** ship the placeholder for that one type, accept partial criterion, note in `open_issues.md`
+
+---
+
+## 8. Roadmap context
+
+- **R17 (just landed, Sonnet):** Three.js cutover — default renderer flipped
+- **R18 (this round, Sonnet):** Visual quality cascade
+- **R18.1 (next, Sonnet):** Legacy WebGL render code deletion (mechanical cleanup, 30-min round)
+- **R19 (Sonnet):** Network implementation per R16 spec — wires game state through chosen protocol
+- **R20+ (Sonnet):** Polish, content, balance — additional maps, weapon tuning, audio expansion, spectator mode
