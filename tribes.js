@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpdz5j9g4m.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp46zykbbe.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -204,25 +204,25 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/larmor.dts", "start": 1878841, "end": 2195287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 2195287, "end": 2196358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 2196358, "end": 2196546}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 2196546, "end": 2199269}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 2199269, "end": 2225269}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 2225269, "end": 2489465}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 2489465, "end": 2587934}, {"filename": "/assets/tribes/marmor.dts", "start": 2587934, "end": 2985076}, {"filename": "/assets/tribes/tower.DTS", "start": 2985076, "end": 2999934}], "remote_package_size": 2999934});
+    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/larmor.dts", "start": 1878841, "end": 2195287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 2195287, "end": 2196358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 2196358, "end": 2198871}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 2198871, "end": 2202286}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 2202286, "end": 2228286}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 2228286, "end": 2492482}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 2492482, "end": 2590951}, {"filename": "/assets/tribes/marmor.dts", "start": 2590951, "end": 2988093}, {"filename": "/assets/tribes/tower.DTS", "start": 2988093, "end": 3002951}], "remote_package_size": 3002951});
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpdz5j9g4m.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuqwduzev.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp46zykbbe.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpc7a4mflq.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuqwduzev.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4p_vzij6.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpc7a4mflq.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmplflo68wg.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4p_vzij6.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmplflo68wg.js
 
 
 var arguments_ = [];
