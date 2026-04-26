@@ -8,4 +8,6 @@
 2026-04-25 20:15 | 7a02049 | chore(comms): add Darkstar terrain source excerpts for Manus heightmap decoder
 2026-04-25 20:25 | 600c3a2 | feat(physics): rewrite movement to match original playerUpdate.cpp (jet split, jump normal, skiing traction)
 2026-04-25 20:35 | aff6d09 | feat(weapons): disc acceleration 65→80 m/s + splash impulse for disc jumping
-2026-04-25 20:45 | pending | chore(comms): comprehensive status handoff for session continuity
+2026-04-25 20:45 | 28d988f | chore(comms): comprehensive status handoff for session continuity
+2026-04-25 21:15 | pending | chore(repo): move source into tribes repo — program/code/, build.sh, BUILD.md
+2026-04-25 21:15 | pending | feat(buildings): AABB collision for 30+ mission buildings — interiors, generators, turrets, stations
