@@ -1,65 +1,73 @@
-# Claude Status — 2026-04-25T21:30:00Z
+# Claude Status — 2026-04-25T22:00:00Z
 
 ## What I just did (this session)
 
-### Round 6 response — Tier 2.6 weapon visuals + blue HUD fix
+### Tier 2.7 — Base Infrastructure (all three sub-systems)
 
-#### Blue HUD bars — fixed
-- Root cause: WebGL canvas renders behind HTML menu overlay. HUD runs every frame including during menus.
-- **Fix 1 (CSS):** Canvas starts `visibility:hidden`; `startGame()` reveals it. No HUD shows during menus.
-- **Fix 2 (C++):** Energy bar fill changed from bright blue `(0.2, 0.5, 1.0)` → amber/brass `(0.9, 0.70, 0.10)`.
-- **Fix 3 (C++):** All bar backgrounds changed from dark blue-grey `(0.15, 0.15, 0.20)` → neutral dark `(0.12, 0.12, 0.12)`.
-- Rule: no blue in HUD. Blue only for Diamond Sword team color (score bars, flag carrier indicator).
+#### 2.7.1 — Turret auto-aim AI ✅
+- 6 turrets initialized from `RAINDANCE_TURRETS[]` with team affiliation per mission data (team0 = Red, team1 = Blue)
+- Detection: scan all enemies within 80m radius every 200ms (not per-frame)
+- Aim: smooth barrel rotation at 120°/sec toward nearest enemy
+- Fire: plasma projectiles (reusing Tier 2.6 plasma visual), 1 shot/1.5s, only when target within 15° of barrel axis
+- HP: 200 per turret; destroyed turrets stop firing + render dark grey with drooped barrel
+- Generator dependency: turrets go offline if team's generator is destroyed
+- Hit detection: projectile update checks turret AABB; hit logs `[CTF] RED/BLUE turret destroyed!`
+- Rendering: team-tinted box (red/blue tone) + barrel box pointing in `aimYaw` direction
 
-#### Tier 2.6 — Distinct projectile visuals
-All four primary weapons now read distinctly from across the map:
+#### 2.7.2 — Destructible generators ✅
+- 2 generators initialized from `RAINDANCE_GENERATORS[]`
+- HP: 800 each; player projectiles damage via AABB hit detection
+- Cascade: `generatorAlive[team]` flag → turrets + stations check this before firing/dispensing
+- When destroyed: dark render + yellow sparks every 500ms (reusing particle system)
+- Repair: +5 HP/sec when no enemy within 30m; on full repair → turrets/stations come back online
+- HUD message via printf `[CTF] >>> RED/BLUE GENERATOR DESTROYED — turrets offline <<<`
+- Repair message: `[CTF] >>> RED/BLUE generator repaired — turrets online <<<`
 
-| Weapon | Visual Signature |
-|--------|-----------------|
-| Spinfusor (disc) | White spinning DTS disc model + cyan trail particles each frame |
-| Chaingun | Tiny yellow tracer dot (0.12 radius), fast-moving |
-| Plasma | Medium red-orange globule (0.45 radius) with color jitter per frame |
-| Grenade | Dark olive ball (0.32 radius), bounces off terrain (40% velocity preserved), red blinks in last 0.5s before detonation |
+#### 2.7.3 — Inventory station UI ✅
+- **Trigger:** press F within 4m of any inventory station (F key, 'E' remains for weapon cycle)
+- **UI:** HTML modal overlay with 3-column grid: Armor / Primary Weapon / Pack
+  - Armor: Light, Medium, Heavy
+  - Weapon: Spinfusor, Chaingun, Plasma, Grenade Launcher
+  - Pack: None, Energy Pack (+50% fuel cap), Repair Pack (10s gradual heal), Ammo Pack (2× ammo)
+- **Offline state:** if generator down, station shows "STATION OFFLINE" and hides loadout options
+- **Apply:** calls `Module._applyLoadout(armor, weapon, pack)` → applies to player immediately (full HP/energy reset)
+- **Energy pack:** 1.5× energy cap applied in player update every frame
+- **Repair pack:** 10s heal timer, heals full HP over duration
+- **Close:** F key or Close button; re-locks pointer
 
-Disc weapon table color updated from blue to white (affects HUD ammo indicator too).
+## C++ changes
+- `Player` struct: added `pack` (int) and `healTimer` (float) fields
+- New structs: `Turret` (6 entries) and `Generator` (2 entries) with HP, team, alive state
+- `generatorAlive[2]` bool array — checked by turrets and station UI
+- `updateTurrets(dt)` — scan/aim/fire loop
+- `updateGenerators(dt)` — spark/repair loop
+- `applyLoadout(int, int, int)` — exported C function, callable from JS
+- Projectile update: added AABB hit detection for turrets and generators
+- Render: turrets and generators rendered as colored/grey boxes; turret barrel as small box pointing aimYaw
 
-#### Grenade bounce physics
-- When grenade hits terrain (not player, not building, not expired): velocity.y reflected at 40%, horizontal damped to 75%.
-- Only bounces if horizontal speed > 2 m/s; below that it detonates.
-- Grenade player-hits and building-hits still detonate immediately.
-- `projectileHitsBuilding` and `expired` and `hitPlayer` detection now separated from `hitTerrain` for clean conditional logic.
+## Build/export changes
+- `build.sh`: added `_applyLoadout` to EXPORTED_FUNCTIONS
 
 ## Current state of key files
 
-### `/Users/jkoshy/tribes/program/code/wasm_main.cpp` (~1630 lines)
-Single-file game. Contains all physics, rendering, CTF logic, HUD.
-- **NEW (this session):** Distinct projectile rendering, grenade bounce, HUD color fixes.
+### `/Users/jkoshy/tribes/program/code/wasm_main.cpp` (~1720 lines)
+All physics, rendering, CTF, turret AI, generator state, station proximity detection.
 
 ### `/Users/jkoshy/tribes/shell.html`
-Template for Emscripten output. Now hides canvas (`visibility:hidden`) until game starts.
-
-### Other files unchanged from previous session.
-
-## Build command
-
-```bash
-cd /Users/jkoshy/tribes && ./build.sh
-```
-
-## Deploy command
-
-```bash
-cd /Users/jkoshy/tribes && git add -A && git commit -m "message" && git push origin master
-```
+Station UI overlay (3-column grid). `[STATION:idx:genAlive]` message handler. `applyLoadout` call.
 
 ## What's next (priority order)
 
-1. **Manus review of weapon visuals** — verify disc/chaingun/plasma/grenade read distinctly
-2. **Tier 2.7 — Base Infrastructure** — turret auto-aim AI, destructible generator, inventory station UI
-3. **Tier 2.x — Full heightmap** — stitch 3×3 block (769×769) per reference_impl/heightmap_decoder.md
-4. **Tier 3.8 — Textures** — BMP→PNG terrain textures and armor skins
-5. **Tier 3.9 — UI polish** — compass, health bar style, command map
+1. **Manus review of Tier 2.7** — verify turret aim visually, generator cascade, station UI
+2. **Tier 2.x — Full heightmap** — stitch 3×3 (769×769) per `comms/reference_impl/heightmap_decoder.md`
+3. **Tier 3.8 — Textures** — BMP→PNG terrain and armor skins
+4. **Tier 3.9 — UI polish** — compass, minimap, command map
 
 ## How to run / test
 - **Live:** https://uptuse.github.io/tribes/
 - **Local:** `cd /Users/jkoshy/tribes/build && python3 -m http.server 8080` → http://localhost:8080/tribes.html
+
+## Build command
+```bash
+cd /Users/jkoshy/tribes && ./build.sh
+```

@@ -113,6 +113,15 @@
 
     .footer { font-size:0.65em; color:#5A4A3A; letter-spacing:1px; margin-top:15px; }
     .hidden { display:none; }
+
+    /* Inventory Station */
+    #stationui { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
+    #stationui.active { display:block; }
+    .station-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin:12px 0; }
+    .station-col h4 { font-family:'Barlow Condensed',sans-serif; font-size:0.75em; letter-spacing:3px; color:#9A8A6A; text-transform:uppercase; margin-bottom:6px; }
+    .station-opt { padding:8px 10px; margin:3px 0; border:1px solid #4A3A2A; cursor:pointer; font-size:0.82em; color:#E8DCB8; text-align:center; transition:all 0.1s; }
+    .station-opt:hover,.station-opt.selected { border-color:#D4A030; color:#FFC850; background:rgba(40,35,20,0.7); }
+    #station-offline { color:#C8302C; font-family:'Cinzel',serif; font-size:1em; letter-spacing:3px; text-align:center; margin:20px 0; }
   </style>
 </head>
 <body>
@@ -317,6 +326,40 @@
     </div>
   </div>
 
+  <!-- Inventory Station -->
+  <div id="stationui">
+    <div class="panel panel-wide">
+      <h3>Inventory Station</h3>
+      <div id="station-offline" style="display:none;">STATION OFFLINE — Generator Destroyed</div>
+      <div id="station-contents">
+        <div class="station-grid">
+          <div class="station-col">
+            <h4>Armor</h4>
+            <div class="station-opt selected" id="st-armor-0" onclick="stSelect('armor',0)">Light</div>
+            <div class="station-opt" id="st-armor-1" onclick="stSelect('armor',1)">Medium</div>
+            <div class="station-opt" id="st-armor-2" onclick="stSelect('armor',2)">Heavy</div>
+          </div>
+          <div class="station-col">
+            <h4>Primary Weapon</h4>
+            <div class="station-opt selected" id="st-wpn-2" onclick="stSelect('wpn',2)">Spinfusor</div>
+            <div class="station-opt" id="st-wpn-1" onclick="stSelect('wpn',1)">Chaingun</div>
+            <div class="station-opt" id="st-wpn-4" onclick="stSelect('wpn',4)">Plasma Gun</div>
+            <div class="station-opt" id="st-wpn-3" onclick="stSelect('wpn',3)">Grenade Launcher</div>
+          </div>
+          <div class="station-col">
+            <h4>Pack</h4>
+            <div class="station-opt selected" id="st-pack-0" onclick="stSelect('pack',0)">None</div>
+            <div class="station-opt" id="st-pack-1" onclick="stSelect('pack',1)">Energy Pack (+50% fuel)</div>
+            <div class="station-opt" id="st-pack-2" onclick="stSelect('pack',2)">Repair Pack (10s heal)</div>
+            <div class="station-opt" id="st-pack-3" onclick="stSelect('pack',3)">Ammo Pack (2× ammo)</div>
+          </div>
+        </div>
+        <button class="btn" onclick="stApply()" style="margin-top:8px;">DEPLOY LOADOUT</button>
+      </div>
+      <button class="btn btn-back" onclick="stClose()" style="margin-top:6px;">Close [F]</button>
+    </div>
+  </div>
+
   <!-- Kill Feed -->
   <div id="killfeed"></div>
   <!-- Flag Status -->
@@ -363,6 +406,7 @@
     document.addEventListener('keydown',function(e){
       if(e.keyCode===9&&gameStarted){e.preventDefault();document.getElementById('scoreboard').classList.add('active');}
       if(e.keyCode===27&&gameStarted){document.exitPointerLock();showScreen('mainmenu');gameStarted=false;}
+      if(e.keyCode===70&&document.getElementById('stationui').classList.contains('active')){stClose();}
     });
     document.addEventListener('keyup',function(e){
       if(e.keyCode===9)document.getElementById('scoreboard').classList.remove('active');
@@ -373,6 +417,30 @@
       setTimeout(function(){div.classList.add('fade');},4000);
       setTimeout(function(){div.remove();},5000);
       while(feed.children.length>5)feed.removeChild(feed.firstChild);
+    }
+    var stSel={armor:0,wpn:2,pack:0};
+    function stSelect(cat,val){
+      var prefix='st-'+cat+'-';
+      document.querySelectorAll('[id^="'+prefix+'"]').forEach(function(el){el.classList.remove('selected');});
+      var el=document.getElementById(prefix+val);if(el)el.classList.add('selected');
+      stSel[cat]=val;
+    }
+    function openStation(idx,genAlive){
+      document.exitPointerLock();
+      var ui=document.getElementById('stationui');
+      var offline=document.getElementById('station-offline');
+      var contents=document.getElementById('station-contents');
+      offline.style.display=genAlive?'none':'block';
+      contents.style.display=genAlive?'block':'none';
+      ui.classList.add('active');
+    }
+    function stApply(){
+      if(Module._applyLoadout)Module._applyLoadout(stSel.armor,stSel.wpn,stSel.pack);
+      stClose();
+    }
+    function stClose(){
+      document.getElementById('stationui').classList.remove('active');
+      if(gameStarted)canvas.requestPointerLock();
     }
     function setFlagStatus(msg){
       var el=document.getElementById('flagstatus');
@@ -385,7 +453,15 @@
 
     var Module={
       canvas:canvas,
-      print:function(t){console.log(t);if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));},
+      print:function(t){
+        console.log(t);
+        if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));
+        if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));
+        if(t.indexOf('[STATION:')===0&&t.indexOf('APPLIED')<0){
+          var parts=t.slice(9).replace(']','').split(':');
+          openStation(parseInt(parts[0]),parts[1]==='1');
+        }
+      },
       printErr:function(t){console.error(t);},
       setStatus:function(t){
         var lt=document.getElementById('load-text'),lb=document.getElementById('load-bar');

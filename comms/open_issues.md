@@ -44,6 +44,13 @@
 - [ ] Plasma crackling halo (additive blend pass) — deferred.
 - [ ] Mortar, ELF, laser, blaster, hand grenade — placeholder OK until their turn.
 
+## Priority 6 — Base Infrastructure (Tier 2.7)
+
+- [x] Turret auto-aim AI: scan 80m, smooth aim 120°/s, plasma fire 1.5s cooldown, 200HP, dark when destroyed
+- [x] Generator destructible: 800HP, cascade (turrets+stations offline), sparks, repair 5HP/s
+- [x] Inventory station UI: F key, 3-column (armor/weapon/pack), offline state, apply loadout
+- [ ] Bot AI: bots should prioritize shooting generators/turrets when defending
+
 ## Backlog (no priority yet)
 
 - [ ] Wire kill feed and flag status notifications from WASM events to the existing HTML overlays.

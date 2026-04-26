@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpn261yx_f.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmprb1tyw9l.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -205,21 +205,21 @@ Module['FS_createPath']("/assets", "tribes", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpn261yx_f.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpjfwitjt1.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmprb1tyw9l.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpemt9y_2c.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpjfwitjt1.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpil_svdgu.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpemt9y_2c.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcc81t0y3.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpil_svdgu.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcc81t0y3.js
 
 
 var arguments_ = [];
@@ -6367,6 +6367,7 @@ function checkIncomingModuleAPI() {
 }
 
 // Imports from the Wasm binary.
+var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
 var _fflush = makeInvalidEarlyAccess('_fflush');
 var _malloc = makeInvalidEarlyAccess('_malloc');
@@ -6384,6 +6385,7 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
+  assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
   assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
@@ -6397,6 +6399,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
+  _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
   _main = Module['_main'] = createExportWrapper('main', 2);
   _fflush = createExportWrapper('fflush', 1);
   _malloc = createExportWrapper('malloc', 1);

@@ -304,6 +304,8 @@ struct Player {
     bool alive,isBot;
     int ammo[WPN_COUNT];
     int carryingFlag; // -1 = none
+    int pack; // 0=none, 1=energy, 2=repair, 3=ammo
+    float healTimer;
     // Bot AI
     Vec3 botTarget;
     float botThinkTimer;
@@ -443,6 +445,27 @@ static bool projectileHitsBuilding(Vec3 pos) {
     }
     return false;
 }
+
+// ============================================================
+// Turrets & Generators
+// ============================================================
+struct Turret {
+    Vec3 pos;
+    int team;
+    float hp, aimYaw, fireCooldown, scanTimer;
+    int targetIdx;
+    bool alive;
+};
+static Turret turrets[RAINDANCE_TURRET_COUNT];
+
+struct Generator {
+    Vec3 pos;
+    int team;
+    float hp, sparkTimer;
+    bool alive;
+};
+static Generator generators[RAINDANCE_GENERATOR_COUNT];
+static bool generatorAlive[2]={true,true};
 
 // ============================================================
 // Shaders
@@ -1028,6 +1051,87 @@ static void drawHUD(){
 }
 
 // ============================================================
+// Turret + Generator update
+// ============================================================
+static void updateTurrets(float dt){
+    for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
+        Turret&t=turrets[i];
+        if(!t.alive)continue;
+        if(!generatorAlive[t.team])continue; // offline — gen destroyed
+        t.scanTimer-=dt;t.fireCooldown-=dt;
+        // Scan for nearest enemy every 200ms
+        if(t.scanTimer<=0){
+            t.scanTimer=0.2f;t.targetIdx=-1;
+            float bestDist=80.0f*80.0f;
+            for(int j=0;j<MAX_PLAYERS;j++){
+                if(!players[j].active||!players[j].alive||players[j].team==t.team)continue;
+                float d=(players[j].pos-t.pos).lenSq();
+                if(d<bestDist){bestDist=d;t.targetIdx=j;}
+            }
+        }
+        if(t.targetIdx<0||!players[t.targetIdx].active||!players[t.targetIdx].alive)continue;
+        Vec3 toTgt=players[t.targetIdx].pos-t.pos;
+        float targetYaw=atan2f(toTgt.x,-toTgt.z);
+        // Smooth barrel rotation (120°/sec)
+        float maxRot=120.0f*DEG2RAD*dt;
+        float yawDiff=targetYaw-t.aimYaw;
+        while(yawDiff>M_PI)yawDiff-=2*M_PI;while(yawDiff<-M_PI)yawDiff+=2*M_PI;
+        t.aimYaw+=(yawDiff>0?1:-1)*fminf(fabsf(yawDiff),maxRot);
+        // Fire plasma when within 15° and cooldown ready
+        if(fabsf(yawDiff)<15.0f*DEG2RAD&&t.fireCooldown<=0){
+            Vec3 dir={sinf(t.aimYaw),0.05f,-cosf(t.aimYaw)};
+            dir=dir.normalized();
+            for(int k=0;k<MAX_PROJ;k++){
+                if(!projs[k].active){
+                    projs[k]={t.pos+Vec3(0,2.5f,0),dir*weapons[WPN_PLASMA].muzzleVel,
+                               weapons[WPN_PLASMA].projLife,WPN_PLASMA,t.team,true};
+                    break;
+                }
+            }
+            t.fireCooldown=1.5f;
+        }
+    }
+}
+
+static void updateGenerators(float dt){
+    for(int i=0;i<RAINDANCE_GENERATOR_COUNT;i++){
+        Generator&g=generators[i];
+        if(g.alive)continue;
+        // Sparking visual
+        g.sparkTimer-=dt;
+        if(g.sparkTimer<=0){
+            g.sparkTimer=0.5f;
+            spawnPart(g.pos+Vec3(0,1,0),Vec3(0,3,0),1.0f,0.7f,0.1f,0.8f,0.15f);
+        }
+        // Regenerate if no enemies within 30m
+        bool enemyNear=false;
+        for(int j=0;j<MAX_PLAYERS;j++){
+            if(!players[j].active||!players[j].alive||players[j].team==g.team)continue;
+            if((players[j].pos-g.pos).lenSq()<900.0f){enemyNear=true;break;}
+        }
+        if(!enemyNear){
+            g.hp+=5.0f*dt;
+            if(g.hp>=800.0f){
+                g.hp=800.0f;g.alive=true;generatorAlive[g.team]=true;
+                printf("[CTF] >>> %s generator repaired — turrets online <<<\n",g.team==0?"RED":"BLUE");
+            }
+        }
+    }
+}
+
+// Exported: apply inventory station loadout (called from JS)
+extern "C" void applyLoadout(int armor,int weapon,int pack){
+    Player&me=players[localPlayer];
+    me.armor=(ArmorType)armor;me.curWeapon=weapon;me.pack=pack;
+    me.health=armors[armor].maxDamage;
+    float enCap=armors[armor].maxEnergy*(pack==1?1.5f:1.0f);
+    me.energy=enCap;
+    if(pack==2)me.healTimer=10.0f;
+    for(int i=0;i<WPN_COUNT;i++)me.ammo[i]=(pack==3?40:20);
+    printf("[STATION:APPLIED]\n");
+}
+
+// ============================================================
 // Main loop
 // ============================================================
 static float respawnTimer=0;
@@ -1072,6 +1176,22 @@ static void mainLoop(){
         }
         if(newWpn>=0&&armorCanUse[me.armor][newWpn]){me.curWeapon=newWpn;weaponSwitchCooldown=10;}
     }
+
+    // F key — inventory station interaction
+    static bool fWas=false;
+    if(keys[70]&&!fWas&&me.alive){
+        for(int i=0;i<RAINDANCE_STATION_COUNT;i++){
+            float sx=RAINDANCE_STATIONS[i].x, sz=-RAINDANCE_STATIONS[i].y, sy=RAINDANCE_STATIONS[i].z;
+            int stTeam=(strstr(RAINDANCE_STATIONS[i].team,"team0")?0:1);
+            Vec3 spos={sx,sy,sz};
+            if((me.pos-spos).lenSq()<16.0f){ // 4m radius
+                int genOk=generatorAlive[stTeam]?1:0;
+                printf("[STATION:%d:%d]\n",i,genOk);
+                break;
+            }
+        }
+    }
+    fWas=keys[70];
 
     if(me.alive){
         Vec3 fwd={sinf(me.yaw)*cosf(me.pitch),sinf(me.pitch),-cosf(me.yaw)*cosf(me.pitch)};
@@ -1157,7 +1277,15 @@ static void mainLoop(){
             spawnPart(me.pos+Vec3(0,0.5f,0),Vec3((rand()%100-50)/100.0f,-10,(rand()%100-50)/100.0f),1,0.7f,0.2f,0.3f);
         }else{
             me.energy+=ENERGY_RECHARGE*dt;
-            if(me.energy>ad.maxEnergy)me.energy=ad.maxEnergy;
+            float enCap=ad.maxEnergy*(me.pack==1?1.5f:1.0f);
+            if(me.energy>enCap)me.energy=enCap;
+        }
+
+        // Repair pack — heal over 10s
+        if(me.pack==2&&me.healTimer>0){
+            me.healTimer-=dt;
+            me.health+=ad.maxDamage*0.1f*dt; // full HP in 10s
+            if(me.health>ad.maxDamage)me.health=ad.maxDamage;
         }
 
         // Jump — from playerUpdate.cpp lines 615-642
@@ -1206,6 +1334,8 @@ static void mainLoop(){
 
     // Update bots
     for(int i=0;i<MAX_PLAYERS;i++)if(players[i].active&&players[i].isBot)updateBot(i,dt);
+    updateTurrets(dt);
+    updateGenerators(dt);
 
     // Update projectiles
     for(int i=0;i<MAX_PROJ;i++){
@@ -1243,6 +1373,38 @@ static void mainLoop(){
                     }
                 }
                 hitPlayer=true;break;
+            }
+        }
+        // Check turret hits (enemy projectiles only)
+        if(!hitPlayer&&!hitBuilding&&!hitTerrain&&!expired){
+            for(int t=0;t<RAINDANCE_TURRET_COUNT;t++){
+                if(!turrets[t].alive||turrets[t].team==projs[i].ownerTeam)continue;
+                Vec3&tp=turrets[t].pos;
+                if(fabsf(projs[i].pos.x-tp.x)<1.3f&&
+                   projs[i].pos.y>tp.y-0.5f&&projs[i].pos.y<tp.y+3.5f&&
+                   fabsf(projs[i].pos.z-tp.z)<1.3f){
+                    turrets[t].hp-=w.damage*100.0f;
+                    if(turrets[t].hp<=0){turrets[t].hp=0;turrets[t].alive=false;
+                        printf("[CTF] %s turret destroyed!\n",turrets[t].team==0?"RED":"BLUE");}
+                    hitPlayer=true;break; // treat as hit to trigger explosion
+                }
+            }
+            // Check generator hits
+            for(int g=0;g<RAINDANCE_GENERATOR_COUNT;g++){
+                if(!generators[g].alive||generators[g].team==projs[i].ownerTeam)continue;
+                Vec3&gp=generators[g].pos;
+                if(fabsf(projs[i].pos.x-gp.x)<1.8f&&
+                   projs[i].pos.y>gp.y-0.5f&&projs[i].pos.y<gp.y+2.5f&&
+                   fabsf(projs[i].pos.z-gp.z)<1.8f){
+                    generators[g].hp-=w.damage*100.0f;
+                    if(generators[g].hp<=0){
+                        generators[g].hp=0;generators[g].alive=false;
+                        generatorAlive[generators[g].team]=false;
+                        printf("[CTF] >>> %s GENERATOR DESTROYED — turrets offline <<<\n",
+                               generators[g].team==0?"RED":"BLUE");
+                    }
+                    hitPlayer=true;break;
+                }
             }
         }
         // Grenade bounces off terrain instead of detonating
@@ -1378,6 +1540,27 @@ static void mainLoop(){
     for(int i=0;i<numBuildings;i++){
         const Building& bld=buildings[i];
         pushBox(bld.pos, bld.halfSize, bld.r, bld.g, bld.b);
+    }
+    // Turrets: bright when alive, dark grey when destroyed
+    for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
+        Turret&t=turrets[i];
+        float tr=t.alive?(t.team==0?0.55f:0.45f):0.18f;
+        float tg=t.alive?0.45f:0.18f;
+        float tb=t.alive?(t.team==0?0.35f:0.55f):0.18f;
+        pushBox(t.pos,Vec3(1.0f,2.5f,1.0f),tr,tg,tb);
+        // Barrel: points in aimYaw direction, tilted down if destroyed
+        float bx=t.pos.x+sinf(t.aimYaw)*1.2f;
+        float bz=t.pos.z-cosf(t.aimYaw)*1.2f;
+        float by=t.pos.y+(t.alive?2.2f:1.5f);
+        pushBox({bx,by,bz},Vec3(0.2f,0.2f,0.5f),tr*1.2f,tg*1.2f,tb*1.2f);
+    }
+    // Generators: amber when alive, dark when destroyed
+    for(int i=0;i<RAINDANCE_GENERATOR_COUNT;i++){
+        Generator&g=generators[i];
+        float gr=g.alive?0.55f:0.15f;
+        float gg=g.alive?0.45f:0.15f;
+        float gb=g.alive?0.25f:0.15f;
+        pushBox(g.pos,Vec3(1.5f,2.0f,1.5f),gr,gg,gb);
     }
     // Flags
     for(int f=0;f<2;f++)if(!flags[f].carried)pushFlag(flags[f].pos,f,gameTime);
@@ -1602,6 +1785,21 @@ int main(){
     flags[1]={flag1World,flag1World,1,true,false,-1,0,0};
 
     initBuildings();
+
+    // Init turrets
+    for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
+        float wx=RAINDANCE_TURRETS[i].x, wz=-RAINDANCE_TURRETS[i].y, wy=RAINDANCE_TURRETS[i].z;
+        int tm=(strstr(RAINDANCE_TURRETS[i].team,"team0")?0:1);
+        turrets[i]={{wx,wy,wz},tm,200.0f,0,1.5f,0,-1,true};
+    }
+
+    // Init generators
+    generatorAlive[0]=generatorAlive[1]=true;
+    for(int i=0;i<RAINDANCE_GENERATOR_COUNT;i++){
+        float wx=RAINDANCE_GENERATORS[i].x, wz=-RAINDANCE_GENERATORS[i].y, wy=RAINDANCE_GENERATORS[i].z;
+        int tm=(strstr(RAINDANCE_GENERATORS[i].team,"team0")?0:1);
+        generators[i]={{wx,wy,wz},tm,800.0f,0,true};
+    }
 
     // Init players
     memset(players,0,sizeof(players));
