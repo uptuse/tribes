@@ -1,247 +1,132 @@
-# R31.6 Manus Brief — Damage Legibility + Audio Loops + Mortar Visibility
+# Manus Feedback — R31.7 (3rd-Person Camera Polish + Aim Convergence)
 
-**Author:** new-Manus
+**Round:** 31.7
 **Date:** 2026-04-26
-**Round type:** Feel + legibility (~60-90 min)
-**Lineage:** R31.5 shipped 3P framing tune. User playtested in 1P, reports two distinct problems:
-
-> *"I keep getting hit with what I presume is turret fire. I am not sure. Its not clear lol. Its hard to play."*
-
-Plus video reference (https://www.youtube.com/watch?v=P_Thczu6UDA) confirms several feel gaps. New-Manus watched the video, cross-checked against repo state. Two of the three asks are pure **wiring** (data already exists in the snapshot, just isn't drawn).
-
-## TL;DR
-
-Three legibility fixes, in priority order:
-
-1. **D1 — Directional damage indicator** (P0; this is the user-blocking issue). Red arc on screen edge pointing at the source of incoming damage. Data already in the wire as `lastDamageFromIdx`; just needs HUD render. Also auto-enable killfeed by default so the user sees what's killing them.
-2. **D2 — Ski sound loop** (P1; biggest video-vs-ours feel gap). Buffer #11 is generated but no `startSki/stopSki` exists. Mirror the `startJet/stopJet` pattern. Volume scales with horizontal speed.
-3. **D3 — Make turret threat visible** (P1; pairs with D1). Turrets currently render as static cubes that fire invisible(ish) plasma. Add (a) a slow red blink on alive turrets, (b) a brief muzzle flash particle when they fire, (c) audible plasma fire from turret position (positional 3D, already supported via `playSoundAt`).
-
-Plus one optional: D4 — Faint targeting bracket on visible enemies in viewport (~30-50 px white square). Real Tribes had this; helps with the "I can't see what's shooting me" feeling.
+**Posture:** Hybrid round. Manus shipped JS-only changes directly (committed on `master` this round). Claude takes the C++ aim-convergence half.
 
 ---
 
-## Why the user can't tell what's hitting them
+## Why R31.7 exists
 
-Walking through `program/code/wasm_main.cpp` lines 1468-1508 (turret AI):
+User playtest of R31.4–R31.6 with the new V-key 3rd-person view exposed two related problems:
 
-- 6 turrets per map (Raindance), 200 HP each, scan range 80 m, fire plasma every 1.5 s with LoS check.
-- Turrets are **always-on** while their team's generator is alive (gen has 30 m enemy-proximity safe-regen, so they come back fast).
-- Plasma projectile is small, low gravity (3), muzzleVel 55. At distance it's a tiny red dot.
-- No turret muzzle flash. No turret-firing sound. No visual "I am being targeted" warning.
-- Damage taken plays a generic `DAMAGE_TAKE` sound (#5) but NO directional cue.
+1. **Tribes Ascend / T1 3P "feels easier to shoot than ours."** User intuition: "there's something about that crosshair." Diagnosis: real Tribes uses **camera-relative aim convergence** — projectiles spawn at the gun barrel but are *aimed at the world point under the dead-center crosshair*, not along the player's body-forward vector. With our R31.5 +0.7 m right-shoulder camera offset, body-forward and crosshair-forward diverge, so shots land 1–2 m off where the crosshair points (worse at range).
+2. **Camera framing is too "doll-viewer."** User: "player is too far away, placement is wrong too." Reference video (Tribes Ascend, `youtu.be/9WMjcsP22EM`) shows: centered chase (no shoulder offset), camera follows aim pitch, smooth toggle lerp, no clipping into terrain when player skids backward into a slope.
 
-Result: user sees HP go down, no idea why. Plays exactly like an invisible sniper, which is by far the worst feeling in any FPS.
-
-## Why the ski sound matters
-
-Video analysis (P_Thczu6UDA, full notes saved to `tribes_evidence/video_analysis_P_Thczu6UDA.md`):
-
-> *"The jetpack emits a continuous, prominent 'hiss' or 'whoosh' while active."*
-
-Same applies to skiing in T1/T:V — there's a constant whoosh while sliding. Our `client/audio.js` already declares `SOUND.SKI_LOOP=11`, the buffer is generated in `shell.html:2841` (pink noise low-pass with rising envelope), but the `AE` engine has `startJet/stopJet/jetNode/jetGain` and **no equivalent for ski**. AE.update() at line 2942 receives `(jetting, onGround, speed, health)` — already has `speed` available, so volume modulation is trivial.
-
-A skiing player without sound feel is like Mario without the "doot doot doot" — you don't know you're moving. Adding ski hiss is probably the single biggest "feel" upgrade per line of code in the entire project.
-
-## Code changes
-
-### D1 · Directional damage indicator + killfeed default-on
-
-**File: `index.html` / `shell.html` (CSS)**
-
-Add to the existing `<style>` block (near the `#killfeed` rule around line 268):
-
-```css
-#dmg-arc {
-    position: absolute;
-    top: 50%; left: 50%;
-    width: 360px; height: 360px;
-    margin: -180px 0 0 -180px;
-    pointer-events: none;
-    z-index: 11;
-    transform-origin: center center;
-    opacity: 0;
-    transition: opacity 0.4s ease-out;
-}
-#dmg-arc.active { opacity: 1; }
-#dmg-arc svg { width: 100%; height: 100%; }
-#dmg-arc path {
-    fill: rgba(255, 50, 30, 0.55);
-    stroke: rgba(255, 100, 60, 0.9);
-    stroke-width: 2;
-}
-```
-
-Add to the body (next to `#killfeed`):
-
-```html
-<div id="dmg-arc"><svg viewBox="-50 -50 100 100"><path d="M -25 -45 A 50 50 0 0 1 25 -45 L 18 -32 A 35 35 0 0 0 -18 -32 Z"/></svg></div>
-```
-
-The arc points "up" (toward 12 o'clock); we'll rotate the whole div based on the angle to the attacker.
-
-**File: `index.html` (JS), in the per-frame HUD update where `lastDamageFromIdx` is processed**
-
-Find where snapshot data flows to HUD (search for `lastDamageFromIdx` or the snapshot apply loop). Add:
-
-```js
-// R31.6 D1: directional damage indicator
-let _lastDmgArcShownAt = 0;
-function showDamageArc(srcWorldX, srcWorldZ, myYaw, myX, myZ) {
-    const dx = srcWorldX - myX, dz = srcWorldZ - myZ;
-    if (dx*dx + dz*dz < 0.01) return;          // self-damage; skip
-    const angleToSrc = Math.atan2(dx, -dz);    // world-space angle (Tribes Y-up convention)
-    const relAngle = angleToSrc - myYaw;       // relative to facing
-    const deg = relAngle * 180 / Math.PI;
-    const arc = document.getElementById('dmg-arc');
-    if (!arc) return;
-    arc.style.transform = `rotate(${deg}deg)`;
-    arc.classList.add('active');
-    _lastDmgArcShownAt = performance.now();
-    setTimeout(() => {
-        if (performance.now() - _lastDmgArcShownAt >= 750)
-            arc.classList.remove('active');
-    }, 800);
-}
-
-// In the main snapshot-apply loop, on player[localIdx]:
-if (lp.lastDamageFromIdx !== undefined && lp.lastDamageFromIdx !== -1
-    && lp.lastDamageFromIdx !== _prevLastDmgFrom) {
-    const src = (lp.lastDamageFromIdx >= 200)
-        ? turrets[lp.lastDamageFromIdx - 200]   // turret damage encoded as 200+turretIdx
-        : players[lp.lastDamageFromIdx];
-    if (src) showDamageArc(src.pos.x, src.pos.z, lp.yaw, lp.pos.x, lp.pos.z);
-    _prevLastDmgFrom = lp.lastDamageFromIdx;
-}
-```
-
-**File: `program/code/wasm_main.cpp`** — extend `lastDamageFromIdx` to include turrets
-
-Currently the field is set when player damage comes from another player. Extend: when turret plasma hits the local player, set `players[localPlayer].lastDamageFromIdx = 200 + turretIndex` (200 chosen to not collide with player ids 0-7). In the wire layer, signed int8 covers -128..127; we have 200+ to send, so change byte 24 to **uint8** (it's already declared as Int8 in `client/wire.js:94`; just switch to `setUint8`/`getUint8`). The semantic becomes: 0xFF = none, 0-7 = player, 200-205 = turret. Update both `wire.js` write and read sides.
-
-**File: `index.html` defaults**
-
-Find the `ST.showKillFeed` default and flip from `false` (or whatever it is) to `true`. Search:
-```js
-ST.showKillFeed
-```
-Make sure first-run default is enabled.
-
-### D2 · Ski sound loop
-
-**File: `index.html` / `shell.html`** in the `AE` object (near line 2885 `startJet`)
-
-Add right after `stopJet`:
-
-```js
-startSki: function() {
-    if (!this.ctx || this.muted || this.skiNode || !this.bufs[11]) return;
-    var g = this.ctx.createGain();
-    g.gain.setValueAtTime(0, this.ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0.4, this.ctx.currentTime + 0.05);
-    g.connect(this.uiBus);
-    var src = this.ctx.createBufferSource();
-    src.buffer = this.bufs[11]; src.loop = true;
-    src.connect(g); src.start();
-    this.skiNode = src; this.skiGain = g;
-},
-stopSki: function() {
-    if (!this.skiNode) return;
-    var g = this.skiGain, n = this.skiNode;
-    g.gain.setValueAtTime(g.gain.value, this.ctx.currentTime);
-    g.gain.linearRampToValueAtTime(0, this.ctx.currentTime + 0.08);
-    setTimeout(function() { try { n.stop(); } catch (e) {} }, 150);
-    this.skiNode = null; this.skiGain = null;
-},
-```
-
-In `AE.update()` (around line 2900), extend the signature to receive `skiing` and add the ski-state edge detection:
-
-```js
-update: function(jetting, onGround, speed, health, skiing) {     // R31.6: + skiing
-    if (jetting && !this.prevJetting) this.startJet();
-    else if (!jetting && this.prevJetting) this.stopJet();
-    this.prevJetting = jetting;
-
-    // R31.6: ski loop with speed-modulated volume
-    var skiActive = skiing && onGround && speed > 2;
-    if (skiActive && !this.prevSkiing) this.startSki();
-    else if (!skiActive && this.prevSkiing) this.stopSki();
-    if (this.skiGain) {
-        // Volume ramps from 0.15 (slow) to 0.55 (fast) over 0..40 m/s
-        var vol = 0.15 + Math.min(speed / 40, 1.0) * 0.40;
-        this.skiGain.gain.setTargetAtTime(vol, this.ctx.currentTime, 0.08);
-    }
-    this.prevSkiing = skiActive;
-
-    // ... existing footstep/damage/listener code unchanged ...
-},
-```
-
-Update the C++ → JS bridge `window.updateAudio` to pass `skiing`:
-
-```js
-window.updateAudio = function(jetting, onGround, speed10, health1000, skiing) {
-    if (!AE.ctx) return;
-    AE.update(jetting === 1, onGround === 1, speed10/10, health1000/1000, skiing === 1);
-};
-```
-
-And the C++ `EM_ASM` call that invokes it (search wasm_main.cpp for `updateAudio`) needs to pass `me.skiing ? 1 : 0` as the 5th arg.
-
-### D3 · Turret threat visibility
-
-**File: `program/code/wasm_main.cpp`** in `updateTurrets()` — when the turret fires (line ~1499, just after `projs[k]={...}`):
-
-```cpp
-// R31.6: muzzle flash + audible fire (positional)
-spawnBurst(firePos, 6, 0.4f, 8, 1.0f, 0.3f, 0.1f, 0.25f);
-EM_ASM({ if(window.playSoundAt) window.playSoundAt(2, $0, $1, $2); },
-    firePos.x, firePos.y, firePos.z);  // sound id 2 = PLASMA_FIRE
-```
-
-In the turret render block (around line 2293), replace the static color with a slow blink (1.2 sec period, 80% min brightness) when alive, so users can see "this is a live threat":
-
-```cpp
-// R31.6: slow red pulse on alive turrets so user sees the threat
-float pulse = t.alive ? (0.85f + 0.15f * sinf(gameTime * 5.2f)) : 0.5f;
-float r = (t.team==0 ? 0.95f : 0.2f) * pulse;
-float g = 0.15f * pulse;
-float b = (t.team==0 ? 0.15f : 0.85f) * pulse;
-// pass r,g,b into existing renderCube/whatever call
-```
-
-(Keep destroyed turrets dim grey as currently.)
-
-### D4 (optional, defer if running long) · Targeting brackets on visible enemies
-
-For each player in `syncPlayers()` who is alive, on opposite team, within camera frustum, project their world position to NDC, draw a small white square (CSS overlay or canvas2d). Real Tribes had this. ~25 lines of JS in `renderer.js`.
+Splits cleanly along Manus/Claude lines because the camera-positioning + raycast work is JS-only, but the actual projectile direction is computed in C++ `fireWeapon()`.
 
 ---
 
-## Acceptance (5 criteria; need 4/5)
+## What Manus already shipped this round (committed, no Claude action)
 
-1. Turret fires → I hear a positional plasma "pew" from the turret's location, see a red muzzle flash, and a red arc appears on the side of my screen pointing at the turret. (D1+D3)
-2. While skiing, I hear a continuous whoosh that gets louder as I gain speed; sound stops within 0.15s of releasing Shift. (D2)
-3. Killfeed is on by default; I can see "Turret-1 → me [plasma]" or "Bot3 → me [disc]" entries top-right. (D1)
-4. Damage from in front, behind, side — arc rotates correctly to point at source. (D1)
-5. Live turrets visibly pulse so I know which ones are active threats. (D3)
+All in `renderer.js`, `index.html`. WASM binary unchanged → ships as soon as the branch deploys.
 
-## Out of scope (R31.7+)
+### M1. Removed +0.7 m right-shoulder offset
+Tribes Ascend reference is centered chase. R31.5's shoulder offset was the single biggest contributor to "shots feel slightly off in 3P." Camera now sits dead-behind-and-above the player. (`renderer.js` syncCamera, ~line 1372–1402.)
 
-- Killcam (5-second replay from killer's POV)
-- Mortar arc preview (faint dotted line showing trajectory)
-- Voice quick-chat (VGS — "Shazbot!", "On my way!"). Big effort, deferred.
-- Minimap/radar (we have killfeed and now damage arc; minimap is a separate round)
-- Hit-marker "tink" sound for OUR shots landing (we have damage_give #13 but not hooked)
-- Smooth 1P↔3P camera lerp
+### M2. Smooth 1P↔3P transition
+R31.4–R31.6 snapped instantly on V-press. Replaced with a frame-rate-independent exponential lerp (~200 ms time constant) on both camera distance and height. Toggle is now filmic.
 
-## Notes for Claude
+### M3. Terrain collision
+When the camera-back position would clip below terrain (skiing down a steep hill backwards into a slope), camera sweeps along the back-vector at progressively shorter distances until it finds clearance ≥0.6 m. Falls back to "near head" if even d=0 is buried.
 
-- `lastDamageFromIdx` already exists in wire — please reuse, don't add a parallel field.
-- Don't break existing kill-feed format (`killer~weapon~victim`).
-- 200+turretIdx encoding is one option; another is a separate `lastDamageType` byte. Use whichever is cleaner for your wire-version migration; just keep wire backward-compatible if other callers exist.
-- Test that ski sound doesn't play during warmup or when local player is dead — gate on `me.alive && matchState===1`.
-- Sound volumes intentionally below 0.55 master — don't blow out user's ears.
+### M4. World aim point exposed via `window._tribesAimPoint3P`
+Each frame in 3P, `syncCamera()` ray-marches camera-forward × 1000 m against the terrain heightfield (32 coarse steps + 4-step binary refine) and stores the hit point at `window._tribesAimPoint3P = {x, y, z}`. **This is the data Claude needs** for the C++ aim-convergence fix below.
 
-— new-Manus
+### M5. Footer bump
+`Version 0.4 / R31.6` → `Version 0.4 / R31.7`. (Mechanical.)
+
+### M6. Weapon viewmodel fade
+`weaponHand.visible` now keys off the smoothed camera distance (`< 0.5 m` ⇒ visible) instead of the raw 3P flag. Fades naturally with the camera lerp; no more pop on V-toggle.
+
+---
+
+## What Claude needs to ship for R31.7 to fully feel right (C++/WASM)
+
+### C1. (P0) Aim convergence in 3rd person
+**Problem:** `fireWeapon()` in `wasm_main.cpp` (~line 1014) computes projectile direction from `p.yaw, p.pitch`. In 1P this is fine (camera = player eye = aim ray). In 3P the camera is ~4 m behind and above the player, so body-forward and crosshair-forward point at different rays. Shots miss where the crosshair points.
+
+**Fix:** When `thirdPerson` is true and JS has provided an aim point, override `fwd` to point from `firePos` to the aim point.
+
+```cpp
+// Around line 1014 in wasm_main.cpp, inside fireWeapon():
+Vec3 fwd = {sinf(p.yaw)*cosf(p.pitch), sinf(p.pitch), -cosf(p.yaw)*cosf(p.pitch)};
+Vec3 firePos = p.pos + Vec3(0, 2, 0) + fwd * 2;
+
+// NEW: aim convergence in 3P (R31.7)
+if (thirdPerson && pi == localPlayerIdx && hasAimPoint3P) {
+    Vec3 toAim = aimPoint3P - firePos;
+    float l = toAim.len();
+    if (l > 1.0f) fwd = toAim * (1.0f / l);
+}
+// proceed: spawn projectile with `vel = fwd * muzzleVel + p.vel * inheritScale`
+```
+
+Add module-scope state:
+```cpp
+static Vec3 aimPoint3P = {0,0,0};
+static bool hasAimPoint3P = false;
+```
+
+Add an exported setter for JS to call each frame:
+```cpp
+EMSCRIPTEN_KEEPALIVE
+void setLocalAimPoint3P(float x, float y, float z) {
+    aimPoint3P = {x, y, z};
+    hasAimPoint3P = true;
+}
+```
+
+Once the setter exists, Manus will (in R31.8) add a one-line JS call inside `syncCamera`:
+```js
+if (Module._setLocalAimPoint3P && window._tribesAimPoint3P) {
+    const p = window._tribesAimPoint3P;
+    Module._setLocalAimPoint3P(p.x, p.y, p.z);
+}
+```
+**Manus has not added this JS call yet** because it would no-op (and warn) without the C++ side. Holds for R31.8 once Claude ships.
+
+### C2. (P1) Player torso pitches with camera in 3P
+Local-player mesh stays upright while the camera/crosshair pitch up and down. Tribes Ascend tilts the upper torso to match aim pitch so the player visibly "looks where they're aiming." This is JS-only (renderer.js soldier rig) — Manus can ship in R31.8. Listed here so Claude doesn't surprise-ship and create a merge.
+
+### C3. (P2) Verify perf-log budget
+R31.3's per-second perf log should still report dt within budget after Manus's per-frame ray-march (32+4 steps). Ray-march only runs in 3P; expected impact is negligible. If perf-log shows a regression, tell Manus and we'll cap to 16 steps.
+
+---
+
+## Acceptance criteria for R31.7
+
+When fully shipped (Manus + Claude halves):
+
+1. ✅ (Manus M2) Press V — camera lerps smoothly to ~4 m back, ~1.6 m up, no shoulder offset.
+2. ✅ (Manus M3) In 3P, ski into a steep hill backwards — camera does not clip into terrain.
+3. ⏳ (Claude C1) Fire disc in 3P at a stationary bot — projectile lands within 0.5 m of crosshair regardless of distance.
+4. ⏳ (Claude C2 / Manus R31.8) Mouse-look up/down in 3P — local player's upper torso visibly pitches with the camera.
+5. ✅ (Manus M4) `window._tribesAimPoint3P` populated each frame in 3P (verify in console).
+6. ✅ (Manus M5) Footer reads `Version 0.4 / R31.7`.
+
+---
+
+## Process going forward
+
+Per user mandate:
+- Manus autonomously ships JS/HTML/comms work as `feat(R*-manus): …` commits.
+- Claude continues to own all C++/WASM work.
+- This brief always exists, even when Manus does most of the round, so the loop (Manus → manus_feedback.md → Claude → claude_status.md → Manus) stays intact.
+- Manus does NOT wait for Claude approval on JS-only changes, and Claude does NOT need to re-do anything Manus already shipped.
+
+---
+
+## Reference videos analyzed (for design context)
+
+- `DQkmXGQfNt8` *How Tribes is Played* Pt 1 — base-interior corridors, stations, mortar arc, turret damage scaling
+- `NOxGRipenxA` *How Tribes is Played* Pt 2 — command map, waypoints, generator powers turrets/stations/forcefields
+- `52MCQAD1seA` *How Tribes is Played* Pt 3 — vehicle pads, deployable turrets/sensors/cameras, sensor jammer pack
+- `9WMjcsP22EM` Tribes Ascend 3P — centered chase camera reference (drives M1)
+- `QN1eCU1aN4o` (analyzed earlier) — momentum, projectile inheritance, ski-jet rhythm
+
+Full transcripts at `/home/ubuntu/tribes_evidence/videos/*.txt` (will be uploaded to comms/ as needed).
+
+Several wishlist items from these videos (deployable turrets, sensor jammer pack, command-map waypoints, base interior corridors, vehicle pads, generator-disables-base) are intentionally NOT in this brief — each is a full round of work. They go in `comms/wishlist_post_R31.md` (Manus to create separately).
+
+— Manus

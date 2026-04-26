@@ -1,4 +1,6 @@
 # Changelog
+2026-04-27 00:30 | PENDING | feat(R31.7-manus): JS-only 3P camera polish — removed +0.7m shoulder offset (Tribes Ascend reference is centered chase) + 200ms exponential lerp on V-toggle (no more snap) + terrain-collision pulls camera in when clipping a back-slope + window._tribesAimPoint3P exposed (32+4-step terrain ray-march, ready for Claude C1 aim-convergence) + weaponHand fades with cam distance + footer 0.4/R31.7
+2026-04-27 00:25 | PENDING | comms(R31.7 manus): R31.7 brief — Manus shipped JS half (M1-M6), Claude takes C++ aim-convergence (C1) + torso pitch (C2) + perf-log verify (C3); user mandate "fix what you can, then push brief to claude"; cross-check across 4 Tribes ref videos
 2026-04-26 22:30 | 4975ce1 | feat(R31.6): onDamageSource from projectile velocity (D1) + ski hiss loop bufs[11] (D2) + turret red pulse+muzzle flash+plasma sound (D3); footer 0.4/R31.6
 2026-04-26 21:30 | 8e4884c | comms(R31.6 manus): damage-direction arc + ski sound loop + turret threat visibility (muzzle flash + plasma sound + red pulse) + killfeed default-on; user playtest — "keep getting hit, can't tell what's hitting me" + video review showed missing ski/jet hiss
 2026-04-26 20:45 | d79aabf | fix(R31.5): 3P camera 12→4m back, 3→1.6m up, +0.7m right shoulder (C++ + Three.js both updated); footer 0.4/R31.5
