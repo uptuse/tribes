@@ -26,12 +26,18 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// R32.7 — additive polish module. Single import; ?polish=off gracefully
+// disables the entire pack at runtime. Effects stack on top of the existing
+// renderer pipeline without modifying any existing materials or meshes.
+import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 
 // --- Module state ---
 let scene, camera, renderer, composer;
 let bloomPass, gradePass;
 let sunLight, hemiLight, sky;
+let polish = null; // R32.7 polish module handle
+let _lastTickTime = 0; // R32.7 dt source for polish.tick
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
@@ -137,6 +143,46 @@ export async function start() {
     initStateViews();
     initPostProcessing();
     console.log('[R29.2] State views + post-process initialized in correct order (camera-first)');
+    // R32.7 — install polish AFTER state views so the module can see playerView/playerStride
+    polish = Polish.installPolish({
+        THREE: THREE, scene: scene, camera: camera, renderer: renderer, composer: composer,
+        sunLight: sunLight, hemiLight: hemiLight, terrainMesh: terrainMesh,
+        sampleTerrainH: sampleTerrainH,
+        playerView: playerView, playerStride: playerStride,
+    });
+    window.__tribesPolish = polish; // expose for debugging / other modules
+    // R32.7 — enhance buildings (deferred so polish module is fully installed)
+    try {
+        for (const b of buildingMeshes) {
+            const canon = b.mesh.userData && b.mesh.userData.canon;
+            if (!canon) continue;
+            const teamColor = canon.team === 0 ? 0xCC4444 : 0x4488CC;
+            if (canon.datablock === 'plasmaTurret') Polish.enhanceTurret(b.mesh, 'plasma', teamColor);
+            else if (canon.datablock === 'rocketTurret') Polish.enhanceTurret(b.mesh, 'rocket', teamColor);
+            else if (canon.datablock === 'PulseSensor') Polish.enhanceSensor(b.mesh);
+            else if (canon.datablock === 'AmmoStation' || canon.datablock === 'InventoryStation' || canon.datablock === 'CommandStation' || canon.datablock === 'VehicleStation') {
+                Polish.addStationIcon(b.mesh, canon.datablock, teamColor);
+            }
+            else if (canon.datablock === 'Generator') {
+                // chimney smoke at vent top (~4.6m above building base)
+                const wp = new THREE.Vector3();
+                b.mesh.getWorldPosition(wp);
+                wp.y += 4.6;
+                Polish.registerGeneratorChimney(wp);
+            }
+        }
+        console.log('[R32.7] Building polish enhancements applied to', buildingMeshes.length, 'buildings');
+    } catch (e) { console.warn('[R32.7] enhanceBuildings failed:', e && e.message ? e.message : e); }
+    // R32.7 — bridge railings (find expbridge interior shape)
+    try {
+        if (interiorShapesGroup) {
+            interiorShapesGroup.traverse(child => {
+                if (child.userData && /expbridge/i.test(child.userData.fileName || '')) {
+                    Polish.addBridgeRailings(child);
+                }
+            });
+        }
+    } catch (e) { console.warn('[R32.7] addBridgeRailings failed:', e && e.message ? e.message : e); }
     console.log('[R29] Scene populated, ready to render');
 
     // Listen for settings changes (graphics quality dropdown)
@@ -1888,9 +1934,14 @@ function syncPlayers(t) {
         }
 
         // Procedural rig animation
+        const jettingNow = playerView[o + 14] > 0.5;
         animatePlayer(mesh, playerView[o + 6], playerView[o + 8],
-                      playerView[o + 14] > 0.5, playerView[o + 15] > 0.5,
+                      jettingNow, playerView[o + 15] > 0.5,
                       t, alive);
+        // R32.7 — FOV punch on local player jet boost (rising edge)
+        if (i === localIdx && polish) {
+            polish.onJetBoost(jettingNow);
+        }
     }
 }
 
@@ -1926,13 +1977,31 @@ function syncFlags(t) {
     }
 }
 
+// R32.7 — track which particle slots have already triggered shockwave/shake
+// so we don't fire a new shockwave every frame for the same explosion. The C++
+// side fills age with a positive value once at spawn and decrements it per tick;
+// we trigger when age was 0 last frame and is positive now.
+let _r327PrevParticleAge = null;
 function syncParticles() {
     const tier = QUALITY_TIERS[currentQuality];
     const cap = tier.particleCap;
     let activeCount = 0;
+    if (!_r327PrevParticleAge) _r327PrevParticleAge = new Float32Array(MAX_PARTICLES);
     for (let i = 0; i < MAX_PARTICLES && activeCount < cap; i++) {
         const o = i * particleStride;
         const age = particleView[o + 7];
+        // R32.7 explosion-spawn detection (rising edge on type=3)
+        const prevAge = _r327PrevParticleAge[i];
+        if (age > 0 && prevAge <= 0) {
+            const ptype = particleView[o + 6] | 0;
+            if (ptype === 3 && polish && Polish.spawnShockwave) {
+                try {
+                    const px = particleView[o], py = particleView[o + 1], pz = particleView[o + 2];
+                    Polish.spawnShockwave(scene, new THREE.Vector3(px, py, pz), 1.0);
+                } catch (e) {}
+            }
+        }
+        _r327PrevParticleAge[i] = age;
         if (age <= 0) continue;
         const dst = activeCount * 3;
         particlePositions[dst]     = particleView[o];
@@ -2231,6 +2300,14 @@ function loop() {
     syncTurretBarrels(t);
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
+
+    // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
+    if (polish) {
+        const now = performance.now() * 0.001;
+        const dt = _lastTickTime > 0 ? Math.min(0.1, now - _lastTickTime) : 1/60;
+        _lastTickTime = now;
+        polish.tick(dt, t);
+    }
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
