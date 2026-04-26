@@ -1,4 +1,5 @@
 # Changelog
+2026-04-27 08:30 | e1baf1b | fix(R32.1.2): MAX_BUILDINGS 64→256 — 18/32 interior-shape AABBs were being silently dropped; player teleported on landing; all 32 fit now (total=78)
 2026-04-27 08:15 | 40f8f78 | tweak(R32.1.1b-manus): default bots to 0 (Solo) for playtest — added Solo button to Team Size picker, kept 2v2/4v4/6v6/8v8 as opt-in; quickStart() now also defaults to Solo; setBotCount() does proper visual button-selection swap; footer R32.1.1->R32.1.1b
 2026-04-27 07:45 | b72537 | fix(R32.1.1 claude): correct interior-shape AABB rotation Rz→Ry matching Manus group-wrapper arch
 2026-04-27 07:30 | 375d05d | fix(R32.1.1-manus): black-faces + clipping fix on interior shapes — index winding flipped CW->CCW so computeVertexNormals points outward; rotation re-architected via outer Group (yaw on world Y) wrapping inner mesh (Tribes z-up to Three y-up via -π/2 X), eliminating the Euler-order axis mixing that made buildings clip in the wrong direction; material lightened to 0xA89D90 + emissive 0x1a1814 + DoubleSide as defensive fallback for any remaining backface-winding outliers; footer R32.1->R32.1.1
