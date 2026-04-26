@@ -225,11 +225,12 @@ struct ArmorData {
     float damageScale;
     int maxBullet,maxPlasma,maxDisc,maxGrenadeAmmo,maxMortarAmmo;
     int maxHandGrenade,maxMine;
+    float energyRegenMul; // F7: per-armor energy regen multiplier (Light=1.0, Med=0.85, Heavy=0.6)
 };
 static const ArmorData armors[3]={
-    {"Light",  0.66f,60, 11,10,10, 9,1.2f,1, 360,3, 75, 236,0.8f,22,0.8f, 1, 3, 0.5f,0.5f,2.3f, true, 0.005f, 100,30,15,10,10,5,3},
-    {"Medium", 1.0f, 80, 8, 7, 7, 13,1.5f,1, 455,3, 110,320,1.0f,17,0.8f, 1, 4, 0.7f,0.7f,2.4f, false,0.005f, 150,40,15,10,10,6,3},
-    {"Heavy",  1.32f,110,5, 4, 4, 18,2.5f,1, 630,4.5f,150,385,1.1f,12,0.8f, 1, 5, 0.8f,0.8f,2.6f, false,0.006f, 200,50,15,15,10,8,3},
+    {"Light",  0.66f,60, 11,10,10, 9,1.2f,1, 360,3, 75, 236,0.8f,22,0.8f, 1, 3, 0.5f,0.5f,2.3f, true, 0.005f, 100,30,15,10,10,5,3, 1.0f},
+    {"Medium", 1.0f, 80, 8, 7, 7, 13,1.5f,1, 455,3, 110,320,1.0f,17,0.8f, 1, 4, 0.7f,0.7f,2.4f, false,0.005f, 150,40,15,10,10,6,3, 0.85f},
+    {"Heavy",  1.32f,110,5, 4, 4, 18,2.5f,1, 630,4.5f,150,385,1.1f,12,0.8f, 1, 5, 0.8f,0.8f,2.6f, false,0.006f, 200,50,15,15,10,8,3, 0.6f},
 };
 
 // ============================================================
@@ -248,17 +249,19 @@ struct WeaponData {
     float energyCost;
     float projLife;
     float r,g,b; // projectile color
+    float inheritScale; // F6: fraction of player velocity added to projectile (0=none, 1=full)
 };
 static const WeaponData weapons[WPN_COUNT]={
-    {"Blaster",     0.125f,0.3f, 0,   200, 0,  0,   5,   false,5,  1.5f, 1.0f,0.8f,0.2f},
-    {"Chaingun",    0.11f, 0.1f, 0,   425, 0,  0,   0,   true, 0,  1.5f, 1.0f,1.0f,0.3f},
-    {"Disc",        0.5f,  1.25f,0.25f,65, 7.5f,150, 5,   true, 0,  6.5f, 1.0f,1.0f,1.0f},
-    {"Grenade L.",  0.4f,  0.5f, 0.5f, 40, 15,  150, 25,  true, 0,  4.0f, 0.4f,0.8f,0.2f},
-    {"Plasma",      0.45f, 0.5f, 0.1f, 55, 4,   0,   3,   true, 0,  2.0f, 0.2f,1.0f,0.2f},
-    {"Mortar",      1.0f,  2.0f, 0.5f, 50, 20,  250, 20,  true, 0,  8.0f, 1.0f,0.5f,0.1f},
-    {"Laser",       0.42f, 0.5f, 0.1f, 9999,0,  0,   0,   false,60, 0,    1.0f,0.2f,0.2f},
-    {"ELF Gun",     0.06f, 0.1f, 0.2f, 0,   0,  0,   0,   false,5,  0,    0.5f,0.5f,1.0f},
-    {"Repair",      -0.05f,0.1f, 0,    0,   0,  0,   0,   false,3,  0,    0.2f,1.0f,0.5f},
+    // name         dmg   fire  rld   muz    expl kick  grav  ammo  enrg  life  r     g     b     inh
+    {"Blaster",     0.125f,0.3f, 0,   200, 0,  0,   5,   false,5,  1.5f, 1.0f,0.8f,0.2f, 0.0f},
+    {"Chaingun",    0.11f, 0.1f, 0,   425, 0,  0,   0,   true, 0,  1.5f, 1.0f,1.0f,0.3f, 0.0f},
+    {"Disc",        0.5f,  1.25f,0.25f,65, 7.5f,150, 5,   true, 0,  6.5f, 1.0f,1.0f,1.0f, 0.5f},
+    {"Grenade L.",  0.4f,  0.5f, 0.5f, 40, 15,  150, 25,  true, 0,  4.0f, 0.4f,0.8f,0.2f, 0.5f},
+    {"Plasma",      0.45f, 0.5f, 0.1f, 55, 4,   0,   3,   true, 0,  2.0f, 0.2f,1.0f,0.2f, 0.3f},
+    {"Mortar",      1.0f,  2.0f, 0.5f, 50, 20,  250, 20,  true, 0,  8.0f, 1.0f,0.5f,0.1f, 1.0f},
+    {"Laser",       0.42f, 0.5f, 0.1f, 9999,0,  0,   0,   false,60, 0,    1.0f,0.2f,0.2f, 0.0f},
+    {"ELF Gun",     0.06f, 0.1f, 0.2f, 0,   0,  0,   0,   false,5,  0,    0.5f,0.5f,1.0f, 0.0f},
+    {"Repair",      -0.05f,0.1f, 0,    0,   0,  0,   0,   false,3,  0,    0.2f,1.0f,0.5f, 0.0f},
 };
 static const bool armorCanUse[3][WPN_COUNT]={
     {1,1,1,1,1,0,1,1,1}, // Light: no mortar
@@ -358,6 +361,7 @@ struct Player {
     int curWeapon;
     float fireCooldown;
     bool onGround,jetting,skiing;
+    float airSkiTimer;  // F2: seconds of ski-like physics to grant after leaving ground
     float traction;
     int jumpContact;
     float speed;
@@ -1016,7 +1020,7 @@ static void fireWeapon(int pi){
     if(w.muzzleVel>0&&p.curWeapon!=WPN_LASER){
         for(int i=0;i<MAX_PROJ;i++)if(!projs[i].active){
             projs[i].pos=firePos;
-            projs[i].vel=fwd*w.muzzleVel+p.vel*0.5f;
+            projs[i].vel=fwd*w.muzzleVel+p.vel*w.inheritScale; // F6: per-weapon inheritance
             projs[i].life=w.projLife;
             projs[i].weapon=p.curWeapon;
             projs[i].ownerTeam=p.team;
@@ -1047,6 +1051,7 @@ static void respawnPlayer(int pi){
     p.carryingFlag=-1;
     p.curWeapon=WPN_DISC;
     p.fireCooldown=0;
+    p.airSkiTimer=0; // F2: reset so a freshly-respawned player can't inherit stale timer
     // Spawn loadout: blaster, chaingun, disc
     memset(p.ammo,0,sizeof(p.ammo));
     p.ammo[WPN_CHAINGUN]=armors[p.armor].maxBullet;
@@ -1058,12 +1063,20 @@ static void respawnPlayer(int pi){
     if(pi==localPlayer)g_localRespawnTimer=0;
 }
 
+// D2: last attacker team that caused damage (used for hit-confirm callback)
+static int g_lastAttackerTeam=-1;
+static float g_lastDmg=0;
+
 static void damagePlayer(int pi,float dmg,int attackerTeam){
     Player&p=players[pi];
     if(!p.alive)return;
     if(g_matchState==0)return; // no damage during warmup
     if(g_matchState==2)return; // no damage after match ends
     if(gameTime<g_spawnProtect[pi])return; // spawn protection
+    // D2: hit-confirm crosshair tick when local player's shot hits a non-teammate
+    if(attackerTeam==players[localPlayer].team && pi!=localPlayer && dmg>0){
+        EM_ASM({ if(window.onHitConfirm)window.onHitConfirm($0); }, (double)dmg);
+    }
     p.health-=dmg;
     if(p.health<=0){
         p.health=0;p.alive=false;p.deaths++;
@@ -1718,6 +1731,23 @@ extern "C" {
     float  getCameraFov()            { return g_fov; }
     int    getMatchState()           { return g_matchState; }
     int    isReady()                 { return g_renderReady; }
+
+    // D1: Ski HUD exports — queried every frame by index.html ski HUD widget
+    int    getPlayerSkiing()   { return players[localPlayer].skiing ? 1 : 0; }
+    float  getPlayerSpeed()    { Player&p=players[localPlayer]; return sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z); }
+    float  getPlayerSlopeDeg() {
+        Player&p=players[localPlayer];
+        Vec3 n=getNorm(p.pos.x,p.pos.z);
+        float angle=acosf(n.y>1?1:n.y<-1?-1:n.y)*57.2957795f; // deg from horizontal
+        // Sign: negative = downhill in velocity direction
+        Vec3 vh={p.vel.x,0,p.vel.z};
+        float vhLen=sqrtf(vh.x*vh.x+vh.z*vh.z);
+        if(vhLen>0.01f){
+            float horizDot=(n.x*vh.x+n.z*vh.z)/vhLen;
+            return angle*(horizDot>0?-1.0f:1.0f); // going downhill → negative
+        }
+        return angle; // no velocity: slope magnitude only
+    }
     void   setRenderMode(int mode){
         g_renderMode = mode;
         if(mode == 1){
@@ -1736,8 +1766,13 @@ extern "C" {
 static float respawnTimer=0;
 static int weaponSwitchCooldown=0;
 
+// D3: per-frame physics timing (accumulated for 60-frame window)
+static int g_perfFrames=0;
+static double g_physicsAccum=0;
+
 extern "C" void mainLoop(){
     double now=emscripten_get_now()/1000.0;
+    double t0=emscripten_get_now();  // D3: physics timing start
     float dt=(lastTime>0)?(float)(now-lastTime):TICK;
     if(dt>0.05f)dt=0.05f;
     lastTime=now;gameTime+=dt;frameCount++;
@@ -1819,12 +1854,17 @@ extern "C" void mainLoop(){
         float th=getH(me.pos.x,me.pos.z);
         float groundDist=me.pos.y-th;
         me.onGround=groundDist<2.2f;  // R31: raised to match new clamp floor
-        me.skiing=keys[16]&&me.onGround;
+        // F2: persist ski state 0.25 s after leaving ground (mogul bounce resilience)
+        if(keys[16]){
+            if(me.onGround){ me.skiing=true; me.airSkiTimer=0.25f; }
+            else if(me.airSkiTimer>0){ me.skiing=true; me.airSkiTimer-=dt; }
+            else me.skiing=false;
+        }else{ me.skiing=false; me.airSkiTimer=0; }
 
         // Gravity — Tribes uses ~20 m/s² as force (F=ma), so acceleration = 20
         // Applied as velocity change per frame: v += g * dt
         // Original engine gravity via SimMovement is roughly mass-independent ~20 m/s²
-        float gravity = 25.0f; // tuned for Tribes feel
+        float gravity = 20.0f; // F1: T1 SimMovement reference (was 25)
 
         // Ground movement — from playerUpdate.cpp lines 591-608
         if(me.skiing){
@@ -1851,9 +1891,15 @@ extern "C" void mainLoop(){
             me.vel.z+=(md.z*targetSpd-me.vel.z)*maxAcc;
             if(me.vel.y<0)me.vel.y=0;
         }else{
-            // Airborne: limited control
-            // From playerUpdate.cpp: air control is much weaker than ground
-            me.vel+=moveDir*(ad.maxFwdSpeed*0.5f*dt);
+            // F3: Airborne — air control capped at maxJetFwdVel so WASD can't
+            // accelerate indefinitely in the air (replaces the uncapped add).
+            Vec3 md3=moveDir.len()>0.01f?moveDir.normalized():Vec3{0,0,0};
+            float curH=sqrtf(me.vel.x*me.vel.x+me.vel.z*me.vel.z);
+            if(curH<ad.maxJetFwdVel){
+                float airAcc=ad.maxFwdSpeed*0.5f*dt;
+                me.vel.x+=md3.x*airAcc;
+                me.vel.z+=md3.z*airAcc;
+            }
         }
 
         // Gravity when airborne
@@ -1877,21 +1923,19 @@ extern "C" void mainLoop(){
             if(me.energy<0)me.energy=0;
 
             float jetAcc=ad.jetForce/ad.mass*dt;
+            // F4: T1 jet-split formula. At max forward speed all jet is horizontal.
+            // vertPct = 1 - clamp(forwardDot / maxJetFwdVel, 0, 1)
             if(moveDir.len()>0.01f && me.jumpContact>8){
-                // Split jet between lateral and vertical based on current speed
                 Vec3 md=moveDir.normalized();
                 float forwardDot=me.vel.x*md.x+me.vel.z*md.z;
-                float pct;
-                if(forwardDot>ad.maxJetFwdVel) pct=0;
-                else if(forwardDot<0) pct=1;
-                else pct=1.0f-(forwardDot/ad.maxJetFwdVel);
-                if(pct>ad.maxJetSideForce) pct=ad.maxJetSideForce;
-
-                me.vel.x+=md.x*pct*jetAcc;
-                me.vel.z+=md.z*pct*jetAcc;
-                me.vel.y+=(1.0f-pct)*jetAcc;
+                float frac=forwardDot/ad.maxJetFwdVel;
+                if(frac<0)frac=0; if(frac>1)frac=1;
+                float horizPct=frac;           // at top speed → all horizontal
+                float vertPct=1.0f-frac;       // at standstill → all vertical
+                me.vel.x+=md.x*horizPct*jetAcc;
+                me.vel.z+=md.z*horizPct*jetAcc;
+                me.vel.y+=vertPct*jetAcc;
             }else{
-                // No directional input or recently on ground: full vertical thrust
                 me.vel.y+=jetAcc;
             }
             // Jetpack glow: twin thruster plumes from behind player
@@ -1900,7 +1944,7 @@ extern "C" void mainLoop(){
             spawnPart(jBack,Vec3(rx,-5.0f,rz),1.0f,0.55f,0.08f,0.28f,0.30f); // orange core
             spawnPart(jBack+Vec3(0,-0.2f,0),Vec3(0,-3.5f,0),1.0f,0.85f,0.35f,0.18f,0.22f); // yellow halo
         }else{
-            me.energy+=ENERGY_RECHARGE*dt;
+            me.energy+=ENERGY_RECHARGE*ad.energyRegenMul*dt;  // F7: per-armor regen rate
             float enCap=ad.maxEnergy*(me.pack==1?1.5f:1.0f);
             if(me.energy>enCap)me.energy=enCap;
         }
@@ -1912,20 +1956,24 @@ extern "C" void mainLoop(){
             if(me.health>ad.maxDamage)me.health=ad.maxDamage;
         }
 
-        // Jump — from playerUpdate.cpp lines 615-642
-        // Impulse along surface normal with directional component
+        // F5: Jump at full impulse magnitude along surface normal.
+        // Previous *0.4f and *0.3f magic scalars cut the impulse too much (~1 m lift).
+        // T1 target: Light armor (~2.5 m lift). dv = jumpImpulse/mass along normal.
         if(keys[32]&&me.onGround&&me.jumpContact<8){
-            me.jumpContact=8; // prevent re-jump for 8 ticks
+            me.jumpContact=8;
             Vec3 jn=getNorm(me.pos.x,me.pos.z);
+            float dv=ad.jumpImpulse/ad.mass;
+            me.vel.x+=jn.x*dv;
+            me.vel.y+=jn.y*dv;
+            me.vel.z+=jn.z*dv;
             if(moveDir.len()>0.01f){
                 Vec3 md=moveDir.normalized();
                 float dot=md.x*jn.x+md.z*jn.z;
                 if(dot>0){
-                    me.vel.x+=md.x*dot*ad.jumpImpulse*0.3f;
-                    me.vel.z+=md.z*dot*ad.jumpImpulse*0.3f;
+                    me.vel.x+=md.x*dot*dv*0.3f;
+                    me.vel.z+=md.z*dot*dv*0.3f;
                 }
             }
-            me.vel.y+=jn.y*ad.jumpImpulse*0.4f;
         }
         if(me.onGround)me.jumpContact=0; else if(me.jumpContact<100)me.jumpContact++;
 
@@ -1939,7 +1987,7 @@ extern "C" void mainLoop(){
                 if(me.health<=0){me.health=0;me.alive=false;me.deaths++;}
             }
             me.pos.y=th+1.8f;
-            if(me.vel.y<0&&!me.skiing)me.vel.y=0;
+            if(me.vel.y<0)me.vel.y=0;  // F0: ALWAYS zero downward vel; skiing guard caused tunnel-through
             if(!me.skiing){me.vel.x*=0.9f;me.vel.z*=0.9f;}
         }
         resolvePlayerBuildingCollision(me.pos, me.vel, ad.hitW, ad.hitH);
@@ -2169,6 +2217,21 @@ extern "C" void mainLoop(){
 
     // R15: populate render-state for JS consumers (always runs, regardless of mode)
     populateRenderState();
+
+    // D3: accumulate physics time and log once per 60 frames (~1 s at 60 fps)
+    double t1=emscripten_get_now();
+    g_physicsAccum+=(t1-t0);
+    g_perfFrames++;
+    if(g_perfFrames>=60){
+        double avgPhys=g_physicsAccum/60.0;
+        double fps=g_perfFrames>0?1000.0/((t1-t0)+0.001):0;
+        EM_ASM({
+            const renderMs=(window.r3FrameTime||0);
+            const fps60=60000.0/$0;
+            console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms');
+        }, g_physicsAccum, avgPhys);
+        g_perfFrames=0; g_physicsAccum=0;
+    }
 
     // ============================================================
     // LEGACY RENDERER — SUNSET PLANNED R18.1 (~1 week from R17 cutover).

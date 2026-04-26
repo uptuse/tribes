@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuhubl6my.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpp76cetks.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -206,21 +206,21 @@ Module['FS_createPath']("/assets/tribes", "hdri", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpuhubl6my.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpxvaqfsq0.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpp76cetks.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpexscmhjr.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpxvaqfsq0.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvft_hf7u.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpexscmhjr.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpbpquyox6.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvft_hf7u.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpbpquyox6.js
 
 
 var arguments_ = [];
@@ -6434,21 +6434,23 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  348588: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 348661: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 348731: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 348778: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348825: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348877: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 348935: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 348993: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349042: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349094: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349143: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 349202: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 349261: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 349311: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349400: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348668: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348741: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348811: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 348858: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348905: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348957: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349015: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349073: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349122: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349174: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349223: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349405: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349464: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349523: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349573: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349625: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349714: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
@@ -6481,6 +6483,9 @@ var _getHeightmapWorldScale = Module['_getHeightmapWorldScale'] = makeInvalidEar
 var _getCameraFov = Module['_getCameraFov'] = makeInvalidEarlyAccess('_getCameraFov');
 var _getMatchState = Module['_getMatchState'] = makeInvalidEarlyAccess('_getMatchState');
 var _isReady = Module['_isReady'] = makeInvalidEarlyAccess('_isReady');
+var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
+var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
+var _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = makeInvalidEarlyAccess('_getPlayerSlopeDeg');
 var _setRenderMode = Module['_setRenderMode'] = makeInvalidEarlyAccess('_setRenderMode');
 var _tick = Module['_tick'] = makeInvalidEarlyAccess('_tick');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
@@ -6530,6 +6535,9 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['getCameraFov'] != 'undefined', 'missing Wasm export: getCameraFov');
   assert(typeof wasmExports['getMatchState'] != 'undefined', 'missing Wasm export: getMatchState');
   assert(typeof wasmExports['isReady'] != 'undefined', 'missing Wasm export: isReady');
+  assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
+  assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
+  assert(typeof wasmExports['getPlayerSlopeDeg'] != 'undefined', 'missing Wasm export: getPlayerSlopeDeg');
   assert(typeof wasmExports['setRenderMode'] != 'undefined', 'missing Wasm export: setRenderMode');
   assert(typeof wasmExports['tick'] != 'undefined', 'missing Wasm export: tick');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
@@ -6575,6 +6583,9 @@ function assignWasmExports(wasmExports) {
   _getCameraFov = Module['_getCameraFov'] = createExportWrapper('getCameraFov', 0);
   _getMatchState = Module['_getMatchState'] = createExportWrapper('getMatchState', 0);
   _isReady = Module['_isReady'] = createExportWrapper('isReady', 0);
+  _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
+  _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);
+  _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = createExportWrapper('getPlayerSlopeDeg', 0);
   _setRenderMode = Module['_setRenderMode'] = createExportWrapper('setRenderMode', 1);
   _tick = Module['_tick'] = createExportWrapper('tick', 0);
   _main = Module['_main'] = createExportWrapper('main', 2);

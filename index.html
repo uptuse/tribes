@@ -220,6 +220,29 @@
     #xhair-arms { transition:transform 0.08s; }
 
     /* Compass — top-center */
+    /* R31.3: Ski HUD — bottom-center above HP bar */
+    #ski-hud { display:none; position:absolute; bottom:120px; left:50%; transform:translateX(-50%);
+      z-index:15; pointer-events:none; display:flex; flex-direction:column; align-items:center; gap:3px; }
+    #ski-badge { font-family:'Barlow Condensed',sans-serif; font-size:0.85em; font-weight:700;
+      letter-spacing:3px; padding:2px 10px; background:#222; color:#666; border:1px solid #333;
+      transition: background 0.1s, color 0.1s; }
+    #ski-badge.active { background:#00d8ff; color:#000; border-color:#00d8ff;
+      animation: skipulse 0.5s ease-in-out infinite alternate; }
+    @keyframes skipulse { from{transform:scale(1)} to{transform:scale(1.05)} }
+    #ski-slope-wrap { display:flex; flex-direction:column; align-items:center; gap:1px; }
+    #ski-slope-bar { width:100px; height:8px; background:#1a1a1a; border:1px solid #333;
+      position:relative; overflow:hidden; }
+    #ski-slope-fill { position:absolute; top:0; height:100%; width:0; transition:width 0.1s, background 0.1s; }
+    #ski-slope-label { font-size:0.65em; color:#888; font-family:monospace; }
+    #ski-speed { font-family:monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
+    #ski-speed-unit { font-size:0.7em; color:#5A8090; }
+    /* D2: hit-confirm tick */
+    #hit-tick { display:none; position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%); color:#fff; font-size:1.6em; font-weight:bold;
+      pointer-events:none; z-index:20; opacity:0; transition:opacity 0.2s; }
+    #hit-tick.show { display:block; opacity:1; }
+    #hit-tick.hide { opacity:0; }
+
     #hud-compass { position:absolute; top:10px; left:50%; transform:translateX(-50%);
       width:380px; height:28px; overflow:hidden; pointer-events:none; }
     #compass-track { position:relative; height:100%; background:rgba(8,6,3,0.6);
@@ -573,6 +596,17 @@
     <div id="hud-warmup"></div>
     <!-- Game-event log -->
     <div id="eventlog"></div>
+    <!-- R31.3 D1: Ski HUD — SKI badge + slope dial + speed readout (user request) -->
+    <div id="ski-hud">
+      <div id="ski-badge">SKI</div>
+      <div id="ski-slope-wrap">
+        <div id="ski-slope-bar"><div id="ski-slope-fill"></div></div>
+        <div id="ski-slope-label">FLAT</div>
+      </div>
+      <div id="ski-speed"><span id="ski-speed-val">0</span> <span id="ski-speed-unit">m/s</span></div>
+    </div>
+    <!-- R31.3 D2: hit-confirm crosshair tick -->
+    <div id="hit-tick">+</div>
   </div>
 
   <!-- Damage flash + pointer-lock visual overlays -->
@@ -3263,6 +3297,8 @@
 
     // FPS counter
     var _fpsFrames=0,_fpsLast=0;
+    // D3: expose render frame time to C++ perf log via window.r3FrameTime
+    var _r3FrameLast=0;
     function updateFPS(now){
       _fpsFrames++;
       if(now-_fpsLast>=1000){
@@ -3270,15 +3306,69 @@
         if(el&&ST.showFPS)el.textContent=_fpsFrames+' fps';
         _fpsFrames=0;_fpsLast=now;
       }
+      window.r3FrameTime = now - _r3FrameLast;
+      _r3FrameLast = now;
+      // R31.3 D1: update Ski HUD every frame when in-game
+      if(gameStarted && window.Module && Module.calledRun){
+        var skiHud=document.getElementById('ski-hud');
+        if(skiHud && skiHud.style){
+          skiHud.style.display='flex';
+          var skiing=Module._getPlayerSkiing&&Module._getPlayerSkiing();
+          var badge=document.getElementById('ski-badge');
+          if(badge) badge.classList.toggle('active',!!skiing);
+          var speed=Module._getPlayerSpeed?Module._getPlayerSpeed():0;
+          var sv=document.getElementById('ski-speed-val');
+          if(sv) sv.textContent=Math.round(speed);
+          // Peak speed tracker
+          if(!window._skiPeakSpeed||speed>window._skiPeakSpeed) window._skiPeakSpeed=speed;
+          if(!window._skiPeakTimer)window._skiPeakTimer=0;
+          window._skiPeakTimer+=16; if(window._skiPeakTimer>5000){window._skiPeakSpeed=speed;window._skiPeakTimer=0;}
+          var slope=Module._getPlayerSlopeDeg?Module._getPlayerSlopeDeg():0;
+          var fill=document.getElementById('ski-slope-fill');
+          var lbl=document.getElementById('ski-slope-label');
+          var color,label;
+          if(slope<=-15){color='#3cd66c';label='STEEP DOWN';}
+          else if(slope<=-5){color='#88d6c0';label='DOWN';}
+          else if(slope<5){color='#888';label='FLAT';}
+          else if(slope<15){color='#d6a000';label='UP';}
+          else{color='#d63030';label='STEEP UP';}
+          var fillPct=Math.min(100,Math.abs(slope)/30*100);
+          if(fill){fill.style.width=fillPct+'%';fill.style.background=color;}
+          if(lbl) lbl.textContent=label;
+        }
+      } else {
+        var skiHud2=document.getElementById('ski-hud');
+        if(skiHud2) skiHud2.style.display='none';
+      }
       requestAnimationFrame(updateFPS);
     }
     requestAnimationFrame(updateFPS);
+
+    // R31.3 D2: hit-confirm crosshair tick (called by EM_ASM in damagePlayer)
+    var _hitTickTimer=null;
+    window.onHitConfirm=function(dmg){
+      var t=document.getElementById('hit-tick');
+      if(!t) return;
+      t.classList.remove('hide'); t.classList.add('show');
+      if(window.playSoundUI) window.playSoundUI(15); // UI slot (R11 audio has 16 bufs)
+      clearTimeout(_hitTickTimer);
+      _hitTickTimer=setTimeout(function(){
+        t.classList.remove('show'); t.classList.add('hide');
+        setTimeout(function(){t.classList.remove('hide');t.style.display='none';t.style.display='';},200);
+      }, 200);
+    };
 
     loadSettings(); // load immediately before anything else
 
     var canvas=document.getElementById('canvas');
     canvas.width=1024;canvas.height=768;
     canvas.addEventListener('click',function(){if(gameStarted)canvas.requestPointerLock();});
+    // D4: CLICK TO RESUME overlay needs its own requestPointerLock so the
+    // overlay itself (z-index above canvas) doesn't absorb the click silently.
+    var ptrHint=document.getElementById('ptr-lock-hint');
+    if(ptrHint) ptrHint.addEventListener('click',function(){
+      if(gameStarted){ canvas.requestPointerLock(); ptrHint.classList.remove('show'); }
+    });
     // Pointer-lock visualization: subtle dim + brass border + "CLICK TO RESUME" prompt
     document.addEventListener('pointerlockchange',function(){
       var hint=document.getElementById('ptr-lock-hint');if(!hint)return;
