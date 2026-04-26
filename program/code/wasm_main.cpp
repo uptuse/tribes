@@ -404,39 +404,13 @@ static void addBuilding(float wx, float wy, float wz, float hx, float hy, float 
 
 static void initBuildings() {
     numBuildings = 0;
-    for (int i = 0; i < RAINDANCE_INTERIOR_COUNT; i++) {
-        float wx = RAINDANCE_INTERIORS[i].x;
-        float wz = -RAINDANCE_INTERIORS[i].y;
-        float wy = RAINDANCE_INTERIORS[i].z;
-        const char* name = RAINDANCE_INTERIORS[i].name;
-        float hx = 3, hy = 3, hz = 3;
-        float r = 0.38f, g = 0.36f, b = 0.33f;
-        bool isRock = false;
-
-        if (strstr(name, "BETower") || strstr(name, "tower")) {
-            continue;
-        } else if (strstr(name, "esmall")) {
-            hx = 5; hy = 4; hz = 5;
-        } else if (strstr(name, "bunker")) {
-            hx = 4; hy = 3; hz = 4;
-            r = 0.35f; g = 0.33f; b = 0.30f;
-        } else if (strstr(name, "cube")) {
-            hx = 2; hy = 2; hz = 2;
-        } else if (strstr(name, "floatingpad") || strstr(name, "Sfloating")) {
-            hx = 6; hy = 0.5f; hz = 6;
-            r = 0.40f; g = 0.38f; b = 0.35f;
-        } else if (strstr(name, "bridge") || strstr(name, "expbridge")) {
-            hx = 3; hy = 1; hz = 12;
-        } else if (strstr(name, "observation") || strstr(name, "mis_ob")) {
-            hx = 4; hy = 6; hz = 4;
-        } else if (strstr(name, "lrock")) {
-            hx = 5; hy = 4; hz = 5;
-            r = 0.42f; g = 0.40f; b = 0.36f;
-            isRock = true;
-        }
-
-        addBuilding(wx, wy, wz, hx, hy, hz, r, g, b, isRock);
-    }
+    // R32.1.3: interior-shape loop REMOVED. The per-name guess halfExtents (iobservation
+    // at 4×6×4 m around a 1×1×6 m mesh, etc.) created a massive "invisible force field"
+    // around every building because both the legacy guess AABBs AND the real mesh-bound
+    // AABBs from appendInteriorShapeAABBs() (R32.1) were in buildings[]. Minkowski-sum
+    // collision always picked the larger (wrongly-sized) one. Now appendInteriorShapeAABBs()
+    // from renderer.js is the sole source of interior-shape collision using actual .dis bounds.
+    // Generators / turrets / stations keep their own small fixed-size AABBs below.
 
     for (int i = 0; i < RAINDANCE_GENERATOR_COUNT; i++) {
         float wx = RAINDANCE_GENERATORS[i].x;
