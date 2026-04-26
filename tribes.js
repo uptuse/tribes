@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpkpnl6gt9.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpt14nj5bn.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -201,25 +201,25 @@ Module['FS_createPath']("/assets", "tribes", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/larmor.dts", "start": 443722, "end": 760168}, {"filename": "/assets/tribes/marmor.dts", "start": 760168, "end": 1157310}, {"filename": "/assets/tribes/tower.DTS", "start": 1157310, "end": 1172168}], "remote_package_size": 1172168});
+    loadPackage({"files": [{"filename": "/assets/tribes/CREDITS.md", "start": 0, "end": 2346}, {"filename": "/assets/tribes/chaingun.DTS", "start": 2346, "end": 29086}, {"filename": "/assets/tribes/discb.DTS", "start": 29086, "end": 33158}, {"filename": "/assets/tribes/grenade.DTS", "start": 33158, "end": 35922}, {"filename": "/assets/tribes/harmor.DTS", "start": 35922, "end": 446068}, {"filename": "/assets/tribes/larmor.dts", "start": 446068, "end": 762514}, {"filename": "/assets/tribes/marmor.dts", "start": 762514, "end": 1159656}, {"filename": "/assets/tribes/tower.DTS", "start": 1159656, "end": 1174514}], "remote_package_size": 1174514});
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpkpnl6gt9.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpy2qlvb9j.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpt14nj5bn.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0lfsj5tr.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpy2qlvb9j.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpn74ozk5q.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0lfsj5tr.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpio_z_3t6.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpn74ozk5q.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpio_z_3t6.js
 
 
 var arguments_ = [];
@@ -6459,6 +6459,7 @@ var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings
 var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
 var _updateScoreboard = Module['_updateScoreboard'] = makeInvalidEarlyAccess('_updateScoreboard');
 var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
+var _setLocalPlayerNetCorrection = Module['_setLocalPlayerNetCorrection'] = makeInvalidEarlyAccess('_setLocalPlayerNetCorrection');
 var _getPlayerStatePtr = Module['_getPlayerStatePtr'] = makeInvalidEarlyAccess('_getPlayerStatePtr');
 var _getPlayerStateCount = Module['_getPlayerStateCount'] = makeInvalidEarlyAccess('_getPlayerStateCount');
 var _getPlayerStateStride = Module['_getPlayerStateStride'] = makeInvalidEarlyAccess('_getPlayerStateStride');
@@ -6505,6 +6506,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
   assert(typeof wasmExports['updateScoreboard'] != 'undefined', 'missing Wasm export: updateScoreboard');
   assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
+  assert(typeof wasmExports['setLocalPlayerNetCorrection'] != 'undefined', 'missing Wasm export: setLocalPlayerNetCorrection');
   assert(typeof wasmExports['getPlayerStatePtr'] != 'undefined', 'missing Wasm export: getPlayerStatePtr');
   assert(typeof wasmExports['getPlayerStateCount'] != 'undefined', 'missing Wasm export: getPlayerStateCount');
   assert(typeof wasmExports['getPlayerStateStride'] != 'undefined', 'missing Wasm export: getPlayerStateStride');
@@ -6547,6 +6549,7 @@ function assignWasmExports(wasmExports) {
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
   _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
+  _setLocalPlayerNetCorrection = Module['_setLocalPlayerNetCorrection'] = createExportWrapper('setLocalPlayerNetCorrection', 5);
   _getPlayerStatePtr = Module['_getPlayerStatePtr'] = createExportWrapper('getPlayerStatePtr', 0);
   _getPlayerStateCount = Module['_getPlayerStateCount'] = createExportWrapper('getPlayerStateCount', 0);
   _getPlayerStateStride = Module['_getPlayerStateStride'] = createExportWrapper('getPlayerStateStride', 0);

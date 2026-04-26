@@ -236,6 +236,12 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* R19 bandwidth telemetry — top-right under FPS counter */
+    #bw-telemetry { display:none; position:fixed; top:28px; right:10px; z-index:40;
+      font-family:'Barlow Condensed',sans-serif; font-size:0.72em; color:#7a8a9a;
+      background:rgba(8,6,3,0.55); border-left:2px solid #2a4a6a; padding:2px 8px;
+      pointer-events:none; letter-spacing:1px; }
+
     /* Damage flash — red tint pulse when local player takes damage */
     #damage-flash { position:fixed; top:0; left:0; width:100%; height:100%; z-index:14;
       pointer-events:none; background:radial-gradient(circle at center, rgba(192,16,16,0) 30%, rgba(180,0,0,0.55) 100%);
@@ -640,6 +646,8 @@
 
   <!-- FPS counter -->
   <div id="fps-counter">0 fps</div>
+  <!-- R19 bandwidth telemetry -->
+  <div id="bw-telemetry"></div>
 
   <!-- Settings Modal -->
   <div id="settings-modal" onclick="if(event.target===this)closeSettings()">
@@ -1548,13 +1556,100 @@
         }else{
           console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
         }
-        // R16: opt-in network client via ?multiplayer=local|remote URL flag
+        // R16/R19: opt-in network client via ?multiplayer=local|remote URL flag
         var mp = new URLSearchParams(location.search).get('multiplayer');
         if(mp === 'local' || mp === 'remote'){
-          console.log('[R16] ?multiplayer=' + mp + ' detected — loading network client');
-          import('./client/network.js').then(function(m){m.start();window.__tribesNet = m;})
-            .catch(function(err){console.error('[R16] network.js import failed:', err);});
+          console.log('[R19] ?multiplayer=' + mp + ' detected — loading network client');
+          import('./client/network.js').then(function(m){
+            window.__tribesNet = m;
+            // Start network connection
+            m.start();
+            // Wire input provider — reads JS keyboard state
+            m.setInputProvider(function(){
+              var btn = 0;
+              if(mpKeys[87]||mpKeys[38]) btn |= 0x01; // forward W/up
+              if(mpKeys[83]||mpKeys[40]) btn |= 0x02; // back S/down
+              if(mpKeys[65]||mpKeys[37]) btn |= 0x04; // left A/left
+              if(mpKeys[68]||mpKeys[39]) btn |= 0x08; // right D/right
+              if(mpKeys[32]) btn |= 0x10; // jump/jet space
+              if(mpKeys[16]) btn |= 0x20; // ski shift
+              if(mpFire) btn |= 0x40;     // fire mouse-1
+              var input = { buttons: btn, mouseDX: mpMouseDX, mouseDY: mpMouseDY, weaponSelect: mpWeapon };
+              mpMouseDX = 0; mpMouseDY = 0; mpWeapon = 0xFF;
+              return input;
+            });
+            // Hook reconciliation: snapshot → prediction.reconcile → setLocalPlayerNetCorrection
+            window.__tribesReconcile = function(snap){
+              if(!Module._setLocalPlayerNetCorrection) return;
+              m.prediction.reconcile(snap, function(){
+                // Read local player from WASM via a tiny bridge — the renderer
+                // already builds a Float32Array view; we re-derive here for simplicity.
+                if(!Module.HEAPF32 || !Module._getPlayerStatePtr) return null;
+                var ptr = Module._getPlayerStatePtr();
+                var stride = Module._getPlayerStateStride();
+                var idx = Module._getLocalPlayerIdx();
+                var view = new Float32Array(Module.HEAPF32.buffer, ptr + idx * stride * 4, stride);
+                return { pos: [view[0], view[1], view[2]], rot: [view[3], view[4], view[5]] };
+              });
+            };
+            // Per-frame correction — driven by RAF (~60Hz); piggyback on existing render loop
+            (function predictionFrame(){
+              if(window.__tribesNet && Module._setLocalPlayerNetCorrection){
+                m.prediction.applyPendingCorrection(
+                  Module._setLocalPlayerNetCorrection,
+                  function(){
+                    if(!Module.HEAPF32) return null;
+                    var ptr = Module._getPlayerStatePtr();
+                    var stride = Module._getPlayerStateStride();
+                    var idx = Module._getLocalPlayerIdx();
+                    var view = new Float32Array(Module.HEAPF32.buffer, ptr + idx * stride * 4, stride);
+                    return { pos: [view[0], view[1], view[2]], rot: [view[3], view[4], view[5]] };
+                  }
+                );
+              }
+              requestAnimationFrame(predictionFrame);
+            })();
+            // Match-start / match-end handlers
+            window.__tribesOnMatchStart = function(msg){
+              addEventMsg('Match started — ' + msg.players.length + ' players');
+            };
+            window.__tribesOnMatchEnd = function(msg){
+              addEventMsg('Match ended — score ' + msg.teamScore.join('-'));
+            };
+            // Bandwidth telemetry overlay updater
+            setInterval(function(){
+              var bw = document.getElementById('bw-telemetry');
+              if(bw && m && m.getStatus){
+                var s = m.getStatus();
+                if(s.connected){
+                  bw.style.display = 'block';
+                  bw.textContent = '↓ ' + s.kbInPerSec + ' KB/s  ↑ ' + s.kbOutPerSec + ' KB/s  ping ' +
+                    s.pingMs + 'ms  recon ' + s.reconciliations + ' (avg Δ ' + s.avgDivergence + 'm)';
+                } else {
+                  bw.style.display = 'none';
+                }
+              }
+            }, 500);
+          })
+            .catch(function(err){console.error('[R19] network.js import failed:', err);});
         }
+        // JS-side keyboard mirror for multiplayer input provider
+        var mpKeys = {};
+        var mpMouseDX = 0, mpMouseDY = 0;
+        var mpFire = false;
+        var mpWeapon = 0xFF;
+        document.addEventListener('keydown', function(e){ mpKeys[e.keyCode] = true;
+          if(e.keyCode >= 49 && e.keyCode <= 54) mpWeapon = e.keyCode - 49; // 1-6
+        });
+        document.addEventListener('keyup',   function(e){ mpKeys[e.keyCode] = false; });
+        document.addEventListener('mousedown', function(e){ if(e.button === 0) mpFire = true; });
+        document.addEventListener('mouseup',   function(e){ if(e.button === 0) mpFire = false; });
+        document.addEventListener('mousemove', function(e){
+          if(document.pointerLockElement){
+            mpMouseDX += (e.movementX || 0) * 0.003;
+            mpMouseDY += (e.movementY || 0) * 0.003;
+          }
+        });
       }
     };
     Module.setStatus('Downloading...');

@@ -1580,6 +1580,16 @@ extern "C" void applyLoadout(int armor,int weapon,int pack){
     printf("[STATION:APPLIED]\n");
 }
 
+// R19: client prediction reconciliation — JS calls this when the server
+// snapshot diverges from the predicted local-player state. Smooth
+// correction is the JS layer's job (200ms interpolation per architecture
+// §7); this function just sets the authoritative target.
+extern "C" void setLocalPlayerNetCorrection(float x, float y, float z, float yaw, float pitch){
+    Player&me=players[localPlayer];
+    me.pos.x = x; me.pos.y = y; me.pos.z = z;
+    me.yaw = yaw; me.pitch = pitch;
+}
+
 // ============================================================
 // Render-state population (R15: Three.js bridge)
 // Called once per simulation tick. Writes the live game state into the

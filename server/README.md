@@ -1,6 +1,7 @@
-# Tribes Lobby Server
+# Tribes Lobby + Match Server
 
-Minimal WebSocket lobby server. **R16 scaffold** — connection plumbing only; game-state networking lands in R19.
+WebSocket lobby + authoritative simulation. **R16 + R19** — full multiplayer
+loop: connection → lobby → match → snapshots/deltas/inputs → match-end.
 
 ## Local development
 
@@ -14,11 +15,34 @@ curl -fsSL https://bun.sh/install | bash
 cd server
 bun install
 bun run start
+
+# Run wire-format tests
+bun run test
 ```
 
 Server listens on `http://localhost:8080`.
 WebSocket endpoint: `ws://localhost:8080/ws`
-Health check: `http://localhost:8080/health`
+Health check: `http://localhost:8080/health` (lobby/connection/active match counts)
+
+## R19 simulation tick rates
+
+- Server simulation: **30 Hz** (33ms tick)
+- Snapshot broadcast: **10 Hz** (~664B per snapshot for 8 players + 30 projectiles)
+- Delta broadcast: **30 Hz** (~122B per delta — R19 uses simplified deltas; full bitmask deltas R20+)
+- Client input: **60 Hz** (12B per input message)
+- Total bandwidth per client: ~10 KB/s downstream + 0.7 KB/s upstream
+
+## R19 file layout
+
+| File | Purpose |
+|------|---------|
+| `lobby.ts` | WebSocket server, lobby management, match lifecycle, tick loops, input routing |
+| `sim.ts` | Authoritative simulation: player physics, projectiles, flags, match state |
+| `wire.ts` | Binary protocol encode/decode (re-exports from `client/wire.js`) |
+| `quant.ts` | Quantization helpers (re-exports from `client/quant.js`) |
+| `constants.ts` | Shared gameplay constants (re-exports from `client/constants.js`) |
+| `anticheat.ts` | Speed/aim-rate/cooldown/sanity checks |
+| `wire.test.ts` | Roundtrip encode/decode test (run via `bun run test`) |
 
 ## Verify with the client
 

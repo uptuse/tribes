@@ -6,7 +6,8 @@
   "private": true,
   "scripts": {
     "start": "bun run lobby.ts",
-    "dev": "bun --hot run lobby.ts"
+    "dev": "bun --hot run lobby.ts",
+    "test": "bun run wire.test.ts"
   },
   "engines": {
     "bun": ">=1.1.0"
