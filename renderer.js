@@ -119,7 +119,7 @@ export async function start() {
     loadHDRISky();   // async — sky + env set when HDRI loads; Sky fallback on error
     initSky();       // always runs for immediate Sky fallback, hidden if HDRI succeeds
     initTerrain();
-    initBuildings();
+    await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
@@ -565,11 +565,232 @@ function createBuildingMesh(type, halfExtents, colorRGB) {
     return group;
 }
 
-function initBuildings() {
+// ============================================================
+// R32.3: Canonical building classifier + mesh builder.
+// The C++ side bakes every Raindance building with type=0 (generic) so the
+// downstream renderer falls into the default "box+skirt" fallback for all of
+// them — generators, turrets, stations, and sensors all look identical.
+// To restore visual identity without touching the C++ build, we load
+// canonical.json and match each baked AABB against the canonical entries
+// by world position. Once classified by datablock string we dispatch to
+// a typed mesh builder with team color tint.
+// Coordinate convention: MIS (x, y, z-up) -> world (x = mis_x, y = mis_z, z = -mis_y)
+// Existing C++ pipeline already does this swap when populating g_rBuildings.
+// ============================================================
+let _r32_3_classifier = null;
+
+async function _loadCanonicalClassifier() {
+    if (_r32_3_classifier) return _r32_3_classifier;
+    try {
+        const res = await fetch('assets/maps/raindance/canonical.json');
+        if (!res.ok) return null;
+        const c = await res.json();
+        const toWorld = (mp) => ({ x: mp[0], y: mp[2], z: -mp[1] });
+        const items = [];
+        const pushAll = (list, datablock, teamIdx) => {
+            (list || []).forEach(s => {
+                if (datablock && s.datablock !== datablock && datablock !== '*') return;
+                const w = toWorld(s.position);
+                items.push({
+                    x: w.x, y: w.y, z: w.z,
+                    datablock: s.datablock, name: s.name, team: teamIdx,
+                });
+            });
+        };
+        ['team0', 'team1'].forEach((tk, ti) => {
+            const t = c[tk]; if (!t) return;
+            pushAll(t.static_shapes, '*', ti);
+            pushAll(t.turrets,       '*', ti);
+            pushAll(t.sensors,       '*', ti);
+        });
+        _r32_3_classifier = items;
+        return items;
+    } catch (e) {
+        console.warn('[R32.3] classifier load failed', e);
+        return null;
+    }
+}
+
+// Look up the canonical entry whose world position is closest to (px,py,pz).
+// Returns { datablock, team } or null if no match within radius.
+function _classifyBuilding(items, px, py, pz, radius = 4.0) {
+    if (!items) return null;
+    let best = null, bestD2 = radius * radius;
+    for (let i = 0; i < items.length; i++) {
+        const it = items[i];
+        const dx = it.x - px, dy = it.y - py, dz = it.z - pz;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        if (d2 < bestD2) { bestD2 = d2; best = it; }
+    }
+    return best;
+}
+
+// Team tint helpers — used as accent on generators/turrets/stations
+function _teamAccent(teamIdx) {
+    if (teamIdx === 0) return { tint: 0xC8302C, emissive: 0x6e1612 };
+    if (teamIdx === 1) return { tint: 0x2C5AC8, emissive: 0x12326e };
+    return { tint: 0x808080, emissive: 0x303030 };
+}
+
+// Per-datablock mesh builder. Returns a Group anchored at y=0 (foot of object).
+// halfExtents are kept for backward-compatibility but datablock-driven sizes
+// are used so silhouettes match the original game proportions.
+function createCanonicalMesh(datablock, teamIdx) {
+    const acc = _teamAccent(teamIdx);
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x6a6862, roughness: 0.78, metalness: 0.18 });
+    const armMat  = new THREE.MeshStandardMaterial({ color: 0x484540, roughness: 0.55, metalness: 0.55 });
+    const accentMat = new THREE.MeshStandardMaterial({
+        color: acc.tint, emissive: acc.emissive, emissiveIntensity: 0.55,
+        roughness: 0.50, metalness: 0.30,
+    });
+    const glowMat = new THREE.MeshBasicMaterial({ color: acc.tint });
+    const g = new THREE.Group();
+
+    if (datablock === 'Generator') {
+        // Armored hex housing (3m wide, 4m tall) with team-tint emissive panels
+        const hx = 1.5, hy = 2.0, hz = 1.5;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2), baseMat);
+        body.position.y = hy; body.castShadow = body.receiveShadow = true; g.add(body);
+        // Side panels with team glow
+        for (let i = 0; i < 4; i++) {
+            const a = i * Math.PI / 2;
+            const panel = new THREE.Mesh(new THREE.PlaneGeometry(hx * 1.4, hy * 1.4), accentMat);
+            panel.position.set(Math.sin(a) * (hx + 0.02), hy * 1.1, Math.cos(a) * (hz + 0.02));
+            panel.lookAt(panel.position.x * 100, panel.position.y, panel.position.z * 100);
+            g.add(panel);
+        }
+        // Top vent + chimney
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(hx * 1.6, 0.2, hz * 1.6), armMat);
+        vent.position.y = hy * 2 + 0.1; g.add(vent);
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.9, 8), armMat);
+        stack.position.y = hy * 2 + 0.65; g.add(stack);
+        return g;
+    }
+
+    if (datablock === 'AmmoStation' || datablock === 'InventoryStation' || datablock === 'CommandStation') {
+        // Hex kiosk — differentiate by accent color of top ring.
+        const r = 1.0, h = 1.5;
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.1, r * 1.2, h * 2, 6), baseMat);
+        body.position.y = h; body.castShadow = body.receiveShadow = true; g.add(body);
+        // Top ring (datablock-tinted to differentiate at a glance)
+        let ringHex = 0xFFC850; // default
+        if (datablock === 'AmmoStation')      ringHex = 0xFF8030; // amber/orange
+        if (datablock === 'InventoryStation') ringHex = 0x40C0FF; // cyan
+        if (datablock === 'CommandStation')   ringHex = 0xFFE060; // gold
+        const ringMat = new THREE.MeshBasicMaterial({ color: ringHex });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.18, 0.08, 6, 24), ringMat);
+        ring.rotation.x = Math.PI / 2; ring.position.y = h * 1.95; g.add(ring);
+        // Display panels (3 sides on hex)
+        const panelMat = new THREE.MeshBasicMaterial({ color: ringHex, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
+        for (let i = 0; i < 3; i++) {
+            const a = i * (2 * Math.PI / 3);
+            const panel = new THREE.Mesh(new THREE.PlaneGeometry(r * 1.0, h * 0.9), panelMat);
+            panel.position.set(Math.sin(a) * (r * 1.13), h * 1.0, Math.cos(a) * (r * 1.13));
+            panel.lookAt(panel.position.x * 100, panel.position.y, panel.position.z * 100);
+            g.add(panel);
+        }
+        // Team-color foot stripe so allegiance is readable from any angle
+        const stripe = new THREE.Mesh(new THREE.TorusGeometry(r * 1.22, 0.04, 6, 18), glowMat);
+        stripe.rotation.x = Math.PI / 2; stripe.position.y = 0.1; g.add(stripe);
+        return g;
+    }
+
+    if (datablock === 'VehicleStation') {
+        // Larger station w/ extended launch arm — the only datablock built into the C++ buildings
+        // array as a station but visually closer to a vehicle bay.
+        const w = 3.0, d = 4.0, h = 2.6;
+        const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), baseMat);
+        body.position.y = h * 0.5; body.castShadow = body.receiveShadow = true; g.add(body);
+        // Roof slab
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(w * 1.05, 0.2, d * 1.05), armMat);
+        roof.position.y = h + 0.1; g.add(roof);
+        // Side launch rail (sticking out front)
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, d * 1.4), armMat);
+        rail.position.set(0, h + 0.4, 0); g.add(rail);
+        // Team accent door
+        const door = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.7, h * 0.7), accentMat);
+        door.position.set(0, h * 0.45, d * 0.501); g.add(door);
+        return g;
+    }
+
+    if (datablock === 'plasmaTurret') {
+        // Plasma turret — pedestal + domed head + glowing coil ring
+        const pedH = 1.0;
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, pedH, 12), baseMat);
+        ped.position.y = pedH * 0.5; ped.castShadow = ped.receiveShadow = true; g.add(ped);
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.95, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), armMat);
+        dome.position.y = pedH + 0.05; g.add(dome);
+        // Plasma coil ring (emissive, slow rotation in syncBuildings if needed)
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.07, 8, 18), accentMat);
+        coil.rotation.x = Math.PI / 2; coil.position.y = pedH + 0.45; g.add(coil);
+        // Forward cannon
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 1.5, 10), armMat);
+        barrel.rotation.z = Math.PI / 2; barrel.position.set(0.85, pedH + 0.45, 0); g.add(barrel);
+        // Sensor eye
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat);
+        eye.position.set(0.55, pedH + 0.95, 0); g.add(eye);
+        g.userData = { barrel: barrel };
+        return g;
+    }
+
+    if (datablock === 'rocketTurret') {
+        // Rocket turret — boxy pedestal + missile cluster on twin rails
+        const pedH = 1.2;
+        const ped = new THREE.Mesh(new THREE.BoxGeometry(1.3, pedH, 1.3), baseMat);
+        ped.position.y = pedH * 0.5; ped.castShadow = ped.receiveShadow = true; g.add(ped);
+        // Top hub
+        const hub = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 1.4), armMat);
+        hub.position.y = pedH + 0.2; g.add(hub);
+        // Two missile rails
+        for (let s = -1; s <= 1; s += 2) {
+            const rail = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.3, 1.4), armMat);
+            rail.position.set(0.45 * s, pedH + 0.55, 0); g.add(rail);
+            // Two missiles per rail
+            for (let m = 0; m < 2; m++) {
+                const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.55, 8), accentMat);
+                tube.rotation.x = Math.PI / 2;
+                tube.position.set(0.45 * s, pedH + 0.55 + (m === 0 ? 0.18 : -0.18), 0.0);
+                g.add(tube);
+            }
+        }
+        // Forward sensor
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat);
+        eye.position.set(0, pedH + 0.45, 0.71); g.add(eye);
+        return g;
+    }
+
+    if (datablock === 'PulseSensor') {
+        // Slim pole with rotating dish at top — distinct from turrets
+        const poleH = 2.4;
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.13, poleH, 8), baseMat);
+        pole.position.y = poleH * 0.5; pole.castShadow = pole.receiveShadow = true; g.add(pole);
+        // Cap
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.15, 12), armMat);
+        cap.position.y = poleH + 0.07; g.add(cap);
+        // Dish (shallow paraboloid as half-sphere flattened)
+        const dish = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), accentMat);
+        dish.position.y = poleH + 0.20; g.add(dish);
+        // Pulsing emissive dot at dish center
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), glowMat);
+        dot.position.y = poleH + 0.30; g.add(dot);
+        g.userData = { dish: dish, isSensor: true };
+        return g;
+    }
+
+    // Fallback: generic interior box (legacy path)
+    return null;
+}
+
+async function initBuildings() {
     const ptr = Module._getBuildingPtr();
     const count = Module._getBuildingCount();
     const stride = Module._getBuildingStride();
     const view = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
+    // R32.3: load canonical classifier. If it fails (e.g. offline), we fall
+    // back to the legacy createBuildingMesh path so the map still renders.
+    const classifier = await _loadCanonicalClassifier();
+    let canonicalCount = 0, fallbackCount = 0;
+
     for (let b = 0; b < count; b++) {
         const o = b * stride;
         const px = view[o], py = view[o + 1], pz = view[o + 2];
@@ -578,20 +799,34 @@ function initBuildings() {
         const isRock = (type === 5);
         if (isRock) continue;
         const cr = view[o + 10], cg = view[o + 11], cb = view[o + 12];
-        const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
+
+        // Try canonical classification first. Match radius 4m is generous
+        // because the C++ position swap is exact — we use 4m to absorb any
+        // float-precision drift between MIS source and baked g_rBuildings.
+        let mesh = null;
+        let canon = _classifyBuilding(classifier, px, py, pz, 4.0);
+        if (canon) {
+            mesh = createCanonicalMesh(canon.datablock, canon.team);
+            if (mesh) canonicalCount++;
+        }
+        if (!mesh) {
+            mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
+            fallbackCount++;
+        }
+
         // R31.1: clamp building Y to terrain so bodies don't sink underground.
-        // The Raindance mission data mission.z → world.y may be below local
-        // terrain height at (px, pz), causing only the unlit accent meshes
-        // (ring, panels) to poke above ground while the PBR body is buried.
         const terrainAtBuilding = sampleTerrainH(px, pz);
         const groundedY = Math.max(py, terrainAtBuilding + hy * 0.5);
         mesh.position.set(px, groundedY, pz);
+        mesh.userData = mesh.userData || {};
+        mesh.userData.canon = canon || null;
         // R31: disable frustum culling on all building sub-meshes
         mesh.traverse(child => { child.frustumCulled = false; });
         scene.add(mesh);
         buildingMeshes.push({ mesh, type });
     }
-    console.log('[R18] Buildings:', buildingMeshes.length, 'composite meshes (turret/station/generator/interior/tower)');
+    console.log('[R32.3] Buildings classified:', canonicalCount, 'canonical /',
+        fallbackCount, 'legacy fallback (total ' + buildingMeshes.length + ')');
 }
 
 // ============================================================
