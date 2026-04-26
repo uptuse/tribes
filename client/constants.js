@@ -35,13 +35,15 @@ export const ARMORS = [
 
 // Weapons — match wasm_main.cpp weapons[] table
 // type: 0=blaster, 1=chaingun, 2=disc, 3=grenade, 4=plasma, 5=mortar, 6=laser, 7=elf, 8=repair
+// R31.3 F6: inheritScale = fraction of player velocity added to projectile at fire.
+// Mirrors the C++ WeaponData.inheritScale field added in R31.3.
 export const WEAPONS = [
-    { name: 'Blaster',     damage: 0.125, fireTime: 0.30, reloadTime: 0,    muzzleVel: 200, splashRadius: 0,    kickback: 0,   gravity: 5,  hitscan: false },
-    { name: 'Chaingun',    damage: 0.11,  fireTime: 0.10, reloadTime: 0,    muzzleVel: 425, splashRadius: 0,    kickback: 0,   gravity: 0,  hitscan: true  },
-    { name: 'Disc',        damage: 0.5,   fireTime: 1.25, reloadTime: 0.25, muzzleVel: 65,  splashRadius: 7.5,  kickback: 150, gravity: 5,  hitscan: false },
-    { name: 'GrenadeL',    damage: 0.4,   fireTime: 0.5,  reloadTime: 0.5,  muzzleVel: 40,  splashRadius: 15,   kickback: 150, gravity: 25, hitscan: false },
-    { name: 'Plasma',      damage: 0.45,  fireTime: 0.5,  reloadTime: 0.1,  muzzleVel: 55,  splashRadius: 4,    kickback: 0,   gravity: 3,  hitscan: false },
-    { name: 'Mortar',      damage: 1.0,   fireTime: 2.0,  reloadTime: 0.5,  muzzleVel: 50,  splashRadius: 20,   kickback: 250, gravity: 20, hitscan: false },
+    { name: 'Blaster',     damage: 0.125, fireTime: 0.30, reloadTime: 0,    muzzleVel: 200, splashRadius: 0,    kickback: 0,   gravity: 5,  hitscan: false, inheritScale: 0.0 },
+    { name: 'Chaingun',    damage: 0.11,  fireTime: 0.10, reloadTime: 0,    muzzleVel: 425, splashRadius: 0,    kickback: 0,   gravity: 0,  hitscan: true,  inheritScale: 0.0 },
+    { name: 'Disc',        damage: 0.5,   fireTime: 1.25, reloadTime: 0.25, muzzleVel: 65,  splashRadius: 7.5,  kickback: 150, gravity: 5,  hitscan: false, inheritScale: 0.5 },
+    { name: 'GrenadeL',    damage: 0.4,   fireTime: 0.5,  reloadTime: 0.5,  muzzleVel: 40,  splashRadius: 15,   kickback: 150, gravity: 25, hitscan: false, inheritScale: 0.5 },
+    { name: 'Plasma',      damage: 0.45,  fireTime: 0.5,  reloadTime: 0.1,  muzzleVel: 55,  splashRadius: 4,    kickback: 0,   gravity: 3,  hitscan: false, inheritScale: 0.3 },
+    { name: 'Mortar',      damage: 1.0,   fireTime: 2.0,  reloadTime: 0.5,  muzzleVel: 50,  splashRadius: 20,   kickback: 250, gravity: 20, hitscan: false, inheritScale: 1.0 },
 ];
 
 // R23: Per-class loadouts. Class index → { weapons[], grenades, spawnSec, energyRegenMul, repairPacks }
