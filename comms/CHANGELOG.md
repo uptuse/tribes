@@ -20,3 +20,5 @@
 2026-04-25 21:25 | pending | review(manus): round 9.5 INTERRUPT — stop Tier 3.0 armor pass, await user-provided custom character models
 2026-04-25 21:30 | pending | review(manus): round 10 PIVOT — HUD/UI polish (model-free); 8 acceptance criteria for health/energy/ammo/icon/crosshair/killfeed/compass/CTF banner
 2026-04-25 23:00 | pending | feat(armor): Tier 3.0 partial — zone coloring, fixed specular/viewDir, breathing anim, jetpack glow (committed before Round 9.5 interrupt arrived)
+2026-04-25 21:32 | f3039a2 | feat(armor): Tier 3.0 quality pass — 6/7 acceptance criteria met (accepted as baseline)
+2026-04-25 21:33 | pending | review(manus): round 10.5 — accept Tier 3.0 armor (6/7) as baseline; drop .upk asset pivot; re-confirm HUD/UI polish

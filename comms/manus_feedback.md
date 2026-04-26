@@ -1,72 +1,80 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — UI/CSS work, no architecture or visual-3D reasoning needed
+> **MODEL: SONNET 4.6 (1M context) OK** — UI/CSS work; no architecture or visual-3D reasoning needed
 
-# Manus Feedback — Round 10 (HUD / UI polish — model-free pivot)
+# Manus Feedback — Round 10.5 (resume HUD/UI polish; armor pivot dropped)
 
-> **Reviewing:** any WIP / status push from Round 9.5 interrupt
+> **Reviewing commit:** `f3039a2` — `feat(armor): Tier 3.0 quality pass — 6/7 acceptance criteria met`
 > **Live build:** https://uptuse.github.io/tribes/
 
-## Context
+## Tier 3.0 armor pass — accepted as baseline (6/7, well done)
 
-User is sourcing custom character models (Round 10's-original armor pivot is on hold). To keep the loop productive in the meantime, we're stacking three model-free tracks: **HUD/UI → Audio → Match flow**. This is Round 10: HUD/UI polish. Audio comes Round 11, match flow Round 12.
+You delivered Tier 3.0 before the Round 9.5 interrupt nudge reached you. Reviewed the diff and status doc — this is **legitimately good work** and we're keeping it as the baseline. Highlights:
 
-Resume Tier 3.0 character work whenever the user's models drop in `program/assets/characters/`.
+- **Real T1 DTS files** (`larmor.dts`, `marmor.dts`, `harmor.DTS`) confirmed loading
+- **Per-team color zones via shader** — model-space Y for zone detection, `smoothstep(-0.1, 0.25, vZone)` blend at waist. Blood Eagle crimson `(0.55,0.06,0.06)` / near-black secondary. Diamond Sword navy `(0.10,0.14,0.52)` / steel-grey secondary. Clean palette, faithful to canon.
+- **Specular fix is the real win** — you correctly identified `viewDir = normalize(-vWorldPos)` was treating world origin as the camera. Replacing with `uCamPos - vWorldPos` is the textbook fix. Warm metallic specular `(1.0, 0.92, 0.82)` exponent 52 + cool rim `(0.45, 0.5, 0.6)` reads convincingly as armor metal.
+- **Idle breathing** with per-player phase offset so they don't sync — small but disproportionately makes models feel alive.
+- **Jetpack twin-thrusters** for all jetting players (not just local), with separate orange core + yellow halo particles. Good.
 
-## Why HUD/UI first
+#6 weapon-in-hand correctly deferred (needs DTS skeleton bone audit; risky for one round). We'll revisit when a real asset pipeline is in place.
 
-The current in-game HUD is functional but minimalist — health bar, energy bar, ammo counter, weapon name. Polishing it now (a) gives the user immediate visual delight without needing 3D assets, (b) sets the visual language for everything else, and (c) doesn't conflict with later character/material work.
+## On the model-replacement pivot (Round 9.5 interrupt — dropping)
 
-## Tier 3.9.1 — HUD Polish (THIS ROUND)
+User attempted to provide custom character models (Tribes: Ascend `.upk` package). Two blockers surfaced:
+1. `.upk` is Unreal Engine 3 binary format — requires UE3 / umodel + Blender pipeline to convert to glTF before we can use anything.
+2. Hi-Rez assets have IP/licensing concerns for a public WebAssembly port.
 
-### Acceptance criteria — must hit **at least 6 of 8**
+**Decision:** Drop the asset-swap pivot for now. Your Tier 3.0 baseline (real T1 DTS files + good shader work) is the shippable armor for the foreseeable future. If the user later sources legitimate (CC0/CC-BY) sci-fi armored character glTFs, we'll do a real integration round then.
 
-1. **Health bar redesign.** Currently a flat amber rectangle. Add: gold/brass border (matches main menu), segmented divisions every 25 HP, color shift to deep red when HP < 25, subtle pulse animation when HP < 10. Place bottom-left.
+Logged in `comms/manus_decisions_log.md`.
 
-2. **Energy bar redesign.** Same brass-bordered styling. Color: cyan-blue (canonical Tribes energy color). Add: subtle horizontal "fluid" gradient that depletes leftward when jetpack used. Place directly under health bar.
+## ACTIVE WORK — Round 10 HUD/UI polish (continues)
 
-3. **Ammo counter.** Currently a number. Upgrade: large primary number (current ammo) + smaller secondary number after `/` (max ammo, e.g., `40 / 80`). Brass-bordered chip in bottom-right. Color codes: green (>50%), amber (25-50%), red (<25%).
+The Round 10 ask in the previous feedback file (now overwritten by this Round 10.5) **is still the active work**. Restating the full ask here so you don't have to dig through git history.
 
-4. **Weapon icon.** Show a small pictograph of the current weapon (disc / chaingun / plasma / grenade) above the ammo counter. SVG line-art is fine — clean, monochrome with brass tint. When weapon switches, animate a 200ms fade-cross between icons.
+### Tier 3.9.1 — HUD Polish: must hit at least 6 of 8 criteria
 
-5. **Crosshair.** Currently a tiny dot or nothing. Replace with: dynamic crosshair that opens up when moving (running/skiing) and closes when stationary. Color: brass `(#C4A14C)` matching the menu palette. Different shape per weapon: spinfusor = circle with cross, chaingun = small dots in a square, plasma = filled circle, grenade = parabola arc indicator.
+1. **Health bar redesign** — gold/brass border (matches main menu), segmented every 25 HP, color shift to deep red when HP < 25, subtle pulse when HP < 10. Bottom-left.
 
-6. **Kill feed.** Top-right of screen. Stack of recent kills, format: `[killer name] [weapon icon] [victim name]` with team color tint. Auto-fade after 5 sec. Max 4 entries visible.
+2. **Energy bar redesign** — same brass-bordered styling. Color: cyan-blue (canonical Tribes energy color). Subtle horizontal "fluid" gradient that depletes leftward when jetpack used. Directly under health bar.
 
-7. **Compass strip.** Top-center. Horizontal strip showing cardinal directions (N/E/S/W) plus markers for: own flag (gold), enemy flag (gold), nearest teammate (team color), nearest enemy (red dot only when in line-of-sight). Marker positions update relative to player's facing direction.
+3. **Ammo counter** — large primary number + smaller `/max` (e.g., `40 / 80`). Brass-bordered chip in bottom-right. Color codes: green (>50%), amber (25-50%), red (<25%).
 
-8. **CTF objective banner.** When player picks up enemy flag → screen-edge gold pulse + center text `>>> YOU HAVE THE FLAG — RETURN TO BASE <<<` for 3 sec then minimize to small "FLAG" indicator near health bar. When flag is captured/dropped → matching banner.
+4. **Weapon icon** — small SVG line-art pictograph (disc / chaingun / plasma / grenade) above ammo counter. Brass tint. 200ms fade-cross when weapon switches.
 
-### Verification flow
+5. **Crosshair** — dynamic, opens when moving (running/skiing), closes when stationary. Brass `#C4A14C`. Different shape per weapon: spinfusor = circle with cross, chaingun = small dots in a square, plasma = filled circle, grenade = parabola arc.
 
-When you push, I'll:
-1. Load https://uptuse.github.io/tribes/ in headless browser
-2. Click through to in-game state, screenshot HUD
-3. Visually count how many of the 8 criteria are met
-4. If 6+ → Round 11 advances to audio system
-5. If 5 or fewer → Round 11 stays on HUD with specific gaps called out (still Sonnet — this is CSS, doesn't need Opus)
+6. **Kill feed** — top-right. Stack of recent kills: `[killer] [weapon icon] [victim]` with team color tint. Auto-fade after 5 sec. Max 4 entries.
+
+7. **Compass strip** — top-center. Cardinal directions (N/E/S/W) + markers for own flag (gold), enemy flag (gold), nearest teammate (team color), nearest enemy (red, only when in line-of-sight). Updates relative to player facing.
+
+8. **CTF objective banner** — when player picks up enemy flag → screen-edge gold pulse + center text `>>> YOU HAVE THE FLAG — RETURN TO BASE <<<` for 3 sec, then minimize to small "FLAG" indicator near health. Matching banners on capture/drop.
 
 ### Implementation notes
 
-- HUD is currently rendered partly in canvas (energy bar on line ~988 of `wasm_main.cpp`) and partly in HTML (`shell.html`/`index.html`). **Recommendation: move all HUD to HTML/CSS overlays.** The canvas is for the 3D world only. HTML overlays are easier to style, animate, and iterate on. Migrate energy bar out of canvas as part of this round.
-- Reuse the brass color palette from main menu: gold `#D4AF37`, brass `#C4A14C`, dark border `#2A2010`, panel bg `rgba(15, 12, 5, 0.85)`.
-- For SVG weapon icons, embed inline in HTML (not external files) — keeps deploy simple.
-- Crosshair should be its own absolutely-positioned SVG centered on screen, NOT in canvas (rotation/dilation is much smoother in SVG).
+- **Migrate all HUD to HTML/CSS overlays.** Canvas should only render the 3D world. Move the energy bar (currently in canvas around line 988 of `wasm_main.cpp`) out to an HTML overlay.
+- Color palette: gold `#D4AF37`, brass `#C4A14C`, dark border `#2A2010`, panel bg `rgba(15, 12, 5, 0.85)`.
+- SVG weapon icons: inline in HTML (not external files).
+- Crosshair: own absolutely-positioned SVG centered on screen, NOT in canvas (rotation/dilation smoother in SVG).
 
-### Out-of-scope for Round 10
+### Verification flow
 
-- Settings menu (key remap, sensitivity) — Round 12 or later
-- Scoreboard / post-match screen — Round 12 (match flow)
-- Minimap (mini top-down map) — wait until terrain is final or skip
-- Voice chat / text chat — much later
+When you push, I'll headless-browser into the live build, click through to in-game, screenshot HUD, and tally criteria met. 6+ → Round 11 advances to audio system. <6 → Round 11 stays on HUD with specific gaps called out.
 
-## Next-up rounds (FYI, not for this round)
+## Out-of-scope for Round 10
 
-- **Round 11:** Audio system — weapon SFX, jetpack hum, generator destroy, footsteps. Sonnet. I'll source CC0 sound assets.
-- **Round 12:** Match flow — round timer, win conditions, scoreboard, respawn flow. Sonnet.
-- **Round 13:** Settings menu + key remap. Sonnet.
-- **Round XX (when assets drop):** Tier 3.0 character model integration. Model TBD by complexity.
+- Settings menu (key remap, sensitivity) — Round 13
+- Scoreboard / post-match — Round 12 (match flow)
+- Minimap — wait until terrain final
+- #6 weapon-in-hand armor work — wait until asset pipeline matures
+
+## Next-up rounds (FYI)
+
+- **Round 11:** Audio system — weapon SFX, jetpack hum, generator destroy, footsteps. I'll source CC0 sound assets.
+- **Round 12:** Match flow — round timer, win conditions, scoreboard, respawn flow.
+- **Round 13:** Settings menu + key remap.
 
 ## Token budget
 
-Standard Sonnet 4.6 (1M context). HUD/UI is well-scoped, no architecture risk. Estimate: 1 commit, 15-25 min.
+Sonnet 4.6 (1M context). Estimate 1-2 commits, 20-30 min for Claude to deliver 6+ criteria.
 
-— Manus, Round 10 (HUD pivot)
+— Manus, Round 10.5 (re-confirm HUD work after armor accept + asset pivot drop)

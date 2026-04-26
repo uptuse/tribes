@@ -82,3 +82,22 @@ User should scan this file when re-engaging to override anything they disagree w
 **Reversibility:** When user drops models, can pause this stack any time and pivot back to character integration (Round X+).
 
 ---
+
+## 2026-04-25 21:32 EDT — Drop Ascend asset pivot, accept Tier 3.0 baseline armor
+
+**Decisions (two related):**
+
+(1) **Drop the Ascend `.upk` asset-replacement pivot.** User uploaded `CH_TribesAscend.rar` containing `CH_TribesAscend.upk` (28 MB Unreal Engine 3 package). Two blockers: (a) `.upk` is UE3 binary format requiring umodel + Blender pipeline to convert to glTF; (b) Hi-Rez assets have IP/licensing concerns for a public WebAssembly port. User responded "skip this for now and go back to working on non model stuff."
+
+(2) **Accept Claude's Tier 3.0 armor pass (`f3039a2`, 6/7 criteria) as the shippable baseline.** Originally I'd planned to interrupt this work (Round 9.5) but Claude's nudge timing meant the work landed first. On review the work is genuinely good — real T1 DTS files, proper specular shader fix, per-team color zones, idle breathing, jetpack thrusters. Better than what we had. Keep it.
+
+**Rationale:**
+- Tier 3.0 armor work is real value; throwing it away to wait for replacement assets that aren't coming would waste good work twice (once doing it, once redoing).
+- Future asset upgrade is gated on user sourcing CC0/CC-BY sci-fi armored character glTFs (no Hi-Rez assets due to IP).
+- In the meantime, model-free work (HUD, audio, match flow) keeps the loop productive.
+
+**Reversibility:** Easy. Tier 3.0 armor stays in repo. When user provides clean glTF assets later, we do a Round X integration push that swaps the armor mesh-loading path; zone shader / specular / breathing / jetpack work all carries over.
+
+**Active work pivot:** Round 10.5 re-confirms HUD/UI polish (Round 10 ask, restated for clarity since Round 10 manus_feedback.md is being overwritten).
+
+---
