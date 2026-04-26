@@ -161,10 +161,15 @@ function initSky() {
     sky.scale.setScalar(450000);
     scene.add(sky);
     const u = sky.material.uniforms;
-    u.turbidity.value = 8;
-    u.rayleigh.value = 2.0;
+    // R30.2: rebalanced sky uniforms. Old values (turbidity=8, rayleigh=2.0)
+    // produced washed-out white sky with harsh banding because tone mapping
+    // was clipping the high luminance values. New values (turbidity=2,
+    // rayleigh=1.0, mieG=0.8) produce a more typical clear-blue sky with a
+    // visible sun disk and proper horizon haze.
+    u.turbidity.value = 2;
+    u.rayleigh.value = 1.0;
     u.mieCoefficient.value = 0.005;
-    u.mieDirectionalG.value = 0.7;
+    u.mieDirectionalG.value = 0.8;
 
     // Sun position: azimuth 60° (from north toward east), elevation 35°
     const azimuth = 60, elevation = 35;
@@ -174,6 +179,30 @@ function initSky() {
     u.sunPosition.value.copy(sunPos);
 }
 
+// R30.2: build a PMREM environment from the Sky shader so PBR materials
+// (MeshStandardMaterial used for buildings, soldiers, weapons, terrain)
+// receive proper image-based ambient lighting instead of looking flat or
+// dark when not directly hit by the sun. This is what makes the difference
+// between "unlit-looking PBR" and "properly grounded PBR".
+function buildEnvironmentFromSky() {
+    if (!sky || !renderer) return;
+    try {
+        const pmrem = new THREE.PMREMGenerator(renderer);
+        pmrem.compileEquirectangularShader();
+        // Render the sky shader into a small offscreen scene
+        const skyScene = new THREE.Scene();
+        skyScene.add(sky.clone(false));
+        const envRT = pmrem.fromScene(skyScene, 0, 0.1, 100000);
+        scene.environment = envRT.texture;
+        // Re-add the original sky to the visible scene since we cloned a placeholder
+        if (!scene.children.includes(sky)) scene.add(sky);
+        pmrem.dispose();
+        console.log('[R30.2] PMREM environment built from Sky shader; PBR materials now lit');
+    } catch (e) {
+        console.warn('[R30.2] PMREM env build failed (non-fatal):', e);
+    }
+}
+
 function initLights() {
     const tier = readQualityFromSettings();
 
@@ -181,6 +210,15 @@ function initLights() {
     // shader fails to draw (e.g. behind the camera, broken uniforms), we get
     // a sky-blue clear instead of WebGL's default black or window white.
     scene.background = new THREE.Color(0x9bb5d6);
+
+    // R30.2: enable proper tone mapping so the Sky shader's high-dynamic-range
+    // output doesn't clip to flat white. ACESFilmic is the standard for
+    // outdoor PBR scenes; exposure=0.5 prevents over-bright sky.
+    if (renderer) {
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 0.5;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+    }
 
     // Hemisphere ambient — sky=#9bb5d6 ground=#5a4a32 (per R18 brief)
     // R30.1: bumped intensity 0.55 → 1.1 so building MeshStandardMaterial
@@ -810,12 +848,22 @@ function initFlags() {
 }
 
 function initWeaponViewmodel() {
-    // Simple viewmodel: small angular box visible in lower-right of screen, attached to camera
-    const geom = new THREE.BoxGeometry(0.15, 0.10, 0.45);
-    const mat = new THREE.MeshStandardMaterial({ color: 0x404040, roughness: 0.4, metalness: 0.6 });
+    // R30.2: scaled up the simple viewmodel so it's actually visible in the
+    // lower-right of the screen. The previous (0.15, 0.10, 0.45) box was so
+    // small at near-plane=0.5 that it was below 1 pixel.
+    const geom = new THREE.BoxGeometry(0.06, 0.05, 0.30);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.45, metalness: 0.55 });
     weaponHand = new THREE.Mesh(geom, mat);
-    weaponHand.position.set(0.30, -0.25, -0.55);
-    // Add to camera so it follows view
+    // Position relative to camera local space: right, slightly down, forward
+    // (negative Z since camera looks down -Z in Three.js convention)
+    weaponHand.position.set(0.18, -0.13, -0.40);
+    weaponHand.rotation.set(0.0, 0.05, 0.0);
+    // Tiny barrel detail so it actually reads as a weapon
+    const barrelGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.18, 8);
+    const barrel = new THREE.Mesh(barrelGeom, mat);
+    barrel.rotation.x = Math.PI / 2;
+    barrel.position.set(0.0, 0.01, -0.22);
+    weaponHand.add(barrel);
     // (Set up after camera is initialized in initStateViews/loop)
 }
 
@@ -956,6 +1004,20 @@ function initStateViews() {
     camera.lookAt(-300, 30, -300);   // look toward the map basin center
     scene.add(camera);
     camera.add(weaponHand);
+
+    // R30.2: position the sun BEFORE the player spawns. Previously the sun
+    // was only positioned inside syncCamera, so until the player got a real
+    // position the sun sat at (0,0,0) with target (0,0,0) — zero contribution
+    // to PBR materials, which is why buildings looked flat-shaded.
+    if (sunLight) {
+        const cx = 0, cy = 200, cz = 0;
+        sunLight.position.set(cx + sunPos.x * 800, cy + sunPos.y * 800, cz + sunPos.z * 800);
+        sunLight.target.position.set(cx, cy - 50, cz);
+        sunLight.target.updateMatrixWorld();
+    }
+
+    // R30.2: build the environment map AFTER renderer + sky are both ready
+    buildEnvironmentFromSky();
 
     console.log('[R18] State views: player(' + playerStride + ') proj(' + projectileStride +
                 ') part(' + particleStride + ') flag(' + flagStride + ')');
