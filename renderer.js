@@ -1346,9 +1346,14 @@ function syncCamera() {
     // eye = pos + (0,3,0) - fwd*12, where fwd = {sin(yaw), 0, -cos(yaw)}.
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
     if (is3P) {
-        const fwdX = Math.sin(yaw);
-        const fwdZ = -Math.cos(yaw);
-        camera.position.set(px - fwdX * 12, py + 3.0, pz - fwdZ * 12);
+        // R31.5: 4m back, 1.6m up, 0.7m right-shoulder — matches C++ wasm_main.cpp
+        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
+        const rightX = Math.cos(yaw), rightZ = Math.sin(yaw);
+        camera.position.set(
+            px - fwdX * 4.0 + rightX * 0.7,
+            py + 1.6,
+            pz - fwdZ * 4.0 + rightZ * 0.7
+        );
     } else {
         camera.position.set(px, py + 1.7, pz);
     }

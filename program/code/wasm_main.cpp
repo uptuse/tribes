@@ -2264,7 +2264,11 @@ extern "C" void mainLoop(){
 
     Vec3 fwd={sinf(me.yaw)*cosf(me.pitch),sinf(me.pitch),-cosf(me.yaw)*cosf(me.pitch)};
     Vec3 eye;
-    if(thirdPerson)eye=me.pos+Vec3(0,3,0)-fwd*12;
+    if(thirdPerson){
+        // R31.5: closer chase (4m back, 1.6m up) + right-shoulder offset (0.7m)
+        Vec3 right={cosf(me.yaw),0,sinf(me.yaw)};
+        eye=me.pos+Vec3(0,1.6f,0)-fwd*4.0f+right*0.7f;
+    }
     else eye=me.pos+Vec3(0,2.5f,0);
     Mat4 view=Mat4::lookAt(eye,fwd,{0,1,0});
     Mat4 proj=Mat4::perspective(g_fov*DEG2RAD,(float)CANVAS_W/CANVAS_H,1.0f,2000.0f*g_renderDistMul);
