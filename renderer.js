@@ -65,6 +65,7 @@ const _tmpVec = new THREE.Vector3();
 // Diagnostic
 let _frameCount = 0;
 let _lastDiagTime = 0;
+let _r30Diagnosed = false;     // R30.0: dump scene contents exactly once on first real frame
 let _lastPlayerColors = new Array(MAX_PLAYERS).fill(-1);
 
 // ============================================================
@@ -1190,8 +1191,82 @@ function loop() {
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
-    // R29: log first frame submission once for diagnostic confirmation
-    if (_frameCount === 0) console.log('[R29] First Three.js frame submitted');
+    // R30.0: one-shot diagnostic dump on first real frame to ground-truth what's
+    // actually in the scene vs what the boot logs claim. The user's video showed
+    // a half-empty world (terrain + black silhouettes) despite the [R18] init
+    // logs saying 39 buildings + 16 soldiers were created. We need to know:
+    //   - which meshes are actually in the scene graph
+    //   - which are visible / culled / parentless
+    //   - what materials they have
+    //   - what the scene root's bounding box covers
+    //   - what lights exist and where
+    //   - what the camera sees
+    if (!_r30Diagnosed) {
+        _r30Diagnosed = true;
+        try {
+            console.log('[R30.0] === SCENE DIAGNOSTIC DUMP (one-shot) ===');
+            const counts = {};
+            const lights = [];
+            const orphans = [];
+            scene.traverse(function(o){
+                counts[o.type] = (counts[o.type] || 0) + 1;
+                if (o.isLight) {
+                    lights.push({
+                        type: o.type,
+                        intensity: o.intensity,
+                        color: o.color ? o.color.getHexString() : 'n/a',
+                        position: o.position ? [o.position.x.toFixed(1), o.position.y.toFixed(1), o.position.z.toFixed(1)] : null,
+                        castShadow: !!o.castShadow,
+                    });
+                }
+                if (!o.parent && o !== scene) orphans.push(o.type + '#' + o.uuid.slice(0,8));
+            });
+            console.log('[R30.0] scene types:', counts);
+            console.log('[R30.0] lights:', lights);
+            if (orphans.length) console.warn('[R30.0] ORPHAN nodes (no parent, not in scene):', orphans);
+
+            // Scene root immediate children
+            console.log('[R30.0] scene root has ' + scene.children.length + ' immediate children:');
+            scene.children.forEach(function(c, i){
+                const bb = c.geometry && c.geometry.boundingBox;
+                let bbStr = 'n/a';
+                if (c.geometry) {
+                    if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+                    if (c.geometry.boundingBox) {
+                        const b = c.geometry.boundingBox;
+                        bbStr = '[' + b.min.x.toFixed(0) + ',' + b.min.y.toFixed(0) + ',' + b.min.z.toFixed(0) + ' \u2192 ' + b.max.x.toFixed(0) + ',' + b.max.y.toFixed(0) + ',' + b.max.z.toFixed(0) + ']';
+                    }
+                }
+                let matInfo = 'no-material';
+                if (c.material) {
+                    const m = Array.isArray(c.material) ? c.material[0] : c.material;
+                    matInfo = m.type + ' color=' + (m.color ? '#'+m.color.getHexString() : 'n/a') + ' map=' + (m.map ? 'yes' : 'no') + ' transparent=' + !!m.transparent + ' opacity=' + (m.opacity!==undefined ? m.opacity : 'n/a') + ' visible=' + m.visible;
+                }
+                let childCount = '';
+                if (c.children && c.children.length) childCount = ' (+' + c.children.length + ' children)';
+                console.log('  [' + i + '] ' + c.type + ' name="' + (c.name||'') + '" visible=' + c.visible + ' bbox=' + bbStr + ' mat=' + matInfo + childCount);
+            });
+
+            // Camera state
+            console.log('[R30.0] camera position:', [camera.position.x.toFixed(1), camera.position.y.toFixed(1), camera.position.z.toFixed(1)],
+                        ' rotation:', [camera.rotation.x.toFixed(2), camera.rotation.y.toFixed(2), camera.rotation.z.toFixed(2)],
+                        ' near=' + camera.near + ' far=' + camera.far + ' fov=' + camera.fov);
+
+            // Render info
+            const info = renderer.info;
+            console.log('[R30.0] renderer.info: ' + info.render.calls + ' calls, ' + info.render.triangles + ' tris, ' + info.memory.geometries + ' geom, ' + info.memory.textures + ' tex, programs=' + info.programs.length);
+
+            // Fog + background
+            console.log('[R30.0] scene.background:', scene.background ? (scene.background.isColor ? '#'+scene.background.getHexString() : scene.background.type) : 'null',
+                        ' scene.fog:', scene.fog ? scene.fog.type + ' density=' + (scene.fog.density!==undefined ? scene.fog.density : 'near='+scene.fog.near+' far='+scene.fog.far) : 'null');
+
+            console.log('[R30.0] === END DIAGNOSTIC DUMP ===');
+        } catch (e) {
+            console.error('[R30.0] diagnostic dump threw:', e);
+        }
+        console.log('[R29] First Three.js frame submitted');
+    }
+
     _frameCount++;
     const now = performance.now();
     if (now - _lastDiagTime > 5000) {
