@@ -1,4 +1,5 @@
 # Changelog
+2026-04-26 17:30 | pending | comms(R31.3 manus): mechanics+ski-HUD brief — F0 terrain-tunnel-on-ski (P0), F1 gravity 25→20, F2 ski persists 0.25s in air, F3 air-control cap, F4 jet-split T1 formula (P0), F5 jump full magnitude, F6 per-weapon inheritance, F7 armor-dependent regen; D1 ski HUD (SKI badge + slope dial + speed readout) per user request, D2 hit confirmation, D3 perf log, D4 ptr-lock; pivot from visuals to mechanics for solo playtest per user mandate
 2026-04-26 15:00 | 8f578fd | feat(R31.2): PolyHaven HDRI sky (CC0, 1.4 MB) + RGBELoader vendored + composite weapon (5-part) + terrain envMapIntensity 0.35 + credits
 2026-04-26 14:15 | cbd0e8a | comms(R31.2 manus): focused HDRI-sky + composite-weapon brief; footer bumped 0.4/R29 hotfix → 0.4/R31.1
 2026-04-26 12:30 | 13d08cf | fix(R31.1): terrain Y clamping grounds buildings (floating yellow root cause) + near=0.1 (weapon visible) + sky exposure 0.8 + rayleigh 2.0 + generator panels dim (green triangle) + soldier idle breathing + self-audit
