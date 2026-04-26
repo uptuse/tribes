@@ -1,86 +1,64 @@
-# R31.7.1 — 3P regression hot-fix (Manus shipped, small Claude alignment ask)
+# Brief to Claude — R32.0 Raindance Heightmap Ship
 
-**Round:** 31.7.1 (hot-fix)
-**Date:** 2026-04-27
-**Posture:** Manus-led. R31.7 was visibly broken in user playtest video; Manus hot-fixed JS-side same round. Claude already shipped the R31.7 C1 C++ aim-convergence half (commit `32b4b41`) — that work is **kept**, only one missing JS hookup is added in R31.7.1.
+**From:** Manus
+**Date:** 2026-04-26
+**Round:** R32.0 (Raindance Phase 1 — real terrain)
+**Priority:** P0
+**Supersedes:** R31.7.1 (which is fully shipped — see CHANGELOG)
 
----
+## What just happened (Manus, this round)
 
-## Why R31.7.1 exists
+I vendored the complete original Sierra/Dynamix Starsiege: Tribes v1.11 install from `levizoesch/tribes.game` into `assets/tribes_original/` (139 MB). Inside is `base/missions/Raindance.MIS` — the canonical mission script as plain TorqueScript text — plus `Raindance.ted` (binary terrain) and all the lush biome volumes. User explicitly directed: "these assets have been released, grab everything." Attribution at `assets/tribes_original/ATTRIBUTION.md`.
 
-User shipped a screen recording right after R31.7 deployed. Three regressions visible:
+I parsed the .MIS into `assets/maps/raindance/canonical.json` (26 KB) using a new general-purpose mission parser at `tools/parse_mis.py`. Every flag, turret, sensor, generator, inv station, vehicle pad, command station, drop point, and architectural shape now has its exact canonical position, rotation, and datablock name.
 
-1. **At ~0:16 the camera snaps to the back of the player's head and stays clipped.** From there, the head and shoulders obstruct the crosshair for the rest of the clip.
-2. **Projectile emerges bottom-right at ~0:13**, off-axis from both the crosshair and the weapon model — i.e. Claude's C1 aim-convergence (which is correctly implemented C++-side) was never *triggered*, because the JS side was missing the per-frame call to `Module._setLocalAimPoint3P()`.
-3. **Weapon viewmodel disappears at the toggle moment** instead of fading naturally with distance.
+I regenerated `program/code/raindance_heightmap.h` (665 KB) from the community heightmap PNG via a new `assets/maps/raindance/build_heightmap.py`. The previous `raindance_heightmap.h` was a placeholder (a 64×64 tile repeated 4× to fill 257×257) — it's now the real Raindance heightfield, 0–200 m vertical relief, 257×257 verts at 8 m spacing, 2048 m × 2048 m world.
 
-Plus one cosmetic: footer still read `Version 0.4 / R31.6` because Claude bumped the C++ in `32b4b41` but didn't touch `index.html`.
+Full plan: `comms/raindance_plan.md`. Visual reference: `comms/raindance_video_reference.md`.
 
----
+## What I need from you (Claude, R32.0)
 
-## What Manus shipped this round (renderer.js + index.html, no WASM rebuild needed)
+### C1 — Rebuild WASM (P0, ~2 min)
 
-### M1. Hard min camera distance 3.0 m, lift instead of pull-in
-R31.7's terrain-collision loop swept the back-distance progressively shorter until clearance was found, which on most slopes collapsed `camDist` to ~0 m and slammed the camera into the player's head. Replaced with a **lift-y** strategy: keep the back-distance fixed at the lerp target (4 m), and only raise camera Y to clear the slope. Net effect: camera always sits a clean 4 m behind, never inside the player.
+Just run `./build.sh`. The C++ already references `RAINDANCE_HEIGHTS`, `RAINDANCE_SIZE`, `RAINDANCE_HEIGHT_MIN/MAX`, and `getH()` already does bilinear lookup. The header is freshly regenerated. No code edits needed — just rebuild and commit `tribes.wasm` + `tribes.data` + `tribes.js` + `index.html`.
 
-### M2. Wired the missing C1 hookup
-Each frame in 3P, `syncCamera()` now calls:
-```js
-if (is3P && Module._setLocalAimPoint3P && window._tribesAimPoint3P) {
-    const p = window._tribesAimPoint3P;
-    Module._setLocalAimPoint3P(p.x, p.y, p.z);
-}
-```
-This feeds the world aim-point (computed by the existing 32+4-step terrain ray-march) into Claude's `setLocalAimPoint3P` C++ setter, so `fireWeapon`'s `if(thirdPerson && pi==localPlayer && hasAimPoint3P)` branch finally fires and overrides `fwd` to point at the crosshair.
+Sanity check after build: add a `printf` once at startup confirming `RAINDANCE_HEIGHT_MAX > 100.0f` (proves the new header loaded; the old placeholder's max was 76.9). Remove the printf after first run.
 
-### M3. Viewmodel fade threshold 0.5 → 0.3
-0.5 m was hiding the weapon abruptly during the lerp. 0.3 m matches the perceived "I'm still basically in 1P" zone.
+### C2 — Apply canonical lighting + fog + sky color (P0, ~10 min)
 
-### M4. Lerp settle + clean blend zone
-- Snap to target when `|delta| < 0.05 m` to kill long-tail drift.
-- Mid-toggle blend [0.05–2.0 m] uses a linear ease between 1P head and 3P chase position so the player mesh isn't clipped during the transition.
+The current renderer.js uses default sun + sky. Per `Raindance.MIS`:
 
-### M5. Footer R31.6 → R31.7.1
-`index.html` line 862.
+- **Sun:** azimuth -90°, incidence 54°, RGB intensity (0.6, 0.6, 0.6), ambient (0.4, 0.4, 0.4), cast shadows
+- **Fog:** haze distance 200 m → visible distance 450 m, color `#C0C8D0` (pale overcast)
+- **Sky background:** `#C0C8D0` (matches fog so the horizon blends)
+- **Camera far plane:** 450 m (currently we use ~1000 m)
 
----
+Drop the recipe block from `comms/raindance_plan.md` §6 directly into `renderer.js` `initLights()` and `initScene()`. This is a JS edit — could be Manus, but you have build privileges; whichever is faster.
 
-## What I'd like Claude to do (one verification + one P1 feature)
+### C3 — Add screen-space rain (P1, ~20 min)
 
-### C1-verify (P0, takes 10 seconds)
-Confirm `RenderPlayer.pitch` is populated for the local player even when `thirdPerson==true`. Renderer.js reads `playerView[o + 3]` in `syncCamera` and uses it for the camera, but I need to know whether you ALSO export the local player's pitch into the soldier-render struct that drives the bot/local mesh in 3P. If yes, R31.8 torso pitch is purely a renderer.js bone-rotation task and Manus owns it. If no, please add the export.
+Per the .MIS, `Snowfall "Rain1" intensity=1 wind=(-0.22, 0.15, -75)`. Three.js `Points` system: ~5000 falling streaks anchored to camera, vertical velocity ~30 m/s, slight horizontal drift from wind XY.
 
-### C2 (P1, can wait one round)
-**Player torso pitch in 3P.** Local player's upper-body bone should rotate with `pitch` so the firing animation visibly tracks where the player is aiming. Current behavior: body stays horizontal regardless of look angle, looks weird in mid-air disc duels viewed from behind. If C1-verify above shows pitch is exported, Manus picks this up in R31.8 (renderer.js bone rotation, ~10 lines). If not, add the export and I'll do the rotation.
+### C4 — Confirm renderer reads heightmap correctly (P0 verification, ~5 min)
 
-### C3 (P2)
-**Perf budget verify.** R31.7.1 adds (a) one terrain ray-march per frame in JS (was already there in R31.7) and (b) one `_setLocalAimPoint3P` WASM boundary call per frame in 3P. Confirm the 32 ms physics tick + frame budget isn't blown — your perf log already prints this; just confirm no regression after the merge.
+After rebuild, take a screenshot from spawn and post in your reply. We should see real terrain undulation (not procedural rolling hills). Skiing should feel different — Raindance has long deep valleys. Two clear high points roughly NW and SE where the bases will go in R32.1.
 
----
+If terrain looks flat or wrong, check that `initTerrain()` in renderer.js is sampling `Module._getHeightmapPtr()` correctly (the export was already in place from a prior round).
 
-## Acceptance criteria for R31.7.1
+## Open architectural decisions (please weigh in)
 
-1. ✅ V toggle: camera lerps to 4 m back, no head-clip, footer reads R31.7.1.
-2. ✅ Terrain pull-in: when behind position would clip a slope, camera **lifts** y instead of collapsing distance.
-3. ✅ Aim convergence: spinfusor disc in 3P lands within 1 m of the crosshair point at 50 m range (now that the JS hookup is wired).
-4. ✅ Weapon viewmodel: visible only in true 1P (camDist < 0.3 m); cleanly hidden in 3P.
-5. ⏳ (Claude C1-verify) Confirm whether `RenderPlayer.pitch` exports for local player in 3P.
-6. ⏳ (Claude C2 or Manus R31.8) Player torso bone pitches with camera in 3P.
-7. ⏳ (Claude C3) Perf budget unchanged within ±5%.
+1. **Should we git-large-file the 139 MB `assets/tribes_original/`?** Or move it to a separate `assets-large` branch with a `make assets` step to fetch on demand? My instinct is keep it on master for simplicity since master is private.
+2. **R32.1 building types:** I'm planning `BUILDING_TOWER` and `BUILDING_GENROOM` as new C++ enum entries. You'll own the C++ side (collision boxes, datablock mapping) — let me know if you'd rather I prototype the Three.js meshes first so you can size collision to match.
+3. **`.ted` parser:** Should we attempt to parse `Raindance.ted` (binary PVOL container with the canonical 256×256 8-bit heightfield inside) for true bit-perfect terrain? Estimated 2 hours against jamesu's format gist. Yes/no/defer to R32.0.1?
 
----
+## Round complete checklist
 
-## Process
-
-- Manus continues to ship JS/HTML/comms hot-fixes without pre-approval.
-- Claude continues to own C++/WASM. C1 was a clean ship (32b4b41) — only the JS-side hookup was missing, which is now in.
-- Brief always exists even on Manus-led rounds.
-
----
-
-## Reference
-
-- User playtest video (Untitledvideo(4).mp4) — analyzed via `manus-analyze-video`. Key findings: head-clip from 0:16 onward, projectile bottom-right at 0:13, weapon disappears at toggle, no smooth lerp visible.
-- Tribes Ascend 3P reference (`youtu.be/9WMjcsP22EM`) — centered chase, dead-center crosshair, no shoulder offset.
+- [ ] `tribes.wasm` rebuilt with new heightmap header
+- [ ] Sanity printf confirms `HEIGHT_MAX ≈ 200.0f` at boot, then removed
+- [ ] Lighting/fog/sky match canonical values
+- [ ] Footer bumped to R32.0 in `index.html`
+- [ ] Screenshot from spawn posted confirming real terrain visible
+- [ ] CHANGELOG entry added
+- [ ] Pushed to master
 
 — Manus
