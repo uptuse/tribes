@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpqeh0gi9d.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4fhgcsbz.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -205,21 +205,21 @@ Module['FS_createPath']("/assets", "tribes", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpqeh0gi9d.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4eavcg_w.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4fhgcsbz.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp2t8mxg5d.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4eavcg_w.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpqfa1p8an.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp2t8mxg5d.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp82gmpvf6.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpqfa1p8an.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp82gmpvf6.js
 
 
 var arguments_ = [];
@@ -5909,6 +5909,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
       return (...args) => ccall(ident, returnType, argTypes, args, opts);
     };
 
+
   var FS_createPath = (...args) => FS.createPath(...args);
 
 
@@ -5990,6 +5991,7 @@ if (Module['wasmBinary']) wasmBinary = Module['wasmBinary'];
   Module['removeRunDependency'] = removeRunDependency;
   Module['ccall'] = ccall;
   Module['cwrap'] = cwrap;
+  Module['UTF8ToString'] = UTF8ToString;
   Module['FS_preloadFile'] = FS_preloadFile;
   Module['FS_unlink'] = FS_unlink;
   Module['FS_createPath'] = FS_createPath;
@@ -6201,7 +6203,6 @@ missingLibrarySymbols.forEach(missingLibrarySymbol)
   'PATH_FS',
   'UTF8Decoder',
   'UTF8ArrayToString',
-  'UTF8ToString',
   'stringToUTF8Array',
   'stringToUTF8',
   'lengthBytesUTF8',
@@ -6410,16 +6411,24 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  347460: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 347518: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 347576: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 347625: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 347674: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 347733: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 347783: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); }
+  347732: ($0, $1, $2, $3, $4, $5, $6) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,UTF8ToString($6)); },  
+ 347802: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 347872: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 347919: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 347966: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348018: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 348076: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 348134: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 348183: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348235: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348284: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 348343: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 348393: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16); }
 };
 
 // Imports from the Wasm binary.
+var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
+var _updateScoreboard = Module['_updateScoreboard'] = makeInvalidEarlyAccess('_updateScoreboard');
 var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
 var _fflush = makeInvalidEarlyAccess('_fflush');
@@ -6438,6 +6447,8 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
+  assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
+  assert(typeof wasmExports['updateScoreboard'] != 'undefined', 'missing Wasm export: updateScoreboard');
   assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
@@ -6452,6 +6463,8 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
+  _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
+  _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
   _main = Module['_main'] = createExportWrapper('main', 2);
   _fflush = createExportWrapper('fflush', 1);

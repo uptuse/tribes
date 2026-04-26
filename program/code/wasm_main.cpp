@@ -281,7 +281,14 @@ struct Flag {
 };
 static Flag flags[2];
 static int teamScore[2]={0,0};
-static const int SCORE_LIMIT=5;
+static int g_scoreLimit=5;
+static int g_timeLimit=600; // 0 = unlimited
+static float g_roundTimer=600.0f;
+static float g_warmupTimer=15.0f;
+static int g_matchState=0; // 0=WARMUP,1=IN_PROGRESS,2=MATCH_END
+static float g_spawnProtect[8]={}; // [MAX_PLAYERS]
+static float g_localRespawnTimer=0; // seconds until local player respawns (for HUD)
+static bool g_warnedTime[3]={}; // [0]=4min, [1]=1min, [2]=warmup countdown sounds
 static const float FLAG_RETURN_TIME=45.0f;
 
 // ============================================================
@@ -907,11 +914,16 @@ static void respawnPlayer(int pi){
     p.ammo[WPN_GRENADE_LAUNCHER]=armors[p.armor].maxGrenadeAmmo;
     p.ammo[WPN_PLASMA]=armors[p.armor].maxPlasma;
     p.ammo[WPN_MORTAR]=armors[p.armor].maxMortarAmmo;
+    g_spawnProtect[pi]=gameTime+3.0f; // 3s invulnerability
+    if(pi==localPlayer)g_localRespawnTimer=0;
 }
 
 static void damagePlayer(int pi,float dmg,int attackerTeam){
     Player&p=players[pi];
     if(!p.alive)return;
+    if(g_matchState==0)return; // no damage during warmup
+    if(g_matchState==2)return; // no damage after match ends
+    if(gameTime<g_spawnProtect[pi])return; // spawn protection
     p.health-=dmg;
     if(p.health<=0){
         p.health=0;p.alive=false;p.deaths++;
@@ -931,7 +943,7 @@ static void updateBot(int pi,float dt){
     if(!p.alive){
         static float respawnTimers[MAX_PLAYERS]={};
         respawnTimers[pi]+=dt;
-        if(respawnTimers[pi]>3.0f){respawnPlayer(pi);respawnTimers[pi]=0;}
+        if(respawnTimers[pi]>5.0f){respawnPlayer(pi);respawnTimers[pi]=0;}
         return;
     }
     p.botThinkTimer-=dt;
@@ -1037,12 +1049,14 @@ static void broadcastHUD(){
     else if(curWpn==WPN_MORTAR)maxAmmo=10;
     if(p.pack==3)maxAmmo*=2;
     int speed10=(int)(p.speed*10);
+    int timeRemain=g_timeLimit>0?(int)g_roundTimer:(int)g_warmupTimer;
     EM_ASM({
-        if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
+        if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
     },(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
        p.skiing?1:0,p.carryingFlag,
        (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
-       teamScore[0],teamScore[1],(int)p.armor);
+       teamScore[0],teamScore[1],(int)p.armor,
+       g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
 }
 
 // ============================================================
@@ -1140,6 +1154,45 @@ static void updateGenerators(float dt){
 }
 
 static int openStationIdx=-1; // -1 = no station UI open
+
+extern "C" void setGameSettings(int team,int armor,int botCount,int scoreLimit,int timeLimit){
+    players[localPlayer].team=team;
+    players[localPlayer].armor=(ArmorType)armor;
+    g_scoreLimit=scoreLimit>0?scoreLimit:5;
+    g_timeLimit=timeLimit;
+    g_roundTimer=(float)timeLimit;
+    // Reset match state for new game
+    g_matchState=0;g_warmupTimer=15.0f;
+    teamScore[0]=teamScore[1]=0;
+    memset(g_warnedTime,0,sizeof(g_warnedTime));
+    memset(g_spawnProtect,0,sizeof(g_spawnProtect));
+    // Re-assign bot teams (simple split)
+    int botsPerTeam=botCount/2;
+    for(int i=1;i<MAX_PLAYERS;i++){
+        players[i].active=(i<=botCount);
+        if(players[i].active)players[i].team=(i<=botsPerTeam)?team:(1-team);
+    }
+}
+
+extern "C" void updateScoreboard(){
+    for(int i=0;i<MAX_PLAYERS;i++){
+        if(!players[i].active)continue;
+        EM_ASM({
+            if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,UTF8ToString($6));
+        },i,players[i].team,players[i].score,players[i].kills,players[i].deaths,
+          players[i].carryingFlag>=0?1:0,players[i].name);
+    }
+    // Compute MVP (3*caps + 1*kills)
+    int mvpIdx=0,mvpScore=-1;
+    for(int i=0;i<MAX_PLAYERS;i++){
+        if(!players[i].active)continue;
+        int s=players[i].score*3+players[i].kills; // score already includes 5*caps+returns
+        if(s>mvpScore){mvpScore=s;mvpIdx=i;}
+    }
+    EM_ASM({
+        if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4));
+    },teamScore[0],teamScore[1],g_matchState,(int)g_roundTimer,players[mvpIdx].name);
+}
 
 // Exported: apply inventory station loadout (called from JS)
 extern "C" void applyLoadout(int armor,int weapon,int pack){
@@ -1368,7 +1421,32 @@ static void mainLoop(){
         if(fireDown&&me.fireCooldown<=0&&ptrLocked)fireWeapon(localPlayer);
     }else{
         respawnTimer+=dt;
-        if(respawnTimer>3){respawnPlayer(localPlayer);respawnTimer=0;}
+        g_localRespawnTimer=5.0f-respawnTimer;
+        if(respawnTimer>5){respawnPlayer(localPlayer);respawnTimer=0;}
+    }
+
+    // Match state machine
+    if(g_matchState==0){ // WARMUP
+        g_warmupTimer-=dt;
+        if(!g_warnedTime[2]&&g_warmupTimer<3){g_warnedTime[2]=true;EM_ASM({if(window.playSoundUI)window.playSoundUI(5);},0);}
+        if(g_warmupTimer<=0){
+            g_matchState=1;g_roundTimer=(float)g_timeLimit;
+            printf("[EVENT] WARMUP COMPLETE — FIGHT!\n");
+            EM_ASM({if(window.playSoundUI)window.playSoundUI(6);},0);
+        }
+    }else if(g_matchState==1){ // IN_PROGRESS
+        if(g_timeLimit>0){
+            g_roundTimer-=dt;
+            if(!g_warnedTime[0]&&g_roundTimer<240){g_warnedTime[0]=true;printf("[EVENT] 4 MINUTES REMAINING\n");}
+            if(!g_warnedTime[1]&&g_roundTimer<60){g_warnedTime[1]=true;printf("[EVENT] 1 MINUTE REMAINING\n");}
+            if(g_roundTimer<=0){
+                g_roundTimer=0;g_matchState=2;
+                int w=teamScore[0]>teamScore[1]?0:(teamScore[1]>teamScore[0]?1:-1);
+                if(w>=0)printf("[EVENT] === TIME UP — %s WINS! %d-%d ===\n",w==0?"BLOOD EAGLE":"DIAMOND SWORD",teamScore[0],teamScore[1]);
+                else printf("[EVENT] === TIME UP — DRAW! %d-%d ===\n",teamScore[0],teamScore[1]);
+                EM_ASM({if(window.onMatchEnd)window.onMatchEnd($0,$1,$2);},w,teamScore[0],teamScore[1]);
+            }
+        }
     }
 
     // Update bots
@@ -1534,8 +1612,13 @@ static void mainLoop(){
                     printf("[CTF] %s CAPTURED the flag! Score: Red %d - Blue %d\n",
                            players[i].name,teamScore[0],teamScore[1]);
                     if(i==localPlayer)EM_ASM({ if(window.playSoundUI)window.playSoundUI(7); },0);
-                    if(teamScore[players[i].team]>=SCORE_LIMIT)
-                        printf("[CTF] === %s TEAM WINS! ===\n",players[i].team==0?"RED":"BLUE");
+                    printf("[EVENT] %s CAPS! (%d-%d)\n",players[i].team==0?"RED":"BLUE",teamScore[0],teamScore[1]);
+                    if(g_matchState==1&&teamScore[players[i].team]>=g_scoreLimit){
+                        g_matchState=2;
+                        int w=players[i].team;
+                        printf("[EVENT] === %s WINS! %d-%d ===\n",w==0?"BLOOD EAGLE":"DIAMOND SWORD",teamScore[0],teamScore[1]);
+                        EM_ASM({if(window.onMatchEnd)window.onMatchEnd($0,$1,$2);},w,teamScore[0],teamScore[1]);
+                    }
                 }
             }else{
                 // Touching enemy flag
@@ -1642,6 +1725,7 @@ static void mainLoop(){
             tr2=0.30f;tg2=0.33f;tb2=0.40f; // steel grey secondary
         }
         if(!pl.alive){tr*=0.35f;tg*=0.35f;tb*=0.35f;tr2*=0.35f;tg2*=0.35f;tb2*=0.35f;}
+        if(gameTime<g_spawnProtect[i]&&fmodf(gameTime,0.17f)<0.085f){tr=0.4f;tg=0.8f;tb=0.9f;tr2=0.3f;tg2=0.7f;tb2=0.8f;}
 
         // Breathing animation: 4s cycle, phase-offset per player so they don't sync
         float breathY = sinf(gameTime*1.5f + i*1.1f) * 0.032f;
@@ -1742,7 +1826,7 @@ int main(){
     printf("  Click       Fire          V      Toggle 3rd person\n");
     printf("  Space       Jet/Jump      Shift  Ski\n\n");
     printf("Weapons: 1=Blaster 2=Chaingun 3=Disc 4=Grenade 5=Plasma 6=Mortar(Heavy only)\n");
-    printf("Objective: Capture enemy flag, return to your base. First to %d wins!\n\n",SCORE_LIMIT);
+    printf("Objective: Capture enemy flag, return to your base. First to %d wins!\n\n",g_scoreLimit);
 
     EmscriptenWebGLContextAttributes a;
     emscripten_webgl_init_context_attributes(&a);

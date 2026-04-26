@@ -22,7 +22,7 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
   --shell-file shell.html \
   --preload-file assets@/assets/tribes \
   -O0 -g0 -Wno-format \
-  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout"]' -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap"]'
+  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard"]' -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString"]'
 
 echo "[build] Output: build/tribes.html, build/tribes.js, build/tribes.wasm, build/tribes.data"
 

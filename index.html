@@ -182,6 +182,60 @@
     .footer { font-size:0.65em; color:#5A4A3A; letter-spacing:1px; margin-top:15px; }
     .hidden { display:none; }
 
+    /* Round timer chip */
+    #hud-timer { position:absolute; top:44px; right:18px;
+      font-family:'Barlow Condensed',sans-serif; font-size:1.05em; font-weight:700;
+      letter-spacing:3px; color:#D4A030; background:rgba(8,6,3,0.75);
+      border:1px solid #4A3A2A; padding:2px 10px; pointer-events:none; display:none; }
+    #hud-timer.warmup { color:#7A6A4A; font-size:0.78em; }
+    #hud-timer.urgent { color:#C0392B; animation:timerPulse 0.5s infinite alternate; }
+    @keyframes timerPulse { from{opacity:1} to{opacity:0.5} }
+
+    /* Warmup banner */
+    #hud-warmup { position:absolute; top:44px; left:50%; transform:translateX(-50%);
+      font-family:'Barlow Condensed',sans-serif; font-size:0.82em; font-weight:600;
+      letter-spacing:3px; color:#7A6A4A; background:rgba(8,6,3,0.7);
+      border:1px solid #3A2A10; padding:3px 14px; pointer-events:none; display:none; }
+
+    /* Respawn overlay */
+    #respawn-overlay { display:none; position:absolute; top:0; left:0; width:100%; height:100%;
+      background:rgba(80,0,0,0.35); z-index:13; pointer-events:none;
+      align-items:center; justify-content:center; flex-direction:column; }
+    #respawn-overlay.active { display:flex; }
+    #respawn-text { font-family:'Barlow Condensed',sans-serif; font-size:2em; font-weight:700;
+      letter-spacing:6px; color:#E8DCB8; text-align:center; }
+    #respawn-sub { font-family:'Barlow Condensed',sans-serif; font-size:1em;
+      letter-spacing:4px; color:#9A8A6A; margin-top:8px; }
+
+    /* Game-event log (bottom-left, above health bar) */
+    #eventlog { position:absolute; bottom:85px; left:18px; z-index:12; pointer-events:none; }
+    .ev-msg { font-family:'Barlow Condensed',sans-serif; font-size:0.78em;
+      letter-spacing:2px; color:#D4A030; padding:2px 8px; margin:2px 0;
+      background:rgba(8,6,3,0.7); border-left:2px solid #7A5A10;
+      opacity:1; transition:opacity 0.6s; }
+    .ev-msg.fade { opacity:0; }
+
+    /* Match-end modal */
+    #matchend { display:none; position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%); z-index:25; min-width:520px; text-align:center; }
+    #matchend.active { display:block; }
+    .me-winner { font-family:'Cinzel',serif; font-size:1.8em; font-weight:900;
+      letter-spacing:6px; margin-bottom:8px; }
+    .me-score { font-family:'Barlow Condensed',sans-serif; font-size:1.2em;
+      color:#9A8A6A; letter-spacing:4px; margin-bottom:12px; }
+    .me-mvp { font-size:0.88em; color:#D4A030; letter-spacing:2px; margin-bottom:16px; }
+    .me-table { width:100%; border-collapse:collapse; margin-bottom:14px; font-size:0.82em; }
+    .me-table th { color:#D4A030; font-weight:600; letter-spacing:2px; padding:4px 8px;
+      border-bottom:1px solid #4A3A2A; text-align:left; }
+    .me-table td { padding:3px 8px; border-bottom:1px solid rgba(60,50,30,0.3); }
+    .me-red { color:#C8302C; } .me-blue { color:#2C5AC8; }
+    .me-btns { display:flex; gap:10px; justify-content:center; margin-top:4px; }
+
+    /* ESC pause menu */
+    #escmenu { display:none; position:absolute; top:50%; left:50%;
+      transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
+    #escmenu.active { display:block; }
+
     /* Inventory Station */
     #stationui { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
     #stationui.active { display:block; }
@@ -251,6 +305,45 @@
     </div>
     <!-- Flag carry indicator -->
     <div id="hud-flag-carry">▶ ENEMY FLAG — RETURN TO BASE ◀</div>
+    <!-- Round timer -->
+    <div id="hud-timer"></div>
+    <!-- Warmup banner -->
+    <div id="hud-warmup"></div>
+    <!-- Game-event log -->
+    <div id="eventlog"></div>
+  </div>
+
+  <!-- Respawn overlay -->
+  <div id="respawn-overlay">
+    <div id="respawn-text">ELIMINATED</div>
+    <div id="respawn-sub">RESPAWNING IN <span id="respawn-count">5</span></div>
+  </div>
+
+  <!-- Match-end modal -->
+  <div id="matchend">
+    <div class="panel panel-wide">
+      <div class="me-winner" id="me-winner">MATCH COMPLETE</div>
+      <div class="me-score" id="me-score"></div>
+      <div class="me-mvp" id="me-mvp"></div>
+      <table class="me-table">
+        <thead><tr><th>Name</th><th>Team</th><th>Score</th><th>Kills</th><th>Deaths</th></tr></thead>
+        <tbody id="me-tbody"></tbody>
+      </table>
+      <div class="me-btns">
+        <button class="btn" onclick="playAgain()">Play Again</button>
+        <button class="btn btn-back" onclick="toMainMenu()">Main Menu</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ESC pause menu -->
+  <div id="escmenu">
+    <div class="panel" style="text-align:center;min-width:220px;">
+      <h3>Paused</h3>
+      <button class="btn" onclick="resumeGame()" style="margin-top:10px;">Resume</button>
+      <button class="btn" onclick="showScreen('options')">Options</button>
+      <button class="btn btn-back" onclick="leaveMatch()">Leave Match</button>
+    </div>
   </div>
 
   <!-- Main Menu -->
@@ -294,8 +387,15 @@
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Score Limit</div>
           <div style="margin:6px 0;">
             <button class="btn-small" onclick="setScoreLimit(3)">3 Caps</button>
-            <button class="btn-small btn-selected" onclick="setScoreLimit(5)">5 Caps</button>
+            <button class="btn-small btn-selected" id="sl-5" onclick="setScoreLimit(5)">5 Caps</button>
             <button class="btn-small" onclick="setScoreLimit(10)">10 Caps</button>
+          </div>
+          <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Time Limit</div>
+          <div style="margin:6px 0;">
+            <button class="btn-small" onclick="setTimeLimit(300)">5 Min</button>
+            <button class="btn-small btn-selected" id="tl-600" onclick="setTimeLimit(600)">10 Min</button>
+            <button class="btn-small" onclick="setTimeLimit(900)">15 Min</button>
+            <button class="btn-small" onclick="setTimeLimit(0)">Unlimited</button>
           </div>
         </div>
         <div style="flex:1;">
@@ -484,7 +584,7 @@
 
   <script>
     var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
-    var gameSettings={botCount:4,scoreLimit:5,sensitivity:5,fov:75,invertY:false};
+    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600,sensitivity:5,fov:75,invertY:false};
 
     function showScreen(id){
       document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
@@ -501,6 +601,7 @@
     }
     function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
+    function setTimeLimit(n){gameSettings.timeLimit=n;}
     function toggleInvert(){
       gameSettings.invertY=!gameSettings.invertY;
       document.getElementById('invert-btn').textContent=gameSettings.invertY?'ON':'OFF';
@@ -528,7 +629,7 @@
     ];
 
     var lastWpn=-1;
-    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
+    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor,matchState,timeRemain,respawnTimer10){
       // Health bar
       var hf=document.getElementById('hp-fill');
       if(hf){
@@ -563,6 +664,35 @@
       AE.lx=px;AE.lz=pz;AE.lyaw=yaw1000/1000;
       // Compass
       updateCompass(px,pz,yaw1000/1000);
+      // Match state handling
+      var timerEl=document.getElementById('hud-timer');
+      var warmupEl=document.getElementById('hud-warmup');
+      var respawnEl=document.getElementById('respawn-overlay');
+      if(matchState===0){ // WARMUP
+        if(timerEl){timerEl.style.display='none';}
+        if(warmupEl){warmupEl.style.display='block';var ws=Math.ceil(timeRemain);warmupEl.textContent='WARMUP — MATCH STARTS IN '+ws;}
+        if(respawnEl)respawnEl.classList.remove('active');
+      }else if(matchState===1){ // IN_PROGRESS
+        if(warmupEl)warmupEl.style.display='none';
+        if(timerEl){
+          timerEl.style.display='block';
+          var mins=Math.floor(timeRemain/60),secs=timeRemain%60;
+          timerEl.textContent=(timeRemain>0?(mins+':'+(secs<10?'0':'')+secs):'∞');
+          timerEl.className=(timeRemain>0&&timeRemain<60)?'urgent':'';
+        }
+        // Respawn
+        if(hp<=0&&respawnTimer10>0){
+          if(respawnEl)respawnEl.classList.add('active');
+          var rc=document.getElementById('respawn-count');
+          if(rc)rc.textContent=Math.ceil(respawnTimer10/10);
+        }else{
+          if(respawnEl)respawnEl.classList.remove('active');
+        }
+      }else{ // MATCH_END
+        if(warmupEl)warmupEl.style.display='none';
+        if(timerEl)timerEl.style.display='none';
+        if(respawnEl)respawnEl.classList.remove('active');
+      }
     };
 
     var FLAG_POS=[ [-221.8,-21.8], [-379.1,-640.8] ]; // world x,z for Red, Blue flags
@@ -607,7 +737,7 @@
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
-      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit);
+      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
       canvas.requestPointerLock();
     }
     function restartGame(){
@@ -620,14 +750,131 @@
       gameStarted=false;showScreen('mainmenu');
     }
     document.addEventListener('keydown',function(e){
-      if(e.keyCode===9&&gameStarted){e.preventDefault();document.getElementById('scoreboard').classList.add('active');}
-      if(e.keyCode===27&&gameStarted){document.exitPointerLock();showScreen('mainmenu');gameStarted=false;}
+      if(e.keyCode===9&&gameStarted){
+        e.preventDefault();
+        document.getElementById('scoreboard').classList.add('active');
+        if(Module._updateScoreboard)Module._updateScoreboard();
+      }
+      if(e.keyCode===27&&gameStarted){
+        var esc=document.getElementById('escmenu');
+        if(esc.classList.contains('active')){resumeGame();}
+        else{document.exitPointerLock();esc.classList.add('active');}
+      }
       if(e.keyCode===70&&document.getElementById('stationui').classList.contains('active')){stClose();}
-      if(e.keyCode===77){AE.mute();} // M = toggle mute
+      if(e.keyCode===77){AE.mute();}
     });
     document.addEventListener('keyup',function(e){
       if(e.keyCode===9)document.getElementById('scoreboard').classList.remove('active');
     });
+    // Event log
+    function addEventMsg(msg){
+      var log=document.getElementById('eventlog');if(!log||!gameStarted)return;
+      var d=document.createElement('div');d.className='ev-msg';d.textContent=msg;log.appendChild(d);
+      setTimeout(function(){d.classList.add('fade');},5000);
+      setTimeout(function(){d.remove();},6000);
+      while(log.children.length>5)log.removeChild(log.firstChild);
+    }
+
+    // Scoreboard (populated from C++ via sbRow/sbFinish)
+    var sbRows=[];
+    window.sbRow=function(idx,team,score,kills,deaths,hasFlag,name){
+      sbRows.push({idx:idx,team:team,score:score,kills:kills,deaths:deaths,hasFlag:hasFlag,name:name});
+    };
+    window.sbFinish=function(rs,bs,matchState,timeRemain,mvpName){
+      // Live scoreboard (TAB)
+      var tbody=document.getElementById('sc-body');
+      if(tbody){
+        tbody.innerHTML='';
+        sbRows.sort(function(a,b){return b.score-a.score;});
+        sbRows.forEach(function(r){
+          var tr=document.createElement('tr');
+          var col=r.team===0?'#C8302C':'#2C5AC8';
+          tr.innerHTML='<td style="color:'+col+'">'+(r.hasFlag?'⚑ ':'')+r.name+'</td>'
+            +'<td>'+armNames[Math.min(r.idx,2)]+'</td>'
+            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td>';
+          tbody.appendChild(tr);
+        });
+        document.getElementById('sc-red').textContent=rs;
+        document.getElementById('sc-blue').textContent=bs;
+      }
+      sbRows=[];
+    };
+    var armNames=['Light','Medium','Heavy'];
+
+    // Match-end screen
+    window.onMatchEnd=function(winner,rs,bs){
+      // Populate match-end screen with scoreboard data
+      if(Module._updateScoreboard)Module._updateScoreboard();
+      var el=document.getElementById('matchend');
+      var wEl=document.getElementById('me-winner');
+      var sEl=document.getElementById('me-score');
+      if(wEl){
+        if(winner<0){wEl.textContent='DRAW';wEl.style.color='#D4A030';}
+        else if(winner===0){wEl.textContent='BLOOD EAGLE WINS';wEl.style.color='#C8302C';}
+        else{wEl.textContent='DIAMOND SWORD WINS';wEl.style.color='#2C5AC8';}
+      }
+      if(sEl)sEl.textContent='FINAL SCORE: '+rs+' — '+bs;
+      if(el)el.classList.add('active');
+      if(gameStarted){document.exitPointerLock();gameStarted=false;}
+    };
+    window.renderScoreboard=function(){
+      // Populate match-end table
+      var tbody=document.getElementById('me-tbody');
+      if(!tbody)return;
+      tbody.innerHTML='';
+      sbRows.sort(function(a,b){return b.score-a.score;});
+      sbRows.forEach(function(r){
+        var tr=document.createElement('tr');
+        var col=r.team===0?'me-red':'me-blue';
+        tr.innerHTML='<td class="'+col+'">'+r.name+'</td>'
+          +'<td class="'+col+'">'+(r.team===0?'Blood Eagle':'Diamond Sword')+'</td>'
+          +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td>';
+        tbody.appendChild(tr);
+      });
+      sbRows=[];
+    };
+    // mvpName populated after sbFinish is called
+    window.sbFinish=function(rs,bs,matchState,timeRemain,mvpName){
+      var mvpEl=document.getElementById('me-mvp');
+      if(mvpEl&&mvpName)mvpEl.textContent='MVP: '+mvpName;
+      // live scoreboard
+      var tbody=document.getElementById('sc-body');
+      if(tbody){
+        tbody.innerHTML='';
+        sbRows.sort(function(a,b){return b.score-a.score;});
+        sbRows.forEach(function(r){
+          var tr=document.createElement('tr');var col=r.team===0?'#C8302C':'#2C5AC8';
+          tr.innerHTML='<td style="color:'+col+'">'+(r.hasFlag?'⚑ ':'')+r.name+'</td>'
+            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td><td>0</td>';
+          tbody.appendChild(tr);
+        });
+        document.getElementById('sc-red').textContent=rs;document.getElementById('sc-blue').textContent=bs;
+      }
+      if(window.renderScoreboard)window.renderScoreboard();
+      sbRows=[];
+    };
+
+    function playAgain(){
+      document.getElementById('matchend').classList.remove('active');
+      showScreen('gamesetup');
+    }
+    function leaveMatch(){
+      document.getElementById('escmenu').classList.remove('active');
+      document.getElementById('matchend').classList.remove('active');
+      document.getElementById('hud').classList.remove('active');
+      document.getElementById('respawn-overlay').classList.remove('active');
+      document.getElementById('hud-timer').style.display='none';
+      document.getElementById('hud-warmup').style.display='none';
+      canvas.style.visibility='hidden';
+      gameStarted=false;
+      document.exitPointerLock();
+      showScreen('mainmenu');
+    }
+    function resumeGame(){
+      document.getElementById('escmenu').classList.remove('active');
+      if(gameStarted)canvas.requestPointerLock();
+    }
+
     function addKillMsg(msg){
       var feed=document.getElementById('killfeed'),div=document.createElement('div');
       div.className='kill-msg';
@@ -820,6 +1067,7 @@
         console.log(t);
         if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));
         if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));
+        if(t.indexOf('[EVENT]')===0)addEventMsg(t.substring(7));
         if(t.indexOf('[STATION:CLOSE]')===0){stClose();}
         else if(t.indexOf('[STATION:')===0&&t.indexOf('APPLIED')<0){
           var parts=t.slice(9).replace(']','').split(':');
