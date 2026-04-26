@@ -120,6 +120,7 @@ export async function start() {
     initSky();       // always runs for immediate Sky fallback, hidden if HDRI succeeds
     initTerrain();
     initBuildings();
+    await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
     initPlayers();
     initProjectiles();
     initFlags();
@@ -590,6 +591,120 @@ function initBuildings() {
         buildingMeshes.push({ mesh, type });
     }
     console.log('[R18] Buildings:', buildingMeshes.length, 'composite meshes (turret/station/generator/interior/tower)');
+}
+
+// ============================================================
+// R32.1: Interior Shapes — real Tribes 1 .dis-extracted meshes
+// Loads raindance_meshes.bin (binary blob of 32 unique shapes) and
+// raindance_meshes.json (sidecar with bounds), then places instances
+// at canonical positions from canonical.json.
+// Coordinate convention (matches existing flag/turret placement):
+//   MIS (x, y, z-up) -> world (x = mis_x, y = mis_z, z = -mis_y)
+//   MIS rotation z-axis (yaw radians) -> Three.js rotation.y = -mis_rot_z
+// ============================================================
+let interiorShapesGroup = null;
+
+async function initInteriorShapes() {
+    try {
+        const [blobRes, infoRes, canonRes] = await Promise.all([
+            fetch('assets/maps/raindance/raindance_meshes.bin'),
+            fetch('assets/maps/raindance/raindance_meshes.json'),
+            fetch('assets/maps/raindance/canonical.json'),
+        ]);
+        if (!blobRes.ok || !infoRes.ok || !canonRes.ok) {
+            console.warn('[R32.1] Interior shape assets missing; skipping');
+            return;
+        }
+        const blob = await blobRes.arrayBuffer();
+        const info = await infoRes.json();
+        const canon = await canonRes.json();
+
+        // Parse the binary blob. Format:
+        //   u32 'RDMS', u32 version, u32 num_meshes
+        //   per mesh: u8 nameLen, char[nameLen] name,
+        //             u32 nVerts, f32[3*nVerts] positions,
+        //             u32 nIndices, u32[nIndices] indices
+        const dv = new DataView(blob);
+        let off = 0;
+        const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
+        off = 4;
+        if (magic !== 'RDMS') { console.warn('[R32.1] bad magic', magic); return; }
+        const version = dv.getUint32(off, true); off += 4;
+        const num = dv.getUint32(off, true); off += 4;
+        if (version !== 1) console.warn('[R32.1] unexpected mesh blob version', version);
+        const meshes = new Map();
+        for (let i = 0; i < num; i++) {
+            const nameLen = dv.getUint8(off); off += 1;
+            const nameBytes = new Uint8Array(blob, off, nameLen);
+            const name = new TextDecoder('utf-8').decode(nameBytes);
+            off += nameLen;
+            const nVerts = dv.getUint32(off, true); off += 4;
+            const positions = new Float32Array(blob.slice(off, off + nVerts * 12));
+            off += nVerts * 12;
+            const nIdx = dv.getUint32(off, true); off += 4;
+            const indices = new Uint32Array(blob.slice(off, off + nIdx * 4));
+            off += nIdx * 4;
+            meshes.set(name, { positions, indices, nVerts });
+        }
+        console.log('[R32.1] Loaded', meshes.size, 'unique interior-shape meshes');
+
+        // Build a shared material — neutral grey PBR; can be enhanced with
+        // per-surface materials in a follow-up round
+        const baseMat = new THREE.MeshStandardMaterial({
+            color: 0x6E6660, roughness: 0.85, metalness: 0.05,
+            flatShading: true,
+        });
+
+        // Create a parent group for easy hide/show + selective culling
+        interiorShapesGroup = new THREE.Group();
+        interiorShapesGroup.name = 'RaindanceInteriorShapes';
+        scene.add(interiorShapesGroup);
+
+        // Helper: convert MIS position to world
+        const toWorld = (mp) => ({ x: mp[0], y: mp[2], z: -mp[1] });
+
+        // Build BufferGeometry once per unique fileName, reuse across instances
+        const geomCache = new Map();
+        const getGeom = (fileName) => {
+            if (geomCache.has(fileName)) return geomCache.get(fileName);
+            const m = meshes.get(fileName);
+            if (!m) return null;
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
+            g.setIndex(new THREE.BufferAttribute(m.indices, 1));
+            g.computeVertexNormals();
+            g.computeBoundingBox();
+            g.computeBoundingSphere();
+            geomCache.set(fileName, g);
+            return g;
+        };
+
+        // Place every neutral_interior_shapes instance
+        let placed = 0, missed = 0;
+        const items = (canon.neutral_interior_shapes || []);
+        for (const item of items) {
+            const geom = getGeom(item.fileName);
+            if (!geom) { missed++; continue; }
+            const mesh = new THREE.Mesh(geom, baseMat);
+            const w = toWorld(item.position);
+            mesh.position.set(w.x, w.y, w.z);
+            // Tribes 1 building local-frame is z-up; rotate -90deg around X to
+            // align local z-up to Three.js y-up
+            mesh.rotation.x = -Math.PI / 2;
+            // Apply MIS yaw (rotation around Tribes z-axis = world y-axis)
+            const rotZ = (item.rotation && item.rotation[2]) ? -item.rotation[2] : 0;
+            mesh.rotation.z = rotZ; // post-X-rotation, this rotates around the original z-axis = world y-axis
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            mesh.frustumCulled = false; // mirror existing buildings policy
+            mesh.userData = { fileName: item.fileName, isInterior: true };
+            interiorShapesGroup.add(mesh);
+            placed++;
+        }
+        console.log('[R32.1] Interior shapes placed:', placed, '(missed', missed, ')');
+    } catch (e) {
+        console.error('[R32.1] initInteriorShapes failed', e);
+    }
 }
 
 // ============================================================

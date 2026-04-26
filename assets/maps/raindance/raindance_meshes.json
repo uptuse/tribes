@@ -1,0 +1,548 @@
+{
+  "meshes": [
+    {
+      "fileName": "esmall2.0.dis",
+      "dis_path": "tools/dis_work/Esmall2.dis",
+      "dig_path": "tools/dis_work/Esmall2-01.dig",
+      "n_verts": 133,
+      "n_tris": 262,
+      "bounds_min": [
+        -16.0,
+        -32.0,
+        -12.0
+      ],
+      "bounds_max": [
+        16.0,
+        48.0,
+        16.0
+      ]
+    },
+    {
+      "fileName": "BETower2.0.dis",
+      "dis_path": "tools/dis_work/BETower2.dis",
+      "dig_path": "tools/dis_work/BETower2-01.dig",
+      "n_verts": 170,
+      "n_tris": 336,
+      "bounds_min": [
+        -10.0,
+        -10.0,
+        0.0
+      ],
+      "bounds_max": [
+        10.0,
+        10.0,
+        44.0
+      ]
+    },
+    {
+      "fileName": "iobservation.0.dis",
+      "dis_path": "tools/dis_work/iobservation.dis",
+      "dig_path": "tools/dis_work/iobservation-00.dig",
+      "n_verts": 48,
+      "n_tris": 108,
+      "bounds_min": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max": [
+        2.0,
+        2.0,
+        25.0
+      ]
+    },
+    {
+      "fileName": "cube.0.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "bunker4.0.dis",
+      "dis_path": "tools/dis_work/bunker4.dis",
+      "dig_path": "tools/dis_work/bunker4-01.dig",
+      "n_verts": 42,
+      "n_tris": 76,
+      "bounds_min": [
+        -10.0,
+        -10.0,
+        -1.0
+      ],
+      "bounds_max": [
+        10.0,
+        10.0,
+        9.0
+      ]
+    },
+    {
+      "fileName": "bunker4.1.dis",
+      "dis_path": "tools/dis_work/bunker4.dis",
+      "dig_path": "tools/dis_work/bunker4-01.dig",
+      "n_verts": 42,
+      "n_tris": 76,
+      "bounds_min": [
+        -10.0,
+        -10.0,
+        -1.0
+      ],
+      "bounds_max": [
+        10.0,
+        10.0,
+        9.0
+      ]
+    },
+    {
+      "fileName": "esmall2.1.dis",
+      "dis_path": "tools/dis_work/Esmall2.dis",
+      "dig_path": "tools/dis_work/Esmall2-01.dig",
+      "n_verts": 133,
+      "n_tris": 262,
+      "bounds_min": [
+        -16.0,
+        -32.0,
+        -12.0
+      ],
+      "bounds_max": [
+        16.0,
+        48.0,
+        16.0
+      ]
+    },
+    {
+      "fileName": "cube.1.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.2.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.3.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.4.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.5.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.6.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.7.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.8.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "cube.9.dis",
+      "dis_path": "tools/dis_work/cube.dis",
+      "dig_path": "tools/dis_work/cube-00.dig",
+      "n_verts": 18,
+      "n_tris": 32,
+      "bounds_min": [
+        0.0,
+        0.0,
+        0.0
+      ],
+      "bounds_max": [
+        7.5,
+        7.5,
+        7.0
+      ]
+    },
+    {
+      "fileName": "BETower2.1.dis",
+      "dis_path": "tools/dis_work/BETower2.dis",
+      "dig_path": "tools/dis_work/BETower2-01.dig",
+      "n_verts": 170,
+      "n_tris": 336,
+      "bounds_min": [
+        -10.0,
+        -10.0,
+        0.0
+      ],
+      "bounds_max": [
+        10.0,
+        10.0,
+        44.0
+      ]
+    },
+    {
+      "fileName": "bunker4.2.dis",
+      "dis_path": "tools/dis_work/bunker4.dis",
+      "dig_path": "tools/dis_work/bunker4-01.dig",
+      "n_verts": 42,
+      "n_tris": 76,
+      "bounds_min": [
+        -10.0,
+        -10.0,
+        -1.0
+      ],
+      "bounds_max": [
+        10.0,
+        10.0,
+        9.0
+      ]
+    },
+    {
+      "fileName": "swsfloatingpad2.0.dis",
+      "dis_path": "tools/dis_work/swsfloatingpad2.dis",
+      "dig_path": "tools/dis_work/swsfloatingpad2-01.dig",
+      "n_verts": 8,
+      "n_tris": 12,
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        14.75
+      ],
+      "bounds_max": [
+        5.0,
+        5.0,
+        16.0
+      ]
+    },
+    {
+      "fileName": "expbridge.0.dis",
+      "dis_path": "tools/dis_work/EXPBRIDGE.dis",
+      "dig_path": "tools/dis_work/EXPBRIDGE-01.dig",
+      "n_verts": 234,
+      "n_tris": 504,
+      "bounds_min": [
+        -8.0,
+        -64.0,
+        0.0
+      ],
+      "bounds_max": [
+        8.0,
+        64.0,
+        22.5
+      ]
+    },
+    {
+      "fileName": "mis_ob1.0.dis",
+      "dis_path": "tools/dis_work/mis_ob1.dis",
+      "dig_path": "tools/dis_work/mis_ob1-01.dig",
+      "n_verts": 40,
+      "n_tris": 88,
+      "bounds_min": [
+        -2.0,
+        -2.0,
+        0.0
+      ],
+      "bounds_max": [
+        2.0,
+        2.0,
+        16.0
+      ]
+    },
+    {
+      "fileName": "mis_ob2.0.dis",
+      "dis_path": "tools/dis_work/mis_ob2.dis",
+      "dig_path": "tools/dis_work/mis_ob2-01.dig",
+      "n_verts": 36,
+      "n_tris": 60,
+      "bounds_min": [
+        -8.0,
+        -8.0,
+        0.0
+      ],
+      "bounds_max": [
+        8.0,
+        8.0,
+        12.0
+      ]
+    },
+    {
+      "fileName": "mis_ob3.0.dis",
+      "dis_path": "tools/dis_work/mis_ob3.dis",
+      "dig_path": "tools/dis_work/mis_ob3-01.dig",
+      "n_verts": 36,
+      "n_tris": 68,
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        0.0
+      ],
+      "bounds_max": [
+        5.0,
+        5.0,
+        8.0
+      ]
+    },
+    {
+      "fileName": "lrock3.0.dis",
+      "dis_path": "tools/dis_work/lrock3.dis",
+      "dig_path": "tools/dis_work/lrock3-01.dig",
+      "n_verts": 14,
+      "n_tris": 24,
+      "bounds_min": [
+        -5.0,
+        -5.0,
+        -1.0
+      ],
+      "bounds_max": [
+        5.0,
+        4.0,
+        6.0
+      ]
+    },
+    {
+      "fileName": "lrock6.0.dis",
+      "dis_path": "tools/dis_work/lrock6.dis",
+      "dig_path": "tools/dis_work/lrock6-01.dig",
+      "n_verts": 29,
+      "n_tris": 50,
+      "bounds_min": [
+        -2.5824999809265137,
+        -1.9343750476837158,
+        0.054999999701976776
+      ],
+      "bounds_max": [
+        2.1553125381469727,
+        1.875,
+        5.0
+      ]
+    },
+    {
+      "fileName": "lrock1.0.dis",
+      "dis_path": "tools/dis_work/lrock1.dis",
+      "dig_path": "tools/dis_work/lrock1-01.dig",
+      "n_verts": 24,
+      "n_tris": 44,
+      "bounds_min": [
+        -2.0,
+        -2.0,
+        -1.0
+      ],
+      "bounds_max": [
+        2.0,
+        2.0,
+        2.515000104904175
+      ]
+    },
+    {
+      "fileName": "lrock4.0.dis",
+      "dis_path": "tools/dis_work/lrock4.dis",
+      "dig_path": "tools/dis_work/lrock4-01.dig",
+      "n_verts": 19,
+      "n_tris": 34,
+      "bounds_min": [
+        -4.0,
+        -4.0,
+        0.0
+      ],
+      "bounds_max": [
+        4.0,
+        4.0,
+        8.0
+      ]
+    },
+    {
+      "fileName": "lrock5.0.dis",
+      "dis_path": "tools/dis_work/lrock5.dis",
+      "dig_path": "tools/dis_work/lrock5-01.dig",
+      "n_verts": 20,
+      "n_tris": 34,
+      "bounds_min": [
+        -1.9384374618530273,
+        -2.304374933242798,
+        -0.009062499739229679
+      ],
+      "bounds_max": [
+        2.4471874237060547,
+        2.2281250953674316,
+        3.3915624618530273
+      ]
+    },
+    {
+      "fileName": "lrock4.1.dis",
+      "dis_path": "tools/dis_work/lrock4.dis",
+      "dig_path": "tools/dis_work/lrock4-01.dig",
+      "n_verts": 19,
+      "n_tris": 34,
+      "bounds_min": [
+        -4.0,
+        -4.0,
+        0.0
+      ],
+      "bounds_max": [
+        4.0,
+        4.0,
+        8.0
+      ]
+    },
+    {
+      "fileName": "lrock4.2.dis",
+      "dis_path": "tools/dis_work/lrock4.dis",
+      "dig_path": "tools/dis_work/lrock4-01.dig",
+      "n_verts": 19,
+      "n_tris": 34,
+      "bounds_min": [
+        -4.0,
+        -4.0,
+        0.0
+      ],
+      "bounds_max": [
+        4.0,
+        4.0,
+        8.0
+      ]
+    },
+    {
+      "fileName": "DSSfloatingPad.0.dis",
+      "dis_path": "tools/dis_work/DSSfloatingPad.dis",
+      "dig_path": "tools/dis_work/DSSfloatingPad-01.dig",
+      "n_verts": 8,
+      "n_tris": 12,
+      "bounds_min": [
+        -6.0,
+        -6.0,
+        17.0
+      ],
+      "bounds_max": [
+        6.0,
+        6.0,
+        17.5
+      ]
+    },
+    {
+      "fileName": "DSSfloatingPad.1.dis",
+      "dis_path": "tools/dis_work/DSSfloatingPad.dis",
+      "dig_path": "tools/dis_work/DSSfloatingPad-01.dig",
+      "n_verts": 8,
+      "n_tris": 12,
+      "bounds_min": [
+        -6.0,
+        -6.0,
+        17.0
+      ],
+      "bounds_max": [
+        6.0,
+        6.0,
+        17.5
+      ]
+    }
+  ]
+}
