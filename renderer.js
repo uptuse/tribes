@@ -1185,54 +1185,63 @@ function createPlayerMesh(armor) {
         emissive: 0x223344, emissiveIntensity: 0.25
     });
 
+    // R32.5: torso group pivoted at sternum height (~1.10m). Upper-body parts
+    // are added as children with positions relative to the pivot, so a single
+    // torso.rotation.x = pitch leans the entire upper body without affecting
+    // hips or legs (they stay attached to the locomotion root).
+    const TORSO_PIVOT_Y = 1.10;
+    const torso = new THREE.Group();
+    torso.position.y = TORSO_PIVOT_Y;
+    group.add(torso);
+
     // Body (chest) — tapered cylinder
     const bodyGeom = new THREE.CylinderGeometry(t.bodyR * 0.85, t.bodyR, t.bodyH, 10);
     const body = new THREE.Mesh(bodyGeom, armorMat);
-    body.position.y = 1.10;
+    body.position.y = 0; // pivot is at chest center now
     body.castShadow = true; body.receiveShadow = true;
-    group.add(body);
+    torso.add(body);
 
-    // Hips
+    // Hips (NOT in torso — stays with locomotion root)
     const hipsGeom = new THREE.BoxGeometry(t.bodyR * 1.6, 0.18, t.bodyR * 1.0);
     const hips = new THREE.Mesh(hipsGeom, accentMat);
     hips.position.y = 0.55;
     hips.castShadow = true;
     group.add(hips);
 
-    // Head
+    // Head (relative to torso pivot)
     const headGeom = new THREE.SphereGeometry(0.20, 12, 10);
     const head = new THREE.Mesh(headGeom, armorMat);
-    head.position.y = 1.78;
+    head.position.y = 1.78 - TORSO_PIVOT_Y;
     head.castShadow = true;
-    group.add(head);
+    torso.add(head);
 
     // Helmet (cap)
     const helmetGeom = new THREE.SphereGeometry(0.24, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.50);
     const helmet = new THREE.Mesh(helmetGeom, accentMat);
-    helmet.position.y = 1.82;
+    helmet.position.y = 1.82 - TORSO_PIVOT_Y;
     helmet.castShadow = true;
-    group.add(helmet);
+    torso.add(helmet);
 
     // Visor band
     const visorGeom = new THREE.BoxGeometry(0.36, 0.09, 0.30);
     const visor = new THREE.Mesh(visorGeom, visorMat);
-    visor.position.set(0, 1.74, 0.10);
-    group.add(visor);
+    visor.position.set(0, 1.74 - TORSO_PIVOT_Y, 0.10);
+    torso.add(visor);
 
     // Shoulders
     const shoulderGeom = new THREE.SphereGeometry(t.shoulderR, 8, 6);
     const lShoulder = new THREE.Mesh(shoulderGeom, armorMat);
-    lShoulder.position.set(-t.bodyR - t.shoulderR * 0.3, 1.45, 0);
+    lShoulder.position.set(-t.bodyR - t.shoulderR * 0.3, 1.45 - TORSO_PIVOT_Y, 0);
     lShoulder.castShadow = true;
-    group.add(lShoulder);
+    torso.add(lShoulder);
     const rShoulder = lShoulder.clone();
     rShoulder.position.x = -lShoulder.position.x;
-    group.add(rShoulder);
+    torso.add(rShoulder);
 
-    // Arm groups (pivot at shoulder for animation)
+    // Arm groups (pivot at shoulder for animation; live in torso so they pitch with it)
     function makeArm(side) {
         const armGroup = new THREE.Group();
-        armGroup.position.set(side * (t.bodyR + t.shoulderR * 0.3), 1.45, 0);
+        armGroup.position.set(side * (t.bodyR + t.shoulderR * 0.3), 1.45 - TORSO_PIVOT_Y, 0);
         const armGeom = new THREE.CylinderGeometry(t.armR, t.armR * 0.85, t.armL, 8);
         const arm = new THREE.Mesh(armGeom, armorMat);
         arm.position.y = -t.armL / 2;
@@ -1247,8 +1256,8 @@ function createPlayerMesh(armor) {
     }
     const leftArm = makeArm(-1);
     const rightArm = makeArm(1);
-    group.add(leftArm);
-    group.add(rightArm);
+    torso.add(leftArm);
+    torso.add(rightArm);
 
     // Leg groups (pivot at hip)
     function makeLeg(side) {
@@ -1271,27 +1280,28 @@ function createPlayerMesh(armor) {
     group.add(leftLeg);
     group.add(rightLeg);
 
-    // Jetpack (on back)
+    // Jetpack (on back) — also rides the torso so it leans with the body
     const jetGeom = new THREE.BoxGeometry(...t.jet);
     const jet = new THREE.Mesh(jetGeom, accentMat);
-    jet.position.set(0, 1.20, -t.bodyR - t.jet[2] * 0.45);
+    jet.position.set(0, 1.20 - TORSO_PIVOT_Y, -t.bodyR - t.jet[2] * 0.45);
     jet.castShadow = true;
-    group.add(jet);
+    torso.add(jet);
 
-    // Jet thrusters
+    // Jet thrusters — stay with torso so they tip with the jetpack
     const thrustGeom = new THREE.CylinderGeometry(0.07, 0.10, 0.18, 8);
     const lThrust = new THREE.Mesh(thrustGeom, accentMat);
-    lThrust.position.set(-0.16, 0.78, -t.bodyR - t.jet[2] * 0.45);
-    group.add(lThrust);
+    lThrust.position.set(-0.16, 0.78 - TORSO_PIVOT_Y, -t.bodyR - t.jet[2] * 0.45);
+    torso.add(lThrust);
     const rThrust = lThrust.clone();
     rThrust.position.x = 0.16;
-    group.add(rThrust);
+    torso.add(rThrust);
 
     group.scale.setScalar(t.scale);
 
     group.userData = {
         armor: armor,
         leftArm, rightArm, leftLeg, rightLeg, body,
+        torso, // R32.5: handle for per-frame pitch
         armorMat, // can recolor for team
     };
 
@@ -1805,6 +1815,16 @@ function syncPlayers(t) {
         mesh.position.set(playerView[o], playerView[o + 1], playerView[o + 2]);
         // R31: negate yaw to match Three.js convention (same fix as camera)
         mesh.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
+        // R32.5: torso pitch — lean the upper body to match aim direction so
+        // remote players (and the local soldier in 3P) read as actually aiming
+        // up/down. Clamped to ±60° so extreme pitches don't fold the model.
+        if (mesh.userData && mesh.userData.torso) {
+            const rawPitch = playerView[o + 3]; // radians
+            const clamped = Math.max(-1.05, Math.min(1.05, rawPitch));
+            // Soldier faces +Z when yaw=0; pitching up = leaning back = negative
+            // X rotation on the torso group (right-hand rule).
+            mesh.userData.torso.rotation.x = -clamped * 0.85;
+        }
 
         // R20: nameplate above head, fade beyond 50m
         const camPos = camera.position;
