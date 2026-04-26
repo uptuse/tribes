@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.10.2</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.10.3</div>
     </div>
   </div>
 
@@ -3475,7 +3475,16 @@
       printErr:function(t){console.error(t);},
       setStatus:function(t){
         var lt=document.getElementById('load-text'),lb=document.getElementById('load-bar');
-        if(!t){document.getElementById('loading').classList.add('hidden');showScreen('mainmenu');return;}
+        if(!t){
+          document.getElementById('loading').classList.add('hidden');
+          // R32.10.3: Emscripten fires setStatus('') when run-deps hit 0,
+          // which used to unconditionally re-open the main menu and stomp
+          // our auto-quickStart. Honor `?menu=1` here too; otherwise stay
+          // out of the way and let onRuntimeInitialized's quickStart() run.
+          var _wantMenu = new URLSearchParams(location.search).get('menu') === '1';
+          if(_wantMenu) showScreen('mainmenu');
+          return;
+        }
         if(lt)lt.textContent=t;
         var m=t.match(/\((\d+)\/(\d+)\)/);if(m&&lb)lb.style.width=(parseInt(m[1])/parseInt(m[2])*100)+'%';
       },
@@ -3486,17 +3495,30 @@
       },
       onRuntimeInitialized:function(){
         document.getElementById('loading').classList.add('hidden');
-        // R32.10.2: skip the main menu entirely and drop straight into a Solo
-        // (0-bot) game on Raindance for visual playtesting. Add `?menu=1` to
-        // the URL to restore the original main-menu flow.
+        // R32.10.3: skip main menu, force Solo (0 bots), drop into world.
+        // Append `?menu=1` to the URL to restore the original menu flow.
         var _wantMenu = new URLSearchParams(location.search).get('menu') === '1';
         if(_wantMenu){
           showScreen('mainmenu');
         } else {
-          // Defer one tick so the rest of onRuntimeInitialized() (Three.js
-          // module import, render-mode set, network/replay/tier modules) has
-          // a chance to wire up before startGame() requests pointer lock.
-          setTimeout(function(){ try { quickStart(); } catch(e){ console.error('[R32.10.2] auto-quickStart failed:', e); showScreen('mainmenu'); } }, 0);
+          // Sync call (no setTimeout) so we win the race with any later
+          // setStatus('')→showScreen('mainmenu'). Defensive: also force-hide
+          // the menu twice (now + 250ms later) in case any other code path
+          // (network/replay/tier modules) re-opens it.
+          var _autoStart = function(){
+            try {
+              if(!gameStarted) quickStart();
+              // Belt-and-braces: nuke any overlay that snuck back in.
+              var mm = document.getElementById('mainmenu');
+              if(mm) mm.classList.remove('active');
+            } catch(e){
+              console.error('[R32.10.3] auto-quickStart failed:', e);
+              showScreen('mainmenu');
+            }
+          };
+          _autoStart();
+          setTimeout(_autoStart, 250);
+          setTimeout(_autoStart, 1000);
         }
         // R17 cutover: Three.js is the DEFAULT renderer.
         // Opt out via ?renderer=legacy (sunsetting in R18.1).

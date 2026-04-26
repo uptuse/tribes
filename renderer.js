@@ -671,7 +671,9 @@ function initTerrain() {
     // path zones (dirt threading from each base toward basin/bridge), and wet patches.
     const splatAttr    = new Float32Array(size * size * 4);  // (grass, rock, dirt, sand)
     // R32.10.1: grass species blend moved to fragment shader (per-pixel smooth noise) to kill triangle-edge seams
-    const washAttr     = new Float32Array(size * size * 3);
+    // R32.10.3: aWash and aAO vertex attributes removed entirely — their interp
+    // across faceted-triangle edges produced visible diagonal seam lines. All
+    // painterly variation is now per-pixel in the fragment shader (see below).
     function H(i, j) {
         i = Math.max(0, Math.min(size - 1, i));
         j = Math.max(0, Math.min(size - 1, j));
@@ -769,89 +771,21 @@ function initTerrain() {
             splatAttr[aIdx+2] = dt / sum;
             splatAttr[aIdx+3] = sd / sum;
 
-            // ---- Watercolor wash with macro grass color drift + wet darkening ----
-            const ridgeWarmth = Math.pow(hN, 1.8);
-            const valleyCool  = Math.pow(1 - hN, 1.4) * 0.6;
-            let wR = 1.00, wG = 1.00, wB = 1.00;
-            wR += ridgeWarmth * 0.18; wG += ridgeWarmth * 0.10; wB -= ridgeWarmth * 0.05;
-            wR -= valleyCool * 0.10;  wG += valleyCool * 0.04;  wB += valleyCool * 0.12;
-            // Macro grass color drift (noiseA) — broader amplitude than R32.9.
-            const grassDom = splatAttr[aIdx];
-            wR += (nA - 0.5) * 0.14 * grassDom;
-            wG += -(nA - 0.5) * 0.08 * grassDom + (1 - nA) * 0.06 * grassDom;
-            wB += (0.5 - nA) * 0.08 * grassDom;
-            // Wet patch darkening
-            if (wetness > 0.05) {
-                wR -= wetness * 0.18; wG -= wetness * 0.20; wB -= wetness * 0.22;
-            }
-            // Painter's noise jitter
-            const pn = noiseA(wx * 1.7, wz * 1.7);
-            const jitter = (pn - 0.5) * 0.14;
-            wR += jitter * 0.5; wG += jitter * 0.7; wB += jitter * 0.3;
-            // Trampled dust tint near bases
-            if (baseDist < 60) {
-                const tD = 1 - baseDist / 60;
-                wR += tD * 0.08; wG += tD * 0.05; wB -= tD * 0.05;
-            }
-            const wIdx = idx * 3;
-            washAttr[wIdx]   = Math.max(0.45, Math.min(1.40, wR));
-            washAttr[wIdx+1] = Math.max(0.45, Math.min(1.40, wG));
-            washAttr[wIdx+2] = Math.max(0.45, Math.min(1.40, wB));
+            // R32.10.3: per-vertex watercolor wash baking removed; replaced by
+            // per-pixel multi-octave smooth noise in the fragment shader. The
+            // baked noiseA/noiseB/noiseC fields above are still used for splat
+            // weights (grass/rock/dirt/sand selection), but the painterly tint
+            // is no longer per-vertex — so faceted triangle edges can't show
+            // a tint discontinuity along their seam.
         }
     }
-    geom.setAttribute('aSplat',    new THREE.BufferAttribute(splatAttr, 4));
-    geom.setAttribute('aWash',     new THREE.BufferAttribute(washAttr, 3));
+    geom.setAttribute('aSplat', new THREE.BufferAttribute(splatAttr, 4));
     _splatData = { splatAttr, size };
 
-    // ---- 3. Bake per-vertex AO ---- 
-    // For each vertex, raycast 8 horizontal directions over a few distances and
-    // count how many hit something taller. Result: vertices in valleys/under cliffs
-    // get darker, vertices on ridges/exposed get brighter.
-    const aoAttr = new Float32Array(size * size);
-    const SAMPLE_DIRS = 8;
-    const SAMPLE_DISTS = [4, 12, 32]; // meters
-    const dirCos = new Float32Array(SAMPLE_DIRS);
-    const dirSin = new Float32Array(SAMPLE_DIRS);
-    for (let d = 0; d < SAMPLE_DIRS; d++) {
-        const a = (d / SAMPLE_DIRS) * Math.PI * 2;
-        dirCos[d] = Math.cos(a); dirSin[d] = Math.sin(a);
-    }
-    function sampleHeightAt(wx, wz) {
-        const fx = (wx + half) / worldScale;
-        const fz = (wz + half) / worldScale;
-        if (fx < 0 || fz < 0 || fx >= size - 1 || fz >= size - 1) return -Infinity;
-        const xi = Math.floor(fx), zi = Math.floor(fz);
-        const tx = fx - xi, tz = fz - zi;
-        const h00 = heights[zi*size+xi], h10 = heights[zi*size+xi+1];
-        const h01 = heights[(zi+1)*size+xi], h11 = heights[(zi+1)*size+xi+1];
-        return h00*(1-tx)*(1-tz) + h10*tx*(1-tz) + h01*(1-tx)*tz + h11*tx*tz;
-    }
-    for (let j = 0; j < size; j++) {
-        for (let i = 0; i < size; i++) {
-            const idx = j * size + i;
-            const h = heights[idx];
-            const wx = (i / (size - 1) - 0.5) * span;
-            const wz = (j / (size - 1) - 0.5) * span;
-            let occluded = 0, total = 0;
-            for (let d = 0; d < SAMPLE_DIRS; d++) {
-                for (let r = 0; r < SAMPLE_DISTS.length; r++) {
-                    const dist = SAMPLE_DISTS[r];
-                    const sx = wx + dirCos[d] * dist;
-                    const sz = wz + dirSin[d] * dist;
-                    const sh = sampleHeightAt(sx, sz);
-                    if (sh === -Infinity) continue;
-                    // Vertical angle from this vertex to that sample
-                    const elev = (sh - h) / dist; // tan(angle)
-                    // If the elevation angle exceeds ~10 degrees, count as occluded
-                    if (elev > 0.18) occluded++;
-                    total++;
-                }
-            }
-            const ao = total > 0 ? 1 - (occluded / total) * 0.65 : 1; // 0.35..1
-            aoAttr[idx] = Math.pow(ao, 1.2); // soften
-        }
-    }
-    geom.setAttribute('aAO', new THREE.BufferAttribute(aoAttr, 1));
+    // R32.10.3: Per-vertex AO bake removed (was 256K horizon raycasts at load,
+    // ~250ms one-time cost). Replaced by per-pixel slope+height shading in the
+    // fragment shader using dFdx/dFdy of vWorldY, which is C¹-continuous and
+    // doesn't introduce per-vertex values that interp across triangle seams.
 
     // ---- 4. Flat shading via non-indexed, computed face normals ----
     // toNonIndexed() expands every shared vertex so each triangle has its own
@@ -903,23 +837,28 @@ function initTerrain() {
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };  // R32.10: was 6m, bumping to 9m so each variation zone covers more ground (less obvious tile loop)
 
-        // Vertex shader: pass aSplat / aWash / aAO / aGrassMix + world XZ (for tile UVs)
+        // R32.10.3: aWash and aAO vertex attributes are GONE. Reason: with
+        // toNonIndexed() flat shading, every triangle has its own face normal,
+        // so neighbour-triangle lighting jumps at edges. When per-vertex baked
+        // tints (aWash) and AO (aAO) ALSO vary across the seam, the lighting
+        // jump becomes a clearly visible diagonal LINE between every triangle.
+        // Solution: only aSplat stays per-vertex (it's smooth across world XZ
+        // and re-normalized in the fragment shader). All painterly variation
+        // (color drift, ridge warmth, valley cool, AO shadowing) is computed
+        // per-pixel from world-space noise + view normal in the fragment
+        // shader, so it's C¹-continuous and cannot show triangle-edge seams.
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>',
                 `#include <common>
                  attribute vec4 aSplat;
-                 attribute vec3 aWash;
-                 attribute float aAO;
                  varying vec4 vSplat;
-                 varying vec3 vWash;
-                 varying float vAO;
-                 varying vec2 vWorldXZ;`)
+                 varying vec2 vWorldXZ;
+                 varying float vWorldY;`)
             .replace('#include <begin_vertex>',
                 `#include <begin_vertex>
                  vSplat = aSplat;
-                 vWash = aWash;
-                 vAO = aAO;
-                 vWorldXZ = position.xz;`);
+                 vWorldXZ = position.xz;
+                 vWorldY = position.y;`);
 
         // Fragment shader: stochastic anti-tiling sampling + grass A/B blend + wash + AO
         shader.fragmentShader = shader.fragmentShader
@@ -931,10 +870,10 @@ function initTerrain() {
                  uniform sampler2D uTileDirtC;   uniform sampler2D uTileDirtN;
                  uniform sampler2D uTileSandC;   uniform sampler2D uTileSandN;
                  uniform float uTileMeters;
+                 uniform float uTerrainSize;
                  varying vec4 vSplat;
-                 varying vec3 vWash;
-                 varying float vAO;
                  varying vec2 vWorldXZ;
+                 varying float vWorldY;
                  // 2D hash → angle in [0..2π)
                  float th_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
                  // R32.10.1: smooth value noise for grass species blend (per-pixel, kills triangle-edge seams)
@@ -975,19 +914,40 @@ function initTerrain() {
                  float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
-                 // R32.10.1: grass species blend computed per-pixel from world-XZ smooth noise.
-                 // Period ~80m so it varies across the map but doesn't show triangle edges.
+                 // R32.10.1: grass species blend per-pixel (period ~80m).
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
                  vec4 cG1 = stochasticSample(uTileGrassC,  tUv);
-                 vec4 cG2 = stochasticSample(uTileGrassC2, tUv * 0.83 + vec2(13.7, 7.1));  // offset+scale break shared loop
+                 vec4 cG2 = stochasticSample(uTileGrassC2, tUv * 0.83 + vec2(13.7, 7.1));
                  vec4 cG  = mix(cG1, cG2, gMix);
                  vec4 cR  = stochasticSample(uTileRockC,  tUv);
                  vec4 cD  = stochasticSample(uTileDirtC,  tUv);
                  vec4 cS  = stochasticSample(uTileSandC,  tUv);
                  vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
-                 // Multiply by watercolor wash + AO
-                 sampledDiffuseColor.rgb *= vWash;
-                 sampledDiffuseColor.rgb *= vAO;
+                 // R32.10.3: per-pixel watercolor wash (replaces vWash vertex attribute).
+                 // Three-octave smooth noise gives painterly color drift with NO seams.
+                 float n1 = vnoise(vWorldXZ * 0.012);
+                 float n2 = vnoise(vWorldXZ * 0.045 + vec2(31.7, 19.3));
+                 float n3 = vnoise(vWorldXZ * 0.18 + vec2(7.4, 53.1));
+                 float washCombo = n1 * 0.55 + n2 * 0.30 + n3 * 0.15;
+                 // Ridge warmth from world height (proxy: vWorldY relative to half
+                 // the terrain Y-span; safe approximation since heightmap is
+                 // [6.65,76.9]m, mid ~42m). Cool valleys, warm ridges — painterly.
+                 float hN = clamp((vWorldY - 6.65) / 70.25, 0.0, 1.0);
+                 vec3 wash = vec3(1.0);
+                 wash.r += (washCombo - 0.5) * 0.10 + (hN - 0.4) * 0.06;
+                 wash.g += (washCombo - 0.5) * 0.06 + (hN - 0.4) * 0.02;
+                 wash.b += (washCombo - 0.5) * 0.04 - (hN - 0.4) * 0.05;
+                 // R32.10.3: per-pixel AO from world-Y screen-space derivatives.
+                 // dFdx/dFdy of vWorldY gives the slope of the surface in screen
+                 // pixels. Steeper terrain = bigger derivatives = darker shading.
+                 // Doesn't depend on vNormal (which is gone in FLAT_SHADED mode).
+                 // Add macro height shading too: low areas slightly darker.
+                 float dy = abs(dFdx(vWorldY)) + abs(dFdy(vWorldY));
+                 float slopeShade = 1.0 - smoothstep(0.05, 0.40, dy) * 0.35;
+                 float heightShade = 0.78 + 0.22 * hN;
+                 float pAO = slopeShade * heightShade;
+                 sampledDiffuseColor.rgb *= wash;
+                 sampledDiffuseColor.rgb *= pAO;
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
