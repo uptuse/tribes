@@ -1272,7 +1272,8 @@
       var cached = null;
       try { cached = localStorage.getItem('tribes:thumb:' + id); } catch (e) {}
       if (cached) { el.style.background = "url(" + cached + ") center/cover #1a1612"; return; }
-      fetch('/map?id=' + encodeURIComponent(id)).then(function(r){ return r.ok ? r.json() : null; }).then(function(doc){
+      // R29.1: GitHub Pages is static — load .tribes-map files directly. Worker route /map?id= only exists for multiplayer mode.
+      fetch('client/maps/' + encodeURIComponent(id) + '.tribes-map').then(function(r){ return r.ok ? r.json() : null; }).then(function(doc){
         if (!doc || !doc.terrain) return;
         var size = doc.terrain.size | 0;
         if (!size) return;
@@ -3422,7 +3423,8 @@
               // R25: fetch the map JSON and apply via the renderer's override hook.
               if (msg.mapId && msg.mapId !== window.__tribesActiveMapId && window.__tribesLoadMap) {
                 window.__tribesActiveMapId = msg.mapId;
-                fetch('/map?id=' + encodeURIComponent(msg.mapId))
+                // R29.1: static-first fetch; if running against a Worker, the relative client/maps path will still work because Workers proxy unknown paths to origin.
+                fetch('client/maps/' + encodeURIComponent(msg.mapId) + '.tribes-map')
                   .then(function(r){ return r.ok ? r.json() : null; })
                   .then(function(doc){ if (doc) window.__tribesLoadMap(doc); })
                   .catch(function(e){ console.warn('[R25] map fetch failed:', e); });
