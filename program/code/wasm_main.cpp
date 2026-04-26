@@ -1503,6 +1503,9 @@ static void updateTurrets(float dt){
                         break;
                     }
                 }
+                // D3 R31.6: muzzle flash particle burst + positional plasma sound
+                spawnBurst(firePos,6,0.4f,8, 1.0f,0.3f,0.1f, 0.25f);
+                EM_ASM({if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2);},(double)firePos.x,(double)firePos.y,(double)firePos.z);
             }
             t.fireCooldown=1.5f; // reset regardless (don't rapid-fire when blocked)
         }
@@ -2067,6 +2070,18 @@ extern "C" void mainLoop(){
             float hitR=armors[players[j].armor].hitW+0.5f;
             if(d<hitR*hitR){
                 damagePlayer(j,w.damage,projs[i].ownerTeam);
+                // D1 R31.6: when local player is hit, fire damage-source callback
+                // so JS can show a directional damage arc pointing at the attacker.
+                // Approximate source: walk backwards along projectile velocity 30m.
+                if(j==localPlayer){
+                    float vx=projs[i].vel.x,vz=projs[i].vel.z;
+                    float vl=sqrtf(vx*vx+vz*vz);
+                    if(vl>0.01f){
+                        float sx=projs[i].pos.x-vx/vl*30.0f;
+                        float sz=projs[i].pos.z-vz/vl*30.0f;
+                        EM_ASM({if(window.onDamageSource)window.onDamageSource($0,$1);},(double)sx,(double)sz);
+                    }
+                }
                 if(!players[j].alive&&projs[i].ownerTeam!=players[j].team){
                     for(int k=0;k<MAX_PLAYERS;k++)if(players[k].active&&players[k].team==projs[i].ownerTeam){
                         players[k].kills++;players[k].score++;
@@ -2246,8 +2261,10 @@ extern "C" void mainLoop(){
     if(g_renderMode != 0) {
         // Three.js mode: still broadcast HUD + audio state to JS overlays
         broadcastHUD();
-        EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },
-               me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000));
+        // D2 R31.6: pass skiing state so JS can drive the ski hiss loop
+        EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },
+               me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000),
+               (me.skiing&&me.alive&&g_matchState==1)?1:0);
         return;
     }
     Vec3 sunDir=Vec3(0.4f,0.8f,0.3f).normalized();
@@ -2290,18 +2307,20 @@ extern "C" void mainLoop(){
         const Building& bld=buildings[i];
         pushBox(bld.pos, bld.halfSize, bld.r, bld.g, bld.b);
     }
-    // Turrets: bright when alive, dark grey when destroyed
+    // D3 R31.6: Turrets — red pulse when alive so users see active threats.
+    // Destroyed turrets stay dim grey. Pulse period ~1.2s, 80% min brightness.
     for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
         Turret&t=turrets[i];
-        float tr=t.alive?(t.team==0?0.55f:0.45f):0.18f;
-        float tg=t.alive?0.45f:0.18f;
-        float tb=t.alive?(t.team==0?0.35f:0.55f):0.18f;
+        float pulse=t.alive?(0.82f+0.18f*sinf(gameTime*5.2f)):1.0f;
+        float tr=t.alive?(t.team==0?0.75f:0.15f)*pulse:0.18f;
+        float tg=t.alive?0.12f*pulse:0.18f;
+        float tb=t.alive?(t.team==0?0.12f:0.75f)*pulse:0.18f;
         pushBox(t.pos,Vec3(1.0f,2.5f,1.0f),tr,tg,tb);
         // Barrel: points in aimYaw direction, tilted down if destroyed
         float bx=t.pos.x+sinf(t.aimYaw)*1.2f;
         float bz=t.pos.z-cosf(t.aimYaw)*1.2f;
         float by=t.pos.y+(t.alive?2.2f:1.5f);
-        pushBox({bx,by,bz},Vec3(0.2f,0.2f,0.5f),tr*1.2f,tg*1.2f,tb*1.2f);
+        pushBox({bx,by,bz},Vec3(0.2f,0.2f,0.5f),tr*1.1f,tg*1.1f,tb*1.1f);
     }
     // Generators: amber when alive, dark when destroyed
     for(int i=0;i<RAINDANCE_GENERATOR_COUNT;i++){

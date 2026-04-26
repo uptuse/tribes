@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R31.5</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R31.6</div>
     </div>
   </div>
 
@@ -2479,6 +2479,29 @@
     }
     window.showDamageArc = showDamageArc;
 
+    // D1 R31.6: called from C++ when local player is hit — compute bearing to source
+    // and show the existing directional arc. Works for both player and turret shots.
+    window.onDamageSource = function(srcX, srcZ) {
+      // Read local player position and yaw from WASM state views
+      if(!window.Module||!Module.calledRun||!Module.HEAPF32) return;
+      try {
+        var ptr=Module._getPlayerStatePtr(),stride=Module._getPlayerStateStride();
+        var idx=Module._getLocalPlayerIdx();
+        if(idx<0||idx>=16) return;
+        var v=new Float32Array(Module.HEAPF32.buffer,ptr+idx*stride*4,stride);
+        var px=v[0],pz=v[2],yaw=v[4];   // pos.x, pos.z, rot.y (yaw)
+        var dx=srcX-px,dz=srcZ-pz;
+        if(dx*dx+dz*dz<0.01) return;
+        // World bearing to source (Tribes/Three.js convention: forward = -Z, right = +X)
+        var worldBrg=Math.atan2(dx,-dz);
+        var relAngle=worldBrg-(-yaw); // camera uses -yaw; see syncCamera R31 fix
+        // Normalise to -π..π
+        while(relAngle>Math.PI)relAngle-=2*Math.PI;
+        while(relAngle<-Math.PI)relAngle+=2*Math.PI;
+        showDamageArc(relAngle);
+      } catch(e) {}
+    };
+
     // R22: Spawn-protection HUD label — driven by per-frame remaining-seconds
     function updateSpawnProt(remainSec){
       var el = document.getElementById('spawn-prot');
@@ -2893,10 +2916,37 @@
         this.jetNode=null;this.jetGain=null;
       },
 
-      update:function(jetting,onGround,speed,health){
+      // D2 R31.6: ski hiss loop — mirrors startJet/stopJet, uses buf[11] (ski_loop)
+      startSki:function(){
+        if(!this.ctx||this.muted||this.skiNode||!this.bufs[11])return;
+        var g=this.ctx.createGain();g.gain.setValueAtTime(0,this.ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0.4,this.ctx.currentTime+0.05);
+        g.connect(this.uiBus);
+        var src=this.ctx.createBufferSource();src.buffer=this.bufs[11];src.loop=true;
+        src.connect(g);src.start();this.skiNode=src;this.skiGain=g;
+      },
+      stopSki:function(){
+        if(!this.skiNode)return;
+        var g=this.skiGain,n=this.skiNode;
+        g.gain.setValueAtTime(g.gain.value,this.ctx.currentTime);
+        g.gain.linearRampToValueAtTime(0,this.ctx.currentTime+0.08);
+        setTimeout(function(){try{n.stop();}catch(e){}},150);
+        this.skiNode=null;this.skiGain=null;
+      },
+
+      update:function(jetting,onGround,speed,health,skiing){
         if(jetting&&!this.prevJetting)this.startJet();
         else if(!jetting&&this.prevJetting)this.stopJet();
         this.prevJetting=jetting;
+        // D2: ski sound loop with speed-modulated volume
+        var skiActive=skiing&&onGround&&speed>2;
+        if(skiActive&&!this.prevSkiing)this.startSki();
+        else if(!skiActive&&this.prevSkiing)this.stopSki();
+        if(this.skiGain){
+          var vol=0.15+Math.min(speed/40,1.0)*0.40;
+          this.skiGain.gain.setTargetAtTime(vol,this.ctx.currentTime,0.08);
+        }
+        this.prevSkiing=skiActive;
         // Footsteps
         if(onGround&&speed>3&&!jetting){
           var interval=Math.max(0.25,0.55-speed/250);
@@ -2932,15 +2982,17 @@
         this.muted=!this.muted;
         if(this.master)this.master.gain.value=this.muted?0:0.55;
         if(this.muted&&this.jetNode)this.stopJet();
+        if(this.muted&&this.skiNode)this.stopSki();
       }
     };
 
     // Global bridges called from C++ via EM_ASM
     window.playSoundAt=function(id,x,y,z){AE.playAt(id,x,y,z);};
     window.playSoundUI=function(id){AE.playUI(id);};
-    window.updateAudio=function(jetting,onGround,speed10,health1000){
+    // D2 R31.6: 5th param skiing
+    window.updateAudio=function(jetting,onGround,speed10,health1000,skiing){
       if(!AE.ctx)return;
-      AE.update(jetting===1,onGround===1,speed10/10,health1000/1000);
+      AE.update(jetting===1,onGround===1,speed10/10,health1000/1000,skiing===1);
     };
 
     // ============================================================

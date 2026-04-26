@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0bbr3mi1.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpi_cppo94.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -206,21 +206,21 @@ Module['FS_createPath']("/assets/tribes", "hdri", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0bbr3mi1.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpt5xfg3i9.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpi_cppo94.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0olg1tre.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpt5xfg3i9.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpnbqctccb.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0olg1tre.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpyxrr_ppb.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpnbqctccb.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpyxrr_ppb.js
 
 
 var arguments_ = [];
@@ -6439,18 +6439,20 @@ var ASM_CONSTS = {
  348811: () => { if(window.playSoundUI)window.playSoundUI(5); },  
  348858: () => { if(window.playSoundUI)window.playSoundUI(6); },  
  348905: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348957: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 349015: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349073: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349122: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349174: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349223: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 349405: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 349464: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 349523: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 349573: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 349625: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349714: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+ 348957: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 349014: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349072: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349130: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349179: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349231: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349280: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349462: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349524: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349583: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349633: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349689: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349741: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349830: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
