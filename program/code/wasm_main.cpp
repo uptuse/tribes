@@ -1732,6 +1732,9 @@ extern "C" {
     int    getMatchState()           { return g_matchState; }
     int    isReady()                 { return g_renderReady; }
 
+    // R31.4: 3P state getter — syncs Three.js camera and mesh visibility to C++ flag
+    int    getThirdPerson()    { return thirdPerson ? 1 : 0; }
+
     // D1: Ski HUD exports — queried every frame by index.html ski HUD widget
     int    getPlayerSkiing()   { return players[localPlayer].skiing ? 1 : 0; }
     float  getPlayerSpeed()    { Player&p=players[localPlayer]; return sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z); }

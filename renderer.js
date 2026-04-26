@@ -1144,6 +1144,8 @@ function initStateViews() {
 // ============================================================
 function syncPlayers(t) {
     const localIdx = Module._getLocalPlayerIdx();
+    // R31.4: hoist 3P check outside loop — one WASM call per frame, not per player
+    const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
     const count = Module._getPlayerStateCount();
     const tier = QUALITY_TIERS[currentQuality];
     for (let i = 0; i < count; i++) {
@@ -1173,10 +1175,16 @@ function syncPlayers(t) {
                 shield.visible = false;
             }
         }
-        if (i === localIdx) {
+        // R31.4: in 1P, skip local player (no self-model). In 3P, fall through
+        // and render local player like any bot — nameplate still suppressed.
+        if (i === localIdx && !is3P) {
             mesh.visible = false;
             if (nameplateSprites[i]) nameplateSprites[i].visible = false;
             continue;
+        }
+        if (i === localIdx && is3P) {
+            if (nameplateSprites[i]) nameplateSprites[i].visible = false;
+            // fall through — position/rotation/animation handled below
         }
         mesh.visible = visible && alive;
         if (!mesh.visible) {
@@ -1329,12 +1337,24 @@ function syncCamera() {
     if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) return;
     if (px === 0 && py === 0 && pz === 0) return;     // unspawned local player
 
-    camera.position.set(px, py + 1.7, pz);
     // R31: negate yaw. C++ forward = {sin(yaw), 0, -cos(yaw)}.
     // Three.js camera forward at rotation.y=θ = {-sin(θ), 0, -cos(θ)}.
     // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
-    // Without this, W moved the player sideways relative to the camera view.
     camera.rotation.set(pitch, -yaw, 0, 'YXZ');
+
+    // R31.4: 3rd-person — chase camera mirrors C++ wasm_main.cpp:2264
+    // eye = pos + (0,3,0) - fwd*12, where fwd = {sin(yaw), 0, -cos(yaw)}.
+    const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
+    if (is3P) {
+        const fwdX = Math.sin(yaw);
+        const fwdZ = -Math.cos(yaw);
+        camera.position.set(px - fwdX * 12, py + 3.0, pz - fwdZ * 12);
+    } else {
+        camera.position.set(px, py + 1.7, pz);
+    }
+
+    // Hide/show weapon viewmodel based on view mode (R31.4)
+    if (weaponHand) weaponHand.visible = !is3P;
 
     const fov = Module._getCameraFov();
     if (Math.abs(camera.fov - fov) > 0.5) {
