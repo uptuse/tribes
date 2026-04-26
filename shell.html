@@ -72,6 +72,13 @@
     .team-blue:hover,.team-blue.selected { border-color:#2C5AC8; }
     .team-name { font-family:'Cinzel',serif; font-size:1.2em; letter-spacing:2px; margin-bottom:8px; }
     .team-roster { font-size:0.82em; color:#9A8A6A; line-height:1.5; }
+    /* R25: map picker cards */
+    .map-card { flex:1; min-width:120px; padding:8px; cursor:pointer; background:rgba(20,18,12,0.65); border:1px solid #3A3020; transition:all 0.15s; text-align:center; }
+    .map-card:hover { border-color:#7A6A4A; }
+    .map-card.btn-selected { border-color:#D4A030; background:rgba(50,40,20,0.7); }
+    .map-thumb { width:100%; height:64px; background:#1a1612; border:1px solid #2a2418; margin-bottom:6px; image-rendering:pixelated; }
+    .map-name { font-size:0.92em; color:#E0D0A0; font-weight:bold; }
+    .map-meta { font-size:0.72em; color:#7E6D55; margin-top:2px; }
 
     /* Scoreboard */
     #scoreboard { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
@@ -503,12 +510,21 @@
       <div class="me-score" id="me-score"></div>
       <div class="me-mvp" id="me-mvp"></div>
       <div id="me-vote"></div>
+      <!-- R25: map vote UI (3 buttons; populated from matchEnd.mapVoteOptions) -->
+      <div id="me-mapvote" style="margin:8px 0;display:none;">
+        <div style="font-size:0.85em;color:#9A8A6A;margin-bottom:6px;">VOTE NEXT MAP</div>
+        <div id="me-mapvote-opts" style="display:flex;gap:8px;justify-content:center;"></div>
+        <div id="me-mapvote-tally" style="font-size:0.78em;color:#7A6A4A;margin-top:4px;"></div>
+      </div>
       <table class="me-table">
         <thead><tr><th>Name</th><th>Team</th><th>Score</th><th>Kills</th><th>Deaths</th></tr></thead>
         <tbody id="me-tbody"></tbody>
       </table>
       <div class="me-btns">
         <button class="btn" onclick="playAgain()">Play Again</button>
+        <!-- R25: replay save + watch -->
+        <button class="btn" id="me-savereplay" onclick="saveCurrentReplay()" style="display:none;">Save Replay</button>
+        <button class="btn" id="me-watchreplay" onclick="watchCurrentReplay()" style="display:none;">Watch Replay</button>
         <button class="btn btn-back" onclick="toMainMenu()">Main Menu</button>
       </div>
     </div>
@@ -610,8 +626,12 @@
         <div class="menu-item" onclick="openFriendsPanel()">FRIENDS</div>
         <div class="menu-item" onclick="inviteFriends()">INVITE FRIENDS</div>
         <div class="menu-item" onclick="quickStart()">QUICK START</div>
+        <!-- R25 -->
+        <div class="menu-item" onclick="document.getElementById('replay-file-input').click()">WATCH REPLAY</div>
+        <div class="menu-item" onclick="openMapEditor()">MAP EDITOR</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
+      <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
       <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.3</div>
     </div>
@@ -650,8 +670,25 @@
         </div>
         <div style="flex:1;">
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Map</div>
-          <button class="btn-small btn-selected">Raindance</button>
-          <div style="margin-top:14px;padding:12px;background:rgba(18,18,16,0.7);border:1px solid #3A3020;font-size:0.82em;color:#9A8A6A;line-height:1.5;">
+          <!-- R25: 3-card map picker -->
+          <div id="map-picker" style="display:flex;gap:8px;flex-wrap:wrap;">
+            <div class="map-card btn-selected" data-mapid="raindance" onclick="selectMap('raindance')">
+              <div class="map-thumb" id="thumb-raindance"></div>
+              <div class="map-name">Raindance</div>
+              <div class="map-meta">16 players &middot; classic</div>
+            </div>
+            <div class="map-card" data-mapid="dangercrossing" onclick="selectMap('dangercrossing')">
+              <div class="map-thumb" id="thumb-dangercrossing"></div>
+              <div class="map-name">Danger Crossing</div>
+              <div class="map-meta">8 players &middot; arena</div>
+            </div>
+            <div class="map-card" data-mapid="iceridge" onclick="selectMap('iceridge')">
+              <div class="map-thumb" id="thumb-iceridge"></div>
+              <div class="map-name">Ice Ridge</div>
+              <div class="map-meta">32 players &middot; ski</div>
+            </div>
+          </div>
+          <div id="map-desc" style="margin-top:14px;padding:12px;background:rgba(18,18,16,0.7);border:1px solid #3A3020;font-size:0.82em;color:#9A8A6A;line-height:1.5;">
             Real Raindance terrain heightmap. CTF with AI opponents. Original weapon and armor stats.
           </div>
         </div>
@@ -958,6 +995,78 @@
     function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
+    // R25: map picker — selectedMapId flows into the WS query string at lobby creation.
+    var selectedMapId = 'raindance';
+    var MAP_DESCS = {
+      raindance: 'Real Raindance terrain heightmap. Classic CTF, balanced for 8-16 players.',
+      dangercrossing: 'Tight arena map with two raised bases and central crossings. Best at 8 players.',
+      iceridge: 'Massive open snow map favouring jet-and-ski gameplay. Distant bases reward long routes.',
+    };
+    function selectMap(id){
+      selectedMapId = id;
+      var cards = document.querySelectorAll('#map-picker .map-card');
+      for (var i = 0; i < cards.length; i++){
+        cards[i].classList.toggle('btn-selected', cards[i].getAttribute('data-mapid') === id);
+      }
+      var d = document.getElementById('map-desc');
+      if (d) d.textContent = MAP_DESCS[id] || '';
+      // Render thumbnail lazily on first selection (pre-cached in localStorage).
+      renderMapThumb(id);
+    }
+    // R25: lazy procedural thumbnail — fetches the .tribes-map and renders a 64x64
+    // canvas heightmap preview. Cached per session via localStorage data URLs.
+    function renderMapThumb(id){
+      var el = document.getElementById('thumb-' + id);
+      if (!el) return;
+      var cached = null;
+      try { cached = localStorage.getItem('tribes:thumb:' + id); } catch (e) {}
+      if (cached) { el.style.background = "url(" + cached + ") center/cover #1a1612"; return; }
+      fetch('/map?id=' + encodeURIComponent(id)).then(function(r){ return r.ok ? r.json() : null; }).then(function(doc){
+        if (!doc || !doc.terrain) return;
+        var size = doc.terrain.size | 0;
+        if (!size) return;
+        // Decode int16 base64 heightmap
+        var bin = '';
+        try { bin = atob(doc.terrain.data); } catch (e) { return; }
+        var thumb = 64;
+        var c = document.createElement('canvas'); c.width = thumb; c.height = thumb;
+        var ctx = c.getContext('2d'); var img = ctx.createImageData(thumb, thumb);
+        var step = doc.terrain.quantStep || 0.1;
+        var step2 = (size / thumb) | 0;
+        var minH = 9999, maxH = -9999;
+        // First pass: find min/max
+        for (var y = 0; y < size; y += step2) for (var x = 0; x < size; x += step2){
+          var off = (y * size + x) * 2;
+          var h = bin.charCodeAt(off) | (bin.charCodeAt(off+1) << 8);
+          if (h & 0x8000) h -= 0x10000;
+          h *= step;
+          if (h < minH) minH = h; if (h > maxH) maxH = h;
+        }
+        var range = Math.max(1, maxH - minH);
+        for (var ty = 0; ty < thumb; ty++) for (var tx = 0; tx < thumb; tx++){
+          var sx = (tx * step2) | 0, sy = (ty * step2) | 0;
+          var o2 = (sy * size + sx) * 2;
+          var hh = bin.charCodeAt(o2) | (bin.charCodeAt(o2+1) << 8);
+          if (hh & 0x8000) hh -= 0x10000;
+          hh *= step;
+          var n = (hh - minH) / range;
+          var p = (ty * thumb + tx) * 4;
+          // Greyscale-tinted by atmosphere
+          img.data[p+0] = 64 + 160 * n;
+          img.data[p+1] = 64 + 160 * n;
+          img.data[p+2] = 80 + 150 * n;
+          img.data[p+3] = 255;
+        }
+        ctx.putImageData(img, 0, 0);
+        var url = c.toDataURL('image/png');
+        try { localStorage.setItem('tribes:thumb:' + id, url); } catch (e) {}
+        el.style.background = "url(" + url + ") center/cover #1a1612";
+      }).catch(function(){});
+    }
+    // Pre-render all three thumbnails at first menu open (background, non-blocking).
+    setTimeout(function(){
+      renderMapThumb('raindance'); renderMapThumb('dangercrossing'); renderMapThumb('iceridge');
+    }, 100);
     function quickStart(){
       selectedTeam=0;selectedArmor=0;
       gameSettings={botCount:4,scoreLimit:5,timeLimit:600};
@@ -1333,9 +1442,16 @@
           if(!el) return;
           if(!list.length){ el.innerHTML = '<div class="lb-empty">No public lobbies. Click Quick Match to create one.</div>'; return; }
           el.innerHTML = list.map(function(l){
+            // R25: render cached thumbnail if available
+            var thumb = '';
+            try { thumb = localStorage.getItem('tribes:thumb:' + (l.mapId || 'raindance')) || ''; } catch (e) {}
+            var thumbStyle = thumb ? "background:url("+thumb+") center/cover #1a1612;" : "background:#1a1612;";
             return '<div class="lb-row" onclick="joinLobby(\''+l.id+'\')">' +
               '<span>'+l.id+'</span>' +
-              '<span>'+l.mapName+'</span>' +
+              '<span style="display:inline-flex;align-items:center;gap:6px;">' +
+                '<span style="display:inline-block;width:24px;height:18px;border:1px solid #3A3020;'+thumbStyle+'"></span>' +
+                l.mapName +
+              '</span>' +
               '<span>'+l.playerCount+'/'+l.maxPlayers+'</span>' +
               '<span style="color:'+(l.matchActive?'#C8302C':'#2ECC71')+'">'+(l.matchActive?'In Match':'Open')+'</span>' +
               '<span style="color:#D4A030">JOIN ▶</span>' +
@@ -1356,7 +1472,70 @@
     function createCustomLobby(){
       var id = '';
       for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
-      window.location.href = '?multiplayer=local&lobbyId='+id;
+      // R25: pass selectedMapId so the new lobby boots on the chosen map.
+      var mapQ = (selectedMapId && selectedMapId !== 'raindance') ? '&map='+encodeURIComponent(selectedMapId) : '';
+      window.location.href = '?multiplayer=local&lobbyId='+id+mapQ;
+    }
+
+    // R25: replay save/watch + map-vote
+    function getServerOrigin(){
+      return (new URLSearchParams(location.search).get('multiplayer')==='remote')
+        ? 'https://tribes-lobby.fly.dev' : 'http://localhost:8080';
+    }
+    function saveCurrentReplay(){
+      if(!window.__lastReplayUrl){ alert('No replay available for this match.'); return; }
+      var url = getServerOrigin() + window.__lastReplayUrl;
+      var a = document.createElement('a');
+      a.href = url; a.download = (window.__lastReplayUrl.split('matchId=')[1] || 'match') + '.tribes-replay';
+      document.body.appendChild(a); a.click(); a.remove();
+    }
+    function watchCurrentReplay(){
+      if(!window.__lastReplayUrl){ alert('No replay available for this match.'); return; }
+      var url = getServerOrigin() + window.__lastReplayUrl;
+      if(window.__replay) window.__replay.openFromUrl(url);
+      else alert('Replay engine not loaded.');
+    }
+    function watchReplayFromFile(input){
+      var f = input && input.files && input.files[0];
+      if(!f){ return; }
+      if(window.__replay) window.__replay.openFromFile(f);
+    }
+    function watchReplayFromPaste(){
+      var url = prompt('Paste a replay URL:');
+      if(!url) return;
+      if(window.__replay) window.__replay.openFromUrl(url);
+    }
+    function castMapVote(mapId){
+      if(window.__tribesNet && window.__tribesNet.send){
+        window.__tribesNet.send({ type: 'mapVote', mapId: mapId });
+      }
+      // Local UI feedback
+      var opts = document.querySelectorAll('#me-mapvote-opts button');
+      for (var i=0; i<opts.length; i++){
+        opts[i].classList.toggle('btn-selected', opts[i].getAttribute('data-mapid') === mapId);
+      }
+    }
+    function renderMatchEndExtras(){
+      // Show save/watch buttons if a replay URL was provided
+      var sb = document.getElementById('me-savereplay');
+      var wb = document.getElementById('me-watchreplay');
+      if (sb) sb.style.display = window.__lastReplayUrl ? '' : 'none';
+      if (wb) wb.style.display = window.__lastReplayUrl ? '' : 'none';
+      // Populate map vote options
+      var mv = document.getElementById('me-mapvote');
+      var opts = document.getElementById('me-mapvote-opts');
+      var tally = document.getElementById('me-mapvote-tally');
+      if (mv && opts && Array.isArray(window.__lastMapVoteOptions) && window.__lastMapVoteOptions.length > 0){
+        mv.style.display = '';
+        var names = { raindance:'Raindance', dangercrossing:'Danger Crossing', iceridge:'Ice Ridge' };
+        opts.innerHTML = window.__lastMapVoteOptions.map(function(id){
+          var current = id === window.__lastMapId ? ' (current)' : '';
+          return '<button class="btn-small" data-mapid="'+id+'" onclick="castMapVote(\''+id+'\')">'+(names[id]||id)+current+'</button>';
+        }).join('');
+        if (tally) tally.textContent = '';
+      } else if (mv) {
+        mv.style.display = 'none';
+      }
     }
 
     // R22: Countdown overlay (5-4-3-2-1 + GO!)
@@ -2275,6 +2454,13 @@
         }else{
           console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
         }
+        // R25: load the replay player + map editor modules unconditionally so
+        // WATCH REPLAY and MAP EDITOR work from the main menu without
+        // requiring multiplayer mode.
+        import('./client/replay.js').then(function(){ console.log('[R25] replay.js loaded'); })
+          .catch(function(e){ console.warn('[R25] replay.js import failed:', e); });
+        import('./client/mapeditor.js').then(function(){ console.log('[R25] mapeditor.js loaded'); })
+          .catch(function(e){ console.warn('[R25] mapeditor.js import failed:', e); });
         // R16/R19: opt-in network client via ?multiplayer=local|remote URL flag
         var mp = new URLSearchParams(location.search).get('multiplayer');
         if(mp === 'local' || mp === 'remote'){
@@ -2332,10 +2518,32 @@
             // Match-start / match-end handlers
             window.__tribesOnMatchStart = function(msg){
               addEventMsg('Match started — ' + msg.players.length + ' players');
+              // R25: fetch the map JSON and apply via the renderer's override hook.
+              if (msg.mapId && msg.mapId !== window.__tribesActiveMapId && window.__tribesLoadMap) {
+                window.__tribesActiveMapId = msg.mapId;
+                fetch('/map?id=' + encodeURIComponent(msg.mapId))
+                  .then(function(r){ return r.ok ? r.json() : null; })
+                  .then(function(doc){ if (doc) window.__tribesLoadMap(doc); })
+                  .catch(function(e){ console.warn('[R25] map fetch failed:', e); });
+              }
             };
             window.__tribesOnMatchEnd = function(msg){
               addEventMsg('Match ended — score ' + msg.teamScore.join('-'));
+              // R25: stash replay URL + map vote options for the match-end UI
+              window.__lastReplayUrl = msg.replayUrl || null;
+              window.__lastMapVoteOptions = msg.mapVoteOptions || [];
+              window.__lastMapId = msg.mapId || null;
+              renderMatchEndExtras();
             };
+            // R25: map vote tally updates streamed from server
+            window.__tribesOnMessage = window.__tribesOnMessage || function(){};
+            // Wire mapVoteUpdate to the lobby browser via the network module's onMessage
+            if (m && m.onMessage) m.onMessage(function(msg){
+              if (msg && msg.type === 'mapVoteUpdate') {
+                var t = document.getElementById('me-mapvote-tally');
+                if (t) t.textContent = 'votes: ' + Object.entries(msg.tally).map(function(p){return p[0]+'='+p[1];}).join(', ') + ' (' + msg.voters + ' voters)';
+              }
+            });
             // R24: skill rating updates (joinAck + matchEnd) → main-menu display
             window.__tribesOnSkillUpdate = function(info){
               var rv = document.getElementById('player-rating-val');

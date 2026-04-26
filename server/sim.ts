@@ -154,6 +154,32 @@ export class Match {
     scoreLimit = 5;
     lagCompBuffer: LagCompFrame[] = [];
     cheatLog: { playerId: number; reason: string; tick: number }[] = [];
+    // R25: active map metadata (id is what gets broadcast and what the client requests)
+    mapId: string = 'raindance';
+    mapName: string = 'Raindance';
+
+    /**
+     * R25 — load a `.tribes-map` JSON document. Honours `gameplay.flags` and
+     * `gameplay.spawns`; the rest of the document (terrain, structures, atmo)
+     * is consumed client-side. Server building collision still runs against
+     * the WASM-resident Raindance set — see comms/open_issues.md and
+     * client/maps/schema.md.
+     */
+    loadMap(doc: { id?: string; name?: string; gameplay?: { flags?: Array<{ team: number; pos: [number, number, number] }> } }) {
+        if (!doc || typeof doc !== 'object') return;
+        if (typeof doc.id === 'string')   this.mapId = doc.id;
+        if (typeof doc.name === 'string') this.mapName = doc.name;
+        const mflags = doc.gameplay?.flags;
+        if (Array.isArray(mflags) && mflags.length === 2) {
+            for (const mf of mflags) {
+                const t = mf.team | 0;
+                if (t !== 0 && t !== 1) continue;
+                const pos: [number, number, number] = [mf.pos[0] | 0, mf.pos[1] | 0, mf.pos[2] | 0];
+                this.flags[t].homePos = pos;
+                this.flags[t].pos = [...pos];
+            }
+        }
+    }
 
     addPlayer(id: number, name: string, team: number, armor = 0, uuid = '', classId = -1): SimPlayer {
         const flagPos = this.flags[team].homePos;

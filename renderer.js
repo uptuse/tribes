@@ -1181,3 +1181,55 @@ function onResize() {
     canvas.style.top = '0';
     canvas.style.left = '0';
 }
+
+// ============================================================
+// R25 — `.tribes-map` JSON loader (visual override)
+//
+// When matchStart broadcasts a non-default mapId, the client fetches the
+// `.tribes-map` doc and calls this. We rebuild buildings from doc.structures
+// and update atmosphere from doc.atmosphere. Terrain elevation is honoured
+// only for the renderer mesh; server collision still uses the WASM-resident
+// Raindance heightmap (documented R25 limitation).
+// ============================================================
+export function loadMap(doc) {
+    if (!doc || !scene) return;
+    console.log('[R25] loadMap', doc.id || '(no id)');
+
+    // Rebuild structures from JSON (replaces WASM-derived buildings)
+    if (Array.isArray(doc.structures)) {
+        for (const entry of buildingMeshes) scene.remove(entry.mesh);
+        buildingMeshes.length = 0;
+        for (const s of doc.structures) {
+            const type = s.type | 0;
+            if (type === 5) continue;            // rocks (visual filler)
+            const hx = s.halfSize?.[0] ?? 3, hy = s.halfSize?.[1] ?? 3, hz = s.halfSize?.[2] ?? 3;
+            const cr = s.color?.[0] ?? 0.4,    cg = s.color?.[1] ?? 0.4,    cb = s.color?.[2] ?? 0.4;
+            const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
+            mesh.position.set(s.pos[0], s.pos[1], s.pos[2]);
+            if (typeof s.rot === 'number') mesh.rotation.y = s.rot * Math.PI / 180;
+            scene.add(mesh);
+            buildingMeshes.push({ mesh, type });
+        }
+        console.log('[R25] rebuilt', buildingMeshes.length, 'structures from map JSON');
+    }
+
+    // Update atmosphere
+    if (doc.atmosphere) {
+        const a = doc.atmosphere;
+        if (scene.fog && a.fogColor) {
+            scene.fog.color = new THREE.Color(a.fogColor);
+            if (typeof a.fogDensity === 'number') scene.fog.density = a.fogDensity;
+        }
+        if (sky && (typeof a.sunAngleDeg === 'number' || typeof a.sunAzimuthDeg === 'number')) {
+            const elev = (a.sunAngleDeg ?? 35) * Math.PI / 180;
+            const azim = (a.sunAzimuthDeg ?? 60) * Math.PI / 180;
+            sunPos.setFromSphericalCoords(1, Math.PI / 2 - elev, azim);
+            sky.material.uniforms.sunPosition.value.copy(sunPos);
+            if (sunLight) sunLight.position.copy(sunPos).multiplyScalar(150);
+        }
+        if (hemiLight && typeof a.ambient === 'number') {
+            hemiLight.intensity = a.ambient;
+        }
+    }
+}
+window.__tribesLoadMap = loadMap;

@@ -24,7 +24,35 @@ import { decodeInput } from './wire.ts';
 import { AntiCheat } from './anticheat.ts';
 import { TICK_HZ, SNAPSHOT_HZ, DELTA_HZ, MATCH_END, MATCH_END_REMATCH_HOLD_SEC } from './constants.ts';
 import { computeRatingDeltas, isRatedMatch, defaultSkillRow, SKILL_INITIAL, type SkillRow } from './skill.ts';
-import { appendFileSync, existsSync, writeFileSync } from 'fs';
+import { appendFileSync, existsSync, writeFileSync, readFileSync } from 'fs';
+
+// R25: known map ids (resolves ?map= query param to a file path)
+const MAP_REGISTRY: Record<string, string> = {
+  raindance:      'client/maps/raindance.tribes-map',
+  dangercrossing: 'client/maps/dangercrossing.tribes-map',
+  iceridge:       'client/maps/iceridge.tribes-map',
+};
+
+function loadMapDocFromDisk(mapId: string): MapDoc | null {
+  const path = MAP_REGISTRY[mapId];
+  if (!path) { console.warn('[map] unknown id:', mapId); return null; }
+  try {
+    const txt = readFileSync(path, 'utf8');
+    const doc = JSON.parse(txt) as MapDoc;
+    return doc;
+  } catch (e) {
+    console.warn('[map] load failed for', mapId, '-', (e as Error).message);
+    return null;
+  }
+}
+
+function setLobbyMap(lobby: LobbyState, mapId: string) {
+  if (!MAP_REGISTRY[mapId]) return;
+  if (lobby.match) return;          // can't change map mid-match
+  lobby.mapId = mapId;
+  lobby.mapDoc = loadMapDocFromDisk(mapId);
+  lobby.mapName = (lobby.mapDoc?.name as string) || mapId;
+}
 
 const PORT = Number(Bun.env.PORT ?? 8080);
 const MAX_PLAYERS_PER_LOBBY = 8;
@@ -42,6 +70,15 @@ interface ConnState {
   ws: any;
 }
 
+// R25: a minimal subset of `.tribes-map` that the server actually inspects.
+// Schema lives in client/maps/schema.md.
+interface MapDoc {
+  id?: string;
+  name?: string;
+  gameplay?: { flags?: Array<{ team: number; pos: [number, number, number] }> };
+  [k: string]: unknown;
+}
+
 interface LobbyState {
   id: string;
   members: Set<string>;
@@ -50,6 +87,8 @@ interface LobbyState {
   lastActivity: number;
   isPublic: boolean;             // R20: false for custom-ID lobbies
   mapName: string;
+  mapId: string;                 // R25: stable id from .tribes-map (filename minus extension)
+  mapDoc: MapDoc | null;         // R25: cached parsed map JSON; loaded lazily on first match start
   match: Match | null;
   matchStartGraceUntil: number;
   tickInterval: ReturnType<typeof setInterval> | null;
@@ -57,6 +96,11 @@ interface LobbyState {
   deltaInterval: ReturnType<typeof setInterval> | null;
   rematchHoldUntil: number;
   rematchVotes: Set<number>;     // R20: numericIds that voted yes
+  // R25: map vote — populated at endMatch with three options (current + 2 random),
+  // collected via 'mapVote' messages, decided when checkPlayAgainVote fires.
+  mapVoteOptions: string[];
+  mapVoteTally: Map<string, number>;     // mapId → vote count
+  mapVoteCast: Set<number>;              // numericIds that already voted
   anticheat: AntiCheat;
   // R20: disconnect bot tracking — playerId → {botId, disconnectedAt, uuid}
   pendingReconnects: Map<string, { numericId: number, botId: number, disconnectedAt: number, name: string, team: number, armor: number }>;
@@ -73,6 +117,32 @@ const skillStore = new Map<string, SkillRow>();
 // Friend list: not server-side per brief — client localStorage. We just
 // expose a presence query GET /friends-status?uuids= mapping uuid → lobbyId.
 const partyStore = new Map<string, { id: string; leaderUuid: string; memberUuids: string[]; createdAt: number }>();
+
+// R25: in-memory replay store. Each key is a matchId, value is the assembled
+// `.tribes-replay` binary blob. Bounded to the most recent ~16 matches to
+// avoid unbounded growth on long-running dev servers; CF DO will replace this
+// with R2 object storage in a future round.
+const REPLAY_MAX = 16;
+const replayStore = new Map<string, Uint8Array>();
+function pruneReplays() {
+  while (replayStore.size > REPLAY_MAX) {
+    const oldest = replayStore.keys().next().value as string | undefined;
+    if (!oldest) break;
+    replayStore.delete(oldest);
+  }
+}
+
+// R25: per-lobby replay capture buffer — one entry per emitted snapshot.
+// Each entry holds the raw snapshot bytes and the wall-clock timestamp.
+// We assemble these into a single `.tribes-replay` blob at endMatch.
+interface ReplayEntry { wallTime: number; bytes: Uint8Array; }
+const replayBuffers = new Map<string, ReplayEntry[]>();   // lobbyId → entries
+const replayMeta = new Map<string, {
+  startedMs: number; mapId: string; mapName: string;
+  killEvents: { tick: number; killer: number; victim: number; weapon: number; killerTeam: number }[];
+  capEvents:  { tick: number; team: number; capturer: number }[];
+}>();
+const REPLAY_CAPTURE_MAX_ENTRIES = 6 * 60 * 10; // 10 min @ 10 snapshots/sec
 
 // R24: Telemetry CSV file path
 const TELEMETRY_PATH = 'server/loadtest/balance_telemetry.csv';
@@ -117,6 +187,8 @@ function newLobby(id: string, isPublic: boolean): LobbyState {
     lastActivity: Date.now(),
     isPublic,
     mapName: 'Raindance',
+    mapId: 'raindance',
+    mapDoc: null,
     match: null,
     matchStartGraceUntil: 0,
     tickInterval: null,
@@ -124,6 +196,9 @@ function newLobby(id: string, isPublic: boolean): LobbyState {
     deltaInterval: null,
     rematchHoldUntil: 0,
     rematchVotes: new Set(),
+    mapVoteOptions: [],
+    mapVoteTally: new Map(),
+    mapVoteCast: new Set(),
     anticheat: new AntiCheat(),
     pendingReconnects: new Map(),
   };
@@ -200,6 +275,18 @@ function recordSlowTick(tickMs: number, players: number, projs: number) {
 function startMatch(lobby: LobbyState) {
   if (lobby.match) return;
   lobby.match = new Match();
+  // R25: lazy-load the .tribes-map for this lobby and apply it to the sim
+  if (!lobby.mapDoc) lobby.mapDoc = loadMapDocFromDisk(lobby.mapId);
+  if (lobby.mapDoc) {
+    lobby.match.loadMap(lobby.mapDoc);
+    lobby.mapName = lobby.match.mapName;
+  }
+  // R25: prime replay capture for this match
+  replayBuffers.set(lobby.id, []);
+  replayMeta.set(lobby.id, {
+    startedMs: Date.now(), mapId: lobby.mapId, mapName: lobby.mapName,
+    killEvents: [], capEvents: [],
+  });
   lobby.rematchVotes = new Set();
   metrics.matchesStarted++;
   (lobby as any).matchStartedMs = Date.now();
@@ -222,6 +309,8 @@ function startMatch(lobby: LobbyState) {
   broadcastJSON(lobby, {
     type: 'matchStart',
     lobbyId: lobby.id,
+    mapId: lobby.mapId,                  // R25
+    mapName: lobby.mapName,              // R25
     players: [...lobby.match.players.values()].map(p => ({
       id: p.id, name: p.name, team: p.team, armor: p.armor,
     })),
@@ -240,8 +329,11 @@ function startMatch(lobby: LobbyState) {
     }
     // R20: drain pending kill events
     if (lobby.match.pendingKillEvents.length > 0) {
+      const meta = replayMeta.get(lobby.id);
       for (const ev of lobby.match.pendingKillEvents) {
         broadcastJSON(lobby, { type: 'kill', killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
+        // R25: capture kill marker for replay timeline
+        if (meta) meta.killEvents.push({ tick: lobby.match.tick, killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
       }
       lobby.match.pendingKillEvents.length = 0;
     }
@@ -252,7 +344,15 @@ function startMatch(lobby: LobbyState) {
 
   lobby.snapshotInterval = setInterval(() => {
     if (!lobby.match) return;
-    try { broadcastBinary(lobby, lobby.match.serializeSnapshot()); } catch (e) { console.error('[snap]', e); }
+    try {
+      const snap = lobby.match.serializeSnapshot();
+      broadcastBinary(lobby, snap);
+      // R25: capture snapshot for replay (10/sec). Bounded buffer length.
+      const buf = replayBuffers.get(lobby.id);
+      if (buf && buf.length < REPLAY_CAPTURE_MAX_ENTRIES) {
+        buf.push({ wallTime: Date.now(), bytes: new Uint8Array(snap) });
+      }
+    } catch (e) { console.error('[snap]', e); }
   }, 1000 / SNAPSHOT_HZ);
 
   lobby.deltaInterval = setInterval(() => {
@@ -315,6 +415,67 @@ function endMatch(lobby: LobbyState) {
     const row = skillStore.get(p.uuid);
     if (row) ratings[p.id] = { rating: row.rating, delta: ratingDeltas.get(p.id) || 0 };
   }
+  // R25: assemble the captured snapshots into a single `.tribes-replay` blob.
+  // Layout:
+  //   [magic 'TRBR' 4B][version u32 LE = 1][matchId-len u16][matchId utf8]
+  //   [meta-len u32][meta JSON utf8 — { startedMs, mapId, mapName, players[],
+  //                                     killEvents[], capEvents[], snapshotHz }]
+  //   repeating: [snap-len u32][snap bytes]
+  let replayUrl: string | null = null;
+  try {
+    const meta = replayMeta.get(lobby.id);
+    const snaps = replayBuffers.get(lobby.id) || [];
+    if (meta && snaps.length > 0) {
+      const metaJson = JSON.stringify({
+        startedMs: meta.startedMs,
+        mapId: meta.mapId, mapName: meta.mapName,
+        players: [...m.players.values()].map(p => ({
+          id: p.id, name: p.name, team: p.team, armor: p.armor, isBot: p.isBot,
+        })),
+        killEvents: meta.killEvents,
+        capEvents:  meta.capEvents,
+        snapshotHz: SNAPSHOT_HZ,
+        finalScore: m.teamScore,
+        durationS,
+      });
+      const enc = new TextEncoder();
+      const idBytes  = enc.encode(lobby.id);
+      const metaBytes = enc.encode(metaJson);
+      let totalLen = 4 + 4 + 2 + idBytes.length + 4 + metaBytes.length;
+      for (const s of snaps) totalLen += 4 + s.bytes.length;
+      const out = new Uint8Array(totalLen);
+      const dv = new DataView(out.buffer);
+      let off = 0;
+      out[off++] = 0x54; out[off++] = 0x52; out[off++] = 0x42; out[off++] = 0x52; // 'TRBR'
+      dv.setUint32(off, 1, true); off += 4;
+      dv.setUint16(off, idBytes.length, true); off += 2;
+      out.set(idBytes, off); off += idBytes.length;
+      dv.setUint32(off, metaBytes.length, true); off += 4;
+      out.set(metaBytes, off); off += metaBytes.length;
+      for (const s of snaps) {
+        dv.setUint32(off, s.bytes.length, true); off += 4;
+        out.set(s.bytes, off); off += s.bytes.length;
+      }
+      replayStore.set(lobby.id, out);
+      pruneReplays();
+      replayUrl = `/replay?matchId=${encodeURIComponent(lobby.id)}`;
+      console.log(`[REPLAY] saved ${lobby.id} (${(out.length / 1024).toFixed(1)} KB, ${snaps.length} snaps)`);
+    }
+  } catch (e) {
+    console.warn('[REPLAY] assembly failed:', e);
+  }
+  // Free the per-match capture buffers regardless of success
+  replayBuffers.delete(lobby.id);
+  replayMeta.delete(lobby.id);
+
+  // R25: pick 2 random alternative maps for the post-match vote
+  const allMaps = Object.keys(MAP_REGISTRY);
+  const others = allMaps.filter(id => id !== lobby.mapId);
+  for (let i = others.length - 1; i > 0; i--) { const j = (Math.random() * (i + 1)) | 0; [others[i], others[j]] = [others[j], others[i]]; }
+  lobby.mapVoteOptions = [lobby.mapId, ...others.slice(0, 2)];
+  lobby.mapVoteTally = new Map(lobby.mapVoteOptions.map(id => [id, 0]));
+  lobby.mapVoteCast = new Set();
+
   broadcastJSON(lobby, {
     type: 'matchEnd',
     lobbyId: lobby.id,
@@ -325,6 +486,10 @@ function endMatch(lobby: LobbyState) {
       team1: mvps.team1 ? { id: mvps.team1.id, name: mvps.team1.name, kills: mvps.team1.kills, deaths: mvps.team1.deaths } : null,
     },
     ratings,
+    replayUrl,                                // R25
+    mapId: lobby.mapId,                       // R25
+    mapName: lobby.mapName,
+    mapVoteOptions: lobby.mapVoteOptions,     // R25
     rematchHoldSec: MATCH_END_REMATCH_HOLD_SEC,
   });
   lobby.rematchHoldUntil = Date.now() + MATCH_END_REMATCH_HOLD_SEC * 1000;
@@ -342,7 +507,25 @@ function checkPlayAgainVote(lobby: LobbyState) {
   if (eligible === 0) return;
   const votes = lobby.rematchVotes.size;
   if (votes / eligible >= 0.75) {
-    console.log(`[match] rematch vote passed (${votes}/${eligible}) — restarting`);
+    // R25: tally the map vote — winner is highest tally; ties favour current map.
+    let chosenMap = lobby.mapId;
+    let topVotes = -1;
+    for (const opt of lobby.mapVoteOptions) {
+      const v = lobby.mapVoteTally.get(opt) || 0;
+      if (v > topVotes) { topVotes = v; chosenMap = opt; }
+    }
+    if (chosenMap !== lobby.mapId) {
+      console.log(`[match] map vote: ${chosenMap} (was ${lobby.mapId})`);
+      // Drop cached doc + reload sim with new map
+      lobby.mapDoc = null;
+      setLobbyMap(lobby, chosenMap);
+      if (lobby.mapDoc) lobby.match.loadMap(lobby.mapDoc);
+    }
+    lobby.mapVoteOptions = [];
+    lobby.mapVoteTally = new Map();
+    lobby.mapVoteCast = new Set();
+
+    console.log(`[match] rematch vote passed (${votes}/${eligible}) — restarting on ${lobby.mapId}`);
     lobby.match.resetForRematch();
     lobby.rematchHoldUntil = 0;
     lobby.rematchVotes = new Set();
@@ -359,7 +542,7 @@ function checkPlayAgainVote(lobby: LobbyState) {
       if (!lobby.match) return;
       try { broadcastBinary(lobby, lobby.match.serializeDelta()); } catch {}
     }, 1000 / DELTA_HZ);
-    broadcastJSON(lobby, { type: 'matchStart', lobbyId: lobby.id, players: [...lobby.match.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, armor: p.armor })), serverTime: Date.now(), rematch: true });
+    broadcastJSON(lobby, { type: 'matchStart', lobbyId: lobby.id, mapId: lobby.mapId, mapName: lobby.mapName, players: [...lobby.match.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, armor: p.armor })), serverTime: Date.now(), rematch: true });
   }
 }
 
@@ -409,7 +592,10 @@ const server = Bun.serve({
       // R20: pass lobbyId + uuid (for reconnect) through to ws data
       const lobbyId = url.searchParams.get('lobbyId') || undefined;
       const uuid = url.searchParams.get('uuid') || '';
-      const ok = srv.upgrade(req, { data: { lobbyIdReq: lobbyId, uuid } });
+      // R25: map selection on lobby creation. Only honoured the first time a
+      // given lobbyId is seen (subsequent joins inherit the existing lobby's map).
+      const mapReq = url.searchParams.get('map') || '';
+      const ok = srv.upgrade(req, { data: { lobbyIdReq: lobbyId, uuid, mapReq } });
       return ok ? undefined : new Response('Upgrade failed', { status: 400 });
     }
     if (url.pathname === '/health') {
@@ -468,6 +654,7 @@ const server = Bun.serve({
             id: l.id,
             playerCount: l.members.size,
             maxPlayers: MAX_PLAYERS_PER_LOBBY,
+            mapId: l.mapId,                  // R25: stable id for client routing/thumbnails
             mapName: l.mapName,
             isPublic: l.isPublic,
             matchActive: !!l.match,
@@ -528,6 +715,40 @@ const server = Bun.serve({
         return new Response('?', { status: 400 });
       }).catch(() => new Response('bad json', { status: 400 }));
     }
+    // R25: serve `.tribes-map` JSON. Same-origin static fallback for the renderer.
+    if (url.pathname === '/map') {
+      const id = url.searchParams.get('id') || '';
+      const path = MAP_REGISTRY[id];
+      if (!path) return new Response('unknown map', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+      try {
+        const txt = readFileSync(path, 'utf8');
+        return new Response(txt, { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+      } catch { return new Response('not found', { status: 404 }); }
+    }
+    if (url.pathname === '/maps-list') {
+      return new Response(JSON.stringify(Object.keys(MAP_REGISTRY)), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
+    // R25: replay download by matchId — streams the captured snapshot blob.
+    if (url.pathname === '/replay') {
+      const matchId = url.searchParams.get('matchId') || '';
+      const buf = replayStore.get(matchId);
+      if (!buf) return new Response('replay not found', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+      return new Response(buf, {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'access-control-allow-origin': '*',
+          'content-disposition': `attachment; filename="${matchId}.tribes-replay"`,
+        },
+      });
+    }
+    if (url.pathname === '/replay-list') {
+      const ids = [...replayStore.keys()];
+      return new Response(JSON.stringify(ids), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
     return new Response('Tribes Lobby + Match Server (R20). WebSocket: /ws  Browse: /lobbies', { status: 200 });
   },
   websocket: {
@@ -535,7 +756,13 @@ const server = Bun.serve({
       const wsData = (ws as any).data || {};
       const requestedLobbyId = wsData.lobbyIdReq as string | undefined;
       const incomingUuid = wsData.uuid as string;
+      const requestedMap = (wsData.mapReq as string) || '';
       const lobby = findOrCreateLobby(requestedLobbyId);
+      // R25: only honour ?map= if the lobby has no match yet AND no other map
+      // was already chosen by an earlier connection. Default stays Raindance.
+      if (requestedMap && !lobby.match && lobby.mapId === 'raindance' && requestedMap !== 'raindance') {
+        setLobbyMap(lobby, requestedMap);
+      }
 
       // R20: reconnect path — same uuid as a pending-reconnect entry?
       let reconnected = false;
@@ -675,6 +902,26 @@ const server = Bun.serve({
             checkPlayAgainVote(lobby);
           }
           break;
+        case 'mapVote': {
+          // R25: one vote per player per match-end window. Recasting overwrites.
+          const choice = typeof msg.mapId === 'string' ? msg.mapId : '';
+          if (lobby.mapVoteOptions.includes(choice)) {
+            // remove any prior vote from this player
+            for (const id of lobby.mapVoteOptions) {
+              const cast = (lobby as any)[`__voted_${conn.numericId}`];
+              if (cast === id) lobby.mapVoteTally.set(id, Math.max(0, (lobby.mapVoteTally.get(id) || 0) - 1));
+            }
+            lobby.mapVoteTally.set(choice, (lobby.mapVoteTally.get(choice) || 0) + 1);
+            (lobby as any)[`__voted_${conn.numericId}`] = choice;
+            lobby.mapVoteCast.add(conn.numericId);
+            broadcastJSON(lobby, {
+              type: 'mapVoteUpdate',
+              tally: Object.fromEntries(lobby.mapVoteTally),
+              voters: lobby.mapVoteCast.size,
+            });
+          }
+          break;
+        }
         case 'setClass':
           // R23: client picks Light/Medium/Heavy on deploy screen, sent here
           if (typeof msg.classId === 'number' && msg.classId >= 0 && msg.classId <= 2) {
