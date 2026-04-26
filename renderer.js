@@ -68,6 +68,22 @@ let _lastDiagTime = 0;
 let _r30Diagnosed = false;     // R30.0: dump scene contents exactly once on first real frame
 let _lastPlayerColors = new Array(MAX_PLAYERS).fill(-1);
 
+// R31.1: heightmap copy for terrain-height sampling (buildings & player grounding)
+let _htSize = 0, _htScale = 1, _htData = null;
+function sampleTerrainH(worldX, worldZ) {
+    if (!_htData || _htSize < 2) return 0;
+    const half = (_htSize - 1) * _htScale * 0.5;
+    const gx = (worldX + half) / _htScale;
+    const gz = (worldZ + half) / _htScale;
+    const ix = Math.max(0, Math.min(_htSize - 2, Math.floor(gx)));
+    const iz = Math.max(0, Math.min(_htSize - 2, Math.floor(gz)));
+    const fx = gx - ix, fz = gz - iz;
+    return _htData[iz * _htSize + ix] * (1-fx)*(1-fz)
+         + _htData[iz * _htSize + (ix+1)] * fx*(1-fz)
+         + _htData[(iz+1) * _htSize + ix] * (1-fx)*fz
+         + _htData[(iz+1) * _htSize + (ix+1)] * fx*fz;
+}
+
 // ============================================================
 // Graphics quality tier (driven by settings menu)
 // ============================================================
@@ -139,7 +155,7 @@ function initRenderer() {
     renderer.setPixelRatio(tier.pixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.0;
+    renderer.toneMappingExposure = 0.8;  // R31.1: 1.0→0.8 (set again in initScene)
     renderer.shadowMap.enabled = tier.shadowMap > 0;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     canvas.style.visibility = 'visible';
@@ -166,13 +182,17 @@ function initSky() {
     // was clipping the high luminance values. New values (turbidity=2,
     // rayleigh=1.0, mieG=0.8) produce a more typical clear-blue sky with a
     // visible sun disk and proper horizon haze.
-    u.turbidity.value = 2;
-    u.rayleigh.value = 1.0;
+    // R31.1: sky uniforms tuned up from R30.2's over-muted values.
+    // turbidity=4 gives slight haze; rayleigh=2 recovers the deep blue zenith;
+    // mieG=0.85 sharpens the sun-disk halo. The key change is in initRenderer():
+    // exposure was 0.5 (too dim) → now 0.8 which brings out the dynamic range.
+    u.turbidity.value = 4;
+    u.rayleigh.value = 2.0;
     u.mieCoefficient.value = 0.005;
-    u.mieDirectionalG.value = 0.8;
+    u.mieDirectionalG.value = 0.85;
 
-    // Sun position: azimuth 60° (from north toward east), elevation 35°
-    const azimuth = 60, elevation = 35;
+    // Sun: 55° elevation, roughly south-west — user will see the sun disk clearly
+    const azimuth = 200, elevation = 55;
     const phi = THREE.MathUtils.degToRad(90 - elevation);
     const theta = THREE.MathUtils.degToRad(azimuth - 180);
     sunPos.setFromSphericalCoords(1, phi, theta);
@@ -211,12 +231,12 @@ function initLights() {
     // a sky-blue clear instead of WebGL's default black or window white.
     scene.background = new THREE.Color(0x9bb5d6);
 
-    // R30.2: enable proper tone mapping so the Sky shader's high-dynamic-range
-    // output doesn't clip to flat white. ACESFilmic is the standard for
-    // outdoor PBR scenes; exposure=0.5 prevents over-bright sky.
+    // R31.1: raise exposure 0.5→0.8. R30.2's 0.5 was too dim — it killed
+    // dynamic range and made the sky look flat and washed out ("2003 game").
+    // 0.8 gives proper bright sky + visible sun disk + shadows on terrain.
     if (renderer) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.5;
+        renderer.toneMappingExposure = 0.8;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
 
@@ -357,6 +377,9 @@ function initTerrain() {
     const size = Module._getHeightmapSize();
     const worldScale = Module._getHeightmapWorldScale();
     const heights = new Float32Array(Module.HEAPF32.buffer, ptr, size * size);
+    // R31.1: copy heights so sampleTerrainH() can be called from initBuildings()
+    _htSize = size; _htScale = worldScale;
+    _htData = new Float32Array(heights);   // owned copy, safe after WASM GC
 
     const span = (size - 1) * worldScale;
     const segs = size - 1;
@@ -460,7 +483,11 @@ function createBuildingMesh(type, halfExtents, colorRGB) {
         box.position.y = halfExtents[1];
         box.castShadow = box.receiveShadow = true;
         group.add(box);
-        const panelMat = new THREE.MeshBasicMaterial({ color: 0x40FF80, transparent: true, opacity: 0.75 });
+        // R31.1: dimmed emissive panels — bright 0x40FF80 was the source of
+        // the "large floating green triangle" (panel above terrain while
+        // generator body was buried). Dimmed to 0x1A5530 + StandardMaterial
+        // so PBR lighting governs visibility rather than always-on basic.
+        const panelMat = new THREE.MeshStandardMaterial({ color: 0x1A5530, emissive: 0x0D2A18, emissiveIntensity: 0.6, roughness: 0.6, metalness: 0.0, transparent: false });
         for (let i = 0; i < 4; i++) {
             const angle = i * Math.PI / 2;
             const panelGeom = new THREE.PlaneGeometry(halfExtents[0] * 1.3, halfExtents[1] * 0.9);
@@ -474,7 +501,7 @@ function createBuildingMesh(type, halfExtents, colorRGB) {
         const vent = new THREE.Mesh(ventGeom, accentMat);
         vent.position.y = halfExtents[1] * 2 + 0.05;
         group.add(vent);
-        group.userData = { panels: group.children.slice(1, 5), aliveColor: 0x40FF80, deadColor: 0x404040 };
+        group.userData = { panels: group.children.slice(1, 5), aliveColor: 0x1A5530, deadColor: 0x202020 };
     } else if (type === 1) {
         // TOWER — vertical box with crown
         const boxGeom = new THREE.BoxGeometry(halfExtents[0] * 1.8, halfExtents[1] * 2, halfExtents[2] * 1.8);
@@ -517,10 +544,14 @@ function initBuildings() {
         if (isRock) continue;
         const cr = view[o + 10], cg = view[o + 11], cb = view[o + 12];
         const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
-        mesh.position.set(px, py, pz);
-        // R31: disable frustum culling on all building sub-meshes; unlit accent
-        // children (MeshBasicMaterial) were the ONLY ones rendering when PBR
-        // body meshes were culled due to zero bounding spheres.
+        // R31.1: clamp building Y to terrain so bodies don't sink underground.
+        // The Raindance mission data mission.z → world.y may be below local
+        // terrain height at (px, pz), causing only the unlit accent meshes
+        // (ring, panels) to poke above ground while the PBR body is buried.
+        const terrainAtBuilding = sampleTerrainH(px, pz);
+        const groundedY = Math.max(py, terrainAtBuilding + hy * 0.5);
+        mesh.position.set(px, groundedY, pz);
+        // R31: disable frustum culling on all building sub-meshes
         mesh.traverse(child => { child.frustumCulled = false; });
         scene.add(mesh);
         buildingMeshes.push({ mesh, type });
@@ -807,11 +838,13 @@ function animatePlayer(mesh, vx, vz, jetting, skiing, t, alive) {
         ud.rightArm.rotation.x = swing * 0.7;
         ud.body.rotation.x = 0;
     } else {
+        // R31.1: idle breathing — small bob so stationary soldiers never look frozen
+        const breathe = Math.sin(t * 1.5) * 0.04;
         ud.leftLeg.rotation.x = 0;
         ud.rightLeg.rotation.x = 0;
-        ud.leftArm.rotation.x = 0;
-        ud.rightArm.rotation.x = 0;
-        ud.body.rotation.x = 0;
+        ud.leftArm.rotation.x = breathe;
+        ud.rightArm.rotation.x = breathe;
+        ud.body.rotation.x = breathe * 0.5;
     }
 }
 
@@ -1010,7 +1043,10 @@ function initStateViews() {
     flagView = new Float32Array(buf, Module._getFlagStatePtr(), 2 * flagStride);
 
     const aspect = window.innerWidth / window.innerHeight;
-    camera = new THREE.PerspectiveCamera(90, aspect, 0.5, 5000);
+    // R31.1: near=0.1 (was 0.5). Weapon viewmodel sits at z=-0.45 and was
+    // getting clipped by the near plane. 0.1 allows it through without
+    // significant depth-buffer precision loss at our 5000m far plane.
+    camera = new THREE.PerspectiveCamera(90, aspect, 0.1, 5000);
     // R30.1: place camera high above the basin center so the FIRST FRAME
     // (before WASM spawns the player) shows the terrain + buildings + sky
     // rather than burying the camera at (0,0,0) under the ground.
