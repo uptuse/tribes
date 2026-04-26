@@ -787,10 +787,49 @@ function initTerrain() {
     // fragment shader using dFdx/dFdy of vWorldY, which is C¹-continuous and
     // doesn't introduce per-vertex values that interp across triangle seams.
 
-    // ---- 4. Flat shading via non-indexed, computed face normals ----
+    // ---- 4. Hybrid shading: faceted texture + smooth lighting normals ----
+    // R32.11.1: pure flat shading (face normals) gave the unmistakable Tribes
+    // silhouette but produced harsh diagonal LIGHTING seams at every triangle
+    // edge — with the sun at a low angle, adjacent triangles' brightness jumped
+    // visibly. Fix: compute SMOOTH per-vertex normals from the underlying
+    // heightmap (central-difference dy/dx,dy/dz → normalize) BEFORE we split
+    // the geometry into per-triangle vertices. Store them as a custom
+    // `aSmoothNormal` attribute. Then non-index the geometry (each triangle
+    // gets its own copy of those smooth normals at its 3 corners). In the
+    // material's vertex shader we override `objectNormal` with aSmoothNormal,
+    // so PBR lighting uses smooth normals (no triangle-edge brightness jumps),
+    // while the *geometry* is still faceted (silhouette retained). Texture,
+    // wash, splat, and AO are all unchanged — the per-triangle texture
+    // appearance (the painterly facet feel) is preserved.
+    const smoothNormals = new Float32Array(size * size * 3);
+    for (let j = 0; j < size; j++) {
+        for (let i = 0; i < size; i++) {
+            const idx = j * size + i;
+            // Central differences (clamped at edges) on the heightmap.
+            const iL = Math.max(0, i - 1), iR = Math.min(size - 1, i + 1);
+            const jU = Math.max(0, j - 1), jD = Math.min(size - 1, j + 1);
+            const hL = heights[j * size + iL], hR = heights[j * size + iR];
+            const hU = heights[jU * size + i], hD = heights[jD * size + i];
+            // dx,dz are world-space step sizes between samples
+            const dx = (iR - iL) * worldScale;
+            const dz = (jD - jU) * worldScale;
+            // Surface tangents: tx = (dx, hR-hL, 0), tz = (0, hD-hU, dz)
+            // Normal n = normalize(cross(tz, tx))  (Y-up, +X right, +Z forward)
+            const nx = -(hR - hL) * dz;
+            const ny = dx * dz;
+            const nz = -(hD - hU) * dx;
+            const len = Math.hypot(nx, ny, nz) || 1;
+            smoothNormals[idx * 3]     = nx / len;
+            smoothNormals[idx * 3 + 1] = ny / len;
+            smoothNormals[idx * 3 + 2] = nz / len;
+        }
+    }
+    geom.setAttribute('aSmoothNormal', new THREE.BufferAttribute(smoothNormals, 3));
+
     // toNonIndexed() expands every shared vertex so each triangle has its own
-    // 3 verts → computeVertexNormals() now produces face-direction normals,
-    // i.e. flat shading per triangle (= original Tribes look).
+    // 3 verts; computeVertexNormals() produces face normals (flat shading).
+    // Both `normal` (face) and `aSmoothNormal` (per-original-vertex, copied to
+    // each triangle's 3 verts) are now available — we pick smooth in the shader.
     const flatGeom = geom.toNonIndexed();
     flatGeom.computeVertexNormals();
 
@@ -837,23 +876,29 @@ function initTerrain() {
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };  // R32.10: was 6m, bumping to 9m so each variation zone covers more ground (less obvious tile loop)
 
-        // R32.10.3: aWash and aAO vertex attributes are GONE. Reason: with
-        // toNonIndexed() flat shading, every triangle has its own face normal,
-        // so neighbour-triangle lighting jumps at edges. When per-vertex baked
-        // tints (aWash) and AO (aAO) ALSO vary across the seam, the lighting
-        // jump becomes a clearly visible diagonal LINE between every triangle.
-        // Solution: only aSplat stays per-vertex (it's smooth across world XZ
-        // and re-normalized in the fragment shader). All painterly variation
-        // (color drift, ridge warmth, valley cool, AO shadowing) is computed
-        // per-pixel from world-space noise + view normal in the fragment
-        // shader, so it's C¹-continuous and cannot show triangle-edge seams.
+        // R32.10.3 + R32.11.1: aWash/aAO vertex attrs are gone (replaced by
+        // per-pixel fragment noise). aSplat stays per-vertex (smooth across
+        // world XZ, re-normalized in fragment). NEW in R32.11.1: aSmoothNormal
+        // attribute carries a smooth heightmap-derived normal at each vertex,
+        // and we override `objectNormal` in `<beginnormal_vertex>` so PBR
+        // lighting uses smooth normals — no more triangle-edge brightness jumps.
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>',
                 `#include <common>
                  attribute vec4 aSplat;
+                 attribute vec3 aSmoothNormal;
                  varying vec4 vSplat;
                  varying vec2 vWorldXZ;
                  varying float vWorldY;`)
+            .replace('#include <beginnormal_vertex>',
+                // Override the default `objectNormal` (which would be the flat
+                // face normal computed by computeVertexNormals on the
+                // non-indexed geometry) with our smooth per-vertex normal.
+                // Result: lighting is smooth-shaded; geometry stays faceted.
+                `vec3 objectNormal = aSmoothNormal;
+                 #ifdef USE_TANGENT
+                   vec3 objectTangent = vec3( tangent.xyz );
+                 #endif`)
             .replace('#include <begin_vertex>',
                 `#include <begin_vertex>
                  vSplat = aSplat;

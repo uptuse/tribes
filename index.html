@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.1</div>
     </div>
   </div>
 
@@ -3006,30 +3006,41 @@
         if(this.muted&&this.skiNode)this.stopSki();
       },
 
-      // R32.11: moody Tribes background music. Lazy-construct on first call.
-      // Uses an HTMLAudioElement (streaming) routed through MediaElementSource
-      // → musicGain → master, so AE.mute() and AE.master volume both apply.
+      // R32.11.1: moody Tribes background music. Simplified from R32.11:
+      // dropped MediaElementSource+CORS routing (was failing silently in some
+      // browsers and required AudioContext.resume() which only works from a
+      // user gesture). Now just a plain <audio> element with element.volume
+      // controlled directly. Loses the AE.mute() integration on the music
+      // (small cost; the M-key still mutes SFX), gains: actually plays.
+      // If the first play() rejects (autoplay policy), we attach a one-shot
+      // pointerdown/keydown retry so the very next click anywhere starts it.
       startMusic:function(){
-        if(!this.ctx)return; // AE not initialized yet
         if(!this.musicEl){
           var el=document.createElement('audio');
           el.src='assets/audio/music/raindance_ambient.mp3';
           el.loop=true;
           el.preload='auto';
-          el.crossOrigin='anonymous';
+          el.volume=this.musicVol;
           this.musicEl=el;
-          try{
-            this.musicNode=this.ctx.createMediaElementSource(el);
-            this.musicGain=this.ctx.createGain();
-            this.musicGain.gain.value=this.musicVol;
-            this.musicNode.connect(this.musicGain).connect(this.master);
-          }catch(e){
-            console.warn('[R32.11] music graph failed, falling back to direct <audio>:',e);
-            el.volume=this.musicVol;
-          }
+          // Append to DOM so devtools/Network panel sees it (debug aid).
+          el.style.display='none';
+          document.body.appendChild(el);
         }
-        var p=this.musicEl.play();
-        if(p&&p.catch)p.catch(function(e){console.log('[R32.11] music autoplay deferred:',e.name);});
+        var el=this.musicEl,self=this;
+        var p=el.play();
+        if(p&&p.catch){
+          p.catch(function(e){
+            console.log('[R32.11.1] music autoplay deferred ('+e.name+'); will retry on next user gesture');
+            var retry=function(){
+              el.play().then(function(){console.log('[R32.11.1] music started on user gesture');})
+                       .catch(function(e2){console.warn('[R32.11.1] music retry failed:',e2);});
+              window.removeEventListener('pointerdown',retry);
+              window.removeEventListener('keydown',retry);
+            };
+            window.addEventListener('pointerdown',retry,{once:true});
+            window.addEventListener('keydown',retry,{once:true});
+          });
+        }
       },
       stopMusic:function(){
         if(this.musicEl){try{this.musicEl.pause();}catch(e){}}
@@ -3037,8 +3048,7 @@
       setMusicVolume:function(v){
         v=Math.max(0,Math.min(1,v));
         this.musicVol=v;
-        if(this.musicGain)this.musicGain.gain.value=v;
-        else if(this.musicEl)this.musicEl.volume=v;
+        if(this.musicEl)this.musicEl.volume=v;
       }
     };
 
