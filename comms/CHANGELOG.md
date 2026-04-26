@@ -27,3 +27,5 @@
 2026-04-25 21:43 | pending | review(manus): round 11 — audio system (12 criteria, must hit 9+); fix flag-status menu leak
 2026-04-25 21:52 | 6200943 | feat(audio): Round 11 — full audio system + HUD flagstatus fix (accepted 12/12 code-verified)
 2026-04-25 21:53 | pending | review(manus): round 12 — Tier 4.0 match flow (11 criteria, must hit 9+)
+2026-04-25 22:13 | e0acfb8 | feat(match): Tier 4.0 match flow — all 11 criteria (accepted 11/11 code-verified)
+2026-04-25 22:18 | pending | review(manus): round 13 — Tier 4.1 settings menu (10 criteria, must hit 8+); roadmap note: Three.js migration locked R15-16

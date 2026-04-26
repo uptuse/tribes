@@ -1,82 +1,74 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — game-state machine + HTML overlays; well-scoped, no architecture or visual-3D reasoning needed
+> **MODEL: SONNET 4.6 (1M context) OK** — settings UI, persistence, key-rebind state machine. No 3D / no architectural risk.
 
-# Manus Feedback — Round 12 (Match flow)
+# Manus Feedback — Round 13 (Settings Menu)
 
-> **Reviewing commit:** `6200943` — `feat(audio): Round 11 — full audio system + HUD flagstatus fix`
+> **Reviewing commit:** `e0acfb8` — `feat(match): Tier 4.0 match flow — all 11 criteria`
 > **Live build:** https://uptuse.github.io/tribes/
 
-## Round 11 (Audio system) — accepted 12/12
+## Round 12 (Match flow) — accepted 11/11
 
-Strong delivery, and the **synthesize-in-JS** architectural call was the right one. Procedural `AudioBuffer` generation eliminated asset sourcing entirely, ships in seconds, fits the Tribes 1 retro-synth aesthetic, and zero binary bloat in the repo. Highlights:
+Strong delivery. The state machine (`g_matchState`: WARMUP → IN_PROGRESS → MATCH_END) is properly guarded — `damagePlayer()` blocks during WARMUP and MATCH_END, scoring is gated, transitions are timer-driven. The scoreboard bridge using `EM_ASM(sbRow(...))` and `sbFinish()` with `UTF8ToString` for player names is the right pattern: per-row marshaling instead of one giant JSON blob, which keeps the C++ → JS hop cheap. The MVP scoring formula (`score*3 + kills`) is reasonable and easy to extend.
 
-- AE singleton with master/sfx/ui buses, lazy init on `startGame()` (respects autoplay policy)
-- Three EM_ASM bridges: `playSoundAt`, `playSoundUI`, `updateAudio` — clean C++/JS boundary
-- 3D positional audio via PannerNode HRTF, listener pos+yaw updated per frame
-- Jetpack envelope (30 ms attack, 60 ms release) — no clicks
-- M-key mute toggle as spec'd
-- Flag-status menu leak fixed via `gameStarted` guard
+Spawn protection at 3s with cyan/white 6Hz flash visual is an excellent quality-of-life touch. The warmup countdown audio cues at T<3s plus the "FIGHT!" arpeggio give the match-start moment proper weight. The ESC menu (Resume / Options / Leave Match) plus second-ESC dismiss matches modern shooter conventions, and the `[EVENT]` printf prefix → bottom-left brass toast feed is a tidy, low-overhead game-event log.
 
-User will smoke-test audio and ping if anything sounds off. Moving on.
+**Round 12 ships as-is.** No fixes requested.
 
-## Tier 4.0 — Match Flow (primary work this round)
+## Roadmap update — Three.js migration locked (R15-R16)
 
-Goal: take the game from "sandbox where you can shoot stuff" to "playable CTF match with structure, win condition, and progression". This is the round that turns this into an actual game.
+Per decisions log: after Round 14 (bot AI v2), we migrate the renderer to **Three.js**. This is the architectural pivot that unlocks browser multiplayer with quality visuals at acceptable per-client cost. **Plan ahead:** for Rounds 13-14, anything you write that touches rendering should be additive (new draw calls / new uniforms) rather than tightly entwining new state inside the existing GL pipeline. The migration in R15-R16 will be cleaner if today's work doesn't bury new state inside `drawWorld()` and friends.
 
-### Acceptance criteria — must hit at least 9 of 11
+For Round 13 (this round), no renderer changes are needed — settings is overlay/HTML plus a thin C++ bridge.
 
-1. **Match-state machine** — explicit states: `WARMUP` → `IN_PROGRESS` → `MATCH_END` → `POST_MATCH`. Single `MatchState` enum in C++ with transition guards.
+## Round 13 ask — Tier 4.1: Settings Menu
 
-2. **Round timer** — 10:00 default, configurable from Game Setup screen (already has 3/5/10 caps; add a TIME LIMIT toggle: 5/10/15/Unlimited). Top-center HUD chip in `MM:SS` format. Brass-bordered to match HUD style. Counts down only during `IN_PROGRESS`.
+**Goal:** production-quality settings menu accessible from both the main menu (Options button) and the in-game ESC submenu (Options — currently a stub). All settings persist across reloads.
 
-3. **Win conditions** — match ends when EITHER:
-   - A team reaches the configured cap limit (Tier 2.x already tracks captures)
-   - The round timer hits 00:00 (team with most caps wins; tie → "DRAW")
+### Acceptance criteria — must hit at least 8 of 10
 
-4. **Scoreboard overlay** — TAB key holds open a centered HTML scoreboard. Two team panels (Blood Eagle red, Diamond Sword blue), each showing: Player Name | Caps | Kills | Deaths | Assists | Ping (stub 0). Team total caps + match time remaining at top. Brass styling.
+1. **Settings modal:** matches the existing brass-bordered HTML modal style. Tabbed layout: **Audio / Controls / Video / Gameplay**. ESC dismisses; click-outside dismisses; close button (×) top-right.
 
-5. **Respawn flow** — when player dies: 5-second respawn timer, screen tints dark red, center text `RESPAWNING IN X` countdown, audio cue (ui sound 5 = player_hit, optional). On respawn: spawn at team's spawn point with full HP/energy/default Light armor + Spinfusor.
+2. **Audio tab:** four sliders — Master Volume (0-100, default 80), SFX Volume (0-100, default 100), UI Volume (0-100, default 80), Music Volume (0-100, default 60 — placeholder for future). Sliders update Web Audio gain nodes live (no apply button). Display numeric value next to each slider. A Mute checkbox at the top syncs bidirectionally with the M-key state.
 
-6. **Spawn protection** — 3 seconds of invulnerability after respawn (player flashes faintly cyan/white). HP doesn't drop, but player can still take cover and select inventory.
+3. **Controls tab — Mouse / View:** Sensitivity slider (0.1-3.0×, default 1.0, step 0.1). Invert Y checkbox (default off). FOV slider (60-110°, default 90, step 5). All three live-preview during slider drag.
 
-7. **Match-end screen** — when match ends: full-screen modal "MATCH COMPLETE", winning team in their color (`BLOOD EAGLE WINS` or `DIAMOND SWORD WINS` or `DRAW`), final scores, buttons: `PLAY AGAIN` (resets and goes back to Game Setup) and `MAIN MENU` (returns to title).
+4. **Controls tab — Keybindings:** displays current binding for Forward (W), Back (S), Left (A), Right (D), Jump (Space), Jet (Shift), Ski (R), Reload (V), Use Inventory (F), Scoreboard (Tab), Chat (Y), Team Chat (U), Mute (M), Toggle Map (B), ESC menu (Esc). Each binding row shows a "Click to rebind" button. Rebind flow: click → button text becomes "Press a key…" → next keystroke captures the new binding (Esc cancels). **Conflict detection:** if assigning to an already-used key, show inline warning and reject. **Reset to Defaults** button at bottom of the keybindings section.
 
-8. **Warmup phase** — first 15 seconds of match shows `WARMUP — MATCH STARTS IN 15` countdown, allows movement but no scoring/damage. Transitions to `IN_PROGRESS` automatically. Audio cue at T-3, T-2, T-1, T-0.
+5. **Video tab:** Resolution scale slider (50-150%, default 100 — applies on close, not live, to avoid GPU thrash). Render-distance multiplier (0.5-3.0×, default 1.0, scales frustum-cull distance — live). Shadows toggle (currently no-op stub for R17). VSync info-only ("Browser-controlled"). Show FPS toggle (default off; when on, an fps counter appears top-right).
 
-9. **MVP / standout calls at match end** — top of match-end screen: "MVP: [name] — N caps, M kills". Just label whoever scored highest (caps weighted 3×, kills 1×).
+6. **Gameplay tab:** Crosshair color (preset palette: White / Cyan / Green / Amber / Red, default White). Crosshair scale (0.5-1.5×). Show damage numbers toggle (default on). Show kill feed toggle (default on). Auto-pickup ammo toggle (default on). Jet input mode radio: **Hold-to-jet** (default) vs **Toggle-to-jet**.
 
-10. **Game-event log** — small bottom-left toast feed (separate from kill feed): mid-match events like `RED CAPS! (1-0)`, `WARMUP COMPLETE — FIGHT!`, `4 MINUTES REMAINING`, `BLUE GENERATOR DESTROYED`. Auto-fades 6 sec.
+7. **Persistence:** all settings saved to `localStorage` under key `tribes_settings_v1` as JSON, including a `_v: 1` schema-version field. Loaded on page boot before any system uses them. If a saved key references a setting not in the current schema, ignore it. If a current setting is missing from the save, fall back to default. No crash on malformed JSON — fall back to defaults and log a console warning.
 
-11. **In-game ESC menu** — pressing ESC during match opens a small modal with `RESUME`, `OPTIONS` (stub for Round 13), `LEAVE MATCH` (returns to main menu). Pauses gameplay updates while open.
+8. **Live apply path:** all settings except Resolution Scale take effect immediately on slider/checkbox change. Resolution Scale shows a small "Will apply on close" badge.
 
-### Implementation notes
+9. **C++ bridge:** `Module._setSettings(jsonStr)` called on every change that affects gameplay or render — mouse sensitivity, FOV, render distance, jet input mode, crosshair color/scale, gameplay toggles. Audio settings remain JS-only (Web Audio gain nodes). On the C++ side, parse with the smallest possible JSON pull and apply to the existing globals (`g_mouseSensitivity`, `g_fov`, etc. — create them if they don't exist).
 
-- Match state should live in C++ alongside team scores. JS HUD reads via existing `broadcastHUD()` (extend the 14-arg payload — add `matchState`, `timeRemainingSec`).
-- Respawn timer should be C++-driven; HUD just renders.
-- Spawn protection: simple `playerInvulnerableUntil[]` timestamps array; damage dealt to invulnerable player ignored.
-- Scoreboard is HTML; grab data from a new `getScoreboardJSON()` C++ exported function called from JS on TAB hold.
-- Match-end modal uses same brass aesthetic as Game Setup.
-- ESC menu must NOT pause if match-state is WARMUP or POST_MATCH (those are already non-gameplay).
-- Game-event toast feed reuses kill-feed JS infrastructure (similar styling, shorter list).
+10. **Reset all:** "Reset all settings to defaults" button at the bottom of the modal, with a confirmation: "Reset all settings? This cannot be undone." On confirm: wipe `localStorage.tribes_settings_v1`, reload defaults, push to C++.
 
-### Verification flow
+### Polish notes
 
-Code review for state machine + spawn flow + scoreboard + match-end. User smoke-tests for game feel.
+The settings modal **should not pause gameplay** when opened from the in-match ESC submenu — a player tweaking FOV mid-match should still see the world updating behind the modal. Tab navigation order should be sensible for keyboard users. Don't break the existing M-key mute toggle; the settings-menu mute checkbox should mirror it. When opening the modal from the main menu (not in-match), gameplay isn't running anyway — no special-case needed there.
 
-## Out-of-scope for Round 12
+### What I'll verify on next push
 
-- Settings menu UI — Round 13 (volume, sensitivity, FOV, key remap)
-- Bot AI improvements — Round 14
-- Polish / bug sweep — Round 15
-- Multiplayer matchmaking / lobby — far future (R23+)
+Code-level: settings JSON schema and version handling, persistence read/write path, key-rebinding state machine, conflict detection. Live: open modal from main menu, change a few sliders, reload page, confirm persisted; open modal from in-game ESC, change FOV, confirm immediate update without close.
+
+## Out-of-scope for Round 13
+
+Bot AI improvements (Round 14). Renderer touches (Rounds 15-16, Three.js migration). Music tracks (placeholder slider only — no actual music yet). Voice macros / chat (deferred until multiplayer rounds).
 
 ## Next-up rounds (FYI)
 
-- **Round 13:** Settings menu — Volume sliders (binds to Round 11 audio buses), sensitivity, FOV slider, key remap
-- **Round 14:** Bot AI v2 — pathfinding, role-based behavior (defender/runner/heavy on D), target prioritization, skiing
-- **Round 15:** Polish + bug sweep + mobile/touch input fallback + perf audit
+| Round | Model | Scope |
+|------:|:------|:------|
+| 14 | Sonnet 4.6 (1M) | Bot AI v2 — basic A* on heightmap, CTF role assignment (defender/offense/runner), simple skiing intent (downhill = ski + jet) |
+| 15 | **Opus 4.7 (1M)** | Three.js migration architecture — bridge protocol, parallel renderer behind debug flag |
+| 16 | **Opus 4.7 (1M)** → Sonnet | Three.js cutover — terrain, buildings, armor, projectiles |
+| 17 | Sonnet | Visual quality cascade — PBR, shadows, particles, post-processing |
+| 18 | Opus | Network architecture design — WebRTC vs WebSocket+server, authority model, lag compensation |
 
 ## Token budget
 
-Sonnet 4.6 (1M context). Estimate 1-2 commits, 25-40 min for Claude to deliver 9+ criteria.
+Sonnet 4.6 (1M context). Estimate 1-2 commits, 30-45 min for Claude to deliver 8+ criteria. UI work is verbose but mechanically straightforward.
 
-— Manus, Round 12 (match flow)
+— Manus, Round 13 (settings menu)

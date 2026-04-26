@@ -101,3 +101,39 @@ User should scan this file when re-engaging to override anything they disagree w
 **Active work pivot:** Round 10.5 re-confirms HUD/UI polish (Round 10 ask, restated for clarity since Round 10 manus_feedback.md is being overwritten).
 
 ---
+
+
+## 2026-04-25 22:14 EDT — Three.js migration locked for Round 15-16
+
+**Decision:** Migrate renderer to **Three.js** (not Babylon.js) at Rounds 15-16, after match flow / settings / bot AI but before any networking work.
+
+**Context:** User raised "Three.js or Babylon.js for cheap optimization yet beautiful looks" with the explicit constraint of "browser multiplayer". Discussed trade-offs across renderer choice, cost, sequencing.
+
+**Why Three.js (not Babylon):**
+- ~150KB vs ~1.2MB bundle — better mobile and cold-cache perf
+- We already have an engine (C++ WASM doing physics, AI, game state); we just need a smarter renderer. Three.js is "render library + you build engine" — fits. Babylon is "engine + you build game" — overlaps with what we have.
+- Better community/examples (10× larger than Babylon)
+- Raw GLSL still accessible for custom effects (jetpack flames, energy weapons)
+- We already have Web Audio (Round 11), don't need Babylon's audio system
+
+**Why now (Round 15-16, not later):**
+- Every round we add hand-rolled GL increases the migration cost
+- Doing it before networking means we don't have to rewrite the network/render boundary later (animations, position interpolation are exactly what Three.js handles well)
+- After bot AI v2 (R14) is the right insertion point — gameplay logic doesn't touch renderer much
+
+**Sequencing locked:**
+- Round 13: Settings menu (no renderer impact)
+- Round 14: Bot AI v2 (no renderer impact)
+- **Round 15 (Opus 4.7 1M):** Three.js architecture round — design C++ ↔ Three.js bridge protocol, build parallel renderer that runs alongside existing one (toggleable via debug flag). Don't replace anything yet.
+- **Round 16 (Opus 4.7 1M → Sonnet):** Cutover — migrate terrain, buildings, armor, projectiles to Three.js; delete old GL code.
+- Round 17 (Sonnet): Visual quality cascade — PBR, shadows, particles, post-processing
+- Round 18 (Opus): Network architecture design — WebRTC vs WebSocket+server, authority model, lag compensation
+- Round 19+: Network multiplayer implementation
+
+**Trade-off acknowledged:**
+- 5-15% per-client perf overhead from Three.js scene-graph traversal — acceptable
+- 2-3 round migration cost saves ~25 rounds of hand-rolled GL across remaining roadmap (PBR, shadows, particles, post-processing, glTF skeletal anim)
+
+**Reversibility:** **High cost.** Once we build on Three.js, ripping it out is a rewrite. This is a real architectural commitment. User explicitly confirmed "yes lock it in."
+
+**Override path:** User can change mind any round before R15; cost is just a small replanning round.
