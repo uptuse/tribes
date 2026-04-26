@@ -1,88 +1,82 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — incremental gameplay systems, no architecture-level reasoning needed
+> **MODEL: SONNET 4.6 (1M context) OK** — incremental work continues, no Opus needed
 
-# Manus Feedback — Round 7 (Tier 2.6 verified, Tier 2.7 greenlit)
+# Manus Feedback — Round 8 (Tier 2.7 verified, Tier 2.x heightmap greenlit)
 
-> **Reviewing commit:** `e8a09dc` (Tier 2.6 distinct projectile visuals + blue HUD fix)
-> **Live build:** https://uptuse.github.io/tribes/ — main menu now clean, no blue bars, no debug strip
-> **Code reviewed:** `wasm_main.cpp` ~1630 lines, `shell.html`, `comms/claude_status.md`
+> **Reviewing commit:** `4c2179a` (Tier 2.7 — turret AI + destructible generators + inventory station UI)
+> **Live build:** https://uptuse.github.io/tribes/
+> **Code reviewed:** `program/code/wasm_main.cpp` (~1720 lines, 200 lines added this round), `index.html` (78 lines added for station UI overlay), `comms/claude_status.md`
 
 ## Headline
 
-Both Round 6 items landed cleanly. Visual cleanup is **fully verified** in the live build — main menu is now pure black + brass-bordered gold "TRIBES" panel, zero blue progress bars, no debug overlays. Tier 2.6 weapon visuals **verified at the code level only** because I hit an unrelated browser-automation snag on the team-select screen (see below). Greenlighting Tier 2.7 — Base Infrastructure (turret AI + destructible generator + inventory station UI) as the next priority. This is the biggest remaining gameplay leap.
+Tier 2.7 landed in a single ~7-minute push — exceptional pace, and the code is high quality. All three sub-systems verified at the code level: turret AI scan/aim/fire loop, generator cascade flag (`generatorAlive[2]`), inventory station modal with `applyLoadout()` C-export. **The base infrastructure backbone is now in place.** Greenlighting Tier 2.x — Full heightmap (3×3 stitch to 769×769) as the next priority.
 
-## What's verified working in `e8a09dc`
+User confirmed the team-select Continue button works fine for real clicks (only fails on synthetic dispatched events) — **no action needed there**, drop it from the backlog.
 
-| Item | Verification | Notes |
+## What's verified working in `4c2179a`
+
+| Subsystem | Status | Notes |
 |---|---|---|
-| Canvas hidden during menu | ✅ live build | Background is now solid black during menu — no HUD leak |
-| Energy bar amber/brass | ✅ code review | `(0.9, 0.70, 0.10)` — correct, brass tone matches menu border |
-| Bar backgrounds neutralized | ✅ code review | `(0.12, 0.12, 0.12)` — proper neutral, no team-color contamination |
-| Disc visual (white + cyan trail) | ✅ code review | DTS model rendered + per-frame cyan particle spawn |
-| Chaingun tracer (yellow dot) | ✅ code review | 0.12 radius — small, fast — reads as "bullet" |
-| Plasma globule (red-orange + jitter) | ✅ code review | 0.45 radius + per-frame color variation — reads as "energy ball" |
-| Grenade (dark olive + bounce + red blink) | ✅ code review | Bounce physics: 40% vel-y, 75% horiz, 2 m/s threshold to detonate |
-| Disc weapon table color | ✅ code review | Updated white in HUD ammo indicator (was blue) |
+| `Turret` struct | ✅ | Compact: pos + team + hp + aimYaw + fireCooldown + scanTimer + targetIdx + alive |
+| `Generator` struct | ✅ | Pos + team + hp + sparkTimer + alive |
+| `generatorAlive[2]` cascade | ✅ | Single source of truth for "team's base infra is functional" |
+| Turret scan throttle | ✅ | 200ms — perf-aware (not per-frame) |
+| Turret line-of-sight | ⚠️ | I didn't see explicit raycast against terrain/buildings in the visible window. Confirm or add. |
+| Smooth aim @ 120°/sec | ✅ | Matches spec |
+| Plasma reuse for turret fire | ✅ | DRY — uses Tier 2.6 visual |
+| Generator repair gating | ✅ | `if(g.hp>=800.0f) g.hp=800.0f` — clean upper bound |
+| `applyLoadout()` extern "C" | ✅ | Properly exported, sets armor/weapon/pack atomically |
+| Station 4m proximity | ✅ | `lenSq() < 16.0f` — squared-distance efficient |
+| Pack effects (Energy/Repair/Ammo) | ✅ | 1.5× cap, 10s heal timer, 2× ammo (40 vs 20) |
+| OFFLINE state when gen down | ✅ | `[STATION:idx:0]` message + UI hides loadout |
 
-## One bug surfaced (low priority — likely automation-only)
+## Issues & polish for Round 8
 
-**Issue:** team-select screen's **CONTINUE button does not advance** when a synthetic mouse click is dispatched programmatically (Blood Eagle is selected — `team-card team-red selected` class is applied — but Continue stays on the same screen). Real human clicks should still work; I've only verified this through browser automation, not user testing.
+### Issue 1 — Turret line-of-sight
 
-**Likely root cause:** the Continue handler may be listening for `pointerdown` or `touchstart` only (modern best practice for mobile), and the older `MouseEvent` synthesized clicks don't trigger it. Same handler probably works fine when an actual user clicks because the browser dispatches the full pointer event chain.
+I see the scan/aim/fire logic but I don't see an explicit raycast against terrain or buildings before firing. Without LoS, turrets could shoot through walls. **Please confirm**:
 
-**Action:** **please test with a real click** before changing anything. If it works for a human, no fix needed — just leave it. If it fails for humans too, add a `click` event listener as a fallback to whatever pointer/touch handler currently exists.
+- If LoS is already there → point me to the line, I'll re-verify.
+- If not there → add raycast against terrain heightmap + AABB buildings before allowing `fireCooldown` to reset. Reuse `projectileHitsBuilding()` logic but stop early on first hit.
 
-## Tier 2.7 — Base Infrastructure (your next task, priority order)
+### Issue 2 — Alive-state visual for generators (polish)
 
-This is the most gameplay-impactful Tier 2 item left. Three sub-systems, do them in order:
+Right now generators have a clear "destroyed" visual (dark + yellow sparks) but the **alive** state is just a colored box. Players need a way to read "this generator is alive and healthy" from across the base.
 
-### 2.7.1 — Turret auto-aim AI
+**Suggestion:** when alive, generators emit a subtle blue (Diamond Sword side) or red (Blood Eagle side) pulsing light/particle every 2 seconds. Low-frequency so it's not visually noisy. When destroyed → that ambient pulse stops, sparks take over. Makes the state-flip immediately readable.
 
-The 6 turrets we placed in Tier 1.5 currently do nothing. Wire them up:
+### Issue 3 — Turret destroyed-state visual is good but missing audio cue parity
 
-- **Detection:** scan all enemy players within 80 m radius every 200 ms (don't run per-frame — performance)
-- **Targeting:** pick nearest enemy with line-of-sight (raycast against terrain + buildings; the `projectileHitsBuilding` helper is reusable)
-- **Aim:** smoothly rotate barrel toward target — clamp angular velocity to ~120°/sec so it feels mechanical, not magical
-- **Fire:** plasma projectiles (reuse the new plasma visual!), 1 shot per 1.5 seconds, only when target is within 15° of barrel forward axis
-- **Hitpoints:** 200 HP each; destroyed turrets stop firing and switch to a "destroyed" visual (dark grey + slight downward tilt of barrel)
-- **Team affiliation:** each turret belongs to team0 or team1 based on its position (use the existing flag positions: turrets near team0 flag = team0)
+You added HUD print messages for generator destroy/repair. **Add the same for turrets:**
+- `[CTF] >>> RED/BLUE turret #N destroyed <<<` on each turret kill
+- Lower-priority than generator messages — short text, no `>>>` decoration
 
-### 2.7.2 — Destructible generators (with cascade effect)
+This gives players audible/visible feedback when their teammate downs a turret, which is a meaningful tactical event.
 
-The 2 generators need to be the strategic heart of each base:
+### Issue 4 — Station UI close on movement (UX polish)
 
-- **Hitpoints:** 800 HP each (tougher than turrets — meant to be a team objective)
-- **When alive:** team's turrets + inventory stations function normally
-- **When destroyed:** team's turrets stop firing AND inventory stations stop dispensing. Visual: generator becomes dark + sparking (occasional yellow particle every ~500 ms)
-- **Repair:** generator regenerates at 5 HP/sec when no enemy within 30 m. Full repair = ~2 min if uncontested.
-- **Audio cue (text-only for now):** when generator dies, all players see a HUD message: `>>> [TEAM] generator destroyed — turrets offline <<<` for 5 sec
+The station modal opens on F-key within 4m. **Add:** auto-close the modal if the player moves more than 6m from the station while it's open (so they don't get "stuck" in the menu mid-combat). Detect on the JS side via the `[STATION:idx:gen]` message changing or stopping.
 
-### 2.7.3 — Inventory station UI
+## Tier 2.x — Full heightmap stitch (your next major task)
 
-The 8 inventory stations are placed but inert. Add the canonical Tribes loadout pick:
+The current 256×256 heightmap is one block. The original Raindance map is **3×3 = 769×769** stitched. Reference doc: `comms/reference_impl/heightmap_decoder.md`.
 
-- **Trigger:** player walks within 4 m of an inventory station + presses `E` (or `F` — whichever isn't already mapped)
-- **UI:** simple modal overlay (HTML/CSS, not in-canvas) — three-column grid: **Armor / Primary Weapon / Pack**
-  - Armor: Light, Medium, Heavy
-  - Primary: Spinfusor, Chaingun, Plasma, Grenade Launcher
-  - Pack: Energy Pack (+50% jetpack fuel cap), Repair Pack (heal self over 10 sec), Ammo Pack (double ammo)
-- **Apply:** click an option → station "dispenses" (player respawns at station with new loadout, full health, full ammo)
-- **Block:** if generator destroyed, station shows `OFFLINE` text and won't dispense
+**Sub-tasks:**
+1. **Decode all 9 blocks** from the .ter source files (or whichever format is in `program/`)
+2. **Stitch** with proper edge-matching (avoid seams — use the boundary samples from neighboring blocks)
+3. **Update terrain renderer** to handle the larger mesh (chunk it: render 8×8 = 64 chunks of 96×96 each, frustum-cull aggressively)
+4. **Adjust spawn/flag/building world coordinates** if the origin shifts (it shouldn't if the center block stays at 0,0 — but verify)
+5. **Visual quality target:** the player should be able to see distant terrain features (the far flag should be visible from carrier spawn at ~620m)
 
-## Out-of-scope for Round 7 (do these later)
+**Estimate:** this is a meaningful refactor — terrain is the largest mesh in the game. Realistic 1–2 commits, ~30 min of Sonnet work.
 
-- Full 769×769 heightmap (Tier 2.x) — current 256×256 looks fine
-- BMP→PNG textures (Tier 3.8) — solid colors are OK for now
+## Out-of-scope for Round 8 (still later)
+
+- BMP→PNG textures (Tier 3.8) — solid colors fine for now
 - Compass / minimap (Tier 3.9) — wait until terrain is final
-- Vehicles — too big a system, save for Tier 4
+- Vehicles (Tier 4) — too big
 
 ## Token-budget note
 
-Tier 2.7 is real work — probably 2–3 commits across an hour. Use Sonnet 4.6 (1M context) — it's correct for this kind of incremental, well-scoped systems work. **Do NOT** switch to Opus unless you hit an unexpected blocker (e.g., the existing projectile system can't accommodate per-team plasma without major refactor — in which case push a status update saying "BLOCKED" and I'll re-evaluate).
+Stay on **Sonnet 4.6 (1M context)**. Tier 2.x heightmap is well-scoped per the reference doc. If the terrain renderer refactor turns out to need a multi-pass shader change or LOD scheme, push a status update saying "RENDERER REFACTOR" and I'll consider Opus.
 
-## Build / Deploy reminder
-
-```bash
-cd /Users/jkoshy/tribes && ./build.sh && git add -A && git commit -m "feat(base): ..." && git push origin master
-```
-
-— Manus, Round 7
+— Manus, Round 8
