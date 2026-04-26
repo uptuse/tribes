@@ -651,19 +651,31 @@ function createCanonicalMesh(datablock, teamIdx) {
         const hx = 1.5, hy = 2.0, hz = 1.5;
         const body = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2), baseMat);
         body.position.y = hy; body.castShadow = body.receiveShadow = true; g.add(body);
-        // Side panels with team glow
+        // R32.6: per-instance emissive material so panel pulse intensity is
+        // independent per team. Color comes from team accent (already factored
+        // into accentMat by caller); here we clone to a Standard material with
+        // emissive identical to the base color so emissiveIntensity actually
+        // controls glow.
+        const teamColor = (accentMat.color && accentMat.color.getHex) ? accentMat.color.getHex() : 0xCC4444;
+        const panelMat = new THREE.MeshStandardMaterial({
+            color: teamColor, emissive: teamColor, emissiveIntensity: 0.55,
+            roughness: 0.5, metalness: 0.1,
+        });
+        const panels = [];
         for (let i = 0; i < 4; i++) {
             const a = i * Math.PI / 2;
-            const panel = new THREE.Mesh(new THREE.PlaneGeometry(hx * 1.4, hy * 1.4), accentMat);
+            const panel = new THREE.Mesh(new THREE.PlaneGeometry(hx * 1.4, hy * 1.4), panelMat);
             panel.position.set(Math.sin(a) * (hx + 0.02), hy * 1.1, Math.cos(a) * (hz + 0.02));
             panel.lookAt(panel.position.x * 100, panel.position.y, panel.position.z * 100);
             g.add(panel);
+            panels.push(panel);
         }
         // Top vent + chimney
         const vent = new THREE.Mesh(new THREE.BoxGeometry(hx * 1.6, 0.2, hz * 1.6), armMat);
         vent.position.y = hy * 2 + 0.1; g.add(vent);
         const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.9, 8), armMat);
         stack.position.y = hy * 2 + 0.65; g.add(stack);
+        g.userData = { panels: panels };
         return g;
     }
 
@@ -1040,8 +1052,10 @@ async function initBaseAccents() {
         const repairCrossMat = new THREE.MeshStandardMaterial({ color: 0xF0F0F0, roughness: 0.4, metalness: 0.1, emissive: 0x404040, emissiveIntensity: 0.2 });
         const standMat    = new THREE.MeshStandardMaterial({ color: 0x4a463e, roughness: 0.7, metalness: 0.5 });
 
-        // Helper: VehiclePad — circular landing pad with quadrant stripes
-        const makeVehiclePad = () => {
+        // Helper: VehiclePad — circular landing pad with quadrant stripes.
+        // R32.6: center disc gets a per-team emissive material so it pulses
+        // visibly from the air. Team color comes from teamIdx in caller.
+        const makeVehiclePad = (teamIdx) => {
             const g = new THREE.Group();
             const base = new THREE.Mesh(new THREE.CylinderGeometry(5.0, 5.4, 0.35, 24), padBaseMat);
             base.position.y = -0.10; base.castShadow = false; base.receiveShadow = true; g.add(base);
@@ -1052,9 +1066,15 @@ async function initBaseAccents() {
                 const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.04, 4.2), padStripeMat);
                 stripe.position.y = 0.16; stripe.rotation.y = q * Math.PI / 4; g.add(stripe);
             }
-            // Center disc
-            const center = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.06, 16), padStripeMat);
+            // Center disc — emissive in team color so it reads as a landing target
+            const teamColor = TEAM_COLORS[teamIdx] || 0x808080;
+            const centerMat = new THREE.MeshStandardMaterial({
+                color: teamColor, emissive: teamColor, emissiveIntensity: 0.30,
+                roughness: 0.5, metalness: 0.1,
+            });
+            const center = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.1, 0.06, 16), centerMat);
             center.position.y = 0.18; g.add(center);
+            g.userData = { center: center };
             return g;
         };
 
@@ -1108,13 +1128,15 @@ async function initBaseAccents() {
             // VehiclePads (1 per team in canonical) — from team static_shapes
             (t.static_shapes || []).forEach(s => {
                 if (s.datablock !== 'VehiclePad') return;
-                const pad = makeVehiclePad();
+                const pad = makeVehiclePad(teamIdx);
                 const w = toWorld(s.position);
                 pad.position.set(w.x, w.y, w.z);
                 const ry = -(s.rotation?.[2] ?? 0);
                 pad.rotation.y = ry;
                 pad.traverse(c => { c.frustumCulled = false; });
-                pad.userData = { kind: 'vehiclepad', team: teamIdx, baseY: w.y };
+                // Preserve center handle from the helper
+                const centerRef = pad.userData.center;
+                pad.userData = { kind: 'vehiclepad', team: teamIdx, baseY: w.y, center: centerRef };
                 baseAccentsGroup.add(pad);
                 placed++;
             });
@@ -2100,7 +2122,20 @@ function syncCamera() {
 // pulse, flag stands respond to their team's flag-state via syncFlags hook.
 // ============================================================
 function syncCanonicalAnims(t) {
-    // Buildings (turrets, sensors)
+    // R32.6: read live flag state per team so flag stands can react when the
+    // flag is taken (state=1=carried, 2=dropped). flagView is the Float32 view
+    // into g_rFlags; team is at offset 3, state at offset 4.
+    const flagStateByTeam = [0, 0]; // index = team
+    if (flagView && flagStride) {
+        for (let i = 0; i < 2; i++) {
+            const fo = i * flagStride;
+            const ft = flagView[fo + 3] | 0;
+            const fs = flagView[fo + 4] | 0;
+            if (ft === 0 || ft === 1) flagStateByTeam[ft] = fs;
+        }
+    }
+
+    // Buildings (turrets, sensors, generators)
     for (const b of buildingMeshes) {
         const canon = b.mesh.userData && b.mesh.userData.canon;
         if (!canon) continue;
@@ -2114,9 +2149,18 @@ function syncCanonicalAnims(t) {
         } else if (canon.datablock === 'PulseSensor' && b.mesh.userData.dish) {
             // Continuous dish rotation around its support pole
             b.mesh.userData.dish.rotation.y = t * 0.9;
+        } else if (canon.datablock === 'Generator' && b.mesh.userData.panels) {
+            // R32.6: gentle emissive pulse on the team-color accent panels so a
+            // running generator visibly hums. Phase keyed off team so two bases
+            // don't look in lock-step.
+            const teamPhase = (canon.team === 1) ? Math.PI : 0;
+            const ipulse = 0.55 + 0.25 * Math.sin(t * 1.8 + teamPhase);
+            for (const p of b.mesh.userData.panels) {
+                if (p.material) p.material.emissiveIntensity = ipulse;
+            }
         }
     }
-    // Base accents (RepairPack bob, flag stand pulse)
+    // Base accents (RepairPack bob, flag stand pulse, vehicle pad center)
     if (baseAccentsGroup) {
         for (const obj of baseAccentsGroup.children) {
             const ud = obj.userData || {};
@@ -2125,11 +2169,23 @@ function syncCanonicalAnims(t) {
                 obj.position.y = ud.baseY + Math.sin(t * 1.6 + phase) * 0.10;
                 obj.rotation.y = t * 0.6 + phase;
             } else if (ud.kind === 'flagstand' && ud.disc) {
-                // Subtle emissive pulse — 0.20 baseline, +/- 0.20 over time. If
-                // we ever wire flag-state in, swap intensity to ~1.0 when flag is
-                // away from home (signaling alert).
-                const homeIntensity = 0.20 + 0.10 * (0.5 + 0.5 * Math.sin(t * 1.4 + ud.team * Math.PI));
-                if (ud.disc.material) ud.disc.material.emissiveIntensity = homeIntensity;
+                // R32.6: react to live flag state — calm pulse at home, intense
+                // alert pulse when flag is missing from base.
+                const fstate = flagStateByTeam[ud.team] || 0;
+                let intensity;
+                if (fstate === 0) {
+                    intensity = 0.20 + 0.10 * (0.5 + 0.5 * Math.sin(t * 1.4 + ud.team * Math.PI));
+                } else {
+                    // ALERT: rapid pulse, much brighter
+                    intensity = 0.60 + 0.40 * (0.5 + 0.5 * Math.sin(t * 5.0));
+                }
+                if (ud.disc.material) ud.disc.material.emissiveIntensity = intensity;
+            } else if (ud.kind === 'vehiclepad' && ud.center) {
+                // R32.6: subtle team-color glow on the pad's center disc so the
+                // landing target is visible from the air.
+                const teamPhase = (ud.team === 1) ? Math.PI : 0;
+                const i = 0.30 + 0.15 * Math.sin(t * 1.0 + teamPhase);
+                if (ud.center.material) ud.center.material.emissiveIntensity = i;
             }
         }
     }
