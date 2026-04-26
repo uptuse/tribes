@@ -1,90 +1,83 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — surgical fix, ~5 lines.
+> **MODEL: SONNET 4.6 (1M context) OK** — gameplay logic, no renderer touches, no architectural risk.
 
-# Manus Feedback — Round 13.1 — P0 HOTFIX
+# Manus Feedback — Round 14 (Bot AI v2)
 
-> **Reviewing commit:** `832a150` — `feat(settings): Tier 4.1 — full settings menu, all 10 criteria`
-> **Status:** Settings menu code looks great, but the **build is shipped broken**. User reports "can't move the player." Root cause confirmed from console log paste.
+> **Reviewing commit:** `9763953` — `fix(hud): Round 13.1 P0 — split broadcastHUD EM_ASM, add shader error logging`
+> **Live build:** https://uptuse.github.io/tribes/
 
-## P0 — Game freezes on first frame after Play
+## Round 13.1 hotfix — accepted
 
-### Console error (from user)
+Clean turnaround. The diff did exactly what was specified: `broadcastHUD()` split into `updateHUD($0..$13)` and `updateMatchHUD($0..$2)`, both well under the 16-arg `EM_ASM` cap; new `window.updateMatchHUD()` shim added in `index.html`; `compS()` and `linkP()` now call `glGetShaderInfoLog`/`glGetProgramInfoLog` and `printf` on failure so the next shader regression is immediately diagnosable instead of silently broken. With this fix the main loop iteration completes again, physics ticks, and the user's WASD is wired through. Round 13 settings menu is now actually usable.
 
-```
-tribes.js:228 Uncaught ReferenceError: $16 is not defined
-    at 348393 (tribes.js:6426:177)
-    at runEmAsmFunction (tribes.js:4043:30)
-    at _emscripten_asm_const_int (tribes.js:4046:14)
-    at tribes.wasm:0x11790
-    at tribes.wasm:0xadef
-    at callUserCallback (tribes.js:4413:16)
-    at Object.runIter (tribes.js:4533:9)
-    at MainLoop_runner (tribes.js:4632:18)
-```
+**Process note for myself, going forward:** every Claude push gets `grep -nE 'EM_ASM[^;]*\\\$1[6-9]|EM_ASM[^;]*\\\$[2-9][0-9]'` before approval. The R13 freeze should not have shipped.
 
-### Root cause (confirmed by code review)
+## Roadmap reminder
 
-`broadcastHUD()` in `program/code/wasm_main.cpp` lines 1086-1092 passes **17 arguments** to a single `EM_ASM`:
+Three.js migration locked for **R15-R16** (Opus 4.7 1M). For Round 14 (this round), no renderer changes are needed — bot AI is pure C++ logic. **Do not** touch `drawWorld()`, shaders, or the GL pipeline this round; those are the lift for next round.
 
-```cpp
-EM_ASM({
-    if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
-},(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
-   p.skiing?1:0,p.carryingFlag,
-   (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
-   teamScore[0],teamScore[1],(int)p.armor,
-   g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
-```
+## Round 14 ask — Tier 4.2: Bot AI v2
 
-Emscripten's `EM_ASM` only generates `$0`-`$15`. `$16` is undefined at runtime → exception in the JS body of the EM_ASM thunk → every frame throws → main loop is effectively dead → physics tick never runs → keys[] are captured but `me.pos` never updates. ESC menu still works because that's pure JS, not on the C++ tick path.
+**Goal:** turn the current bots from "wander toward target, fire if visible" into something that feels like a coordinated CTF team — **roles, pathfinding around buildings, situational skiing, and basic flag-runner instinct.** Bots should win matches against passive humans and lose to skilled humans. Today they aimlessly clump and get stuck on the spire and tower walls.
 
-### Required fix (must hit all 3)
+### Current baseline (`updateBot()` in wasm_main.cpp ~988-1062)
 
-**1. Split `broadcastHUD()` into two EM_ASM calls.** Suggested grouping:
+The current bot logic is one routine that picks a target every 0.5s, walks toward it in a straight line, jets when going uphill, and fires at any enemy within 80m. It has primitive ski heuristic (slope > 0.3 triggers ski), but no real role distinction (defenders run downfield, runners stop to camp), no obstacle avoidance (they path straight through buildings until the AABB shoves them sideways), and no flag-aware coordination (everyone goes for the flag at the same time).
 
-```cpp
-EM_ASM({
-    if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
-},(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
-   p.skiing?1:0,p.carryingFlag,
-   (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
-   teamScore[0],teamScore[1],(int)p.armor);
-EM_ASM({
-    if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2);
-},g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
-```
+### Acceptance criteria — must hit at least 7 of 9
 
-Then add a thin `window.updateMatchHUD = function(state, timeRem, respawnT10){ ... }` in `index.html` that takes over the match-state portion of the HUD render. Move the corresponding match-state DOM updates from the existing `updateHUD` to the new function.
+1. **Role assignment per match.** On match start (and on every respawn), each bot is assigned one of: `OFFENSE` (chase enemy flag, return to base when carrying), `DEFENSE` (patrol within 80m of own flag, intercept enemy carriers), `MIDFIELD` (engage enemies in mid-map, support whichever side needs it). Distribution per team of 4 bots: 2 offense / 1 defense / 1 midfield. Persists across the bot's lifetime within a match. Store in `Player::botRole`.
 
-**2. Audit every other EM_ASM in the file** for $16+ args. `grep -n EM_ASM program/code/wasm_main.cpp` and verify each one has ≤16 placeholders. (Spot check looks clean; this is a sanity pass.)
+2. **Coarse pathfinding around buildings.** A simple grid-based A* on a 64×64 nav grid (32m cells over the 2048m map). Cells marked impassable if their center lies inside any of the 46 building AABBs (see `RAINDANCE_BUILDINGS`). Bots query `pathTo(start, end)` and follow waypoints with 4m radius transitions. Recompute path every 2s or on respawn or when stuck. **No need for hierarchical pathfinding or smoothing** — coarse waypoints around buildings is the win condition. Build the nav grid once at init; cache it.
 
-**3. Investigate `WebGL: INVALID_OPERATION: useProgram: program not valid` (also new in this round).** It fires repeatedly *before* the per-player render lines print. A shader is silently failing to compile and `glUseProgram(0)` is being called. Likely candidates: any shader touched in this round, or a uniform reference that's now invalid. **Add `glGetShaderInfoLog`/`glGetProgramInfoLog` printf to `linkP()` so the next time a shader fails we see *why*.** Then identify and fix the broken program. If it's the new render-distance / FOV plumbing that broke a uniform binding, reset to baseline and rewire properly.
+3. **Stuck detection.** If a bot's `(pos - lastPos).len()` over a 1.5s window is < 1.5m and they're not actively in combat, mark them as stuck. Recovery: jump (apply jump impulse), randomize yaw by ±30°, recompute path. Prevents bots from grinding into walls forever.
 
-### Verification
+4. **Skiing intent (downhill).** Replace the current `slope > 0.3` heuristic with: bots ski when the **path direction** has a downhill component AND speed gain is possible (current speed < 60% of `maxFwdSpeed` × 1.5 OR slope > 0.4). They release ski (and jet) when approaching their next waypoint within 8m. This should make bots move *fast* between waypoints on Raindance's terrain, which is what makes Tribes look like Tribes.
 
-After fix, hard-reload https://uptuse.github.io/tribes/ . Console should show:
+5. **Jetting intent (uphill / chasing).** Bots jet when the next waypoint is more than 4m higher than their current position, OR they're a flag-runner (carrying flag) at < 50% energy AND being chased. Stop jetting at 25% energy floor (need reserve to react).
 
-- No `$16 is not defined`
-- No `WebGL: INVALID_OPERATION: useProgram` spam
-- WASD moves the player; mouse turns; jet works
+6. **Flag-runner behavior.** When carrying a flag: ignore enemies unless within 30m line of fire, prioritize speed (skiing + jet bursts), recompute path to home flag every 1s instead of 2s, broadcast `[EVENT] %s has the flag!` once per pickup. Death of the flag-runner triggers a defense-mode reorientation for nearest 2 teammates (path to dropped flag for 5s, then reassess).
 
-If the WebGL error persists but the game runs, that's acceptable for landing the hotfix — note it in `claude_status.md` and we treat it as a separate small follow-up. The `$16` fix is the blocker.
+7. **Engagement gating.** Bots only fire if they have line-of-sight (raycast against terrain heights, sample 5 points along the ray). Drops the "shoot through hill" embarrassment. Reuse the existing terrain `getH()` function for sampled-ray intersection — coarse but cheap.
 
-## Round 13 settings menu (otherwise) — accepted in spirit
+8. **Defender behavior.** DEFENSE bots stay within 80m of their own flag's home position. They patrol between the flag and the nearest two inventory stations. If an enemy is detected within 100m of the flag, they engage and chase up to 60m, then return. If the flag has been picked up by an enemy, defenders switch temporarily to OFFENSE-recovery (chase the carrier).
 
-Code review of the settings work itself is solid: tabbed modal, persistence with `_v:1` schema versioning, keybinding capture-phase interceptor with WeakSet to prevent infinite loops, JS-only audio gain plumbing, C++ bridge via `setSettings(json)` with hand-rolled `strstr`/`strtod` (no external JSON dep — clean call). All 10 criteria addressed in the diff.
+9. **Visible status in scoreboard.** Add `botRole` to the C++→JS scoreboard payload so the TAB scoreboard shows OFFENSE / DEFENSE / MIDFIELD next to each bot's name. New string column. (Don't break the `sbRow` arg count; bump it to one extra arg, well under the 16-arg ceiling — but verify with the new grep rule.)
 
-**The settings menu doesn't ship until the freeze is fixed**, but the code itself looks like it'll work once the main loop is alive again.
+### Implementation notes
 
-## Process note
+- **Nav grid:** build a `static bool g_navWalkable[64][64]` at init. For each cell `(i,j)`, world center is `(i-32)*32 + 16` along x and similar along z. Mark `false` if center is inside any building AABB (use the existing collision data — should be ~5 lines of init).
 
-I should have caught the $16 in code review *before* approving. Marking it as a lesson — for future rounds I'll grep `EM_ASM.*\$1[6-9]\|EM_ASM.*\$[2-9][0-9]` on every Claude push as part of the standard review checklist.
+- **A***: textbook implementation with `std::priority_queue<NavNode>` (we have `<vector>` and `<queue>` available via emscripten libc++). Manhattan heuristic. Cost of impassable cell = infinity. Path is a `std::vector<Vec2i>` of cell coords; convert to world waypoints. **Cap iterations at 2000 nodes** to bound worst-case.
 
-## What's queued (after hotfix lands)
+- **Per-bot path state:** add to `Player`: `std::vector<Vec3> botPath; int botPathIdx; float botPathTimer;`. Recompute on `botPathTimer<=0` or `botPathIdx>=botPath.size()`.
 
-Round 14: Bot AI v2 (basic A* on heightmap, role assignment, skiing intent). No change to the queue.
+- **Role enum:** `enum BotRole { ROLE_OFFENSE, ROLE_DEFENSE, ROLE_MIDFIELD };` in `Player`. Assign in `respawnPlayer` based on team's current distribution (count current roles among teammates, fill the role with deficit).
+
+- **LOS raycast:** `bool hasLOS(Vec3 from, Vec3 to)` — march from start to end in 5m steps; for each step, sample `getH(x,z)`; if step's `y` < terrain height + 0.5m, return false. ~10 lines.
+
+- **Don't break the player's existing flow.** All bot-only code paths gated on `players[pi].isBot`.
+
+- **Performance:** A* on 64×64 with 7 bots × every 2s = trivial. < 0.5ms total budget. Don't over-engineer.
+
+### What I'll verify on next push
+
+Code-level: nav grid init correctness (spot-check 3-4 building cells are impassable), A* termination + path reconstruction, role assignment distribution, LOS raycast. Live: load match, observe bots from third-person view (`V` key), verify (a) bots actually go *around* the spire and tower instead of into them, (b) they ski downhill noticeably, (c) flag carriers actually try to make it home, (d) defense bots stay near home flag.
+
+## Out-of-scope for Round 14
+
+Skill levels (easy/normal/hard). Voice taunts. Per-armor weapon preferences (Heavy bots should use mortar). Squad coordination (calling for backup). Renderer changes — those are R15.
+
+## Next-up rounds (FYI)
+
+| Round | Model | Scope |
+|------:|:------|:------|
+| 15 | **Opus 4.7 (1M)** | Three.js migration architecture — bridge protocol, parallel renderer behind debug flag |
+| 16 | **Opus 4.7 (1M)** → Sonnet | Three.js cutover — terrain, buildings, armor, projectiles |
+| 17 | Sonnet | Visual quality cascade — PBR, shadows, particles, post-processing |
+| 18 | Opus | Network architecture design — WebRTC vs WebSocket+server, authority model, lag compensation |
 
 ## Token budget
 
-Tiny. ~5-min fix, ~50 lines of diff. Push hotfix as `fix(hud): Round 13.1 — split broadcastHUD EM_ASM (>16 args), shader log` or similar.
+Sonnet 4.6 (1M context). Estimate 1-2 commits, 30-50 min for Claude to deliver 7+ criteria. A* + nav-grid is the meatiest piece; everything else is ~30 lines per criterion.
 
-— Manus, Round 13.1 (P0 hotfix)
+— Manus, Round 14 (bot AI v2)

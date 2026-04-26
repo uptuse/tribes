@@ -31,3 +31,5 @@
 2026-04-25 22:18 | pending | review(manus): round 13 — Tier 4.1 settings menu (10 criteria, must hit 8+); roadmap note: Three.js migration locked R15-16
 2026-04-25 22:31 | 832a150 | feat(settings): Tier 4.1 — full settings menu, all 10 criteria (BUILD BROKEN — EM_ASM $16 ref crashes main loop)
 2026-04-25 22:38 | pending | review(manus): round 13.1 P0 HOTFIX — split broadcastHUD EM_ASM (>16 args), add shader compile log
+2026-04-25 22:42 | 9763953 | fix(hud): Round 13.1 P0 — split broadcastHUD EM_ASM, add shader error logging (accepted; main loop alive again)
+2026-04-25 22:55 | pending | review(manus): round 14 — Tier 4.2 bot AI v2 (9 criteria, must hit 7+); A* nav grid, roles, skiing intent, LOS gating
