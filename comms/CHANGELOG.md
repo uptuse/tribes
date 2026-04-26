@@ -35,3 +35,5 @@
 2026-04-25 22:55 | pending | review(manus): round 14 — Tier 4.2 bot AI v2 (9 criteria, must hit 7+); A* nav grid, roles, skiing intent, LOS gating
 2026-04-25 23:03 | 2277fcc | feat(bots): Tier 4.2 — Bot AI v2, all 9 criteria (accepted 9/9 PROVISIONAL; user confirmed real Chrome renders fine; Manus headless false-alarm was SwiftShader 300es)
 2026-04-25 23:11 | pending | review(manus): round 14.5 LIGHT HOTFIX — verify dts model render, fix warmup-ternary (HUD shows 600 not 15), remove dead gameSettings legacy fields; QUICK START quick-start (optional)
+2026-04-25 23:11 | 629c5c2 | fix(R14.5): warmup timer + DTS diag + gameSettings cleanup + quick start (accepted 4/4)
+2026-04-25 23:25 | pending | review(manus): round 15 — Three.js renderer architecture (OPUS 4.7); additive scaffold behind ?renderer=three flag; WASM exports flat render-state structs; zero-copy HEAPF32 views; r170 + WebGLRenderer + ACESFilmic; placeholder visuals only (R18 will upgrade to real models/PBR/shadows)
