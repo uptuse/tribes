@@ -1350,7 +1350,7 @@ static void broadcastHUD(){
     else if(curWpn==WPN_MORTAR)maxAmmo=10;
     if(p.pack==3)maxAmmo*=2;
     int speed10=(int)(p.speed*10);
-    int timeRemain=g_timeLimit>0?(int)g_roundTimer:(int)g_warmupTimer;
+    int timeRemain=(g_matchState==0)?(int)g_warmupTimer:(int)g_roundTimer;
     // Split into two calls: EM_ASM supports $0-$15 only (max 16 args)
     EM_ASM({
         if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
@@ -2023,6 +2023,18 @@ static void mainLoop(){
 
     // --- Render DTS models ---
     // Players: DTS armor with zone coloring, breathing, jetpack glow
+    {
+        static int s_dtsFrameCount=0;
+        if((++s_dtsFrameCount%300)==1){
+            int alive=0,drawn=0;
+            for(int i=0;i<MAX_PLAYERS;i++){
+                if(players[i].active&&players[i].alive)alive++;
+                if(players[i].active&&(i!=localPlayer||thirdPerson)&&gpuArmor[players[i].armor].valid)drawn++;
+            }
+            printf("[DTS] frame=%d shader=%u alive=%d drawable=%d\n",
+                   s_dtsFrameCount,dtsShader,alive,drawn);
+        }
+    }
     for(int i=0;i<MAX_PLAYERS;i++){
         if(!players[i].active)continue;
         if(i==localPlayer&&!thirdPerson)continue;

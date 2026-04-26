@@ -391,7 +391,7 @@
       <div class="menu-grid">
         <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
         <div class="menu-item" onclick="window.open('https://github.com/uptuse/tribes','_blank')">WEBSITE</div>
-        <div class="menu-item" onclick="showScreen('gamesetup')">QUICK START</div>
+        <div class="menu-item" onclick="quickStart()">QUICK START</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
@@ -688,7 +688,7 @@
 
   <script>
     var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
-    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600,sensitivity:5,fov:75,invertY:false};
+    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
 
     function showScreen(id){
       document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
@@ -706,6 +706,11 @@
     function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
+    function quickStart(){
+      selectedTeam=0;selectedArmor=0;
+      gameSettings={botCount:4,scoreLimit:5,timeLimit:600};
+      startGame();
+    }
     function toggleInvert(){
       gameSettings.invertY=!gameSettings.invertY;
       document.getElementById('invert-btn').textContent=gameSettings.invertY?'ON':'OFF';
