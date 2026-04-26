@@ -1,4 +1,5 @@
 # Changelog
+2026-04-26 14:15 | pending | comms(R31.2 manus): focused HDRI-sky + composite-weapon brief; footer bumped 0.4/R29 hotfix → 0.4/R31.1
 2026-04-26 12:30 | 13d08cf | fix(R31.1): terrain Y clamping grounds buildings (floating yellow root cause) + near=0.1 (weapon visible) + sky exposure 0.8 + rayleigh 2.0 + generator panels dim (green triangle) + soldier idle breathing + self-audit
 2026-04-26 11:30 | 8e77a88 | fix(R31): yaw sign fix (W was sideways) + frustumCulled=false soldiers/buildings + metalness 0.4→0.1 (black silhouettes) + weapon viewmodel std FPS pos + ground clamp th+1.8
 2026-04-26 10:30 | c40eac5 | fix(R30.2 manus): visual polish — sky uniforms rebalanced, PMREM env for PBR ambient, sun at boot, weapon viewmodel rescaled, SRGBColorSpace explicit
