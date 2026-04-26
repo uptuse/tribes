@@ -1,74 +1,90 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — settings UI, persistence, key-rebind state machine. No 3D / no architectural risk.
+> **MODEL: SONNET 4.6 (1M context) OK** — surgical fix, ~5 lines.
 
-# Manus Feedback — Round 13 (Settings Menu)
+# Manus Feedback — Round 13.1 — P0 HOTFIX
 
-> **Reviewing commit:** `e0acfb8` — `feat(match): Tier 4.0 match flow — all 11 criteria`
-> **Live build:** https://uptuse.github.io/tribes/
+> **Reviewing commit:** `832a150` — `feat(settings): Tier 4.1 — full settings menu, all 10 criteria`
+> **Status:** Settings menu code looks great, but the **build is shipped broken**. User reports "can't move the player." Root cause confirmed from console log paste.
 
-## Round 12 (Match flow) — accepted 11/11
+## P0 — Game freezes on first frame after Play
 
-Strong delivery. The state machine (`g_matchState`: WARMUP → IN_PROGRESS → MATCH_END) is properly guarded — `damagePlayer()` blocks during WARMUP and MATCH_END, scoring is gated, transitions are timer-driven. The scoreboard bridge using `EM_ASM(sbRow(...))` and `sbFinish()` with `UTF8ToString` for player names is the right pattern: per-row marshaling instead of one giant JSON blob, which keeps the C++ → JS hop cheap. The MVP scoring formula (`score*3 + kills`) is reasonable and easy to extend.
+### Console error (from user)
 
-Spawn protection at 3s with cyan/white 6Hz flash visual is an excellent quality-of-life touch. The warmup countdown audio cues at T<3s plus the "FIGHT!" arpeggio give the match-start moment proper weight. The ESC menu (Resume / Options / Leave Match) plus second-ESC dismiss matches modern shooter conventions, and the `[EVENT]` printf prefix → bottom-left brass toast feed is a tidy, low-overhead game-event log.
+```
+tribes.js:228 Uncaught ReferenceError: $16 is not defined
+    at 348393 (tribes.js:6426:177)
+    at runEmAsmFunction (tribes.js:4043:30)
+    at _emscripten_asm_const_int (tribes.js:4046:14)
+    at tribes.wasm:0x11790
+    at tribes.wasm:0xadef
+    at callUserCallback (tribes.js:4413:16)
+    at Object.runIter (tribes.js:4533:9)
+    at MainLoop_runner (tribes.js:4632:18)
+```
 
-**Round 12 ships as-is.** No fixes requested.
+### Root cause (confirmed by code review)
 
-## Roadmap update — Three.js migration locked (R15-R16)
+`broadcastHUD()` in `program/code/wasm_main.cpp` lines 1086-1092 passes **17 arguments** to a single `EM_ASM`:
 
-Per decisions log: after Round 14 (bot AI v2), we migrate the renderer to **Three.js**. This is the architectural pivot that unlocks browser multiplayer with quality visuals at acceptable per-client cost. **Plan ahead:** for Rounds 13-14, anything you write that touches rendering should be additive (new draw calls / new uniforms) rather than tightly entwining new state inside the existing GL pipeline. The migration in R15-R16 will be cleaner if today's work doesn't bury new state inside `drawWorld()` and friends.
+```cpp
+EM_ASM({
+    if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16);
+},(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
+   p.skiing?1:0,p.carryingFlag,
+   (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
+   teamScore[0],teamScore[1],(int)p.armor,
+   g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
+```
 
-For Round 13 (this round), no renderer changes are needed — settings is overlay/HTML plus a thin C++ bridge.
+Emscripten's `EM_ASM` only generates `$0`-`$15`. `$16` is undefined at runtime → exception in the JS body of the EM_ASM thunk → every frame throws → main loop is effectively dead → physics tick never runs → keys[] are captured but `me.pos` never updates. ESC menu still works because that's pure JS, not on the C++ tick path.
 
-## Round 13 ask — Tier 4.1: Settings Menu
+### Required fix (must hit all 3)
 
-**Goal:** production-quality settings menu accessible from both the main menu (Options button) and the in-game ESC submenu (Options — currently a stub). All settings persist across reloads.
+**1. Split `broadcastHUD()` into two EM_ASM calls.** Suggested grouping:
 
-### Acceptance criteria — must hit at least 8 of 10
+```cpp
+EM_ASM({
+    if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
+},(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
+   p.skiing?1:0,p.carryingFlag,
+   (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
+   teamScore[0],teamScore[1],(int)p.armor);
+EM_ASM({
+    if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2);
+},g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
+```
 
-1. **Settings modal:** matches the existing brass-bordered HTML modal style. Tabbed layout: **Audio / Controls / Video / Gameplay**. ESC dismisses; click-outside dismisses; close button (×) top-right.
+Then add a thin `window.updateMatchHUD = function(state, timeRem, respawnT10){ ... }` in `index.html` that takes over the match-state portion of the HUD render. Move the corresponding match-state DOM updates from the existing `updateHUD` to the new function.
 
-2. **Audio tab:** four sliders — Master Volume (0-100, default 80), SFX Volume (0-100, default 100), UI Volume (0-100, default 80), Music Volume (0-100, default 60 — placeholder for future). Sliders update Web Audio gain nodes live (no apply button). Display numeric value next to each slider. A Mute checkbox at the top syncs bidirectionally with the M-key state.
+**2. Audit every other EM_ASM in the file** for $16+ args. `grep -n EM_ASM program/code/wasm_main.cpp` and verify each one has ≤16 placeholders. (Spot check looks clean; this is a sanity pass.)
 
-3. **Controls tab — Mouse / View:** Sensitivity slider (0.1-3.0×, default 1.0, step 0.1). Invert Y checkbox (default off). FOV slider (60-110°, default 90, step 5). All three live-preview during slider drag.
+**3. Investigate `WebGL: INVALID_OPERATION: useProgram: program not valid` (also new in this round).** It fires repeatedly *before* the per-player render lines print. A shader is silently failing to compile and `glUseProgram(0)` is being called. Likely candidates: any shader touched in this round, or a uniform reference that's now invalid. **Add `glGetShaderInfoLog`/`glGetProgramInfoLog` printf to `linkP()` so the next time a shader fails we see *why*.** Then identify and fix the broken program. If it's the new render-distance / FOV plumbing that broke a uniform binding, reset to baseline and rewire properly.
 
-4. **Controls tab — Keybindings:** displays current binding for Forward (W), Back (S), Left (A), Right (D), Jump (Space), Jet (Shift), Ski (R), Reload (V), Use Inventory (F), Scoreboard (Tab), Chat (Y), Team Chat (U), Mute (M), Toggle Map (B), ESC menu (Esc). Each binding row shows a "Click to rebind" button. Rebind flow: click → button text becomes "Press a key…" → next keystroke captures the new binding (Esc cancels). **Conflict detection:** if assigning to an already-used key, show inline warning and reject. **Reset to Defaults** button at bottom of the keybindings section.
+### Verification
 
-5. **Video tab:** Resolution scale slider (50-150%, default 100 — applies on close, not live, to avoid GPU thrash). Render-distance multiplier (0.5-3.0×, default 1.0, scales frustum-cull distance — live). Shadows toggle (currently no-op stub for R17). VSync info-only ("Browser-controlled"). Show FPS toggle (default off; when on, an fps counter appears top-right).
+After fix, hard-reload https://uptuse.github.io/tribes/ . Console should show:
 
-6. **Gameplay tab:** Crosshair color (preset palette: White / Cyan / Green / Amber / Red, default White). Crosshair scale (0.5-1.5×). Show damage numbers toggle (default on). Show kill feed toggle (default on). Auto-pickup ammo toggle (default on). Jet input mode radio: **Hold-to-jet** (default) vs **Toggle-to-jet**.
+- No `$16 is not defined`
+- No `WebGL: INVALID_OPERATION: useProgram` spam
+- WASD moves the player; mouse turns; jet works
 
-7. **Persistence:** all settings saved to `localStorage` under key `tribes_settings_v1` as JSON, including a `_v: 1` schema-version field. Loaded on page boot before any system uses them. If a saved key references a setting not in the current schema, ignore it. If a current setting is missing from the save, fall back to default. No crash on malformed JSON — fall back to defaults and log a console warning.
+If the WebGL error persists but the game runs, that's acceptable for landing the hotfix — note it in `claude_status.md` and we treat it as a separate small follow-up. The `$16` fix is the blocker.
 
-8. **Live apply path:** all settings except Resolution Scale take effect immediately on slider/checkbox change. Resolution Scale shows a small "Will apply on close" badge.
+## Round 13 settings menu (otherwise) — accepted in spirit
 
-9. **C++ bridge:** `Module._setSettings(jsonStr)` called on every change that affects gameplay or render — mouse sensitivity, FOV, render distance, jet input mode, crosshair color/scale, gameplay toggles. Audio settings remain JS-only (Web Audio gain nodes). On the C++ side, parse with the smallest possible JSON pull and apply to the existing globals (`g_mouseSensitivity`, `g_fov`, etc. — create them if they don't exist).
+Code review of the settings work itself is solid: tabbed modal, persistence with `_v:1` schema versioning, keybinding capture-phase interceptor with WeakSet to prevent infinite loops, JS-only audio gain plumbing, C++ bridge via `setSettings(json)` with hand-rolled `strstr`/`strtod` (no external JSON dep — clean call). All 10 criteria addressed in the diff.
 
-10. **Reset all:** "Reset all settings to defaults" button at the bottom of the modal, with a confirmation: "Reset all settings? This cannot be undone." On confirm: wipe `localStorage.tribes_settings_v1`, reload defaults, push to C++.
+**The settings menu doesn't ship until the freeze is fixed**, but the code itself looks like it'll work once the main loop is alive again.
 
-### Polish notes
+## Process note
 
-The settings modal **should not pause gameplay** when opened from the in-match ESC submenu — a player tweaking FOV mid-match should still see the world updating behind the modal. Tab navigation order should be sensible for keyboard users. Don't break the existing M-key mute toggle; the settings-menu mute checkbox should mirror it. When opening the modal from the main menu (not in-match), gameplay isn't running anyway — no special-case needed there.
+I should have caught the $16 in code review *before* approving. Marking it as a lesson — for future rounds I'll grep `EM_ASM.*\$1[6-9]\|EM_ASM.*\$[2-9][0-9]` on every Claude push as part of the standard review checklist.
 
-### What I'll verify on next push
+## What's queued (after hotfix lands)
 
-Code-level: settings JSON schema and version handling, persistence read/write path, key-rebinding state machine, conflict detection. Live: open modal from main menu, change a few sliders, reload page, confirm persisted; open modal from in-game ESC, change FOV, confirm immediate update without close.
-
-## Out-of-scope for Round 13
-
-Bot AI improvements (Round 14). Renderer touches (Rounds 15-16, Three.js migration). Music tracks (placeholder slider only — no actual music yet). Voice macros / chat (deferred until multiplayer rounds).
-
-## Next-up rounds (FYI)
-
-| Round | Model | Scope |
-|------:|:------|:------|
-| 14 | Sonnet 4.6 (1M) | Bot AI v2 — basic A* on heightmap, CTF role assignment (defender/offense/runner), simple skiing intent (downhill = ski + jet) |
-| 15 | **Opus 4.7 (1M)** | Three.js migration architecture — bridge protocol, parallel renderer behind debug flag |
-| 16 | **Opus 4.7 (1M)** → Sonnet | Three.js cutover — terrain, buildings, armor, projectiles |
-| 17 | Sonnet | Visual quality cascade — PBR, shadows, particles, post-processing |
-| 18 | Opus | Network architecture design — WebRTC vs WebSocket+server, authority model, lag compensation |
+Round 14: Bot AI v2 (basic A* on heightmap, role assignment, skiing intent). No change to the queue.
 
 ## Token budget
 
-Sonnet 4.6 (1M context). Estimate 1-2 commits, 30-45 min for Claude to deliver 8+ criteria. UI work is verbose but mechanically straightforward.
+Tiny. ~5-min fix, ~50 lines of diff. Push hotfix as `fix(hud): Round 13.1 — split broadcastHUD EM_ASM (>16 args), shader log` or similar.
 
-— Manus, Round 13 (settings menu)
+— Manus, Round 13.1 (P0 hotfix)

@@ -137,3 +137,20 @@ User should scan this file when re-engaging to override anything they disagree w
 **Reversibility:** **High cost.** Once we build on Three.js, ripping it out is a rewrite. This is a real architectural commitment. User explicitly confirmed "yes lock it in."
 
 **Override path:** User can change mind any round before R15; cost is just a small replanning round.
+
+
+## 2026-04-25 22:38 EDT — Round 13.1 P0 HOTFIX (build broken)
+
+**Decision:** Interrupt the queue (R14 bot AI v2 was next); push P0 hotfix brief to fix the broken Round 13 build before any new feature work. User-impacting bug — game is unplayable.
+
+**Context:** Claude's Round 13 settings push (`832a150`) compiled and shipped, but the live game freezes the moment the user clicks Play. User reported "can't move the player." Console paste from user showed `Uncaught ReferenceError: $16 is not defined` thrown every frame from `broadcastHUD()`.
+
+**Root cause:** `broadcastHUD()` in `wasm_main.cpp` lines 1086-1092 expanded to **17 args** to a single `EM_ASM` call (`$0` through `$16`). Emscripten only generates `$0`-`$15`. The thrown ReferenceError kills the main-loop iteration before physics runs, so keys[] are captured but `me.pos` never changes. ESC menu still works because that's pure browser-side JS, not on the WASM tick path.
+
+**Secondary issue:** `WebGL: INVALID_OPERATION: useProgram: program not valid` spam, also new this round. A shader is silently failing to link. Asked Claude to add `glGetShaderInfoLog`/`glGetProgramInfoLog` print to `linkP()` so the next failure is debuggable, then identify and fix the broken program.
+
+**Process miss:** I should have grepped for `EM_ASM.*\$1[6-9]` on the Round 13 review and caught this before approving. Adding to my standard pre-approval checklist for all future rounds.
+
+**Reversibility:** Trivial — split the `EM_ASM` into two calls (HUD-state-A + a new HUD-state-B-match-only) and add a thin `window.updateMatchHUD()` shim in `index.html`. ~50 lines of diff. Once the hotfix lands, the settings menu code (which is otherwise solid) becomes accessible because the underlying main loop is alive again.
+
+**Queue impact:** Round 14 (Bot AI v2) is delayed by one hotfix round. No long-term cost.
