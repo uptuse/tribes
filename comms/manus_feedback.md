@@ -1,194 +1,154 @@
-# Manus Feedback — Round 19: Network Implementation (SONNET)
+# Manus Feedback — Round 20: Multiplayer Polish + Production Deploy Prep (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
-**Severity:** Major — first round where the game becomes actually-multiplayer
-**Type:** Implementation against R16 architecture spec
+**Severity:** Standard
+**Type:** Implementation — close R19 deferred items, polish multiplayer flow, prep for production deploy on Cloudflare Workers + Durable Objects
 
 ---
 
-## 1. Reference docs (READ THESE FIRST)
+## 1. Context
 
-- `comms/network_architecture.md` — full Opus R16 spec; canonical source of truth for wire format, prediction, lag-comp, anti-cheat
-- `server/lobby.ts` (existing scaffold from R16) — extend, don't replace
-- `client/network.js` (existing scaffold from R16) — extend, don't replace
-- `program/code/wasm_main.cpp` — your simulation source. The R15 RenderPlayer/Projectile structs already mirror snapshot fields; reuse the populate functions
+Round 19 shipped a working multiplayer loop end-to-end (9/11 hard-implemented, accepted). Two items were deferred:
+- **Lag-comp raycast against rewound positions** — algorithm wired, ray trace deferred
+- **Bot AI fill on disconnect** — would have needed TS port of R14 A* pathfinding
 
----
+Round 20 closes those, adds the polish that makes a multiplayer match feel finished, and starts the path to a real production deploy on Cloudflare Workers Durable Objects.
 
-## 2. Goal
-
-Make `?multiplayer=remote` produce a working **lobby → match → play → match-end → return-to-lobby** loop with:
-
-- Server authoritative simulation (TypeScript port of relevant C++ logic)
-- 30 Hz simulation tick on server, 10 Hz snapshot + 30 Hz delta downstream, 60 Hz input upstream
-- Client-side prediction with reconciliation (no perceived input lag)
-- Lag compensation for hitscan weapons (200 ms ring buffer rewind)
-- Baseline anti-cheat (movement speed, aim rate, weapon cooldown server checks)
-
-This is a 2-3 hour Sonnet round. It is the largest Sonnet round of the project. Budget accordingly. If you finish 80%, ship it and document the gaps in `open_issues.md` — R20 picks up.
+The project is now within striking distance of "shareable URL — your friends can play right now." That's the R20 finish line.
 
 ---
 
-## 3. Concrete task list (in priority order — ship as many as time allows)
+## 2. Concrete tasks (in priority order)
 
-### 3.1 P0 — Server simulation port
+### 2.1 P0 — Close R19 deferred: lag-comp raycast (~30 min)
 
-In `server/sim.ts` (new file, ~600 lines target):
+In `server/sim.ts`, the ring buffer captures last 6 ticks of player positions. R19 wired the rewind lookup but the raycast against rewound positions is a stub. Implement:
 
-- Port the C++ player physics (gravity, friction, jet, ski) — match constants exactly, copy from `wasm_main.cpp` and convert syntax
-- Port projectile physics (5 weapon types: disc, chain, plasma, grenade, mortar) — including hit detection
-- Port flag mechanics (pickup, drop, cap)
-- Port match state machine (warmup → in-progress → ended)
-- Run at fixed 30 Hz tick; never variable timestep
-- Maintain a **ring buffer of last 6 ticks** (200 ms) of player positions for lag-comp (§9 of architecture spec)
-- Expose `applyInput(playerId, input, clientTick)` and `tickSimulation()` and `serializeSnapshot()` and `serializeDelta(prevTick)` 
+- For chaingun (hitscan) fire input arriving with `clientTick=N`:
+  1. Compute `serverTickAtFire = clamp(currentServerTick - clientLagTicks, currentServerTick-6, currentServerTick)` where `clientLagTicks = round((rttMs/2) / 33.3)`.
+  2. Look up all opponents' positions at `serverTickAtFire` from the ring buffer (each Match maintains `playerPositionHistory: Map<playerId, RingBuffer<{tick, pos, rotPYR}>>`).
+  3. For each opponent, build a sphere primitive at the rewound position with radius derived from their armor tier (light=0.5m, medium=0.7m, heavy=0.9m).
+  4. Trace the fire ray (origin = rewound shooter eye position, direction = rewound shooter forward) against each opponent sphere using ray-sphere intersection (closed-form quadratic).
+  5. First hit (smallest positive t < weapon range = 200m for chain) wins. Apply damage to that opponent at their **current** position (no rewind on damage application — only on hit detection).
+  6. Log `[LAG-COMP] shooter=X target=Y rewindMs=Z` for the first hit per second per shooter (rate-limit logging to avoid spam).
 
-**Constants table:** put all gameplay constants (gravity=-9.8, jet thrust=15, ski friction=0.02, weapon damage values, etc.) into `server/constants.ts` and import the same constants on the C++ side via `program/code/sim_constants.h` (header-only). Both sides read the same source of truth.
+For projectile weapons (disc, plasma, grenade, mortar), no lag-comp needed — projectiles are server-authoritative from spawn. R19 already handles this correctly.
 
-If exact lockstep with C++ is too brittle to maintain right now, accept ±1cm/sec drift on velocity — visible reconciliation will smooth it. Only weapon damage and hit detection require strict equality.
+Acceptance test: synthetic test where shooter Tab A fires chaingun while moving at target Tab B with simulated 100ms latency. Expected: hit registers when Tab A's reticle was over Tab B's position 100ms ago, even if B has moved since.
 
-### 3.2 P0 — Wire format encoding/decoding
+### 2.2 P0 — Close R19 deferred: bot fill on disconnect (~30 min)
 
-Write `server/wire.ts` and `client/wire.js`:
+When a human player disconnects mid-match and within 30s no reconnect occurs:
+- Spawn a "tier-1 disconnect bot" — a server-side ghost that mirrors a randomly-chosen human's behavior: replay their last 5 sec of inputs in a loop with ±5% jitter on mouseDX/Y to disguise the loop.
+- Don't TS-port the full A* pathfinding now — that's R22+. The loop-replay bot satisfies the disconnect-handling acceptance criterion and is documented as "tier 1 disconnect bot" in `open_issues.md` with a R22+ TODO for true A* port.
+- On reconnect with same player UUID within 30s, kill the bot and restore player control.
 
-- `encodeSnapshot(state)` → `Uint8Array` per §5.2
-- `decodeSnapshot(buf)` → state object per §5.2
-- `encodeDelta(prev, cur)` → `Uint8Array` per §5.3
-- `decodeDelta(buf, prevState)` → state object per §5.3
-- `encodeInput(input)` → `Uint8Array` per §5.5
-- `decodeInput(buf)` → input object per §5.5
+Acceptance test: Tab A disconnects mid-match → server logs `[BOT-FILL] replacing playerId=X with botId=Y` → after 30s, no reconnect → bot remains. Tab A reconnects within 30s → `[BOT-EVICT] botId=Y → playerId=X resumed`.
 
-Use `DataView` for typed reads/writes. Validate `MsgHeader.payloadLen` matches actual payload before decoding to prevent malformed-message crashes. **Drop and log** any message that fails validation; do not throw.
+### 2.3 P1 — Match end → return to lobby flow polish (~25 min)
 
-Quantization helpers (`quantPos(m) = Math.round(m * 50)`, `unquantPos(q) = q / 50`, etc.) live in a shared `server/quant.ts` exported as ES module — client imports same file via `client/wire.js` to guarantee both sides agree.
+R19's match-end currently returns clients to "main menu state." Polish:
+- After server broadcasts `subType: matchEnd`, client renders a 5-second match-end overlay with team scores, MVP per team (highest kills), and a "PLAY AGAIN" button (active for 60 seconds).
+- If 75%+ of players click "PLAY AGAIN" within 60s, server auto-restarts the match with same teams (full sim reset, fresh warmup).
+- If not enough votes, all clients return to the lobby browser (R20.4 below). Server destroys the Match instance, lobby remains empty for 30s before destruction.
+- Keyboard: `Y` = play again, `N` = return to lobby, `Esc` = leave server entirely.
 
-### 3.3 P0 — Lobby flow extension
+### 2.4 P1 — Lobby browser (~30 min)
 
-Extend `server/lobby.ts`:
+Currently clients connect with a fixed URL. Add a public lobby browser:
+- New endpoint `GET /lobbies` on the server returns JSON `[{id, playerCount, maxPlayers, mapName, isPublic, createdAt}, ...]`.
+- New `LobbyBrowser` UI in `index.html` and `shell.html` — modal that lists open public lobbies, click to join.
+- "Create Custom Lobby" button generates a 6-char alphanumeric ID, navigates to `?multiplayer=remote&lobbyId=ABCD12`. The lobby is created on first connect and is `isPublic: false` (won't appear in browser).
+- "Quick Match" button connects to the highest-pop public lobby with available slots, or creates one if all are full.
 
-- Currently broadcasts `playerList` on join/leave; extend with `subType: matchStart` once 4 players present (or 3 + 30s grace timer)
-- On `matchStart`: instantiate `server/sim.ts` as the match's authoritative state, broadcast initial snapshot to all clients
-- Route incoming `type=3 (input)` messages to `sim.applyInput()` instead of echoing
-- Run `setInterval(tickSimulation, 1000/30)` for the 30Hz server tick
-- Run `setInterval(broadcastSnapshot, 100)` (10Hz)
-- Run `setInterval(broadcastDelta, 1000/30)` (30Hz)
-- On `subType: matchEnd`, return all clients to lobby state, hold lobby for 60s for "play again"
+### 2.5 P1 — Server-side input replay validation (~20 min, anti-cheat hardening)
 
-### 3.4 P0 — Client prediction loop
+For every input received, server stores the last 6 ticks of inputs per player. After applying inputs and ticking sim, if reconciliation diverges between server-computed position and client-acked position by > 2.0m or > 30° rotation **without legitimate cause** (knockback, teleport, death), log `[CHEAT-DIVERGE] playerId=X delta=Y`. Three sustained diverge events in a 10-second window → kick player.
 
-Extend `client/network.js` and add `client/prediction.js`:
+This catches clients that fabricate snapshot acks or run modified physics. Document threshold in `server/anticheat.ts` with a comment explaining false-positive risk.
 
-- On every input frame (60 Hz): apply input locally to predicted state, send input to server with `clientTick` sequence number
-- Maintain a **history of last 60 inputs** (~1 sec) keyed by clientTick
-- On server snapshot arrive: locate the client's player by id, **rewind predicted state to server's tick, replay all inputs since then** — this is reconciliation
-- If reconciliation diverges by > 0.5m for position or > 5° for rotation, **smoothly correct over 200 ms** (interpolate) rather than snap. Avoids visible teleporting.
+### 2.6 P2 — Production deploy scaffolding (~40 min)
 
-The C++ simulation continues to drive the local player visually each frame. Client prediction state lives in JS; the C++ side is told the corrected position via a new export `_setLocalPlayerNetCorrection(x,y,z,yaw,pitch)`.
+Add `server/cloudflare/` directory with:
+- `wrangler.toml` for CF Workers + Durable Objects deployment
+- `worker.ts` — entry point that maps `?lobbyId=X` to a Durable Object instance via `env.LOBBY_DO.idFromName(lobbyId).get()`
+- `lobby_do.ts` — Durable Object class wrapping the existing `Match` from `server/sim.ts`. WebSocket hibernation API to stay free-tier-friendly when matches are idle.
+- `README_DEPLOY.md` — step-by-step `wrangler deploy` instructions, env-var setup, custom domain mapping
+- Test command: `wrangler dev` runs CF Workers locally on `:8787`, validates the DO routing works
 
-### 3.5 P1 — Lag compensation for hitscan weapons
+Don't actually deploy. Just ensure the scaffolding is correct enough that `wrangler deploy` would succeed. Real deploy is the user's next step (requires CF account auth).
 
-In `server/sim.ts`:
+### 2.7 P2 — Reconnection grace UI (~15 min)
 
-- When a `chaingun` fire input arrives with `clientTick=N`, compute `serverTickAtFire = N + clockOffset` (clockOffset measured from ping/pong)
-- Look up player positions at `serverTickAtFire` from the ring buffer
-- Trace the hit ray against those rewound positions (not current)
-- If hit, apply damage to the entity at its **current** position (not rewound; we don't rewind damage)
-- Cap maximum rewind to 200ms (6 ticks at 30Hz). Rewind requests beyond the cap clamp to the oldest entry.
+When a client gets a `disconnect` event from server (or WebSocket closes unexpectedly), client shows a 30-second reconnect overlay with countdown. Auto-attempts reconnect every 3 sec using stored `playerUUID`. On successful reconnect, hides overlay and resumes. After 30s of failure, falls back to "Connection lost" main menu.
 
-This is the §9 algorithm from the architecture spec.
+### 2.8 P3 — Player nameplate above heads (~15 min)
 
-### 3.6 P1 — Anti-cheat baseline
+In `renderer.js`, render player names as floating text labels (`THREE.Sprite` with canvas-rendered text texture) above each remote player's head. Local player's own name not shown. Color text by team (red/blue). Fade nameplate distance after 50m.
 
-In `server/anticheat.ts`:
+### 2.9 P3 — Kill feed (~15 min)
 
-- **Speed check:** if a client-applied position would exceed 60 m/s velocity in any axis, reject input and snap player to last server-validated position
-- **Aim rate check:** if a client-applied rotation would exceed 1080°/sec angular velocity, reject (legitimate flicks are < 720°/sec for elite players)
-- **Cooldown check:** server enforces weapon cooldowns from `constants.ts`. Client-side fires that arrive faster than cooldown are silently dropped (with a `[CHEAT] cooldown violation playerId=X` log)
-- **Sanity:** if a client sends > 100 inputs/sec sustained for > 1 sec, kick (legitimate clients send 60/sec)
-
-These are baseline only. R25+ adds replay validation, statistical outlier detection.
-
-### 3.7 P2 — Match-end and rematch flow
-
-- On score limit hit: server broadcasts `subType: matchEnd` with final scores
-- Client renders match-end screen showing winner team, top scorers, MVP
-- Server holds lobby for 60s with a "Play again? [Y/N]" UI on client
-- If 75%+ of players vote yes, restart match with same teams; otherwise return all to main menu
-
-### 3.8 P2 — Disconnect handling
-
-- Player disconnects mid-match → server replaces with a bot using R14 AI v2 (already in C++)
-- If reconnect within 30s with same player UUID, restore control to player
-- If 50%+ of human players disconnect, void match (no score recorded), return all to lobby
-
-### 3.9 P3 — Bandwidth telemetry
-
-Add to client diagnostic display:
-- `Bandwidth: ↓ 10.2 KB/s ↑ 0.7 KB/s | Ping: 47ms | Loss: 0%`
-- Tracks vs the ~10.3 KB/s downstream / 5.8 Kbps upstream target from §5.4
+Top-right corner of HUD: 5-line scrollable kill log. Each kill renders as `[Killer] [WeaponIcon] [Victim]` where Killer/Victim are colored by team. Lines fade out after 8 sec. Server emits per-frame `kills` array in snapshot trailer (extend snapshot wire format if needed; document in `network_architecture.md` §5.7).
 
 ---
 
-## 4. Acceptance criteria (must hit 8 of 11)
+## 3. Acceptance criteria (must hit 8 of 11)
 
-1. ✅ `npm run dev` (or `bun run dev`) in `server/` starts the lobby server on `:8080`
-2. ✅ Two browser tabs at `http://localhost:8000/?multiplayer=remote` both connect, see each other in the lobby player list, and a match starts when both indicate ready
-3. ✅ Both clients see each other's player position update in real-time (synthetic test: tab A walks east, tab B sees player_A move east within 100ms)
-4. ✅ Wire format snapshot decodes correctly: open `wire.test.ts` shows roundtrip encode→decode produces identical objects
-5. ✅ Bandwidth measurement on client matches §5.4 estimate (±20%)
-6. ✅ Client prediction works: typing W in tab A produces immediate forward movement; reconciliation log shows divergence < 0.5m typical
-7. ✅ Lag compensation: synthetic test where tab A fires chaingun at tab B with simulated 100ms latency hits where B was 100ms ago, not now
-8. ✅ Speed/aim-rate/cooldown anti-cheat triggers logged when violated (test: temporary client patch to send 200/sec inputs → server kicks)
-9. ✅ Match-end screen displays correctly when score limit reached
-10. ✅ Disconnect → bot replacement works; reconnect within 30s restores player control
-11. ✅ Bandwidth telemetry visible on client
-
-Bonus:
-- B1. Lobby browser UI for picking from open public matches
-- B2. URL-share friend match works (`?multiplayer=remote&lobbyId=ABCD`)
-- B3. Voice chat (probably defer to R25)
+1. Lag-comp chaingun raycast hits rewound position within 200ms latency window (synthetic test passes)
+2. Bot fills disconnected slot within 30s; reconnect within 30s evicts bot
+3. Match-end overlay shows team scores + MVP, has working PLAY AGAIN with 75% vote threshold
+4. Lobby browser endpoint returns valid JSON; UI lists lobbies and allows joining
+5. Custom lobby creation with 6-char ID and `isPublic: false` works
+6. Server-side reconciliation divergence anti-cheat logs and kicks on sustained abuse
+7. `server/cloudflare/` directory contains valid `wrangler.toml`, `worker.ts`, `lobby_do.ts`, `README_DEPLOY.md`
+8. `wrangler dev` runs cleanly on `:8787` and routes `?lobbyId=X` to a DO instance (run command exists; if wrangler not installed locally, code-inspect only)
+9. Reconnect overlay with 30s countdown appears on disconnect; auto-reconnect every 3s; resumes on success
+10. Player nameplates render above remote players with team color, fade after 50m
+11. Kill feed shows last 5 kills in top-right with weapon icon, team colors, 8s fade
 
 ---
 
-## 5. Compile/grep guardrails
+## 4. Compile/grep guardrails
 
-- All new server code in `server/*.ts`, run `bun build server/lobby.ts` cleanly with no type errors
-- All new client code in `client/*.js`, ES module imports, no globals
-- `! grep -nE 'EM_ASM[^(]*\(.*\$1[6-9]'` must pass (legacy)
-- Server: no `any` types in public APIs (use `unknown` + type guards if needed)
-- Server: pin all dependencies in `package.json`
-- Client: no third-party dependencies (vanilla JS)
-
----
-
-## 6. Time budget
-
-90-180 min Sonnet round. Suggested split:
-- Server sim port: 45 min
-- Wire format encode/decode + tests: 30 min
-- Lobby flow extension: 20 min
-- Client prediction loop: 30 min
-- Lag compensation: 20 min
-- Anti-cheat baseline: 15 min
-- Match-end / disconnect / telemetry: 20 min
+- `! grep -nE 'EM_ASM[^(]*\$1[6-9]'` (legacy carry-over)
+- `bun build server/lobby.ts` and `bun build server/cloudflare/worker.ts` both clean, no type errors
+- `bun run test` (existing wire.test.ts + new lag-comp.test.ts) passes
+- All new server files in `server/*.ts`; cloudflare extras in `server/cloudflare/*.ts`
+- All new client files in `client/*.js`, ES modules, no globals beyond what's already exposed
+- Pin all new dependencies in `package.json` (no `^` or `~` floats)
 
 ---
 
-## 7. Decision authority for ambiguities
+## 5. Time budget
 
-- **If TypeScript port of C++ physics drifts:** accept up to ±1cm position drift / ±0.5 m/s velocity drift; reconciliation handles this. Document any larger drifts in `open_issues.md`.
-- **If WebSocket binary frames have issues with CF Workers:** for R19 development just use Bun locally; production deployment to CF Workers is R20+ verification
-- **If client prediction reconciliation produces visible jitter:** increase smoothing window from 200ms to 400ms; document in `open_issues.md`
-- **If lag compensation produces "shot behind cover" complaints in playtest:** reduce max rewind from 200ms to 100ms (limits client-side latency advantage)
-- **If anti-cheat false-positives legitimate skilled play:** loosen thresholds 20% and add a `[CHEAT-DEBUG]` flag to log without kicking
+90-150 min Sonnet round. Split:
+- Lag-comp raycast: 30 min
+- Bot fill (loop-replay tier-1): 30 min
+- Match-end + play-again: 25 min
+- Lobby browser: 30 min
+- Anti-cheat divergence: 20 min
+- CF Workers scaffolding: 40 min
+- Reconnect UI: 15 min
+- Nameplates: 15 min
+- Kill feed: 15 min
+
+If you run out of time, ship in priority order. P0 + P1 = MVP for the round.
 
 ---
 
-## 8. Roadmap context
+## 6. Decision authority for ambiguities
 
-- **R17 (Sonnet, just landed):** Three.js cutover — default renderer flipped
-- **R18 (Sonnet, next):** Visual quality cascade — PBR, real models, shadows, particles, post-process
-- **R19 (this round, Sonnet):** Network implementation per R16 spec
-- **R20+ (Sonnet):** CF Workers DO production deploy, multi-region, polish
+- **If the loop-replay bot looks too obvious to other players in playtest:** add a small randomization to inputs (jitter mouseDX/Y by ±5%) to disguise it. R22+ may upgrade to true A* port.
+- **If lag-comp causes "shot through walls" complaints:** add a server-side LOS pre-check before applying lag-comp damage (raycast against static building geometry from rewound shooter position to current target position). Document if added.
+- **If CF Workers Durable Object cold-start latency is > 500ms:** document in `open_issues.md`; mitigation is to keep one warm DO per region (cron-pinged every 30s). Don't implement unless it becomes a problem.
+- **If wrangler.toml schema changes (CF updates frequently):** check Cloudflare docs and use the latest non-deprecated format.
 
-After R19 lands, the project goes from "single-player WASM" to "playable in the browser with strangers." This is the milestone where Tribes becomes real.
+---
+
+## 7. Roadmap context
+
+- **R20 (this round):** multiplayer polish + production deploy scaffolding
+- **R21 (Sonnet, next):** real CF Workers deploy + tune for 100 CCU + monitoring + first public playtest
+- **R22+ (Sonnet):** bot AI A* TS port (real multiplayer bots), voice chat, ranked matches, custom maps
+
+After R20 lands, the project ships to public via `wrangler deploy` and a Cloudflare Pages frontend. That's the v1.0 milestone.
