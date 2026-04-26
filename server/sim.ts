@@ -70,6 +70,15 @@ export interface SimPlayer {
     loadoutViolations: number[];        // wallTime stamps for kick on 3-in-10s
     lastDamageFromIdx: number;          // -1 or attacker player id (R23 lastDamageFrom)
     lastDamageAtTick: number;           // server tick of last damage taken
+    // R24 additions:
+    skillRating: number;                // ELO-lite rating, default SKILL_INITIAL
+    matchesPlayed: number;
+    // Per-match telemetry counters (reset on resetForRematch)
+    shotsFired: number;
+    killsScored: number;                // computed elsewhere; mirror count for telemetry
+    jetTicks: number;
+    skiTicks: number;
+    skiDistanceM: number;
 }
 
 export interface SimProjectile {
@@ -179,6 +188,13 @@ export class Match {
             loadoutViolations: [],
             lastDamageFromIdx: -1,
             lastDamageAtTick: -1,
+            skillRating: 1000,         // R24: lobby will overwrite from store on join
+            matchesPlayed: 0,
+            shotsFired: 0,
+            killsScored: 0,
+            jetTicks: 0,
+            skiTicks: 0,
+            skiDistanceM: 0,
         };
         this.players.set(id, p);
         return p;
@@ -254,6 +270,7 @@ export class Match {
                 const cooldown = (w.fireTime + (w.reloadTime || 0));
                 this.fireHitscan(p, input);
                 p.fireCooldown = cooldown;
+                p.shotsFired++;        // R24 telemetry
             }
         }
     }
@@ -354,6 +371,12 @@ export class Match {
         if (p.repairTimer > 0) {
             p.repairTimer -= dt;
             p.health = Math.min(1, p.health + 0.10 * dt);
+        }
+        // R24 telemetry — per-tick movement accumulators
+        if (p.jetting) p.jetTicks++;
+        if (p.skiing) {
+            p.skiTicks++;
+            p.skiDistanceM += Math.hypot(p.vel[0], p.vel[2]) * dt;
         }
 
         // Apply velocity
@@ -723,6 +746,42 @@ export class Match {
         this.captureLagCompFrame();
     }
 
+    // R24: telemetry getter — caller (lobby endMatch) builds CSV row
+    getTelemetrySnapshot() {
+        const perWeapon = new Map<number, { shots: number; kills: number }>();
+        const perClass = [
+            { kills: 0, deaths: 0 },
+            { kills: 0, deaths: 0 },
+            { kills: 0, deaths: 0 },
+        ];
+        let totalJet = 0, totalSki = 0, totalSkiM = 0, humanCount = 0;
+        for (const p of this.players.values()) {
+            if (!p.isBot) humanCount++;
+            const w = perWeapon.get(p.weaponIdx) || { shots: 0, kills: 0 };
+            w.shots += p.shotsFired;
+            w.kills += p.kills;
+            perWeapon.set(p.weaponIdx, w);
+            if (p.classId >= 0 && p.classId < 3) {
+                perClass[p.classId].kills += p.kills;
+                perClass[p.classId].deaths += p.deaths;
+            }
+            totalJet += p.jetTicks;
+            totalSki += p.skiTicks;
+            totalSkiM += p.skiDistanceM;
+        }
+        const ticks = Math.max(1, this.tick);
+        return {
+            durationS: ticks * TICK_DT,
+            humanCount,
+            perWeapon,
+            perClass,
+            avgJetS: totalJet * TICK_DT / Math.max(1, this.players.size),
+            avgSkiS: totalSki * TICK_DT / Math.max(1, this.players.size),
+            avgSkiM: totalSkiM / Math.max(1, this.players.size),
+            scores: this.teamScore,
+        };
+    }
+
     // R20: full sim reset for "play again" (preserves player roster + teams)
     resetForRematch() {
         this.tick = 0;
@@ -746,6 +805,12 @@ export class Match {
             const flagPos = this.flags[p.team].homePos;
             p.pos = [flagPos[0] + (Math.random() * 6 - 3), flagPos[1] + 5, flagPos[2] + (Math.random() * 6 - 3)];
             p.vel = [0, 0, 0];
+            // R24: telemetry reset
+            p.shotsFired = 0;
+            p.killsScored = 0;
+            p.jetTicks = 0;
+            p.skiTicks = 0;
+            p.skiDistanceM = 0;
         }
     }
 

@@ -28,6 +28,10 @@ const telemetry = {
     lastPingSent: 0,
     matchActive: false,
     inMatch: false,
+    // R24: skill rating mirrored from joinAck + matchEnd
+    skillRating: 1000,
+    matchesPlayed: 0,
+    lastRatingDelta: 0,
 };
 
 // 60Hz input loop
@@ -138,6 +142,12 @@ export function start() {
             const rttMs = Math.round(lastMessageAt - connectedAt);
             log('joined ' + myLobbyId + ' as ' + msg.name + ' (id=' + myNumericId + ', RTT ' + rttMs + 'ms' + (msg.reconnected ? ' [RECONNECTED]' : '') + ')');
             if (msg.reconnected && window.__tribesHideReconnect) window.__tribesHideReconnect();
+            // R24: capture skill rating from joinAck for main-menu display
+            if (typeof msg.skillRating === 'number') telemetry.skillRating = msg.skillRating;
+            if (typeof msg.matchesPlayed === 'number') telemetry.matchesPlayed = msg.matchesPlayed;
+            if (window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({
+                rating: telemetry.skillRating, matchesPlayed: telemetry.matchesPlayed, delta: 0,
+            });
         } else if (msg.type === 'playerList') {
             log('roster: ' + msg.players.map(p => p.name).join(', '));
             telemetry.matchActive = msg.matchActive;
@@ -156,6 +166,19 @@ export function start() {
             log('matchEnd score=' + msg.teamScore.join('-') + ' winner=' + msg.winner);
             telemetry.inMatch = false;
             stopInputLoop();
+            // R24: pull our rating delta out of the match-end broadcast (rated matches only)
+            if (msg.ratings && typeof msg.ratings === 'object') {
+                const myRow = msg.ratings[myNumericId];
+                if (myRow) {
+                    telemetry.skillRating = myRow.rating | 0;
+                    telemetry.lastRatingDelta = myRow.delta | 0;
+                    telemetry.matchesPlayed = (telemetry.matchesPlayed | 0) + 1;
+                    if (window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({
+                        rating: telemetry.skillRating, matchesPlayed: telemetry.matchesPlayed,
+                        delta: telemetry.lastRatingDelta,
+                    });
+                }
+            }
             if (window.__tribesOnMatchEnd) window.__tribesOnMatchEnd(msg);
         } else if (msg.type === 'pong') {
             telemetry.pingMs = msg.serverTs - msg.clientTs;
@@ -278,6 +301,10 @@ export function getStatus() {
         inMatch: telemetry.inMatch,
         reconciliations: prediction.stats.reconciliations,
         avgDivergence: prediction.stats.avgDivergence.toFixed(3),
+        // R24
+        skillRating: telemetry.skillRating,
+        matchesPlayed: telemetry.matchesPlayed,
+        lastRatingDelta: telemetry.lastRatingDelta,
     };
 }
 export function getLatestSnapshot() { return latestSnapshot; }

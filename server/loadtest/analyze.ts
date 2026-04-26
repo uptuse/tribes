@@ -37,7 +37,10 @@ function parseArgs() {
         const i = argv.indexOf('--' + k);
         return i >= 0 ? argv[i + 1] : def;
     };
-    return { csv: get('csv', 'server/loadtest/loadtest_balance.csv') };
+    return {
+        csv: get('csv', 'server/loadtest/balance_telemetry.csv'),  // R24: real telemetry path
+        apply: argv.includes('--apply'),
+    };
 }
 
 function loadCsv(path: string): Sample[] {
@@ -50,17 +53,31 @@ function loadCsv(path: string): Sample[] {
     }
     const lines = text.trim().split('\n').slice(1); // skip header
     const samples: Sample[] = [];
+    // R24: balance_telemetry.csv has header:
+    //   matchId,durationS,humanCount,scoreA,scoreB,
+    //   blasterShots,blasterKills,chainShots,chainKills,discShots,discKills,
+    //   grenShots,grenKills,plasmaShots,plasmaKills,mortarShots,mortarKills,
+    //   lightK,lightD,medK,medD,heavyK,heavyD,
+    //   avgJetS,avgSkiS,avgSkiM
+    const WEAPON_COLS = [
+        { name: 'Blaster', idx: 6 }, { name: 'Chaingun', idx: 8 }, { name: 'Disc', idx: 10 },
+        { name: 'Grenade', idx: 12 }, { name: 'Plasma', idx: 14 }, { name: 'Mortar', idx: 16 },
+    ];
     for (const line of lines) {
         const cols = line.split(',');
-        if (cols.length < 10) continue;
-        samples.push({
-            weapon: cols[4],
-            classId: Number(cols[3]),
-            killerClass: Number(cols[5]),
-            victimClass: Number(cols[6]),
-            jetTimeS: Number(cols[8]),
-            skiDistanceM: Number(cols[9]),
-        });
+        if (cols.length < 26) continue;
+        // Emit per-weapon-kill samples for kill-share aggregation
+        for (const w of WEAPON_COLS) {
+            const kills = Number(cols[w.idx + 1]) || 0;
+            for (let k = 0; k < kills; k++) {
+                samples.push({
+                    weapon: w.name,
+                    classId: -1, killerClass: -1, victimClass: -1,
+                    jetTimeS: Number(cols[23]) || 0,
+                    skiDistanceM: Number(cols[25]) || 0,
+                });
+            }
+        }
     }
     return samples;
 }
@@ -155,10 +172,13 @@ function analyze(samples: Sample[]): Tweak[] {
     return tweaks;
 }
 
-function main() {
+async function main() {
     const args = parseArgs();
     const samples = loadCsv(args.csv);
     console.log(`[analyze] loaded ${samples.length} samples from ${args.csv}`);
+    if (samples.length > 0 && samples.length < 5) {
+        console.log('[analyze] WARNING: <5 samples — tweaks may be noisy. Recommend 50+ matches before applying.');
+    }
     const tweaks = analyze(samples);
     console.log(`[analyze] suggested ${tweaks.length} tweaks:`);
     for (const t of tweaks) {
@@ -166,6 +186,33 @@ function main() {
         console.log(`    reason: ${t.reason}`);
         console.log(`    evidence: ${t.csvEvidence}`);
     }
-    console.log('\n[analyze] applied tweaks should be documented in comms/balance_log.md');
+    if (args.apply) {
+        const ok = await confirm('Apply these tweaks to comms/balance_log.md? (y/N) ');
+        if (!ok) { console.log('[analyze] not applied.'); return; }
+        const fs = require('fs');
+        let logContent = '';
+        try { logContent = fs.readFileSync('comms/balance_log.md', 'utf8'); } catch {}
+        const date = new Date().toISOString().slice(0, 10);
+        let newEntries = `\n\n## ${date} — analyze.ts auto-apply\n\n`;
+        for (const t of tweaks) {
+            newEntries += `### ${t.constant}: ${t.fromValue} → ${t.toValue}\n\n**Reason:** ${t.reason}\n\n**Evidence:** ${t.csvEvidence}\n\n`;
+        }
+        try {
+            fs.writeFileSync('comms/balance_log.md', logContent + newEntries);
+            console.log('[analyze] appended tweaks to comms/balance_log.md');
+            console.log('[analyze] NOTE: actual constants.js edits require human review (per-tweak grep + edit).');
+        } catch (e) { console.error('[analyze] write failed:', e); }
+    } else {
+        console.log('\n[analyze] re-run with --apply to write tweak proposals to comms/balance_log.md');
+    }
 }
-main();
+
+// Bun doesn't have global confirm(); polyfill via stdin
+async function confirm(prompt: string): Promise<boolean> {
+    process.stdout.write(prompt);
+    return new Promise(res => {
+        process.stdin.once('data', d => res(d.toString().trim().toLowerCase().startsWith('y')));
+    });
+}
+
+main().catch(e => { console.error(e); process.exit(1); });

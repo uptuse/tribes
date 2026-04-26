@@ -23,6 +23,8 @@ import { Match } from './sim.ts';
 import { decodeInput } from './wire.ts';
 import { AntiCheat } from './anticheat.ts';
 import { TICK_HZ, SNAPSHOT_HZ, DELTA_HZ, MATCH_END, MATCH_END_REMATCH_HOLD_SEC } from './constants.ts';
+import { computeRatingDeltas, isRatedMatch, defaultSkillRow, SKILL_INITIAL, type SkillRow } from './skill.ts';
+import { appendFileSync, existsSync, writeFileSync } from 'fs';
 
 const PORT = Number(Bun.env.PORT ?? 8080);
 const MAX_PLAYERS_PER_LOBBY = 8;
@@ -62,6 +64,45 @@ interface LobbyState {
 
 const lobbies = new Map<string, LobbyState>();
 const connections = new Map<string, ConnState>();
+
+// R24: Skill rating store — keyed by uuid. In-memory for Bun; CF DO uses
+// state.storage in lobby_do.ts.
+const skillStore = new Map<string, SkillRow>();
+
+// R24: Friend / party stores (in-memory for Bun).
+// Friend list: not server-side per brief — client localStorage. We just
+// expose a presence query GET /friends-status?uuids= mapping uuid → lobbyId.
+const partyStore = new Map<string, { id: string; leaderUuid: string; memberUuids: string[]; createdAt: number }>();
+
+// R24: Telemetry CSV file path
+const TELEMETRY_PATH = 'server/loadtest/balance_telemetry.csv';
+const TELEMETRY_HEADER = 'matchId,durationS,humanCount,scoreA,scoreB,blasterShots,blasterKills,chainShots,chainKills,discShots,discKills,grenShots,grenKills,plasmaShots,plasmaKills,mortarShots,mortarKills,lightK,lightD,medK,medD,heavyK,heavyD,avgJetS,avgSkiS,avgSkiM\n';
+
+function ensureTelemetryFile() {
+    try { if (!existsSync(TELEMETRY_PATH)) writeFileSync(TELEMETRY_PATH, TELEMETRY_HEADER); } catch {}
+}
+ensureTelemetryFile();
+
+function writeTelemetryRow(matchId: string, snap: ReturnType<Match['getTelemetrySnapshot']>) {
+    const w = (idx: number) => snap.perWeapon.get(idx) || { shots: 0, kills: 0 };
+    const row = [
+        matchId,
+        snap.durationS.toFixed(1),
+        snap.humanCount,
+        snap.scores[0], snap.scores[1],
+        w(0).shots, w(0).kills,
+        w(1).shots, w(1).kills,
+        w(2).shots, w(2).kills,
+        w(3).shots, w(3).kills,
+        w(4).shots, w(4).kills,
+        w(5).shots, w(5).kills,
+        snap.perClass[0].kills, snap.perClass[0].deaths,
+        snap.perClass[1].kills, snap.perClass[1].deaths,
+        snap.perClass[2].kills, snap.perClass[2].deaths,
+        snap.avgJetS.toFixed(2), snap.avgSkiS.toFixed(2), snap.avgSkiM.toFixed(1),
+    ].join(',') + '\n';
+    try { appendFileSync(TELEMETRY_PATH, row); } catch (e) { console.warn('[TELEMETRY] write failed:', e); }
+}
 
 function shortId(): string {
   return Math.random().toString(36).slice(2, 10);
@@ -234,7 +275,46 @@ function endMatch(lobby: LobbyState) {
   metrics.matchHistory.push({ matchId: lobby.id, durationS, peakPlayers, totalKills, winnerTeam });
   if (metrics.matchHistory.length > 50) metrics.matchHistory.shift();
   console.log(`[METRIC] {event:matchEnd, matchId:'${lobby.id}', durationS:${durationS.toFixed(1)}, peakPlayers:${peakPlayers}, totalKills:${totalKills}, winnerTeam:${winnerTeam}}`);
+
+  // R24: per-match telemetry CSV row (Bun only; CF DO version uses storage)
+  const tsnap = m.getTelemetrySnapshot();
+  writeTelemetryRow(lobby.id, tsnap);
+
+  // R24: skill rating updates (only if match qualifies as rated)
+  const ratingDeltas = new Map<number, number>();
+  if (isRatedMatch(durationS, tsnap.humanCount)) {
+    const teams: { team: 0 | 1; players: { id: number; uuid: string; rating: number; matchesPlayed: number }[] }[] = [
+      { team: 0, players: [] }, { team: 1, players: [] }
+    ];
+    for (const p of m.players.values()) {
+      if (p.isBot || !p.uuid) continue;
+      const row = skillStore.get(p.uuid) || defaultSkillRow();
+      teams[p.team as 0|1].players.push({ id: p.id, uuid: p.uuid, rating: row.rating, matchesPlayed: row.matchesPlayed });
+    }
+    const deltas = computeRatingDeltas(teams, m.teamScore as [number, number]);
+    for (const t of teams) {
+      for (const tp of t.players) {
+        const delta = deltas.get(tp.id) || 0;
+        const row = skillStore.get(tp.uuid) || defaultSkillRow();
+        row.rating += delta;
+        row.matchesPlayed++;
+        row.lastActiveMs = Date.now();
+        skillStore.set(tp.uuid, row);
+        ratingDeltas.set(tp.id, delta);
+        console.log(`[METRIC] {event:ratingUpdate, uuid:'${tp.uuid.slice(0,8)}', new:${row.rating}, delta:${delta}, matches:${row.matchesPlayed}}`);
+      }
+    }
+  } else {
+    console.log(`[METRIC] {event:matchEndUnrated, durationS:${durationS.toFixed(0)}, humans:${tsnap.humanCount}}`);
+  }
   console.log(`[match] end lobby=${lobby.id} score=${m.teamScore[0]}-${m.teamScore[1]}`);
+  // R24: include per-player rating deltas + new ratings
+  const ratings: Record<number, { rating: number; delta: number }> = {};
+  for (const p of m.players.values()) {
+    if (p.isBot || !p.uuid) continue;
+    const row = skillStore.get(p.uuid);
+    if (row) ratings[p.id] = { rating: row.rating, delta: ratingDeltas.get(p.id) || 0 };
+  }
   broadcastJSON(lobby, {
     type: 'matchEnd',
     lobbyId: lobby.id,
@@ -244,6 +324,7 @@ function endMatch(lobby: LobbyState) {
       team0: mvps.team0 ? { id: mvps.team0.id, name: mvps.team0.name, kills: mvps.team0.kills, deaths: mvps.team0.deaths } : null,
       team1: mvps.team1 ? { id: mvps.team1.id, name: mvps.team1.name, kills: mvps.team1.kills, deaths: mvps.team1.deaths } : null,
     },
+    ratings,
     rematchHoldSec: MATCH_END_REMATCH_HOLD_SEC,
   });
   lobby.rematchHoldUntil = Date.now() + MATCH_END_REMATCH_HOLD_SEC * 1000;
@@ -370,21 +451,82 @@ const server = Bun.serve({
       return new Response(DASHBOARD_HTML, { headers: { 'content-type': 'text/html' } });
     }
     if (url.pathname === '/lobbies') {
-      // R20: public lobby browser endpoint
+      // R20: public lobby browser endpoint (R24: + avgSkillRating)
       const list = [...lobbies.values()]
         .filter(l => l.isPublic)
-        .map(l => ({
-          id: l.id,
-          playerCount: l.members.size,
-          maxPlayers: MAX_PLAYERS_PER_LOBBY,
-          mapName: l.mapName,
-          isPublic: l.isPublic,
-          matchActive: !!l.match,
-          createdAt: l.createdAt,
-        }));
+        .map(l => {
+          let totalRating = 0, count = 0;
+          for (const pid of l.members) {
+            const c = connections.get(pid);
+            if (!c) continue;
+            const uuid = (c.ws as any).data?.uuid as string;
+            const row = uuid ? skillStore.get(uuid) : null;
+            if (row) { totalRating += row.rating; count++; }
+          }
+          const avgSkillRating = count > 0 ? Math.round(totalRating / count) : SKILL_INITIAL;
+          return {
+            id: l.id,
+            playerCount: l.members.size,
+            maxPlayers: MAX_PLAYERS_PER_LOBBY,
+            mapName: l.mapName,
+            isPublic: l.isPublic,
+            matchActive: !!l.match,
+            createdAt: l.createdAt,
+            avgSkillRating,
+            skillRange: count > 0 ? 200 : 0,
+          };
+        });
       return new Response(JSON.stringify(list), {
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
       });
+    }
+    if (url.pathname === '/friends-status') {
+      // R24: presence query — uuids comma-sep returns map of uuid → lobbyId | null
+      const uuidsParam = url.searchParams.get('uuids') || '';
+      const uuids = uuidsParam.split(',').filter(u => u.length > 0);
+      const result: Record<string, { online: boolean; lobbyId: string | null; rating: number }> = {};
+      for (const u of uuids) {
+        let lobbyId: string | null = null;
+        for (const conn of connections.values()) {
+          const cuuid = (conn.ws as any).data?.uuid;
+          if (cuuid === u) { lobbyId = conn.lobbyId; break; }
+        }
+        const row = skillStore.get(u);
+        result[u] = {
+          online: lobbyId !== null,
+          lobbyId,
+          rating: row?.rating || SKILL_INITIAL,
+        };
+      }
+      return new Response(JSON.stringify(result), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
+    if (url.pathname === '/party-create' || url.pathname === '/party-join' || url.pathname === '/party-disband') {
+      // R24: party endpoints — POST with JSON body { uuid, partyId? }
+      if (req.method !== 'POST') return new Response('POST required', { status: 405 });
+      return req.json().then((body: any) => {
+        const myUuid = body.uuid;
+        if (!myUuid) return new Response(JSON.stringify({ error: 'uuid required' }), { status: 400, headers: { 'content-type': 'application/json' } });
+        if (url.pathname === '/party-create') {
+          const partyId = Math.random().toString(36).slice(2, 8).toUpperCase();
+          partyStore.set(partyId, { id: partyId, leaderUuid: myUuid, memberUuids: [myUuid], createdAt: Date.now() });
+          return new Response(JSON.stringify({ partyId }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        if (url.pathname === '/party-join') {
+          const partyId = body.partyId;
+          const party = partyId ? partyStore.get(partyId) : undefined;
+          if (!party) return new Response(JSON.stringify({ error: 'partyId not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+          if (party.memberUuids.indexOf(myUuid) < 0) party.memberUuids.push(myUuid);
+          return new Response(JSON.stringify({ partyId, members: party.memberUuids }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        if (url.pathname === '/party-disband') {
+          const partyId = body.partyId;
+          if (partyId) partyStore.delete(partyId);
+          return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        return new Response('?', { status: 400 });
+      }).catch(() => new Response('bad json', { status: 400 }));
     }
     return new Response('Tribes Lobby + Match Server (R20). WebSocket: /ws  Browse: /lobbies', { status: 200 });
   },
@@ -437,6 +579,9 @@ const server = Bun.serve({
       connections.set(playerId, conn);
       (ws as any).data = { playerId, uuid: newUuid };
 
+      // R24: load skill row for this uuid (creates default if absent)
+      let row = skillStore.get(newUuid);
+      if (!row) { row = defaultSkillRow(); skillStore.set(newUuid, row); }
       ws.send(JSON.stringify({
         type: 'joinAck',
         playerId, numericId,
@@ -447,6 +592,8 @@ const server = Bun.serve({
         memberCount: lobby.members.size,
         serverTime: Date.now(),
         reconnected,
+        skillRating: row.rating,
+        matchesPlayed: row.matchesPlayed,
       }));
       broadcastJSON(lobby, buildPlayerList(lobby));
       metrics.playersConnected++;

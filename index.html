@@ -315,6 +315,30 @@
     #me-vote { font-family:'Barlow Condensed',sans-serif; font-size:0.85em; color:#7A6A4A;
       letter-spacing:2px; margin:8px 0; }
 
+    /* R24 gear icon for in-match settings access */
+    #hud-gear { display:none; position:fixed; top:8px; right:140px; z-index:40;
+      width:28px; height:28px; cursor:pointer; pointer-events:auto;
+      background:rgba(8,6,3,0.6); border:1px solid #3A2A10;
+      display:flex; align-items:center; justify-content:center; user-select:none; }
+    #hud-gear.show { display:flex; }
+    #hud-gear:hover { border-color:#D4A030; }
+    #hud-gear svg { width:18px; height:18px; fill:#D4A030; opacity:0.85; }
+
+    /* R24 connection-quality 4-bar indicator */
+    #conn-quality { display:none; position:fixed; top:8px; right:50px; z-index:40;
+      pointer-events:none; user-select:none; padding:2px 4px;
+      background:rgba(8,6,3,0.55); border:1px solid #2A2010; }
+    #conn-quality.show { display:flex; align-items:flex-end; height:28px; gap:2px; }
+    .cq-bar { width:4px; background:#3a3a3a; border-radius:1px; transition:background 0.3s; }
+    .cq-bar.b1 { height:25%; }
+    .cq-bar.b2 { height:50%; }
+    .cq-bar.b3 { height:75%; }
+    .cq-bar.b4 { height:100%; }
+    .cq-bar.lit-good { background:#2ECC71; }
+    .cq-bar.lit-fair { background:#FFC850; }
+    .cq-bar.lit-poor { background:#E07020; }
+    .cq-bar.lit-bad  { background:#C0392B; }
+
     /* R19 bandwidth telemetry — top-right under FPS counter */
     #bw-telemetry { display:none; position:fixed; top:28px; right:10px; z-index:40;
       font-family:'Barlow Condensed',sans-serif; font-size:0.72em; color:#7a8a9a;
@@ -509,6 +533,26 @@
     </div>
   </div>
 
+  <!-- R24: Friends + Party panel -->
+  <div id="friends-panel" onclick="if(event.target===this)closeFriendsPanel()" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;z-index:30;background:rgba(0,0,0,0.6);align-items:center;justify-content:center;">
+    <div class="panel" style="min-width:480px;max-height:80vh;overflow-y:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0">Friends &amp; Party</h3>
+        <span onclick="closeFriendsPanel()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div id="party-status" style="padding:6px 10px;background:rgba(40,30,15,0.5);border:1px solid #4A3A2A;margin-bottom:10px;font-size:0.85em;color:#9A8A6A;">No active party</div>
+      <div style="margin-bottom:14px;display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn" onclick="createParty()" style="flex:1">Create Party</button>
+        <button class="btn btn-back" onclick="leaveParty()" style="flex:1">Leave Party</button>
+      </div>
+      <h4 style="color:#D4A030;letter-spacing:2px;font-size:0.8em;margin:12px 0 6px;">YOUR FRIENDS</h4>
+      <div id="friends-list"></div>
+      <div style="margin-top:14px;font-size:0.78em;color:#7A6A4A;">
+        Add friends from the match-end screen by clicking + FRIEND next to a player's name.
+      </div>
+    </div>
+  </div>
+
   <!-- R20: Lobby browser modal -->
   <div id="lobby-browser" onclick="if(event.target===this)closeLobbyBrowser()">
     <div class="panel">
@@ -553,9 +597,17 @@
       </div>
       <div class="subtitle">STARSIEGE</div>
       <div class="wordmark">TRIBES</div>
+      <!-- R24: skill rating display, populated by __tribesOnSkillUpdate -->
+      <div id="player-rating-row" style="margin:6px 0 14px;color:#C8B888;font-size:0.85em;letter-spacing:1px;text-transform:uppercase;">
+        <span id="player-name-line" style="color:#E0D0A0;">Player</span>
+        &middot; Rating <span id="player-rating-val" style="color:#FFE69A;font-weight:bold;">1000</span>
+        <span id="player-rating-delta" style="margin-left:6px;font-weight:bold;"></span>
+        <span id="player-rating-count" style="margin-left:6px;color:#7E6D55;font-size:0.85em;">(0 matches)</span>
+      </div>
       <div class="menu-grid">
         <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
         <div class="menu-item" onclick="openLobbyBrowser()">MULTIPLAYER</div>
+        <div class="menu-item" onclick="openFriendsPanel()">FRIENDS</div>
         <div class="menu-item" onclick="inviteFriends()">INVITE FRIENDS</div>
         <div class="menu-item" onclick="quickStart()">QUICK START</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
@@ -779,6 +831,17 @@
   <div id="fps-counter">0 fps</div>
   <!-- R19 bandwidth telemetry -->
   <div id="bw-telemetry"></div>
+  <!-- R24 connection-quality 4-bar indicator -->
+  <div id="conn-quality">
+    <div class="cq-bar b1" id="cq-b1"></div>
+    <div class="cq-bar b2" id="cq-b2"></div>
+    <div class="cq-bar b3" id="cq-b3"></div>
+    <div class="cq-bar b4" id="cq-b4"></div>
+  </div>
+  <!-- R24 in-match gear icon -->
+  <div id="hud-gear" onclick="openSettings()" title="Settings (Ctrl+,)">
+    <svg viewBox="0 0 24 24"><path d="M19.43 12.98a7.93 7.93 0 0 0 0-1.96l2.11-1.65a.5.5 0 0 0 .12-.64l-2-3.46a.5.5 0 0 0-.6-.22l-2.49 1a7.96 7.96 0 0 0-1.69-.98l-.38-2.65A.5.5 0 0 0 14 2h-4a.5.5 0 0 0-.5.42l-.38 2.65a8 8 0 0 0-1.69.98l-2.49-1a.5.5 0 0 0-.6.22l-2 3.46a.5.5 0 0 0 .12.64l2.11 1.65a7.96 7.96 0 0 0 0 1.96L1.54 14.63a.5.5 0 0 0-.12.64l2 3.46c.13.22.4.31.6.22l2.49-1a7.96 7.96 0 0 0 1.69.98l.38 2.65a.5.5 0 0 0 .5.42h4a.5.5 0 0 0 .5-.42l.38-2.65c.6-.24 1.16-.57 1.69-.98l2.49 1c.2.09.47 0 .6-.22l2-3.46a.5.5 0 0 0-.12-.64l-2.11-1.65zM12 15.5A3.5 3.5 0 1 1 12 8.5a3.5 3.5 0 0 1 0 7z"/></svg>
+  </div>
 
   <!-- Settings Modal -->
   <div id="settings-modal" onclick="if(event.target===this)closeSettings()">
@@ -1097,6 +1160,9 @@
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
+      // R24: show gear icon + connection-quality bars in-match
+      document.getElementById('hud-gear').classList.add('show');
+      document.getElementById('conn-quality').classList.add('show');
       // R21: show tutorial overlay on first match (skips if user has seen it)
       showTutorial();
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
@@ -1123,6 +1189,13 @@
         e.preventDefault();
         document.getElementById('scoreboard').classList.add('active');
         if(Module._updateScoreboard)Module._updateScoreboard();
+      }
+      // R24: Ctrl+, opens settings from any state (cross-platform shortcut)
+      if(e.keyCode===188 && (e.ctrlKey || e.metaKey)){
+        e.preventDefault();
+        if(document.getElementById('settings-modal').classList.contains('active')){closeSettings();}
+        else{openSettings();}
+        return;
       }
       if(e.keyCode===27){
         if(document.getElementById('tutorial').classList.contains('active')){closeTutorial();return;}
@@ -1415,31 +1488,147 @@
       try{ localStorage.setItem('tribes:tutorialDone', 'v1'); }catch(e){}
     }
 
+    // R24: Friends + Party (client-side persistence + server presence)
+    function loadFriends(){
+      try { return JSON.parse(localStorage.getItem('tribes:friends') || '[]'); }
+      catch(e){ return []; }
+    }
+    function saveFriends(arr){
+      try { localStorage.setItem('tribes:friends', JSON.stringify(arr)); } catch(e){}
+    }
+    window.addFriend = function(uuid, name){
+      var friends = loadFriends();
+      if(friends.find(function(f){return f.uuid===uuid;})) return;
+      friends.push({ uuid: uuid, lastName: name || 'Player', addedAt: Date.now() });
+      saveFriends(friends);
+      showToast('FRIEND ADDED: '+(name||'Player'),3000);
+    };
+    function removeFriend(uuid){
+      var friends = loadFriends().filter(function(f){return f.uuid!==uuid;});
+      saveFriends(friends);
+      renderFriendsList();
+    }
+    var _currentPartyId = null;
+    function openFriendsPanel(){
+      document.getElementById('friends-panel').style.display='flex';
+      renderFriendsList();
+      refreshFriendsPresence();
+    }
+    function closeFriendsPanel(){
+      document.getElementById('friends-panel').style.display='none';
+    }
+    function renderFriendsList(){
+      var el = document.getElementById('friends-list');
+      var friends = loadFriends();
+      if(friends.length === 0){
+        el.innerHTML = '<div style="color:#7A6A4A;padding:14px;text-align:center;font-size:0.85em;">No friends yet.</div>';
+        return;
+      }
+      el.innerHTML = friends.map(function(f){
+        var pres = f._presence;
+        var status = pres ? (pres.online ? '<span style="color:#2ECC71">● online</span>' : '<span style="color:#7A6A4A">○ offline</span>') : '<span style="color:#7A6A4A">…</span>';
+        var rating = pres ? (' ('+pres.rating+')') : '';
+        var joinBtn = (pres && pres.online && pres.lobbyId) ? '<button class="btn-small" onclick="joinFriendLobby(\''+pres.lobbyId+'\')">JOIN</button>' : '';
+        return '<div style="display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px solid #2A2010;">'+
+          '<span>'+f.lastName+rating+'</span>'+
+          '<span>'+status+' '+joinBtn+' <span onclick="removeFriend(\''+f.uuid+'\')" style="cursor:pointer;color:#7A6A4A;margin-left:8px">×</span></span>'+
+        '</div>';
+      }).join('');
+    }
+    function refreshFriendsPresence(){
+      var friends = loadFriends();
+      if(friends.length === 0) return;
+      var serverBase = (new URLSearchParams(location.search).get('multiplayer')==='remote')
+        ? (window.__TRIBES_SERVER_URL || 'wss://tribes-server.workers.dev/ws').replace(/^ws/,'http').replace(/\/ws.*$/,'')
+        : 'http://localhost:8080';
+      var uuids = friends.map(function(f){return f.uuid;}).join(',');
+      fetch(serverBase + '/friends-status?uuids='+encodeURIComponent(uuids))
+        .then(function(r){ return r.json(); })
+        .then(function(map){
+          friends.forEach(function(f){ f._presence = map[f.uuid]; });
+          renderFriendsList();
+        })
+        .catch(function(){});
+    }
+    function joinFriendLobby(lobbyId){
+      window.location.href = '?multiplayer=local&lobbyId='+encodeURIComponent(lobbyId);
+    }
+    function getPartyServerBase(){
+      return (new URLSearchParams(location.search).get('multiplayer')==='remote')
+        ? (window.__TRIBES_SERVER_URL || 'wss://tribes-server.workers.dev/ws').replace(/^ws/,'http').replace(/\/ws.*$/,'')
+        : 'http://localhost:8080';
+    }
+    function getMyUuid(){
+      return localStorage.getItem('tribes_player_uuid') || ('client-' + Math.random().toString(36).slice(2,10));
+    }
+    function createParty(){
+      fetch(getPartyServerBase() + '/party-create', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ uuid: getMyUuid() }),
+      }).then(function(r){return r.json();}).then(function(d){
+        if(d.partyId){
+          _currentPartyId = d.partyId;
+          document.getElementById('party-status').textContent = 'Party: '+d.partyId+' (you are leader)';
+          showToast('PARTY CREATED: '+d.partyId+' — share with friends',5000);
+        }
+      }).catch(function(e){ showToast('Party create failed',2500); });
+    }
+    function leaveParty(){
+      if(!_currentPartyId){ showToast('No active party',2000); return; }
+      fetch(getPartyServerBase() + '/party-disband', {
+        method:'POST', headers:{'content-type':'application/json'},
+        body: JSON.stringify({ uuid: getMyUuid(), partyId: _currentPartyId }),
+      }).finally(function(){
+        _currentPartyId = null;
+        document.getElementById('party-status').textContent = 'No active party';
+      });
+    }
+
     // R20: Reconnect grace overlay
-    var _reconnectTimer = null, _reconnectCountdown = 30;
+    // R24: exponential backoff reconnect (3,5,8,12,20,30,30,30s = 138s total)
+    var RECONNECT_BACKOFF_S = [3, 5, 8, 12, 20, 30, 30, 30];
+    var _reconnectTimer = null, _reconnectCountdown = 0, _reconnectAttempt = 0;
     function showReconnectOverlay(){
       document.getElementById('reconnect-overlay').classList.add('active');
-      _reconnectCountdown = 30;
+      _reconnectAttempt = 0;
+      scheduleNextReconnect();
+    }
+    function scheduleNextReconnect(){
+      if(_reconnectAttempt >= RECONNECT_BACKOFF_S.length){
+        // R24: after 8 fails, replace countdown with manual RECONNECT button
+        clearInterval(_reconnectTimer); _reconnectTimer = null;
+        var sub = document.getElementById('reconnect-sub');
+        var cnt = document.getElementById('reconnect-count');
+        if(sub) sub.innerHTML = 'Auto-retry exhausted. <span style="cursor:pointer;color:#FFC850;text-decoration:underline" onclick="manualReconnect()">RECONNECT</span> or <span style="cursor:pointer;color:#FFC850;text-decoration:underline" onclick="hideReconnectOverlay();gameStarted=false;canvas.style.visibility=\'hidden\';document.getElementById(\'hud\').classList.remove(\'active\');showScreen(\'mainmenu\');">return to menu</span>';
+        if(cnt) cnt.textContent = '✕';
+        return;
+      }
+      _reconnectCountdown = RECONNECT_BACKOFF_S[_reconnectAttempt];
+      _reconnectAttempt++;
+      var sub = document.getElementById('reconnect-sub');
+      if(sub) sub.textContent = 'Attempt '+_reconnectAttempt+'/'+RECONNECT_BACKOFF_S.length+' in';
       if(_reconnectTimer) clearInterval(_reconnectTimer);
       _reconnectTimer = setInterval(function(){
         _reconnectCountdown--;
         var el = document.getElementById('reconnect-count');
         if(el) el.textContent = _reconnectCountdown;
-        // Auto-reconnect every 3s
-        if(_reconnectCountdown % 3 === 0 && _reconnectCountdown > 0 && window.__tribesNet){
-          try { window.__tribesNet.start(); } catch(e){}
-        }
         if(_reconnectCountdown <= 0){
           clearInterval(_reconnectTimer); _reconnectTimer = null;
-          hideReconnectOverlay();
-          // Fall back to main menu
-          gameStarted = false;
-          canvas.style.visibility = 'hidden';
-          document.getElementById('hud').classList.remove('active');
-          showScreen('mainmenu');
-          addEventMsg('Connection lost — returned to main menu');
+          if(window.__tribesNet){ try { window.__tribesNet.start(); } catch(e){} }
+          // Wait 2s for connection result; if still not connected, schedule next
+          setTimeout(function(){
+            if(window.__tribesNet && window.__tribesNet.getStatus && window.__tribesNet.getStatus().connected){
+              hideReconnectOverlay();
+            } else {
+              scheduleNextReconnect();
+            }
+          }, 2000);
         }
       }, 1000);
+    }
+    function manualReconnect(){
+      _reconnectAttempt = 0;
+      scheduleNextReconnect();
     }
     function hideReconnectOverlay(){
       document.getElementById('reconnect-overlay').classList.remove('active');
@@ -2147,7 +2336,21 @@
             window.__tribesOnMatchEnd = function(msg){
               addEventMsg('Match ended — score ' + msg.teamScore.join('-'));
             };
-            // Bandwidth telemetry overlay updater
+            // R24: skill rating updates (joinAck + matchEnd) → main-menu display
+            window.__tribesOnSkillUpdate = function(info){
+              var rv = document.getElementById('player-rating-val');
+              var rd = document.getElementById('player-rating-delta');
+              var rc = document.getElementById('player-rating-count');
+              if(rv) rv.textContent = (info.rating|0);
+              if(rc) rc.textContent = '(' + (info.matchesPlayed|0) + ' matches)';
+              if(rd){
+                var d = info.delta|0;
+                if(d > 0)      { rd.textContent = '+' + d; rd.style.color = '#5DD66B'; }
+                else if(d < 0) { rd.textContent = String(d); rd.style.color = '#E04A4A'; }
+                else           { rd.textContent = ''; }
+              }
+            };
+            // Bandwidth telemetry overlay + R24 connection-quality bar updater
             setInterval(function(){
               var bw = document.getElementById('bw-telemetry');
               if(bw && m && m.getStatus){
@@ -2156,6 +2359,21 @@
                   bw.style.display = 'block';
                   bw.textContent = '↓ ' + s.kbInPerSec + ' KB/s  ↑ ' + s.kbOutPerSec + ' KB/s  ping ' +
                     s.pingMs + 'ms  recon ' + s.reconciliations + ' (avg Δ ' + s.avgDivergence + 'm)';
+                  // R24: 4-bar quality indicator
+                  // ping<50: 4 bars green; <100: 3 bars; <200: 2 bars yellow; <400: 1 bar orange; ≥400: red
+                  var ping = s.pingMs|0;
+                  var bars, cls;
+                  if(ping < 50)       { bars = 4; cls = 'lit-good'; }
+                  else if(ping < 100) { bars = 3; cls = 'lit-good'; }
+                  else if(ping < 200) { bars = 2; cls = 'lit-fair'; }
+                  else if(ping < 400) { bars = 1; cls = 'lit-poor'; }
+                  else                { bars = 1; cls = 'lit-bad'; }
+                  for(var bi=1; bi<=4; bi++){
+                    var el = document.getElementById('cq-b'+bi);
+                    if(!el) continue;
+                    el.classList.remove('lit-good','lit-fair','lit-poor','lit-bad');
+                    if(bi <= bars) el.classList.add(cls);
+                  }
                 } else {
                   bw.style.display = 'none';
                 }
