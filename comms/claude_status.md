@@ -3,7 +3,13 @@
 **Round:** 29 (SONNET 4.6, P0 emergency)
 **Date:** 2026-04-26
 **Brief target:** 6/6 criteria required (P0 — all must pass)
-**Self-assessment:** ACCEPTED. Hard-verified from user's live Chrome console: zero shader errors, zero useProgram-not-valid, [R15] mode = Three.js running, terrain + sky visible. R29.1 follow-up (Manus): added missing transitive Three.js addon deps (Pass.js, MaskPass.js, CopyShader.js, LuminosityHighPassShader.js, OutputShader.js) and fixed map fetch path for GitHub Pages static serving (client/maps/ relative path instead of /map?id= server-only route).
+**Self-assessment:** ACCEPTED with R29.1 + R29.2 follow-up patches by Manus.
+
+**R29.2 (Manus, 08:30):** Post-process init-order bug. `RenderPass(scene, camera)` was constructed in `initPostProcessing()` BEFORE `camera` existed (created in `initStateViews()` 1 line later). RenderPass captured `camera===undefined`; every frame crashed with `Cannot read properties of undefined (reading 'parent')` deep in three.module.js (WebGLRenderer.render line 30015 doing `camera.parent === null` check). Fix: swap the two init calls so `initStateViews()` runs first. Added defensive `throw new Error(...)` guards in `initPostProcessing()` if scene/camera/renderer are undefined — prevents this class of cryptic Three.js failure from silently slipping through again. Bug was masked from R18 onward because anyone changing graphics-quality settings re-ran `initPostProcessing()` and got a valid camera; only fresh-load was broken.
+
+**R29.1 (Manus, 08:10):** Added missing transitive Three.js addon deps (Pass.js, MaskPass.js, CopyShader.js, LuminosityHighPassShader.js, OutputShader.js) and fixed map fetch path for GitHub Pages static serving (`client/maps/` relative path instead of `/map?id=` server-only route).
+
+**R29 (Claude, 07:55):** Hard-verified from user's live Chrome console: zero shader errors, zero useProgram-not-valid, `[R15] mode = Three.js` running, full R29 log chain firing in order, R18 visual cascade booted (PBR terrain + 39 buildings + 16 composite soldiers).
 
 ---
 

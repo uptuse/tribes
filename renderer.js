@@ -104,8 +104,15 @@ export async function start() {
     initFlags();
     initParticles();
     initWeaponViewmodel();
-    initPostProcessing();
+    // R29.2: initStateViews() must run BEFORE initPostProcessing() because the
+    // RenderPass(scene, camera) constructor captures the camera reference, and
+    // initStateViews() is where `camera` is actually created. Previously the
+    // order was reversed, so RenderPass got camera===undefined and every frame
+    // crashed with `Cannot read properties of undefined (reading 'parent')` at
+    // WebGLRenderer.render line 30015 (camera.parent === null check).
     initStateViews();
+    initPostProcessing();
+    console.log('[R29.2] State views + post-process initialized in correct order (camera-first)');
     console.log('[R29] Scene populated, ready to render');
 
     // Listen for settings changes (graphics quality dropdown)
@@ -855,6 +862,14 @@ function initPostProcessing() {
         composer = null;
         return;
     }
+    // R29.2 defensive: hard-fail with a clear message if init order regresses.
+    // Without these guards, an undefined scene/camera passed to RenderPass causes
+    // a cryptic `Cannot read properties of undefined (reading 'parent')` deep
+    // inside three.module.js on every frame — we lost an hour to that exact
+    // failure mode. Fail loud at init time instead.
+    if (!scene)    throw new Error('[R29.2] initPostProcessing called before initScene()');
+    if (!camera)   throw new Error('[R29.2] initPostProcessing called before initStateViews() — camera is undefined');
+    if (!renderer) throw new Error('[R29.2] initPostProcessing called before initRenderer() — renderer is undefined');
     composer = new EffectComposer(renderer);
     composer.setPixelRatio(tier.pixelRatio);
     const renderPass = new RenderPass(scene, camera);
