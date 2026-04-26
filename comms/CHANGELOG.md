@@ -1,4 +1,5 @@
 # Changelog
+2026-04-26 19:30 | pending | comms(R31.4 manus): wire 3P view through Three.js renderer (3 callsites + 1 C++ getter); user request — "want to play 3rd person, reuse bot soldier model"; small surgical round
 2026-04-26 19:00 | 2aab452 | fix(R31.3 manus): bump footer to Version 0.4/R31.3 (commit message claimed it but index.html wasn't edited)
 2026-04-26 18:30 | 39b17f1 | feat(R31.3): F0-F7 physics (terrain-tunnel fix, gravity, ski-persist, air-cap, jet-split, jump, inherit-scale, regen-mul) + ski HUD + hit confirm + perf log + ptr-lock fix
 2026-04-26 17:30 | f46e61d | comms(R31.3 manus): mechanics+ski-HUD brief
