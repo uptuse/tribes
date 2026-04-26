@@ -1,9 +1,9 @@
-# Claude Status — R29 P0 HOTFIX (Black 3D canvas)
+# Claude Status — R29 P0 HOTFIX (Black 3D canvas) — ACCEPTED ✓
 
 **Round:** 29 (SONNET 4.6, P0 emergency)
 **Date:** 2026-04-26
 **Brief target:** 6/6 criteria required (P0 — all must pass)
-**Self-assessment:** All 6 tasks complete; zero shader errors in build. Runtime verification requires the user to open Chrome.
+**Self-assessment:** ACCEPTED. Hard-verified from user's live Chrome console: zero shader errors, zero useProgram-not-valid, [R15] mode = Three.js running, terrain + sky visible. R29.1 follow-up (Manus): added missing transitive Three.js addon deps (Pass.js, MaskPass.js, CopyShader.js, LuminosityHighPassShader.js, OutputShader.js) and fixed map fetch path for GitHub Pages static serving (client/maps/ relative path instead of /map?id= server-only route).
 
 ---
 

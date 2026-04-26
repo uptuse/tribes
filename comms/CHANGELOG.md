@@ -1,5 +1,5 @@
 # Changelog
-2026-04-26 08:10 | pending  | fix(R29.1 manus): hotfix — R29 vendoring missed transitive deps; added Pass.js + MaskPass.js + CopyShader.js + LuminosityHighPassShader.js + OutputShader.js so EffectComposer/UnrealBloomPass/OutputPass can resolve. ALSO fixed map fetch path: index.html + shell.html were calling fetch('/map?id=X') (Worker-only route) on GitHub Pages; switched to fetch('client/maps/X.tribes-map') so static deploy works. R29 hard-verified post-fix from user's console: zero shader errors, zero useProgram-not-valid, [R15] mode = Three.js + C++ main loop cancelled — only renderer.js import was failing due to addon 404s.
+2026-04-26 08:10 | b7b7424 | fix(R29.1 manus): missing transitive Three.js deps (Pass/MaskPass/CopyShader/LuminosityHighPassShader/OutputShader) + map fetch path for GitHub Pages — R29 ACCEPTED, terrain + sky verified in Chrome
 2026-04-26 07:55 | 20e6b6c | fix(R29): P0 black canvas — highp precision all 8 shaders + Three.js init to onRuntimeInitialized + vendor Three.js r170 locally (CDN eliminated)
 2026-04-26 04:30 | 140cff8 | feat(R28): text chat (channels + sanitize + rate limit) + emoji + R2 SigV4 + per-match shadow IDs + slash commands + admin wordlist
 2026-04-26 04:00 | 63ae35d | feat(R27): velocity anti-cheat + moderation + voice mute + reports + events + survey + GDPR + HELP
