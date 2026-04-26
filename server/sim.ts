@@ -21,6 +21,7 @@ import {
     WORLD_HALF,
 } from './constants.js';
 import { encodeSnapshot, encodeDelta } from './wire.js';
+import { BotAI } from './bot_ai.ts';
 
 // ---- Types ----
 export interface PlayerInput {
@@ -124,6 +125,7 @@ const NEXT_PROJ_ID = { v: 1 };
 export class Match {
     tick = 0;
     players = new Map<number, SimPlayer>();
+    botAI = new BotAI();   // R22: real A* bot AI
     projectiles: SimProjectile[] = [];
     flags: SimFlag[] = [
         { team: 0, pos: [-100, 30, -50], homePos: [-100, 30, -50], state: 0, carrierIdx: -1, dropTimer: 0 },
@@ -614,6 +616,8 @@ export class Match {
             uuid: '',
         };
         this.players.set(botId, bot);
+        // R22: register with BotAI so per-tick computeInput() runs A*-driven behavior
+        this.botAI.addBot(botId, this.players.size);
         console.log(`[BOT-FILL] replacing playerId=${disconnectedPlayer.id} (${disconnectedPlayer.name}) with botId=${botId}`);
         return bot;
     }
@@ -622,30 +626,27 @@ export class Match {
         const bot = this.players.get(botId);
         if (!bot || !bot.isBot) return;
         this.players.delete(botId);
+        this.botAI.removeBot(botId);
         console.log(`[BOT-EVICT] botId=${botId} (${bot.name}) removed`);
     }
 
-    // Step bot: cycle through recorded inputs with jitter
+    // R22: BotAI-driven input step (replaces R20 input-replay loop)
     private stepBotInputs(bot: SimPlayer) {
-        if (bot.recentInputs.length === 0) {
-            // No inputs to replay — bot stands still
+        const aiInput = this.botAI.computeInput(bot, this, this.tick);
+        if (!aiInput) {
+            // BotAI declined (bot dead) — fall back to input-replay if we have history
+            if (bot.recentInputs.length > 0) {
+                const entry = bot.recentInputs[bot.botReplayCursor % bot.recentInputs.length];
+                bot.botReplayCursor++;
+                bot.lastInput = entry.input;
+                bot.rot[0] = Math.max(-1.4, Math.min(1.4, bot.rot[0] + entry.input.mouseDY));
+                bot.rot[1] += entry.input.mouseDX;
+            }
             return;
         }
-        const entry = bot.recentInputs[bot.botReplayCursor % bot.recentInputs.length];
-        bot.botReplayCursor++;
-        const jitter = (Math.random() - 0.5) * 0.10; // ±5%
-        const fakeInput: PlayerInput = {
-            tick: this.tick,
-            buttons: entry.input.buttons,
-            mouseDX: entry.input.mouseDX * (1 + jitter),
-            mouseDY: entry.input.mouseDY * (1 + jitter),
-            pingMs: 0,
-            weaponSelect: 0xFF,
-        };
-        bot.lastInput = fakeInput;
-        // Apply rotation deltas
-        bot.rot[0] = Math.max(-1.4, Math.min(1.4, bot.rot[0] + fakeInput.mouseDY));
-        bot.rot[1] += fakeInput.mouseDX;
+        bot.lastInput = aiInput;
+        bot.rot[0] = Math.max(-1.4, Math.min(1.4, bot.rot[0] + aiInput.mouseDY));
+        bot.rot[1] += aiInput.mouseDX;
     }
 
     tickSimulation() {

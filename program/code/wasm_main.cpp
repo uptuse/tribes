@@ -1425,9 +1425,11 @@ static void broadcastHUD(){
        p.skiing?1:0,p.carryingFlag,
        (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
        teamScore[0],teamScore[1],(int)p.armor);
+    // R22: also pass local-player spawn-protection remaining (deciseconds)
+    float spRemain = (g_spawnProtect[localPlayer] > gameTime) ? (g_spawnProtect[localPlayer] - gameTime) : 0.0f;
     EM_ASM({
-        if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2);
-    },g_matchState,timeRemain,(int)(g_localRespawnTimer*10));
+        if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3);
+    },g_matchState,timeRemain,(int)(g_localRespawnTimer*10),(int)(spRemain*10));
 }
 
 // ============================================================
@@ -1613,6 +1615,8 @@ static void populateRenderState(){
         r.carryingFlag=(float)p.carryingFlag;
         r.visible=p.active?1.0f:0.0f;
         r.botRole=p.isBot?(float)p.botRole:-1.0f;
+        // R22: spawn protection remaining seconds in reserved[0]
+        r.reserved[0] = (g_spawnProtect[i] > gameTime) ? (g_spawnProtect[i] - gameTime) : 0.0f;
     }
 
     // Projectiles

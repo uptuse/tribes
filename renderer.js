@@ -601,12 +601,32 @@ function createPlayerMesh(armor) {
     return group;
 }
 
+// R22: shield sphere shared geometry/material — pulsing cyan, attached per-player when active
+const shieldSpheres = []; // index = player slot
+function makeShieldSphere() {
+    const geom = new THREE.SphereGeometry(1.2, 16, 12);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0x9DDCFF,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+    });
+    const mesh = new THREE.Mesh(geom, mat);
+    mesh.visible = false;
+    return mesh;
+}
+
 function initPlayers() {
     for (let i = 0; i < MAX_PLAYERS; i++) {
         const mesh = createPlayerMesh(1);
         mesh.visible = false;
         scene.add(mesh);
         playerMeshes.push(mesh);
+        // Pre-allocate shield sphere per player
+        const shield = makeShieldSphere();
+        scene.add(shield);
+        shieldSpheres.push(shield);
     }
     console.log('[R18] Players: 16 composite soldiers (3 armor tiers)');
 }
@@ -908,6 +928,19 @@ function syncPlayers(t) {
             mesh = playerMeshes[i];
         }
 
+        // R22: spawn-protection shield sphere — pulsing 0.5→1.0 alpha at 2Hz
+        const spawnProt = playerView[o + 20];   // reserved[0] from R15 RenderPlayer struct
+        const shield = shieldSpheres[i];
+        if (shield) {
+            if (alive && visible && spawnProt > 0.05) {
+                shield.position.set(playerView[o], playerView[o+1] + 1.0, playerView[o+2]);
+                const pulse = 0.5 + 0.5 * Math.sin(t * Math.PI * 4); // 2Hz pulse
+                shield.material.opacity = 0.20 + 0.20 * pulse;
+                shield.visible = true;
+            } else {
+                shield.visible = false;
+            }
+        }
         if (i === localIdx) {
             mesh.visible = false;
             if (nameplateSprites[i]) nameplateSprites[i].visible = false;

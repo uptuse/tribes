@@ -236,6 +236,38 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* R22: Match start countdown overlay — center screen */
+    #countdown { display:none; position:fixed; top:35%; left:50%; transform:translate(-50%,-50%);
+      z-index:55; font-family:'Cinzel',serif; font-size:6em; font-weight:900;
+      letter-spacing:8px; color:#FFC850; text-shadow:0 4px 20px rgba(0,0,0,0.9);
+      pointer-events:none; opacity:0; transition:opacity 0.3s; }
+    #countdown.show { display:block; opacity:1; }
+    #countdown.go { color:#2ECC71; font-size:8em; animation:goFlash 1s ease-out; }
+    @keyframes goFlash {
+      0% { transform:translate(-50%,-50%) scale(0.5); opacity:0; }
+      30% { transform:translate(-50%,-50%) scale(1.2); opacity:1; }
+      100% { transform:translate(-50%,-50%) scale(1); opacity:0; }
+    }
+
+    /* R22: Spawn-protection HUD label (under crosshair) */
+    #spawn-prot { display:none; position:fixed; top:55%; left:50%; transform:translateX(-50%);
+      z-index:14; font-family:'Barlow Condensed',sans-serif; font-size:1.05em;
+      letter-spacing:4px; color:#9DDCFF; background:rgba(8,18,30,0.6);
+      border:1px solid #3A6A9A; padding:4px 14px; pointer-events:none; }
+    #spawn-prot.show { display:block; }
+
+    /* R22: Damage indicator arcs — fade out red 60° wedge on HUD edge */
+    #damage-arcs { position:fixed; top:0; left:0; width:100%; height:100%; z-index:13;
+      pointer-events:none; }
+    .dmg-arc { position:absolute; top:50%; left:50%; width:240px; height:240px;
+      transform:translate(-50%,-50%);
+      background:conic-gradient(from -30deg, transparent 0deg, rgba(220,40,40,0.6) 30deg, rgba(220,40,40,0.6) 90deg, transparent 120deg, transparent 360deg);
+      border-radius:50%;
+      mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
+      -webkit-mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
+      opacity:0; transition:opacity 1.5s; }
+    .dmg-arc.show { opacity:1; transition:opacity 0.05s; }
+
     /* R21: Toast notification (centre top, fades out) */
     #toast { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
       z-index:60; background:rgba(10,8,4,0.95); border:1px solid #D4A030; color:#FFC850;
@@ -455,6 +487,11 @@
       </div>
     </div>
   </div>
+
+  <!-- R22: countdown / spawn-protection label / damage indicators -->
+  <div id="countdown"></div>
+  <div id="spawn-prot">INVULNERABLE 3.0s</div>
+  <div id="damage-arcs"></div>
 
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
@@ -881,6 +918,35 @@
       df.classList.add('hit');
       if(_flashTimeout)clearTimeout(_flashTimeout);
       _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
+      // R22: also fire damage arc toward nearest visible enemy
+      if(Module && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
+        var ptr = Module._getPlayerStatePtr();
+        var stride = Module._getPlayerStateStride();
+        var count = Module._getPlayerStateCount();
+        var localIdx = Module._getLocalPlayerIdx();
+        var view = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
+        var lo = localIdx * stride;
+        var lx = view[lo], lz = view[lo+2], lyaw = view[lo+4];
+        var localTeam = view[lo+11];
+        var bestDist=Infinity, bestAng=0;
+        for(var ii=0; ii<count; ii++){
+          if(ii===localIdx) continue;
+          var oo = ii*stride;
+          if(view[oo+18]<0.5 || view[oo+13]<0.5) continue; // visible+alive
+          if(view[oo+11]===localTeam) continue;
+          var dx = view[oo]-lx, dz = view[oo+2]-lz;
+          var d = Math.hypot(dx,dz);
+          if(d < bestDist){
+            bestDist = d;
+            // World-bearing - localYaw → screen-relative angle (0=front, +=right)
+            var wb = Math.atan2(dx, -dz);
+            bestAng = wb - lyaw;
+            while(bestAng>Math.PI) bestAng -= 2*Math.PI;
+            while(bestAng<-Math.PI) bestAng += 2*Math.PI;
+          }
+        }
+        if(bestDist<Infinity && window.showDamageArc) window.showDamageArc(bestAng);
+      }
     }
     window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
       // Damage flash on HP drop (>= 2 HP loss to filter noise / regen)
@@ -924,10 +990,29 @@
 
     // Match-state HUD (separate EM_ASM call — EM_ASM cap is $0-$15)
     var _lastHp=100; // track HP for respawn overlay
-    window.updateMatchHUD=function(matchState,timeRemain,respawnTimer10){
+    var _lastMatchState=-1, _lastRespawnTimer=-1;
+    window.updateMatchHUD=function(matchState,timeRemain,respawnTimer10,spawnProtRemain10){
+      // R22: spawn-protection HUD label
+      if(window.updateSpawnProt) window.updateSpawnProt((spawnProtRemain10||0)/10);
       var timerEl=document.getElementById('hud-timer');
       var warmupEl=document.getElementById('hud-warmup');
       var respawnEl=document.getElementById('respawn-overlay');
+      // R22: state-change audio cues
+      if(matchState!==_lastMatchState){
+        if(_lastMatchState===0 && matchState===1 && window.playSoundUI){
+          window.playSoundUI(15); // match_start_horn
+          showCountdown('GO!');
+        }
+        if(matchState===2 && window.playSoundUI) window.playSoundUI(16); // match_end_horn
+        _lastMatchState=matchState;
+      }
+      // R22: respawn arpeggio when local player respawn timer goes 0→prev
+      if(_lastRespawnTimer>0 && respawnTimer10===0 && window.playSoundUI) window.playSoundUI(14);
+      _lastRespawnTimer=respawnTimer10;
+      // R22: 5-4-3-2-1 countdown overlay during warmup (last 5s)
+      if(matchState===0 && timeRemain<=5 && timeRemain>0){
+        showCountdown(String(Math.ceil(timeRemain)));
+      }
       if(matchState===0){ // WARMUP
         if(timerEl)timerEl.style.display='none';
         if(warmupEl){warmupEl.style.display='block';warmupEl.textContent='WARMUP — MATCH STARTS IN '+Math.ceil(timeRemain);}
@@ -1186,6 +1271,63 @@
       window.location.href = '?multiplayer=local&lobbyId='+id;
     }
 
+    // R22: Countdown overlay (5-4-3-2-1 + GO!)
+    var _lastCountdownText = '';
+    var _countdownClearTimer = null;
+    function showCountdown(text){
+      var el = document.getElementById('countdown');
+      if(!el) return;
+      if(_lastCountdownText === text) return;
+      _lastCountdownText = text;
+      el.textContent = text;
+      el.classList.remove('go');
+      el.classList.add('show');
+      if(text === 'GO!') el.classList.add('go');
+      if(_countdownClearTimer) clearTimeout(_countdownClearTimer);
+      _countdownClearTimer = setTimeout(function(){
+        el.classList.remove('show', 'go');
+        _lastCountdownText = '';
+      }, text === 'GO!' ? 1000 : 950);
+    }
+
+    // R22: Damage indicator arcs — pool of up to 4
+    var _damageArcs = [];
+    function showDamageArc(angleRad){
+      var container = document.getElementById('damage-arcs');
+      if(!container) return;
+      var arc = document.createElement('div');
+      arc.className = 'dmg-arc';
+      arc.style.transform = 'translate(-50%,-50%) rotate(' + (angleRad * 180 / Math.PI) + 'deg)';
+      container.appendChild(arc);
+      _damageArcs.push(arc);
+      requestAnimationFrame(function(){ arc.classList.add('show'); });
+      setTimeout(function(){ arc.classList.remove('show'); }, 100);
+      setTimeout(function(){
+        arc.remove();
+        var i = _damageArcs.indexOf(arc);
+        if(i >= 0) _damageArcs.splice(i, 1);
+      }, 1700);
+      // Cap at 4 active
+      while(_damageArcs.length > 4){
+        var old = _damageArcs.shift();
+        if(old) old.remove();
+      }
+    }
+    window.showDamageArc = showDamageArc;
+
+    // R22: Spawn-protection HUD label — driven by per-frame remaining-seconds
+    function updateSpawnProt(remainSec){
+      var el = document.getElementById('spawn-prot');
+      if(!el) return;
+      if(remainSec > 0){
+        el.textContent = 'INVULNERABLE ' + remainSec.toFixed(1) + 's';
+        el.classList.add('show');
+      } else {
+        el.classList.remove('show');
+      }
+    }
+    window.updateSpawnProt = updateSpawnProt;
+
     // R21: Toast helper (centre top, fades out)
     var _toastFadeTimer = null, _toastHideTimer = null;
     function showToast(msg, ms){
@@ -1403,6 +1545,24 @@
         // jetpack loop: noise + hum (loopable)
         b=mb(0.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=(Math.random()*2-1)*0.22+Math.sin(2*Math.PI*60*t)*0.12+Math.sin(2*Math.PI*120*t)*0.06;}
         this.bufs[10]=b;
+        // R22: ski_loop — pink noise low-pass, looping (volume scales w/ velocity)
+        b=mb(0.5);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*0.30*(0.5+Math.sin(i/da.length*Math.PI*0.5)*0.5);}
+        this.bufs[11]=b;
+        // R22: mortar_boom — noise burst + low-pass tail
+        b=mb(1.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var e=Math.exp(-t*1.2);da[i]=((Math.random()*2-1)*0.7+Math.sin(2*Math.PI*45*t)*0.3)*e;}
+        this.bufs[12]=b;
+        // R22: damage_give — hit-confirm "tink" (880Hz sine, 0.1s decay)
+        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=Math.sin(2*Math.PI*880*t)*Math.exp(-t*25)*0.5;}
+        this.bufs[13]=b;
+        // R22: respawn arpeggio (C5 → G4 → C4)
+        b=mb(0.80);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=t<0.27?523:(t<0.54?392:262);var e=t<0.75?Math.exp(-(t%0.27)*8):0;da[i]=Math.sin(2*Math.PI*f*t)*e*0.4;}
+        this.bufs[14]=b;
+        // R22: match_start_horn — sawtooth + harmonics, decrescendo
+        b=mb(1.20);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220;var e=Math.exp(-t*1.2);var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5+Math.sin(2*Math.PI*f*3*t)*0.3)*e*0.35;}
+        this.bufs[15]=b;
+        // R22: match_end_horn — same but ascending crescendo→decrescendo
+        b=mb(1.50);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220+t*60;var e=t<0.6?(t/0.6):(Math.exp(-(t-0.6)*2.5));var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5)*e*0.35;}
+        this.bufs[16]=b;
       },
 
       playAt:function(id,x,y,z){
