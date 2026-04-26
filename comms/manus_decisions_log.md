@@ -65,3 +65,20 @@ User should scan this file when re-engaging to override anything they disagree w
 **Next step:** Wait for user to provide model files. Then Round 10 with integration brief.
 
 ---
+
+## 2026-04-25 21:30 EDT — Round 10 model-free pivot stack
+
+**Decision:** While user sources custom character models, run three model-free rounds in sequence: HUD/UI polish (R10) → Audio system (R11) → Match flow (R12).
+
+**Context:** User said "I need to find models. Pivot for now. Anything else we can work that doesn't involve any models?"
+
+**Why this stack:**
+- HUD/UI polish: highest visual delight per token, all CSS/canvas, no 3D
+- Audio: transformative for "feel like a game", I can source CC0 placeholder sounds
+- Match flow: turns the playground into an actual playable match (timer, win conditions, scoreboard)
+
+**Each round won't conflict with later character/material work** — HUD is overlay layer, audio is independent system, match flow is game logic.
+
+**Reversibility:** When user drops models, can pause this stack any time and pivot back to character integration (Round X+).
+
+---

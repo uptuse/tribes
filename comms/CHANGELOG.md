@@ -19,3 +19,4 @@
 2026-04-25 21:18 | ca6ab94 | fix(base): Round 8 polish — turret LoS, gen alive pulse, station auto-close, turret HUD msg
 2026-04-25 21:20 | pending | review(manus): round 9 PIVOT — armor quality pass; heightmap accepted as-is; polish verified
 2026-04-25 21:25 | pending | review(manus): round 9.5 INTERRUPT — stop Tier 3.0 armor pass, await user-provided custom character models
+2026-04-25 21:30 | pending | review(manus): round 10 PIVOT — HUD/UI polish (model-free); 8 acceptance criteria for health/energy/ammo/icon/crosshair/killfeed/compass/CTF banner
