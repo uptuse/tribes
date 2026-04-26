@@ -1342,23 +1342,22 @@ function syncCamera() {
     // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
     camera.rotation.set(pitch, -yaw, 0, 'YXZ');
 
-    // R31.7-manus: 3rd-person chase camera — Tribes Ascend reference is
-    // a centered chase (no shoulder offset), camera follows aim, crosshair
-    // is dead-center for clean aim convergence.
+    // R31.7.1-manus: 3rd-person chase camera — Tribes Ascend reference is
+    // a centered chase (no shoulder offset), camera follows aim. Hot-fix from
+    // R31.7: enforce a HARD MIN distance (3.0m) so terrain pull-in never collapses
+    // the camera into the player's head. Lift instead of pulling in.
     //
-    // Improvements over R31.5:
-    //   - Removed +0.7m right-shoulder offset (Ascend uses centered chase)
+    //   - Centered chase (no shoulder offset)
     //   - Smooth 200ms lerp on V-toggle so view doesn't snap
-    //   - Terrain/building collision: pulls camera in if it would clip
-    //   - Exposes window._tribesAimPoint3P (world point under crosshair) so
-    //     C++ aim-convergence (Claude work) can read it via JS callback
+    //   - Terrain collision: LIFT camera (don't shorten distance below 3.0m)
+    //   - Exposes window._tribesAimPoint3P + feeds it to C++ for aim convergence
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
 
     // Smooth toggle: animate from prev distance to target over ~200ms.
-    if (typeof _camDistTarget === 'undefined') {
+    if (typeof window._tribesCamDist !== 'number') {
         // module-scope state — initialize on first call
-        window._tribesCamDist = 0; // will hot-snap to target on first frame
-        window._tribesCamHeight = 1.7;
+        window._tribesCamDist = is3P ? 4.0 : 0.0; // hot-snap on init so first frame is clean
+        window._tribesCamHeight = is3P ? 1.6 : 1.7;
     }
     const targetDist = is3P ? 4.0 : 0.0;
     const targetHeight = is3P ? 1.6 : 1.7;
@@ -1366,39 +1365,37 @@ function syncCamera() {
     const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
     window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * lerpAlpha;
     window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * lerpAlpha;
+    // R31.7.1: snap to target when within 0.05 to kill long-tail lerp drift.
+    if (Math.abs(targetDist   - window._tribesCamDist)   < 0.05) window._tribesCamDist   = targetDist;
+    if (Math.abs(targetHeight - window._tribesCamHeight) < 0.05) window._tribesCamHeight = targetHeight;
     const camDist = window._tribesCamDist;
     const camH = window._tribesCamHeight;
 
-    if (camDist > 0.05) {
-        // 3P (or transitioning): place camera behind player, no shoulder offset
+    // R31.7.1: 3P threshold is 2.0 (not 0.05) — anything under 2m is effectively
+    // 1P framing and would clip the player mesh. The lerp settles to 0 in 1P
+    // and 4 in 3P, so the only time camDist is in [0.05, 2.0] is mid-toggle.
+    if (camDist > 2.0) {
+        // 3P: place camera behind player at full distance, then LIFT y if terrain
+        // would clip. NEVER shorten the back-distance — that's what created the
+        // head-clip bug in R31.7.
         const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
         let cx = px - fwdX * camDist;
         let cy = py + camH;
         let cz = pz - fwdZ * camDist;
-        // Terrain collision: if camera would be below ground, lift it; if it
-        // would clip a steep slope behind the player, also pull it in along
-        // the back-vector. Sample 3 candidate points along the back ray.
         const terrH = sampleTerrainH(cx, cz);
-        if (cy < terrH + 0.6) {
-            // Re-shoot: pull camera in along back-axis until clear, or floor it
-            const minClearance = 0.6;
-            // Try at progressively shorter distances
-            let found = false;
-            for (let d = camDist - 0.5; d > 0.5; d -= 0.5) {
-                const tx = px - fwdX * d, tz = pz - fwdZ * d;
-                const th = sampleTerrainH(tx, tz);
-                if (py + camH - th > minClearance) {
-                    cx = tx; cz = tz; cy = py + camH;
-                    found = true; break;
-                }
-            }
-            if (!found) {
-                // Even at d=0 we're stuck; fall back to player head + tiny back
-                cx = px - fwdX * 0.5;
-                cz = pz - fwdZ * 0.5;
-                cy = Math.max(py + 1.7, terrH + 0.6);
-            }
+        const minClearance = 0.6;
+        if (cy < terrH + minClearance) {
+            // Lift the camera straight up to clear terrain, keep distance fixed.
+            cy = terrH + minClearance;
         }
+        camera.position.set(cx, cy, cz);
+    } else if (camDist > 0.05) {
+        // Mid-toggle blend: linear ease between 1P head and 3P chase position.
+        const t = camDist / 2.0;  // 0..1
+        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
+        const cx = px - fwdX * camDist;
+        const cz = pz - fwdZ * camDist;
+        const cy = py + (1.7 * (1 - t) + camH * t);
         camera.position.set(cx, cy, cz);
     } else {
         // 1P
@@ -1439,9 +1436,19 @@ function syncCamera() {
         window._tribesAimPoint3P = { x: hitX, y: hitY, z: hitZ };
     }
 
-    // Hide/show weapon viewmodel based on view mode (R31.4); use camDist so
-    // viewmodel fades in/out smoothly rather than snapping at toggle moment.
-    if (weaponHand) weaponHand.visible = (camDist < 0.5);
+    // R31.7.1: weapon viewmodel — visible only in true 1P (camDist near 0).
+    // Was 0.5 in R31.7 which left it visible for the first ~0.5m of 3P transition
+    // then SUDDENLY hid it; users perceived this as "weapon disappeared".
+    if (weaponHand) weaponHand.visible = (camDist < 0.3);
+
+    // R31.7.1: feed the world aim-point we computed above into the C++ aim-
+    // convergence override (Claude shipped C1 in commit 32b4b41 / R31.7).
+    // Without this hookup, fireWeapon's `if(thirdPerson&&hasAimPoint3P)` branch
+    // never triggers and 3P shots come out of camera-fwd instead of crosshair-fwd.
+    if (is3P && Module._setLocalAimPoint3P && window._tribesAimPoint3P) {
+        const p = window._tribesAimPoint3P;
+        Module._setLocalAimPoint3P(p.x, p.y, p.z);
+    }
 
     const fov = Module._getCameraFov();
     if (Math.abs(camera.fov - fov) > 0.5) {
