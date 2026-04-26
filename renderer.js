@@ -177,8 +177,17 @@ function initSky() {
 function initLights() {
     const tier = readQualityFromSettings();
 
+    // R30.1: also set a fallback scene background color so that if the Sky
+    // shader fails to draw (e.g. behind the camera, broken uniforms), we get
+    // a sky-blue clear instead of WebGL's default black or window white.
+    scene.background = new THREE.Color(0x9bb5d6);
+
     // Hemisphere ambient — sky=#9bb5d6 ground=#5a4a32 (per R18 brief)
-    hemiLight = new THREE.HemisphereLight(0x9bb5d6, 0x5a4a32, 0.55);
+    // R30.1: bumped intensity 0.55 → 1.1 so building MeshStandardMaterial
+    // doesn't render as black silhouettes in the absence of direct sun.
+    // Even without the directional light reaching them, hemi alone now
+    // produces visible PBR shading.
+    hemiLight = new THREE.HemisphereLight(0x9bb5d6, 0x5a4a32, 1.1);
     scene.add(hemiLight);
 
     // Directional sun
@@ -940,7 +949,11 @@ function initStateViews() {
 
     const aspect = window.innerWidth / window.innerHeight;
     camera = new THREE.PerspectiveCamera(90, aspect, 0.5, 5000);
-    camera.position.set(0, 50, 0);
+    // R30.1: place camera high above the basin center so the FIRST FRAME
+    // (before WASM spawns the player) shows the terrain + buildings + sky
+    // rather than burying the camera at (0,0,0) under the ground.
+    camera.position.set(0, 200, 0);
+    camera.lookAt(-300, 30, -300);   // look toward the map basin center
     scene.add(camera);
     camera.add(weaponHand);
 
@@ -1119,10 +1132,23 @@ function syncParticles() {
 
 function syncCamera() {
     const localIdx = Module._getLocalPlayerIdx();
+    // R30.1: hard guard against invalid local player index. Without this,
+    // playerView[-32] returns undefined, camera.position.set(undefined,...)
+    // silently no-ops, and the camera stays at constructor default (0,0,0)
+    // — which is BELOW the terrain (min Y ≈ 7) and therefore frustum-culls
+    // EVERYTHING in the scene. That's why we saw '1 draw call, 1 tri'.
+    if (!Number.isFinite(localIdx) || localIdx < 0 || localIdx >= MAX_PLAYERS) return;
     const o = localIdx * playerStride;
     const px = playerView[o], py = playerView[o + 1], pz = playerView[o + 2];
     const pitch = playerView[o + 3];
     const yaw   = playerView[o + 4];
+
+    // R30.1: also guard against garbage / NaN / sub-terrain positions before
+    // the WASM side has finished spawning the player. If position is invalid
+    // or buried under the lowest terrain point, leave camera at its current
+    // safe default (initialized to 0,100,0 above the basin).
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) return;
+    if (px === 0 && py === 0 && pz === 0) return;     // unspawned local player
 
     camera.position.set(px, py + 1.7, pz);
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
@@ -1272,7 +1298,16 @@ function loop() {
     if (now - _lastDiagTime > 5000) {
         const fps = Math.round(_frameCount / ((now - _lastDiagTime) / 1000));
         const info = renderer.info.render;
-        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls, ' + info.triangles + ' tris, quality=' + currentQuality);
+        // R30.1: include camera position + visible-soldier count + local player
+        // idx in the per-5-sec FPS report so we can correlate '1 draw call'
+        // symptoms with camera placement and player spawn state.
+        const cp = camera.position;
+        const li = (typeof Module !== 'undefined' && Module.calledRun) ? Module._getLocalPlayerIdx() : -2;
+        let visSold = 0;
+        for (let i = 0; i < playerMeshes.length; i++) if (playerMeshes[i] && playerMeshes[i].visible) visSold++;
+        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls, ' + info.triangles + ' tris, quality=' + currentQuality
+                    + ' | cam=(' + cp.x.toFixed(0) + ',' + cp.y.toFixed(0) + ',' + cp.z.toFixed(0) + ')'
+                    + ' localIdx=' + li + ' visSoldiers=' + visSold + '/' + playerMeshes.length);
         _frameCount = 0;
         _lastDiagTime = now;
     }
