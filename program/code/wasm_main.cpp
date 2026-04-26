@@ -500,40 +500,52 @@ void main(){gl_Position=vec4(aP,0,1);vC=aC;})";
 static const char*hFS=R"(#version 300 es
 precision mediump float;in vec3 vC;out vec4 F;void main(){F=vec4(vC,0.85);})";
 
-// DTS model shader: uses a model matrix uniform + per-vertex normals for lighting + team color tint
+// DTS model shader: zone-based team coloring, correct specular, metallic look
 static const char*dtsVS=R"(#version 300 es
 layout(location=0)in vec3 aP;layout(location=1)in vec3 aN;
-out vec3 vN;out vec3 vWorldPos;out float vF;uniform mat4 uVP;uniform mat4 uModel;
+out vec3 vN;out vec3 vWorldPos;out float vF;out float vZone;
+uniform mat4 uVP;uniform mat4 uModel;uniform vec3 uCamPos;
 void main(){
     vec4 wp=uModel*vec4(aP,1);
     gl_Position=uVP*wp;
     vN=normalize(mat3(uModel)*aN);
     vWorldPos=wp.xyz;
-    vF=clamp((gl_Position.z-600.0)/900.0,0.0,0.92);
+    float dist=length(wp.xyz-uCamPos);
+    vF=clamp((dist-600.0)/900.0,0.0,0.92);
+    vZone=aP.y; // model-space Y: upper body positive, lower negative
 })";
 static const char*dtsFS=R"(#version 300 es
 precision mediump float;
-in vec3 vN;in vec3 vWorldPos;in float vF;
+in vec3 vN;in vec3 vWorldPos;in float vF;in float vZone;
 out vec4 F;
-uniform vec3 uSun;uniform vec3 uTint;uniform float uA;
+uniform vec3 uSun;uniform vec3 uTint;uniform vec3 uTint2;
+uniform vec3 uCamPos;uniform float uA;
 void main(){
     vec3 n=normalize(vN);
-    float diff=max(dot(n,uSun),0.0)*0.6;
-    vec3 viewDir=normalize(-vWorldPos);
-    float rim=pow(1.0-max(dot(n,viewDir),0.0),2.5)*0.3;
-    float amb=0.35;
-    float hemi=dot(n,vec3(0,1,0))*0.12+0.12;
-    vec3 col=uTint*(diff+amb+hemi)+vec3(0.5,0.55,0.6)*rim;
+    // Zone blend: upper body/torso=primary, lower/limbs=secondary
+    float zone=smoothstep(-0.1,0.25,vZone);
+    vec3 baseColor=mix(uTint2,uTint,zone);
+    // Lighting
+    float diff=max(dot(n,uSun),0.0)*0.65;
+    float amb=0.30;
+    float hemi=dot(n,vec3(0,1,0))*0.12+0.08;
+    // Correct viewDir from camera position
+    vec3 viewDir=normalize(uCamPos-vWorldPos);
+    // Metallic specular (higher exponent, warm tint)
     vec3 halfDir=normalize(uSun+viewDir);
-    float spec=pow(max(dot(n,halfDir),0.0),32.0)*0.25;
-    col+=vec3(1.0,0.95,0.9)*spec;
+    float spec=pow(max(dot(n,halfDir),0.0),52.0)*0.55;
+    // Cool rim light for silhouette definition
+    float rim=pow(1.0-max(dot(n,viewDir),0.0),3.0)*0.20;
+    vec3 col=baseColor*(diff+amb+hemi);
+    col+=vec3(1.0,0.92,0.82)*spec; // warm metallic specular
+    col+=vec3(0.45,0.5,0.6)*rim;   // cool rim
     col=mix(col,vec3(0.722,0.769,0.784),vF);
     F=vec4(col,uA);
 })";
 
 static GLuint tShader,oShader,hShader,dtsShader;
 static GLint tVPLoc,tSunLoc,tCamPosLoc,oVPLoc,oALoc;
-static GLint dtsVPLoc,dtsModelLoc,dtsSunLoc,dtsTintLoc,dtsALoc;
+static GLint dtsVPLoc,dtsModelLoc,dtsSunLoc,dtsTintLoc,dtsTint2Loc,dtsCamPosLoc,dtsALoc;
 static GLuint oVAO,oVBO,hVAO,hVBO;
 
 static GLuint compS(GLenum t,const char*s){GLuint sh=glCreateShader(t);glShaderSource(sh,1,&s,0);glCompileShader(sh);return sh;}
@@ -714,21 +726,26 @@ static bool uploadModel(const LoadedModel& model, GPUModel& gpu, float scaleFact
     return true;
 }
 
+// r2/g2/b2 = secondary zone color (-1 means same as primary)
 static void renderDTSModel(const GPUModel& gpu, const Mat4& vp, Vec3 pos, float yaw,
-                            float r, float g, float b, float alpha=1.0f) {
+                            float r, float g, float b, float alpha=1.0f,
+                            float r2=-1, float g2=-1, float b2=-1,
+                            float breathY=0, Vec3 camPos={0,0,0}) {
     if (!gpu.valid) return;
+    if(r2<0){r2=r;g2=g;b2=b;}
 
-    // Build model matrix: translate -> rotateY -> scale
-    Mat4 model = Mat4::translate(pos.x, pos.y + gpu.offsetY, pos.z)
+    Mat4 model = Mat4::translate(pos.x, pos.y + gpu.offsetY + breathY, pos.z)
                * Mat4::rotateY(yaw)
                * Mat4::scale(gpu.scale, gpu.scale, gpu.scale);
 
+    static Vec3 sun=Vec3(0.4f,0.8f,0.3f).normalized();
     glUseProgram(dtsShader);
     glUniformMatrix4fv(dtsVPLoc, 1, GL_FALSE, vp.m);
     glUniformMatrix4fv(dtsModelLoc, 1, GL_FALSE, model.m);
-    Vec3 sun = Vec3(0.4f,0.8f,0.3f).normalized();
     glUniform3f(dtsSunLoc, sun.x, sun.y, sun.z);
     glUniform3f(dtsTintLoc, r, g, b);
+    glUniform3f(dtsTint2Loc, r2, g2, b2);
+    glUniform3f(dtsCamPosLoc, camPos.x, camPos.y, camPos.z);
     glUniform1f(dtsALoc, alpha);
 
     glBindVertexArray(gpu.vao);
@@ -1314,7 +1331,11 @@ static void mainLoop(){
                 // No directional input or recently on ground: full vertical thrust
                 me.vel.y+=jetAcc;
             }
-            spawnPart(me.pos+Vec3(0,0.5f,0),Vec3((rand()%100-50)/100.0f,-10,(rand()%100-50)/100.0f),1,0.7f,0.2f,0.3f);
+            // Jetpack glow: twin thruster plumes from behind player
+            Vec3 jBack=me.pos+Vec3(-sinf(me.yaw)*0.35f,0.7f,cosf(me.yaw)*0.35f);
+            float rx=(rand()%100-50)*0.006f,rz=(rand()%100-50)*0.006f;
+            spawnPart(jBack,Vec3(rx,-5.0f,rz),1.0f,0.55f,0.08f,0.28f,0.30f); // orange core
+            spawnPart(jBack+Vec3(0,-0.2f,0),Vec3(0,-3.5f,0),1.0f,0.85f,0.35f,0.18f,0.22f); // yellow halo
         }else{
             me.energy+=ENERGY_RECHARGE*dt;
             float enCap=ad.maxEnergy*(me.pack==1?1.5f:1.0f);
@@ -1616,22 +1637,42 @@ static void mainLoop(){
     flushObj(vp);
 
     // --- Render DTS models ---
-    // Players: render DTS armor models (with fallback to box if model not loaded)
+    // Players: DTS armor with zone coloring, breathing, jetpack glow
     for(int i=0;i<MAX_PLAYERS;i++){
         if(!players[i].active)continue;
         if(i==localPlayer&&!thirdPerson)continue;
         const Player& pl = players[i];
         const GPUModel& gm = gpuArmor[pl.armor];
-        // Team color: red team = warm, blue team = cool
-        float tr = pl.team==0 ? 0.75f : 0.25f;
-        float tg = 0.3f;
-        float tb = pl.team==0 ? 0.2f  : 0.75f;
-        if(!pl.alive){ tr*=0.4f; tg*=0.4f; tb*=0.4f; }
+
+        // Blood Eagle: dark crimson primary, near-black secondary
+        // Diamond Sword: navy blue primary, steel grey secondary
+        float tr,tg,tb,tr2,tg2,tb2;
+        if(pl.team==0){
+            tr=0.55f;tg=0.06f;tb=0.06f;   // Blood Eagle crimson
+            tr2=0.13f;tg2=0.12f;tb2=0.11f; // dark near-black secondary
+        }else{
+            tr=0.10f;tg=0.14f;tb=0.52f;   // Diamond Sword navy
+            tr2=0.30f;tg2=0.33f;tb2=0.40f; // steel grey secondary
+        }
+        if(!pl.alive){tr*=0.35f;tg*=0.35f;tb*=0.35f;tr2*=0.35f;tg2*=0.35f;tb2*=0.35f;}
+
+        // Breathing animation: 4s cycle, phase-offset per player so they don't sync
+        float breathY = sinf(gameTime*1.5f + i*1.1f) * 0.032f;
+
+        // Jetpack glow particles — spawn from jetpack position on player's back
+        if(pl.jetting&&pl.alive){
+            Vec3 jBack=pl.pos+Vec3(-sinf(pl.yaw)*0.35f,0.7f,cosf(pl.yaw)*0.35f);
+            for(int p2=0;p2<2;p2++){
+                float rx=((rand()%100)-50)*0.006f, rz=((rand()%100)-50)*0.006f;
+                spawnPart(jBack,Vec3(rx,-4.5f,rz),1.0f,0.55f+rx,0.08f,0.3f,0.28f);
+            }
+        }
+
         if(gm.valid){
-            renderDTSModel(gm, vp, pl.pos, pl.yaw, tr, tg, tb);
+            renderDTSModel(gm, vp, pl.pos, pl.yaw, tr, tg, tb, 1.0f,
+                           tr2, tg2, tb2, breathY, eye);
             if(frameCount==1) printf("[RENDER] Player %d using DTS model (armor=%d, scale=%.2f, idxCount=%d)\n", i, pl.armor, gm.scale, gm.indexCount);
         }else{
-            // Fallback to placeholder boxes
             oBatch.clear();
             pushPlayerModel(pl.pos, pl.yaw, pl.team, pl.armor, pl.alive);
             flushObj(vp);
@@ -1639,10 +1680,11 @@ static void mainLoop(){
         }
     }
 
-    // Towers at flag bases — neutral grey per spec, no bright team colors
+    // Towers at flag bases — neutral grey per spec
     for(int f=0;f<2;f++){
         if(gpuTower.valid){
-            renderDTSModel(gpuTower, vp, flags[f].homePos, 0.0f, 0.4f, 0.38f, 0.35f);
+            renderDTSModel(gpuTower, vp, flags[f].homePos, 0.0f, 0.4f, 0.38f, 0.35f,
+                           1.0f, 0.3f,0.28f,0.25f, 0, eye);
         }
     }
 
@@ -1651,7 +1693,8 @@ static void mainLoop(){
         if(!projs[i].active)continue;
         const WeaponData&w=weapons[projs[i].weapon];
         if(projs[i].weapon==WPN_DISC&&gpuDisc.valid){
-            renderDTSModel(gpuDisc,vp,projs[i].pos,gameTime*15.0f,1.0f,1.0f,1.0f);
+            renderDTSModel(gpuDisc,vp,projs[i].pos,gameTime*15.0f,1.0f,1.0f,1.0f,
+                           1.0f,-1,-1,-1,0,eye);
             spawnPart(projs[i].pos,{0,0,0},0.1f,0.8f,1.0f,0.15f,0.15f); // cyan trail
         }else if(projs[i].weapon==WPN_CHAINGUN){
             oBatch.clear();
@@ -1733,6 +1776,8 @@ int main(){
     dtsModelLoc=glGetUniformLocation(dtsShader,"uModel");
     dtsSunLoc=glGetUniformLocation(dtsShader,"uSun");
     dtsTintLoc=glGetUniformLocation(dtsShader,"uTint");
+    dtsTint2Loc=glGetUniformLocation(dtsShader,"uTint2");
+    dtsCamPosLoc=glGetUniformLocation(dtsShader,"uCamPos");
     dtsALoc=glGetUniformLocation(dtsShader,"uA");
 
     glGenVertexArrays(1,&oVAO);glGenBuffers(1,&oVBO);

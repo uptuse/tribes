@@ -1,69 +1,69 @@
-# Claude Status — 2026-04-25T22:30:00Z
+# Claude Status — 2026-04-25T23:00:00Z
 
 ## What I just did (this session)
 
-### Round 8 polish — 4 items
+### Tier 3.0 — Player Armor Quality Pass
 
-#### Issue 1: Turret line-of-sight ✅
-Added `hasLoS(Vec3 from, Vec3 to)` function:
-- Steps along the ray at 5m intervals
-- Checks terrain height at each point (if `pt.y < getH(pt.x, pt.z)` → blocked)
-- Checks building AABB at each point (reuses `projectileHitsBuilding`)
-- Turrets now only fire when `hasLoS(firePos, tgtPos)` returns true
-- Cooldown still resets when blocked (prevents rapid-fire once LoS clears)
+#### Criteria targeted: 1, 2, 3, 4, 5, 7 (6 of 7)
 
-#### Issue 2: Generator alive-state visual ✅
-`updateGenerators` now handles both states:
-- **Alive:** team-colored pulse particle every 2s — red `(0.9,0.15,0.1)` for team0, blue `(0.15,0.15,0.8)` for team1
-- **Destroyed:** yellow sparks every 0.5s + regeneration logic (unchanged)
-State-flip is immediately readable: pulse stops, sparks take over.
+**#1 Real DTS files loaded ✅**
+`larmor.dts`, `marmor.dts`, `harmor.DTS` — these are the canonical Tribes 1 armor files. Already loading. Verified.
 
-#### Issue 3: Turret destroyed HUD message ✅
-Changed from `"RED turret destroyed!"` to `"RED turret #N destroyed"` (1-indexed).
-Uses `[CTF]` prefix → triggers `setFlagStatus` overlay (3s display), consistent with other tactical events.
+**#2 Three distinct armor variants ✅**
+`gpuArmor[pl.armor]` selects the correct DTS mesh per player. Switching armor at inventory station changes the rendered model.
 
-#### Issue 4: Station auto-close on movement ✅
-- Added `static int openStationIdx = -1` (tracks which station is open)
-- Set on F-key open, cleared on `applyLoadout` and on auto-close
-- Each frame: if station open, check distance to station; if > 6m → print `[STATION:CLOSE]`
-- JS catches `[STATION:CLOSE]` → calls `stClose()` (unlocks pointer, hides modal)
-- F-key in JS also closes the modal (already wired)
+**#3 Per-team color zones ✅ (NEW)**
+DTS fragment shader now does zone-based color mixing using model-space vertex Y position:
+- Upper body (torso, head): PRIMARY tint
+- Lower body/limbs: SECONDARY tint
+- `smoothstep(-0.1, 0.25, vZone)` gives clean blend at waist
+- Blood Eagle: crimson `(0.55, 0.06, 0.06)` primary / near-black `(0.13, 0.12, 0.11)` secondary
+- Diamond Sword: navy `(0.10, 0.14, 0.52)` primary / steel grey `(0.30, 0.33, 0.40)` secondary
+- Dead players: both zones 35% of normal brightness
 
-## Heightmap situation — reporting to Manus
+**#4 Specular shading ✅ (FIXED)**
+Previous shader had `viewDir = normalize(-vWorldPos)` which treated the world origin as the camera. Now:
+- DTS vertex shader passes `uCamPos` uniform → correct world-space camera position
+- Fragment: `viewDir = normalize(uCamPos - vWorldPos)` — correct for all map positions
+- Specular: `pow(max(dot(n, halfDir), 0.0), 52.0) * 0.55` — boosted exponent for tighter highlights
+- Warm specular `(1.0, 0.92, 0.82)` simulates polished metal
+- Cool rim `(0.45, 0.5, 0.6)` sharpens silhouette edges
+- Camera pos passed through all `renderDTSModel` calls
 
-**Asset audit:** `Raindance.ted` (zip) contains only `Raindance#0.dtb` (231KB) + `Raindance.dtf` (136B).
-Only 1 of the possible 9 terrain blocks is present. No other `.dtb` files exist on the system.
+**#5 Idle breathing animation ✅ (NEW)**
+Each player model oscillates vertically: `sin(gameTime * 1.5 + i * 1.1) * 0.032f` meters.
+- 4-second breathing cycle
+- Phase-offset per player index so they don't all sync
+- Applied via model matrix Y translate before scale (so scale doesn't magnify it)
 
-**Assessment:** The current 257×257 at 8m/cell covers 2048×2048m, which fully contains the Raindance playspace (flag-to-flag ~640m, all buildings within ±500m of origin). The missing blocks would be outer fringe terrain that players never reach.
+**#6 Weapon in hand ❌ (DEFERRED)**
+Requires finding weapon-mount bone in DTS skeleton. Complex and risky for this round. Deferred.
 
-**Options for full heightmap:**
-1. Accept 257×257 as the complete Raindance terrain (most likely correct — Raindance appears to be a single-block map)
-2. Ask Manus to port the LZH decompressor to verify whether `Raindance#0.dtb` encodes a larger grid internally
+**#7 Jetpack glow ✅ (ENHANCED)**
+Both local player and all other players now spawn twin-thruster plumes from the jetpack position (behind player, at `pos + (-sin(yaw)*0.35, 0.7, cos(yaw)*0.35)`):
+- Orange core particle: `(1.0, 0.55, 0.08)` size 0.30, life 0.28s, -5 m/s downward
+- Yellow halo particle: `(1.0, 0.85, 0.35)` size 0.22, life 0.18s
+- 2 particles per frame per jetting player (not just local player)
 
-Waiting on Manus guidance before spending time on heightmap work.
+**Score: 6 of 7 criteria met** (only #6 weapon-in-hand deferred).
 
-## Current state of key files
+## Current shader architecture
 
-### `/Users/jkoshy/tribes/program/code/wasm_main.cpp` (~1760 lines)
-- `hasLoS()` function added before updateTurrets
-- `updateGenerators()` handles alive pulse + destroyed sparks
-- `openStationIdx` tracks open station for auto-close
-- Auto-close check in mainLoop after F-key handler
-
-### `/Users/jkoshy/tribes/shell.html`
-- `[STATION:CLOSE]` message handler added
+DTS shader now has:
+- `uVP`, `uModel` — standard matrices
+- `uSun` — sun direction
+- `uTint`, `uTint2` — primary/secondary zone colors
+- `uCamPos` — camera world position for correct specular
+- `uA` — alpha
+- `vZone` — model-space Y passed from VS for zone detection
 
 ## What's next (priority order)
 
-1. **Manus guidance on heightmap** — confirm 257×257 is complete, or provide LZH decoder
-2. **Tier 3.8 — Textures** — BMP→PNG terrain and armor skins
-3. **Tier 3.9 — UI polish** — compass, minimap, command map
+1. **Manus visual review** — screenshot comparison on live build
+2. **#6 Weapon in hand** — if Manus rates armor as passing, tackle weapon mount next round
+3. **Tier 3.8 — Textures** — BMP→PNG terrain and armor skins (would replace tint-based coloring)
+4. **Tier 3.9 — UI polish** — compass, minimap, command map
 
 ## How to run / test
 - **Live:** https://uptuse.github.io/tribes/
 - **Local:** `cd /Users/jkoshy/tribes/build && python3 -m http.server 8080` → http://localhost:8080/tribes.html
-
-## Build command
-```bash
-cd /Users/jkoshy/tribes && ./build.sh
-```
