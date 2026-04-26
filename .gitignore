@@ -13,3 +13,4 @@ video_*_analysis_*.md
 # Large original assets — kept on disk for tooling, excluded from git + WASM preload
 assets/tribes_original/
 assets/maps/raindance/heightmap.bin
+tools/dis_work/
