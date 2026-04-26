@@ -1,414 +1,262 @@
-# Manus Feedback — Round 15: Three.js Renderer Architecture (OPUS)
+# Manus Feedback — Round 16: Network Architecture (OPUS)
 
 **MODEL:** **OPUS 4.7** (1M context, architectural reasoning round)
-**Severity:** Strategic — this round determines the renderer architecture for the rest of the project
-**Type:** Architecture spec + minimal additive scaffold (no removal of existing WebGL code)
-**Round 14 + 14.5 status:** Accepted ✓
+**Severity:** Strategic — defines multiplayer protocol for the rest of the project
+**Type:** Architecture decision memo + minimal scaffold (no game-state networking yet — that's R19)
+**Round 15 status:** Accepted ✓ (Three.js renderer in place behind `?renderer=three` flag)
 
 ---
 
-## 1. Why Three.js, and why now
+## 1. Why network architecture now (before visuals)
 
-The current hand-rolled WebGL2 renderer in `wasm_main.cpp` (~4 GLSL programs, manual VAO/UBO/draw-call orchestration) has been adequate for 14 rounds, but is reaching its scaling ceiling:
+Round 15 built the renderer scaffold; Round 17 will cut Three.js over to default; Round 18 will cash in on Three.js with PBR/models/post-process. Before pouring effort into visuals, the network architecture must be locked in because:
 
-1. **Silent shader linkage failures.** The R13 settings work introduced a regression where one or more programs fail to link in headless Chromium (SwiftShader). Real Chrome renders fine, but the fragility — a single uniform-name mismatch crashes the whole render path silently — is unacceptable as we scale to PBR materials, shadows, particles, and player models.
-2. **Asset pipeline dead-end.** Hand-rolled WebGL has no path to glTF/FBX import. Real Tribes player models, weapon models, and animations require a proper asset pipeline. Three.js has it built in (`GLTFLoader`, `FBXLoader`, skeletal animation, morph targets).
-3. **Headless-CI parity.** Three.js is rigorously tested against headless Chromium because the entire web-3D ecosystem runs CI in headless. After this migration, Manus play-testing will produce screenshots that match what users see — a 5x productivity gain for the review loop.
-4. **Built-in modern features.** Shadow maps, post-processing, PBR materials, environment IBL, instanced meshes, frustum culling — all production-grade and free. Building these by hand in raw WebGL costs us 4-6 rounds of work each.
-5. **Path to WebGPU.** When we want to upgrade compute (R30+ timeframe), Three.js's `WebGPURenderer` is a one-line swap. Hand-rolled WebGL would require a complete rewrite.
+1. **It dictates client-server vs P2P, which affects everything downstream** — anti-cheat, spectator/replay, scaling, cost, mobile support. Picking wrong forces a rewrite at R25+.
+2. **Server state structure must align with the C++ simulation now** — if we wait until R19 to think about it, we'll have built bot AI, scoring, match flow, and weapons against a single-process assumption that's hard to factor.
+3. **Hosting, signaling, and lobby decisions take real-world time** — Cloudflare Workers/Durable Objects vs Fly.io vs self-hosted have setup latency. Locking the architecture now means R19 can move at full speed.
 
-The C++ simulation (physics, weapons, bots, networking, match flow) **stays in WASM unchanged**. This round migrates only the *rendering* layer.
+The C++ simulation is currently **single-process authoritative** — it runs the world for one player + 7 bots, locally in WASM. R19 will move that authoritative simulation to a server (or shared peer), with clients running a **prediction shadow** of the simulation for their local input.
 
 ---
 
-## 2. Architectural goal
+## 2. The decision space (Opus must rank and pick)
 
-**Move the renderer from C++ to JS, while keeping the simulation in C++.** The C++ side becomes a state-export oracle; the JS side reads simulation state each frame and renders it via Three.js.
+There are three viable architectures for browser-based real-time multiplayer in 2026. Opus must score them against the criteria in §3 and **pick one** (or a hybrid), with rationale.
 
-The boundary contract:
+### 2.1 Option A: Authoritative server over WebSocket
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│  C++ (WASM linear memory)                               │
-│  • Physics, weapons, bots, networking, match state      │
-│  • Player[8] array, projectile array, particle array    │
-│  • Per-frame: simulate(dt) → updates Player.pos/rot/etc │
-│  • Exports flat memory layouts (no new allocations)     │
-└──────────────────┬──────────────────────────────────────┘
-                   │
-        ┌──────────▼──────────┐
-        │  WASM↔JS boundary   │  Zero-copy Float32Array views into HEAPF32
-        └──────────┬──────────┘  No JSON. No EM_ASM per-frame.
-                   │
-┌──────────────────▼──────────────────────────────────────┐
-│  JS / Three.js                                          │
-│  • Reads Float32Array view → updates THREE.Object3D     │
-│  • Owns scene graph, materials, lights, camera          │
-│  • Renders with WebGLRenderer (r182, no WebGPU)         │
-│  • HUD/UI continues as DOM overlay (unchanged)          │
-└─────────────────────────────────────────────────────────┘
+[client]──TCP/WebSocket──→[server]──TCP/WebSocket──→[client]
 ```
 
-**Critical principle: zero-copy state export.** Per-frame state must NOT pass through JSON, EM_ASM, or any string marshal. C++ owns a flat struct array in linear memory; JS sees it as a typed array view and reads it directly. This is essential for performance (60 FPS with 8-16 players + 200 projectiles) and reliability (no $16+ EM_ASM crashes, ever again).
+- **Server runs the C++ simulation** (compiled to native, not WASM) at e.g. 30 Hz tick rate. Single source of truth.
+- **Clients send inputs** (button press bitfield + mouse delta) at e.g. 60 Hz.
+- **Server broadcasts world snapshots** to all clients at the tick rate.
+- **Clients run prediction** of their own player based on local input, then reconcile when server snapshot arrives.
+- **Transport:** WebSocket (TCP). Reliable, ordered. ~50-150ms RTT depending on geography. Head-of-line blocking is real but tolerable at 30 Hz tick rate.
+
+**Pros:**
+- Trivial anti-cheat (server is truth)
+- Easy spectator (server already knows all state, can stream a "spectator view")
+- Easy match recording (server logs all snapshots → replay file)
+- One server hosts many simultaneous matches
+- No NAT traversal — every client just connects to a public hostname
+- Works through corporate firewalls (port 443/WSS)
+
+**Cons:**
+- Hosting cost: $3-30/mo for first region, $3-30 per additional region for low-latency global support
+- Server must be written or reused (Node.js wrapping the WASM, or C++ native binary, or Go re-impl). The C++ simulation **can** be reused via Emscripten (Node.js can run WASM), but simpler to compile native.
+- Single-region latency disadvantage for users far from the server
+- Server is a single point of failure / DDoS target
+
+**Server-host options (Opus rank):**
+- **Cloudflare Workers + Durable Objects:** Edge-distributed, $5/mo for hobby, scales globally automatically. Durable Objects model maps cleanly to "one match = one DO". Limit: WebSocket message budget per request, but for 30Hz × 8 players this is fine. **Best fit for this project.**
+- **Fly.io:** Multi-region VMs starting $0/mo (free tier covers small games), $1.94/mo per shared CPU instance. Good for native C++ server reuse.
+- **Render / Railway:** Single-region but cheap, $0-7/mo.
+- **Self-hosted on a VPS (Hetzner/Scaleway):** $4/mo, full control. Worst on geographic distribution but cheapest at scale.
+
+### 2.2 Option B: P2P WebRTC DataChannel with mesh or host-migration
+
+```
+[client]──WebRTC DataChannel──↔──[client]
+            (UDP-like)
+```
+
+- **No central game server.** Clients form a P2P mesh (each connects to each other) or designate a "host" client whose simulation is authoritative.
+- **Signaling server** is still needed to bootstrap connections (exchange SDP offers/answers + ICE candidates). A free Cloudflare Worker on Workers KV is sufficient — only used at lobby entry, no per-tick cost.
+- **STUN servers** (Google's are free) for NAT traversal. **TURN** server needed as fallback for ~5-10% of users behind symmetric NAT — costs $1-5/mo for a small TURN server, or use Cloudflare's TURN service.
+- **DataChannel transport:** SCTP over DTLS over UDP. Can be configured `ordered: false, maxRetransmits: 0` for pure UDP-like behavior — perfect for game state.
+
+**Pros:**
+- $0-5/mo total hosting (just signaling + optional TURN)
+- Lowest latency (~30-60ms RTT direct between players)
+- Server-less — scales infinitely without infrastructure work
+- No bottleneck server to DDoS
+- Privacy-friendly (no central recording)
+
+**Cons:**
+- **Anti-cheat is hard.** Host or peers can forge state. Would need cross-validation between peers (consensus), which is complex and still defeatable.
+- **NAT traversal fails for ~5-10% of users.** TURN fallback rescues most but adds latency.
+- **Spectator and replay are non-trivial** — no central state to stream; would need one client to volunteer to record.
+- **Mesh scales poorly:** N-1 connections per client, O(N²) total bandwidth. For 8 players this is fine (7 conns × ~10KB/s = 70KB/s). For 16 players it's borderline. For 32+ players, host-migration model is required.
+- **Browser support quirks:** iOS Safari WebRTC has differences. Firefox has stricter ICE behavior. Needs careful testing.
+
+### 2.3 Option C: Hybrid — server-relayed WebRTC (Geckos.io / Colyseus pattern)
+
+```
+[client]──WebRTC DataChannel──→[server]──DataChannel──→[client]
+                  (UDP-fast)
+```
+
+- **Server is authoritative**, like Option A
+- **Transport is WebRTC DataChannel to the server**, not WebSocket. This gives UDP-style behavior (drop packets, no head-of-line blocking) instead of TCP's ordered/reliable behavior.
+- **Implementation: Geckos.io** is the canonical library. Wraps the server-side WebRTC complexity. Server runs Node.js (works with our WASM-compiled simulation) or there are Go/Rust ports.
+- **Fallback:** If WebRTC handshake fails (rare, ~2% of clients), drop to WebSocket transparently.
+
+**Pros:**
+- All Option A pros (anti-cheat, spectator, recording, scaling)
+- ~30% lower latency than Option A (no TCP retransmit pile-up)
+- Server hostable on same platforms as Option A
+- Geckos.io is mature (~2018, 1.5k stars, used in production)
+
+**Cons:**
+- Slightly more complex server setup (~1 day vs 1 hour for plain WebSocket)
+- WebRTC server library quality varies — Geckos.io is solid; alternatives (Colyseus + raw WebRTC plugin) are rougher
+- Same NAT/TURN concerns as Option B for the client→server WebRTC, though server has public IP so traversal is much easier than P2P
 
 ---
 
-## 3. Concrete architecture
+## 3. Decision criteria — Opus must score 1-5 (1=worst, 5=best)
 
-### 3.1 Three.js setup
+| Criterion | Weight | A: Server-WS | B: P2P-WebRTC | C: Hybrid-WebRTC |
+|---|---|---|---|---|
+| **Latency (East Coast US user)** | 3 | 3 (50-100ms) | **5 (30-60ms)** | 4 (40-80ms) |
+| **Latency (cross-Pacific user)** | 2 | 2 (180-250ms) | **4 (80-150ms)** | 3 (140-200ms) |
+| **Anti-cheat resistance** | 5 | **5** | 1 | **5** |
+| **Spectator / replay support** | 3 | **5** | 1 | **5** |
+| **Hosting cost ($/mo at 100 concurrent)** | 4 | 3 ($5-30) | **5 ($0-5)** | 3 ($5-30) |
+| **Implementation complexity** | 4 | **5** (simplest) | 2 | 3 |
+| **Browser compat (Chrome/FF/Safari/Edge)** | 4 | **5** | 3 | 4 |
+| **Mobile / iOS Safari** | 2 | **5** | 3 | 4 |
+| **Scaling to 32+ players per match** | 1 | **5** | 1 | **5** |
+| **Future WebGPU/HTTP3 path** | 1 | 4 | 5 | **5** |
 
-- **Version: r170** (NOT r182). r170 is the last release with the legacy `EffectComposer` post-process and zero WebGPU regressions. We can upgrade to r182 in R18 if RenderPipeline benefits warrant it. Lock the version in `package.json` or — since we're not using a build tool — pin to a CDN URL: `https://unpkg.com/three@0.170.0/build/three.module.js`.
-- **Renderer: `WebGLRenderer`** (NOT `WebGPURenderer` — known shadow-quality regressions per threejs.org discourse).
-- **Module loading via ES modules.** No bundler. Use `<script type="importmap">` to alias `three` to the CDN URL, then `import * as THREE from 'three'` in a new `renderer.js` file. Importmap is supported in all modern browsers.
-- **Color space: `THREE.SRGBColorSpace`** for output, `THREE.LinearSRGBColorSpace` for textures. Three.js r155+ defaults are correct; just verify.
-- **Tone mapping: `THREE.ACESFilmicToneMapping`** with exposure `1.0`. Gives a film-quality look that matches the muted Tribes 1 aesthetic.
+Opus computes weighted sum and picks. If two are within 10%, Opus picks based on Manus's stated priority: **anti-cheat + spectator/replay matter most for this project's long-term life as a competitive game**, so weight #3 and #4 heavily.
 
-### 3.2 WASM↔JS state export protocol
-
-Add to `wasm_main.cpp` a flat per-entity export struct, packed for direct typed-array reading:
-
-```cpp
-// Public render-state structs — laid out so JS Float32Array views map directly.
-// Sizes are deliberately power-of-2 friendly and cacheline-conscious.
-
-struct RenderPlayer {        // 32 floats = 128 bytes
-    float pos[3];            // [0..2]   world position
-    float rot[3];            // [3..5]   euler XYZ (Three.js order: 'YXZ')
-    float vel[3];            // [6..8]   for motion-blur / dust trails
-    float health;            // [9]      0..maxHealth
-    float energy;            // [10]     0..maxEnergy
-    float team;              // [11]     0=red, 1=blue, 2=spectator
-    float armor;             // [12]     0=light, 1=medium, 2=heavy
-    float alive;             // [13]     0 or 1
-    float jetting;           // [14]     0 or 1 (for jet-flame VFX)
-    float skiing;            // [15]     0 or 1 (for ski-spray VFX)
-    float weaponIdx;         // [16]     -1 = none, else 0..numWeapons-1
-    float carryingFlag;      // [17]     -1 = none, else team idx
-    float visible;           // [18]     0 or 1 (for cloak / spectator filter)
-    float botRole;           // [19]     -1=human, 0=OFF, 1=DEF, 2=MID
-    float reserved[12];      // [20..31] future use; keep struct 128-byte aligned
-};
-
-struct RenderProjectile {    // 16 floats = 64 bytes
-    float pos[3];
-    float vel[3];
-    float type;              // 0=disc, 1=chain, 2=plasma, 3=grenade
-    float age;               // for trail length / alpha
-    float team;              // shooter's team for color
-    float alive;             // 0 or 1
-    float reserved[6];
-};
-
-struct RenderParticle {      // 8 floats = 32 bytes
-    float pos[3];
-    float vel[3];
-    float type;              // 0=jet, 1=ski, 2=hit, 3=explosion, 4=spark
-    float age;
-};
-
-struct RenderFlag {          // 8 floats = 32 bytes
-    float pos[3];
-    float team;              // 0=red, 1=blue
-    float state;             // 0=at-base, 1=carried, 2=dropped
-    float carrierIdx;        // -1 or player idx
-    float reserved[2];
-};
-
-// Static arrays in BSS — fixed capacity, no allocation
-static RenderPlayer       g_rPlayers[16];           // 16 max players
-static RenderProjectile   g_rProjectiles[256];
-static RenderParticle     g_rParticles[1024];
-static RenderFlag         g_rFlags[2];
-static int g_rPlayerCount = 0;
-static int g_rProjectileCount = 0;
-static int g_rParticleCount = 0;
-```
-
-After each `simulate(dt)`, populate these arrays from the live simulation state. Then export base addresses and counts:
-
-```cpp
-extern "C" EMSCRIPTEN_KEEPALIVE float* getPlayerStatePtr()      { return (float*)g_rPlayers; }
-extern "C" EMSCRIPTEN_KEEPALIVE int    getPlayerStateCount()    { return g_rPlayerCount; }
-extern "C" EMSCRIPTEN_KEEPALIVE int    getPlayerStateStride()   { return sizeof(RenderPlayer)/4; }
-
-extern "C" EMSCRIPTEN_KEEPALIVE float* getProjectileStatePtr()  { return (float*)g_rProjectiles; }
-extern "C" EMSCRIPTEN_KEEPALIVE int    getProjectileStateCount(){ return g_rProjectileCount; }
-extern "C" EMSCRIPTEN_KEEPALIVE int    getProjectileStateStride(){ return sizeof(RenderProjectile)/4; }
-
-// ...same pattern for particles, flags
-```
-
-JS side reads:
-
-```js
-const playersPtr = Module._getPlayerStatePtr();
-const playersCount = Module._getPlayerStateCount();
-const stride = Module._getPlayerStateStride();   // 32
-// Build a typed-array view ONCE at startup; reuse every frame
-const playerView = new Float32Array(Module.HEAPF32.buffer, playersPtr, 16 * stride);
-
-// Per frame:
-for (let i = 0; i < playersCount; i++) {
-    const o = i * stride;
-    playerObjects[i].position.set(playerView[o], playerView[o+1], playerView[o+2]);
-    playerObjects[i].rotation.set(playerView[o+3], playerView[o+4], playerView[o+5], 'YXZ');
-    playerObjects[i].visible = playerView[o+13] > 0.5 && playerView[o+18] > 0.5;
-    // ... etc
-}
-```
-
-**One critical caveat: `Module.HEAPF32.buffer` may detach if WASM memory grows.** Set `INITIAL_MEMORY=64MB, MAXIMUM_MEMORY=64MB, ALLOW_MEMORY_GROWTH=0` in `build.sh` to prevent growth. The simulation comfortably fits in 32MB; 64MB is generous headroom and avoids ever needing to rebuild typed-array views.
-
-### 3.3 Three.js scene structure
-
-```
-scene (THREE.Scene)
-├── ambientLight       (THREE.HemisphereLight, sky=#9bb5d6 ground=#5a4a32)
-├── sunLight           (THREE.DirectionalLight, casts shadows)
-│                       position=(2000, 3000, 1500), shadowMapSize=2048×2048
-├── terrain            (THREE.Mesh)
-│                       geometry=THREE.PlaneGeometry(2048, 2048, 256, 256) displaced by heightmap
-│                       material=THREE.MeshStandardMaterial (roughness 0.95, metalness 0)
-├── sky                (THREE.Mesh, inverted sphere with gradient shader OR THREE.Sky)
-├── buildingsGroup     (THREE.Group containing instanced THREE.InstancedMesh per building type)
-├── playersGroup       (THREE.Group containing 16 placeholder THREE.Mesh — capsule for now)
-├── projectilesGroup   (THREE.InstancedMesh per type — disc, plasma, grenade as instanced spheres)
-├── particlesGroup     (THREE.Points with custom shader for jet flames, ski spray, explosions)
-├── flagsGroup         (THREE.Group with 2 cloth-banner meshes)
-└── stationsGroup      (THREE.Group of inventory station markers)
-```
-
-For R15, **placeholders are acceptable** — capsule meshes for players, simple spheres for projectiles, billboard quads for particles. R18 will replace these with proper assets and PBR materials. The architectural goal of R15 is the *pipeline*, not the visuals.
-
-### 3.4 Terrain handling
-
-Currently the C++ renders the Raindance heightmap. Two options for moving it to Three.js:
-
-**Option A (preferred):** C++ exports the 256×256 heightmap once via:
-```cpp
-extern "C" EMSCRIPTEN_KEEPALIVE float* getHeightmapPtr() { return g_heightmap; }
-extern "C" EMSCRIPTEN_KEEPALIVE int getHeightmapSize() { return 256; }
-```
-JS builds a `THREE.PlaneGeometry(2048, 2048, 255, 255)`, then in a one-time pass, displaces each vertex Y by `heightView[ix*256 + iz]`. Compute vertex normals via `geometry.computeVertexNormals()`. Done. Static geometry, GPU-resident.
-
-**Option B (fallback):** JS loads the same `raindance.bin` heightmap file directly via `fetch('raindance.bin')` — bypasses WASM entirely. Slightly cleaner separation but means the heightmap file must be a static asset. Either is fine; pick Option A for less plumbing.
-
-### 3.5 Buildings handling
-
-Buildings are static AABB-defined geometry. C++ currently has the building list. Same export pattern:
-
-```cpp
-struct RenderBuilding {
-    float pos[3];
-    float halfExtents[3];
-    float type;              // 0=tower, 1=base, 2=generator, 3=turret, 4=station
-    float team;              // -1=neutral, 0=red, 1=blue
-    float alive;             // for destructible generators
-    float reserved[5];
-};
-static RenderBuilding g_rBuildings[64];
-extern "C" EMSCRIPTEN_KEEPALIVE float* getBuildingPtr();
-extern "C" EMSCRIPTEN_KEEPALIVE int getBuildingCount();
-```
-
-JS reads once at startup → spawns one `THREE.Mesh` per building from a placeholder box geometry of the right size. For R15, all building types render as colored boxes (gray for neutral, dim red/blue for team-owned). R18 will swap in real models.
-
-### 3.6 Camera
-
-`THREE.PerspectiveCamera(g_fov, aspect, 0.1, 5000)`. Read FOV from the existing settings system (`Module._getDiag()` → `fov` field, OR add a dedicated `getCameraFov()` export). Position/rotation driven each frame from `g_rPlayers[localPlayerIdx].pos + (0, 1.7, 0)` and `.rot`.
-
-For R15, **first-person only** (camera attached to local player's head). Third-person and spectator can come in R18.
-
-### 3.7 Render loop
-
-```js
-import * as THREE from 'three';
-
-const renderer = new THREE.WebGLRenderer({
-    canvas: document.getElementById('canvas'),
-    antialias: true,
-    powerPreference: 'high-performance'
-});
-renderer.setPixelRatio(window.devicePixelRatio);
-renderer.outputColorSpace = THREE.SRGBColorSpace;
-renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
-renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-
-function loop() {
-    if (!Module._isReady || !Module._isReady()) {
-        requestAnimationFrame(loop);
-        return;
-    }
-    
-    // 1. C++ runs simulation tick (existing main_tick / wasm_main loop)
-    Module._tick();   // advances physics, weapons, bots, etc., and populates g_rPlayers etc.
-    
-    // 2. JS reads state and updates Three.js scene
-    syncPlayersFromWASM();
-    syncProjectilesFromWASM();
-    syncParticlesFromWASM();
-    syncFlagsFromWASM();
-    syncCameraFromWASM();
-    
-    // 3. Render
-    renderer.render(scene, camera);
-    
-    requestAnimationFrame(loop);
-}
-```
-
-**Existing C++ main loop:** currently driven by Emscripten's `emscripten_set_main_loop`. For R15, **add an `extern "C" tick()` export and stop the C++-side main loop** when the Three.js renderer is active. This puts JS in control of timing. Add a `setRenderMode(int mode)` export: 0 = legacy WebGL (current behavior, C++ drives main loop and renders), 1 = Three.js (C++ exposes `tick()`, JS drives main loop and renders).
-
-### 3.8 Additive rollout — `?renderer=three` query flag
-
-**Critical: do NOT remove or modify the existing C++ render code.** The new Three.js renderer must be opt-in via:
-
-```js
-// At top of index.html / shell.html JS:
-const useThree = new URLSearchParams(location.search).get('renderer') === 'three';
-
-if (useThree) {
-    Module.onRuntimeInitialized = async () => {
-        Module._setRenderMode(1);  // disable C++ render loop
-        await import('./renderer.js').then(m => m.start());
-    };
-} else {
-    // Existing behavior — Module._main() runs, C++ drives everything
-}
-```
-
-Test plan:
-- `https://uptuse.github.io/tribes/` → existing WebGL renderer (unchanged) ✓
-- `https://uptuse.github.io/tribes/?renderer=three` → new Three.js renderer ✓
-
-This lets us A/B compare side-by-side, fall back instantly if the Three.js path has bugs, and ship to users only when ready (R17 cutover).
+**Manus's expected outcome:** Option C (hybrid) wins narrowly over A; B is a poor fit because anti-cheat and spectator are critical. But Opus may disagree based on factors Manus didn't see — accept whatever Opus chooses as long as the rationale is sound.
 
 ---
 
-## 4. File layout
+## 4. Architectural deliverables (regardless of choice)
 
-New files:
-- `renderer.js` — Three.js scene setup, render loop, WASM-state sync (~400 lines)
-- `renderer-helpers.js` (optional) — heightmap → geometry, building → mesh helpers (~100 lines)
-- No build step — both files are vanilla ES modules loaded via `<script type="module">` and the importmap
+Once Opus picks an architecture, produce the following in this round:
 
-C++ changes (`wasm_main.cpp`):
-- Add `RenderPlayer/Projectile/Particle/Flag/Building` structs + global arrays
-- Add `populateRenderState()` called at end of each `simulate(dt)`
-- Add export functions: `getPlayerStatePtr/Count/Stride`, same for projectile/particle/flag/building, plus `getHeightmapPtr/Size`, `getCameraFov`, `tick`, `setRenderMode`, `isReady`
-- Add `g_renderMode = 0` global; if `==1`, skip the C++ `glClear/glDraw*` calls in the existing render path
-- **Do NOT remove existing render code** — guard it behind `if (g_renderMode == 0)` so legacy path still works
+### 4.1 Decision memo
+A 200-400 word section in `comms/network_architecture.md` (new file) explaining:
+- Which option was chosen
+- The weighted score table
+- Why this beats the others for *this specific project* (not generic)
+- Fallback path if the chosen architecture hits a wall in implementation
 
-`build.sh` changes:
-- Add new exports: `_getPlayerStatePtr,_getPlayerStateCount,_getPlayerStateStride,_getProjectileStatePtr,_getProjectileStateCount,_getProjectileStateStride,_getParticleStatePtr,_getParticleStateCount,_getParticleStateStride,_getFlagStatePtr,_getFlagStateCount,_getBuildingPtr,_getBuildingCount,_getHeightmapPtr,_getHeightmapSize,_getCameraFov,_tick,_setRenderMode,_isReady`
-- Add `_HEAPF32` to `EXPORTED_RUNTIME_METHODS`
-- Set `INITIAL_MEMORY=67108864`, `MAXIMUM_MEMORY=67108864`, `ALLOW_MEMORY_GROWTH=0`
-- Keep all existing exports
+### 4.2 Snapshot / delta protocol design
+The wire format for server → client world updates. Specifically:
+- **Snapshot structure** — full state, sent at e.g. 10 Hz. Format: binary, packed. Estimate byte size for 8 players + 200 projectiles + 2 flags.
+- **Delta structure** — per-tick changes from prior snapshot, sent at 30 Hz. Format: bitmask of changed fields + new values. Estimate byte size.
+- **Client-input structure** — per-tick from client → server. Format: button bitfield (2 bytes) + mouse delta (4 bytes) + sequence number (2 bytes) + timestamp (4 bytes).
 
-`index.html` / `shell.html` changes:
-- Add `<script type="importmap">{"imports":{"three":"https://unpkg.com/three@0.170.0/build/three.module.js"}}</script>` in `<head>`
-- Add `?renderer=three` flag detection in main script
-- Conditionally `import('./renderer.js')` if flag set
+Provide the C struct definitions Opus expects for each.
 
----
+### 4.3 Lobby and matchmaking design
+- How does a player find a match? (Open lobby browser? Quick-match queue? Friend-link URL?)
+- How are 8 players assembled into a match? (First-come-first-served? Skill-based?)
+- What happens when a player disconnects? (Bot replaces? Match continues short-handed?)
+- What is the auth model? (Anonymous? Username? Account?)
 
-## 5. Acceptance criteria (must hit 8 of 10)
+For R16, **anonymous + URL-share quick-match** is sufficient. Account system can come in R25+. Spec it that way.
 
-1. ✅ `https://uptuse.github.io/tribes/` (no flag) renders identically to `629c5c2` — zero regression
-2. ✅ `https://uptuse.github.io/tribes/?renderer=three` loads, no console errors, terrain visible
-3. ✅ Terrain renders from C++-exported heightmap (Option A above) with correct elevation
-4. ✅ Sky and lighting present — directional sun + hemisphere ambient, ACESFilmic tone mapping active
-5. ✅ All buildings (towers, bases, generators, turrets, stations) render as colored placeholder boxes at correct positions
-6. ✅ Players render as capsule placeholders, follow C++ physics in real-time, team color visible
-7. ✅ Projectiles render as colored sphere placeholders for disc/chain/plasma/grenade
-8. ✅ First-person camera follows local player position + look direction at 60 FPS
-9. ✅ HUD overlay (score, compass, ammo, HP/EN bars, crosshair, kill feed) continues working unchanged
-10. ✅ Manus headless screenshot of `?renderer=three` shows terrain + sky + buildings (NOT all-black) — proving SwiftShader compatibility
+### 4.4 Client-side prediction & reconciliation pseudocode
+Standard "Quake 3 style" prediction:
+1. Client sends input + sequence number to server
+2. Client immediately applies input to local prediction shadow
+3. Server processes input, advances authoritative state, broadcasts snapshot+ack of last sequence
+4. Client receives snapshot, finds the prediction state at that sequence, compares
+5. If divergence > threshold, client re-runs all inputs from that sequence forward against the authoritative state (rewind + replay)
 
-Bonus (nice-to-haves, not gating):
-- B1. Skybox uses `THREE.Sky` for atmosphere-style sun + horizon (one-line addition)
-- B2. PCF soft shadows from sun on terrain and buildings
-- B3. Window resize re-sets renderer + camera aspect
+Provide pseudocode (~30 lines) for the client reconciliation loop.
 
----
+### 4.5 Lag compensation
+For weapons (especially the chaingun and disc launcher), the server must rewind enemies to where the shooter saw them at the time-of-fire. Spec the algorithm: server keeps a 200ms ringbuffer of past Player positions; on hitscan, rewind enemies by `clientLatency` (capped at 200ms) before raycast.
 
-## 6. Compile/grep guardrails (do not regress)
+### 4.6 Anti-cheat baseline
+Three things the server must validate (cheaply, without per-frame heavy compute):
+- **Movement validity:** client-claimed position must be reachable from prior position within `dt × maxSpeed × tolerance` (e.g., 1.3×). Reject + snap-back if violated.
+- **Aim validity (soft):** server logs hit-rate per player; flags players with > 60% hit-rate over a 60s window for review (humans top out around 30-40%).
+- **Rate-limiting:** clients can't fire weapons faster than the weapon's cooldown allows.
 
-- `! grep -nE 'EM_ASM[^(]*\(.*\$1[6-9]'` must pass (legacy guardrail, still applies)
-- `! grep -nE 'malloc\(' wasm_main.cpp` must pass — render-state structs are static, no per-frame allocation
-- `! grep -nE 'std::vector' wasm_main.cpp | grep -v g_botPath` should remain at one match — A* nav grid only
-- `! grep -nE '#version 300 es' wasm_main.cpp | wc -l` should NOT increase (no new GLSL programs in legacy renderer)
-- New: every `_get*Ptr` export must have a matching `_get*Count` (typed array length safety)
+### 4.7 Scaffold code (minimal)
+- A new directory: `server/` containing a stub Node.js/Bun/Deno server (Opus picks runtime — likely **Bun** for speed and built-in WebSocket/WebRTC support, or **Deno** for stability)
+- A new file: `server/lobby.ts` — listens on port 8080, tracks lobbies in memory, accepts WebSocket/WebRTC connections, echoes a "hello you are client N in lobby M" message back
+- A new file: `client/network.js` — connects to `ws://localhost:8080` (or `wss://...` for prod), sends a join message, logs any received messages
+- A new query flag: `?multiplayer=local` adds the network client and connects to localhost; without flag, single-player C++ continues unchanged
+- **No game state networking yet.** That's R19. R16 just proves the connection plumbing works.
 
----
-
-## 7. Performance budget
-
-- Per-frame WASM tick: ≤ 4ms target, ≤ 8ms hard ceiling
-- Per-frame JS sync (typed-array reads → Three.js Object3D updates): ≤ 1ms for 16 players + 256 projectiles + 1024 particles
-- Three.js render: ≤ 8ms with shadows on, 1024×768 canvas
-- Total frame budget: ≤ 16.6ms (60 FPS)
-
-If exceeded, the most likely culprit is shadow map size — drop from 2048 to 1024.
+### 4.8 Build / deploy scripts
+- A `server/package.json` (or equivalent for Bun/Deno) with start command
+- A `server/Dockerfile` for one-command deploy to Fly.io / Cloudflare Workers / Railway
+- A `server/README.md` explaining how to run locally and deploy
 
 ---
 
-## 8. Things explicitly NOT in this round
+## 5. Acceptance criteria (must hit 7 of 9)
 
-- Real player models (R18 — glTF / FBX import + skeletal animation)
-- Real building models (R18)
-- PBR materials, IBL environment maps, post-processing (R18)
-- Particle visual upgrade beyond `THREE.Points` placeholders (R18)
-- Removing the legacy WebGL renderer (R17 — cutover round)
-- Multiplayer / networking (R16 — separate Opus brief, network architecture)
+1. ✅ `comms/network_architecture.md` exists with chosen architecture, scored decision matrix, and rationale (200-400 words)
+2. ✅ Wire-format C structs documented for snapshot, delta, and client-input
+3. ✅ Estimated bandwidth: snapshot bytes × 10 Hz + delta bytes × 30 Hz, with rough math (e.g., "8 players × 20 bytes/snapshot × 10 Hz = 1.6 KB/s")
+4. ✅ Lobby + matchmaking design documented (200+ words)
+5. ✅ Client-prediction reconciliation pseudocode present (~30 lines, commented)
+6. ✅ Lag-compensation algorithm specified
+7. ✅ Anti-cheat baseline (3 server-side checks) documented
+8. ✅ `server/` scaffold runs locally — `cd server && bun run start` (or equivalent) listens on a port and accepts connections
+9. ✅ `client/network.js` connects to `?multiplayer=local`, console-logs round-trip "hello" within 1s
+
+Bonus:
+- B1. Server scaffold deployed to a free-tier hosting provider (Cloudflare/Fly/Railway) at a public URL, verified by Opus or Manus loading the live `?multiplayer=remote` flag
+- B2. WebRTC DataChannel handshake verified working (not just WebSocket fallback)
+- B3. CI workflow stub for server (lint + unit test on PR)
 
 ---
 
-## 9. Time budget
+## 6. Compile/grep guardrails
 
-This is a 2-3 hour Opus round. Most of the time is in `renderer.js` (the new Three.js code) — the C++ side changes are mostly mechanical struct definitions + populate functions + exports.
+- `! grep -nE 'EM_ASM[^(]*\(.*\$1[6-9]'` must pass (legacy)
+- New: server directory must have a `package.json` or `deno.json` with explicit dependency versions
+- New: server must NOT use `eval`, `Function()` constructor, or load remote code at runtime (security)
+- New: client `network.js` must NOT block the render loop — all WebSocket/WebRTC handlers async, message dispatch via `requestAnimationFrame` or microtask queue
+
+---
+
+## 7. Things explicitly NOT in this round
+
+- Actually networking the game state (R19)
+- Spectator client mode (R20+)
+- Match recording / replay (R20+)
+- Account system, persistent accounts (R25+)
+- Matchmaking based on skill (R25+)
+- Voice chat (out of scope for now)
+
+---
+
+## 8. Time budget
+
+This is a 2-3 hour Opus round. Most of the time is in the architecture decision memo + snapshot/delta protocol design — the scaffold code is lightweight (~100 lines server, ~50 lines client).
 
 Suggested split:
-- C++ struct + populate + exports + render-mode flag: ~30 min
-- `build.sh` exports + memory settings: ~5 min
-- `renderer.js` Three.js setup + scene graph: ~45 min
-- `renderer.js` WASM-state sync + render loop: ~30 min
-- `renderer.js` heightmap + buildings + camera: ~30 min
-- `index.html` / `shell.html` flag wiring + importmap: ~10 min
-- Testing both code paths (`?renderer=three` and default): ~15 min
+- Read-up + decision memo: ~30 min
+- Wire format + bandwidth math: ~20 min
+- Lobby + matchmaking + auth: ~20 min
+- Prediction + reconciliation pseudocode: ~30 min
+- Lag compensation + anti-cheat baseline: ~20 min
+- Server + client scaffold code: ~30 min
+- Build/deploy script + README: ~20 min
 
 ---
 
-## 10. After R15 lands
+## 9. Decision authority for ambiguities
 
-- Manus reviews via headless screenshot at `?renderer=three` URL — should see terrain + sky + buildings (the all-black bug from R14 self-resolves because Three.js doesn't use `#version 300 es` problematic configs)
-- Manus accepts R15 by visual + code inspection
-- Manus pushes **R16: Network architecture (OPUS, multiplayer protocol)** — designs WebRTC-DataChannel vs WebSocket-server vs hybrid (e.g., Geckos.io / Colyseus pattern); produces a ranked decision with anti-cheat, latency, hosting cost, browser compat trade-offs scored. Opus picks one and provides a minimal scaffold (lobby flow, client-server message format, snapshot/delta protocol stub)
-- After R16, user switches Claude back to Sonnet 4.6 for R17 (Three.js cutover) onward
-
----
-
-## 11. Decision authority for ambiguities
-
-If Opus encounters ambiguity not covered above:
-
-- **Performance vs visual fidelity:** prefer 60 FPS with simpler visuals (this is a placeholder round; R18 cashes in on quality)
-- **Three.js feature choice:** prefer well-documented, stable APIs over bleeding-edge (e.g., `EffectComposer` not `RenderPipeline` in r170)
-- **WASM↔JS boundary:** when in doubt, expose more from C++; never marshal via JSON/string in the per-frame path
-- **Memory layout:** when in doubt, pad structs to 32-float (128-byte) boundaries for cacheline friendliness
-- **File organization:** if `renderer.js` exceeds ~600 lines, split into `renderer-core.js`, `renderer-sync.js`, `renderer-scene.js` — but don't over-fragment
+- **Runtime choice (Bun vs Deno vs Node):** Bun preferred for speed + built-in WebSocket; Deno acceptable for stability; avoid Node unless other two have a blocker
+- **Hosting choice:** Cloudflare Workers + Durable Objects strongly preferred for global edge + cost; Fly.io fine; avoid AWS/GCP/Azure (operational overhead)
+- **Authoritative tick rate:** 30 Hz default; spec-out the option to drop to 20 Hz for cost or raise to 60 Hz for premium-tier matches
+- **Snapshot interval:** 10 Hz default (every 3rd tick at 30 Hz); delta updates fill the gaps
+- **TURN server:** start with a public TURN provider (Cloudflare's $0.05/GB) rather than self-hosted — easier to reason about; can self-host later if costs blow up
+- **Library use:** prefer **Geckos.io** for the server WebRTC layer if Option C wins; raw `ws` package for plain WebSocket; avoid Colyseus (heavier, opinionated)
 
 ---
 
-## 12. Roadmap context (for Opus's situational awareness)
+## 10. Roadmap context
 
-- **R15 (this round, OPUS):** Three.js architecture + scaffold, behind `?renderer=three` flag
-- **R16 (next round, OPUS):** Network architecture — multiplayer protocol decision + scaffold
-- **R17 (Sonnet):** Three.js cutover — make Three.js the default, retire legacy WebGL after one round of fallback safety
-- **R18 (Sonnet):** Visual quality cascade — PBR materials, real player/building models via glTF, shadows, particles, post-processing
-- **R19 (Sonnet):** Network implementation per R16 spec — server, client prediction, snapshot/delta, lag compensation
-- **R20+ (Sonnet):** Polish, balance, content (additional maps, weapon tuning, audio expansion)
-
-The Three.js migration unlocks ~6 future rounds of visual + content work that would otherwise be blocked by the hand-rolled WebGL ceiling.
+- **R15 (just landed, OPUS):** Three.js renderer architecture
+- **R16 (this round, OPUS):** Network architecture + scaffold
+- **R17 (Sonnet):** Three.js cutover — make Three.js the default renderer
+- **R18 (Sonnet):** Visual quality cascade — PBR, real models, shadows, post-process
+- **R19 (Sonnet):** Network implementation per R16 spec — wire game state, prediction, reconciliation, lag-comp, anti-cheat checks
+- **R20+ (Sonnet):** Polish, spectator mode, matchmaking improvements, content
