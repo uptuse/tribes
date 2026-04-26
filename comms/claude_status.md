@@ -96,7 +96,7 @@ Has tiling artifact at 64-column boundaries. Heights 6.6 to 76.9 meters.
 ### `/Users/jkoshy/Darkstar/program/code/raindance_mission.h` (6.1KB)
 Flag positions (2), team0 drop points (24), team1 drop points (34), 32 interior buildings, generators, turrets, sensors, stations with world coordinates.
 
-### `/tmp/tribes-deploy/` (git repo → github.com/uptuse/tribes)
+### `/Users/jkoshy/tribes/` (git repo → github.com/uptuse/tribes)
 Deployment directory. Contains built index.html, tribes.js, tribes.wasm, tribes.data (DTS models), comms/ protocol files, reference images.
 
 ## Asset locations on disk
@@ -124,9 +124,9 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
 ## Deploy command
 
 ```bash
-cp build/tribes.html /tmp/tribes-deploy/index.html
-cp build/tribes.{js,wasm,data} /tmp/tribes-deploy/
-cd /tmp/tribes-deploy
+cp build/tribes.html /Users/jkoshy/tribes/index.html
+cp build/tribes.{js,wasm,data} /Users/jkoshy/tribes/
+cd /Users/jkoshy/tribes
 git add -A && git commit -m "message" && git push origin master
 ```
 
