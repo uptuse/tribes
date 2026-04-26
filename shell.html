@@ -1358,7 +1358,8 @@
       if(_flashTimeout)clearTimeout(_flashTimeout);
       _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
       // R22: also fire damage arc toward nearest visible enemy
-      if(Module && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
+      // R29.3: Module.calledRun guard
+      if(Module && Module.calledRun && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
         var ptr = Module._getPlayerStatePtr();
         var stride = Module._getPlayerStateStride();
         var count = Module._getPlayerStateCount();
@@ -1486,7 +1487,8 @@
     var _lastCompassPx = 0, _lastCompassPz = 0, _lastCompassYaw = 0;
     setInterval(function(){
       try {
-        if (window.Module && Module._getPlayerStatePtr && Module.HEAPF32) {
+        // R29.3: Module.calledRun guard
+        if (window.Module && Module.calledRun && Module._getPlayerStatePtr && Module.HEAPF32) {
           var ptr = Module._getPlayerStatePtr();
           var stride = Module._getPlayerStateStride();
           var idx = Module._getLocalPlayerIdx();
@@ -1925,7 +1927,8 @@
     // R28: spawn floating emoji above the player character (uses snapshot pos)
     function spawnEmojiFloat(numericId, e){
       try {
-        if(!Module || !Module.HEAPF32) return;
+        // R29.3: Module.calledRun guard
+        if(!Module || !Module.calledRun || !Module.HEAPF32) return;
         var ptr = Module._getPlayerStatePtr();
         var stride = Module._getPlayerStateStride();
         var view = new Float32Array(Module.HEAPF32.buffer, ptr + numericId * stride * 4, stride);
@@ -3392,7 +3395,8 @@
               m.prediction.reconcile(snap, function(){
                 // Read local player from WASM via a tiny bridge — the renderer
                 // already builds a Float32Array view; we re-derive here for simplicity.
-                if(!Module.HEAPF32 || !Module._getPlayerStatePtr) return null;
+                // R29.3: Module.calledRun guard
+                if(!Module.calledRun || !Module.HEAPF32 || !Module._getPlayerStatePtr) return null;
                 var ptr = Module._getPlayerStatePtr();
                 var stride = Module._getPlayerStateStride();
                 var idx = Module._getLocalPlayerIdx();
@@ -3406,7 +3410,8 @@
                 m.prediction.applyPendingCorrection(
                   Module._setLocalPlayerNetCorrection,
                   function(){
-                    if(!Module.HEAPF32) return null;
+                    // R29.3: Module.calledRun guard
+                    if(!Module.calledRun || !Module.HEAPF32) return null;
                     var ptr = Module._getPlayerStatePtr();
                     var stride = Module._getPlayerStateStride();
                     var idx = Module._getLocalPlayerIdx();
