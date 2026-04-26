@@ -36,10 +36,12 @@
 
 ## Priority 5 — Distinct projectile visuals
 
-- [ ] Spinfusor: white spinning disc + cyan trail.
-- [ ] Chaingun: yellow tracers, no trail, muzzle flash.
-- [ ] Plasma: red-orange globule with crackling halo.
-- [ ] Grenade launcher: bouncing dark ball with red blink before detonation.
+- [x] Spinfusor: white spinning disc + cyan trail.
+- [x] Chaingun: yellow tracer dot, no trail.
+- [x] Plasma: red-orange globule with color jitter.
+- [x] Grenade launcher: bouncing dark olive ball, red blink before detonation.
+- [ ] Chaingun muzzle flash at firing player — deferred.
+- [ ] Plasma crackling halo (additive blend pass) — deferred.
 - [ ] Mortar, ELF, laser, blaster, hand grenade — placeholder OK until their turn.
 
 ## Backlog (no priority yet)

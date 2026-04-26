@@ -218,7 +218,7 @@ struct WeaponData {
 static const WeaponData weapons[WPN_COUNT]={
     {"Blaster",     0.125f,0.3f, 0,   200, 0,  0,   5,   false,5,  1.5f, 1.0f,0.8f,0.2f},
     {"Chaingun",    0.11f, 0.1f, 0,   425, 0,  0,   0,   true, 0,  1.5f, 1.0f,1.0f,0.3f},
-    {"Disc",        0.5f,  1.25f,0.25f,65, 7.5f,150, 5,   true, 0,  6.5f, 0.2f,0.5f,1.0f},
+    {"Disc",        0.5f,  1.25f,0.25f,65, 7.5f,150, 5,   true, 0,  6.5f, 1.0f,1.0f,1.0f},
     {"Grenade L.",  0.4f,  0.5f, 0.5f, 40, 15,  150, 25,  true, 0,  4.0f, 0.4f,0.8f,0.2f},
     {"Plasma",      0.45f, 0.5f, 0.1f, 55, 4,   0,   3,   true, 0,  2.0f, 0.2f,1.0f,0.2f},
     {"Mortar",      1.0f,  2.0f, 0.5f, 50, 20,  250, 20,  true, 0,  8.0f, 1.0f,0.5f,0.1f},
@@ -980,20 +980,20 @@ static void drawHUD(){
     // Health bar
     float hpPct=p.health/ad.maxDamage;
     float hr=hpPct>0.5f?0.1f:0.9f,hg=hpPct>0.3f?0.8f:0.2f;
-    hQ(-0.95f,-0.85f,-0.65f,-0.81f,0.15f,0.15f,0.2f);
+    hQ(-0.95f,-0.85f,-0.65f,-0.81f,0.12f,0.12f,0.12f);
     hQ(-0.95f,-0.85f,-0.95f+0.3f*hpPct,-0.81f,hr,hg,0.2f);
-    // Energy bar
+    // Energy bar (amber/brass — no blue in HUD)
     float enPct=p.energy/ad.maxEnergy;
-    hQ(-0.95f,-0.92f,-0.65f,-0.88f,0.15f,0.15f,0.2f);
-    hQ(-0.95f,-0.92f,-0.95f+0.3f*enPct,-0.88f,0.2f,0.5f,1.0f);
+    hQ(-0.95f,-0.92f,-0.65f,-0.88f,0.12f,0.12f,0.12f);
+    hQ(-0.95f,-0.92f,-0.95f+0.3f*enPct,-0.88f,0.9f,0.70f,0.10f);
     // Speed
     float sw=0.25f*fminf(p.speed/200.0f,1.0f);
-    hQ(0.65f,-0.92f,0.9f,-0.88f,0.15f,0.15f,0.2f);
+    hQ(0.65f,-0.92f,0.9f,-0.88f,0.12f,0.12f,0.12f);
     float sr=p.skiing?0.9f:0.5f,sg=p.skiing?0.6f:0.5f;
     hQ(0.65f,-0.92f,0.65f+sw,-0.88f,sr,sg,0.2f);
     // Weapon indicator
     const WeaponData&wd=weapons[p.curWeapon];
-    hQ(0.55f,-0.82f,0.95f,-0.78f,0.1f,0.1f,0.15f);
+    hQ(0.55f,-0.82f,0.95f,-0.78f,0.1f,0.1f,0.1f);
     // Ammo count as bar width
     if(wd.usesAmmo){
         float amPct=(float)p.ammo[p.curWeapon]/20.0f;
@@ -1226,23 +1226,36 @@ static void mainLoop(){
         projs[i].pos+=projs[i].vel*dt;
         projs[i].life-=dt;
         float ph=getH(projs[i].pos.x,projs[i].pos.z);
-        bool hit=projs[i].pos.y<=ph||projs[i].life<=0||projectileHitsBuilding(projs[i].pos);
+        bool hitTerrain=projs[i].pos.y<=ph;
+        bool hitBuilding=projectileHitsBuilding(projs[i].pos);
+        bool expired=projs[i].life<=0;
+        bool hitPlayer=false;
         // Check player hits
-        if(!hit)for(int j=0;j<MAX_PLAYERS;j++){
+        if(!hitTerrain&&!hitBuilding&&!expired)for(int j=0;j<MAX_PLAYERS;j++){
             if(!players[j].active||!players[j].alive)continue;
             float d=(players[j].pos+Vec3(0,1.2f,0)-projs[i].pos).lenSq();
             float hitR=armors[players[j].armor].hitW+0.5f;
             if(d<hitR*hitR){
                 damagePlayer(j,w.damage,projs[i].ownerTeam);
                 if(!players[j].alive&&projs[i].ownerTeam!=players[j].team){
-                    // Find killer
                     for(int k=0;k<MAX_PLAYERS;k++)if(players[k].active&&players[k].team==projs[i].ownerTeam){
                         players[k].kills++;players[k].score++;break;
                     }
                 }
-                hit=true;break;
+                hitPlayer=true;break;
             }
         }
+        // Grenade bounces off terrain instead of detonating
+        if(hitTerrain&&!hitPlayer&&!expired&&!hitBuilding&&projs[i].weapon==WPN_GRENADE_LAUNCHER){
+            float hspd=sqrtf(projs[i].vel.x*projs[i].vel.x+projs[i].vel.z*projs[i].vel.z);
+            if(hspd>2.0f){
+                projs[i].vel.y=fabsf(projs[i].vel.y)*0.4f;
+                projs[i].vel.x*=0.75f;projs[i].vel.z*=0.75f;
+                projs[i].pos.y=ph+0.1f;
+                hitTerrain=false;
+            }
+        }
+        bool hit=hitPlayer||expired||hitBuilding||hitTerrain;
         if(hit){
             if(w.explosionRadius>0){
                 spawnBurst(projs[i].pos,30,1.5f,25,1,0.6f,0.1f,0.5f);
@@ -1410,17 +1423,31 @@ static void mainLoop(){
         }
     }
 
-    // Projectiles: use DTS disc model for disc projectiles, fallback for others
+    // Projectiles: distinct visual per weapon type
     for(int i=0;i<MAX_PROJ;i++){
         if(!projs[i].active)continue;
         const WeaponData&w=weapons[projs[i].weapon];
-        if(projs[i].weapon==WPN_DISC && gpuDisc.valid){
-            // Spin the disc
-            renderDTSModel(gpuDisc, vp, projs[i].pos, gameTime*15.0f, w.r, w.g, w.b);
-        }else{
-            // Other projectiles: use batch disc shape
+        if(projs[i].weapon==WPN_DISC&&gpuDisc.valid){
+            renderDTSModel(gpuDisc,vp,projs[i].pos,gameTime*15.0f,1.0f,1.0f,1.0f);
+            spawnPart(projs[i].pos,{0,0,0},0.1f,0.8f,1.0f,0.15f,0.15f); // cyan trail
+        }else if(projs[i].weapon==WPN_CHAINGUN){
             oBatch.clear();
-            pushDisc(projs[i].pos, 0.4f, gameTime*15, w.r, w.g, w.b);
+            pushDisc(projs[i].pos,0.12f,0,1.0f,1.0f,0.2f); // yellow tracer dot
+            flushObj(vp);
+        }else if(projs[i].weapon==WPN_PLASMA){
+            float jitter=(rand()%100)*0.001f;
+            oBatch.clear();
+            pushDisc(projs[i].pos,0.45f,gameTime*8,1.0f,0.3f+jitter,0.05f); // red-orange globule
+            flushObj(vp);
+        }else if(projs[i].weapon==WPN_GRENADE_LAUNCHER){
+            float gr=0.35f,gg=0.55f,gb=0.15f;
+            if(projs[i].life<0.5f&&fmodf(gameTime,0.2f)<0.1f){gr=0.9f;gg=0.1f;gb=0.1f;} // red blink
+            oBatch.clear();
+            pushDisc(projs[i].pos,0.32f,0,gr,gg,gb); // dark olive ball
+            flushObj(vp);
+        }else{
+            oBatch.clear();
+            pushDisc(projs[i].pos,0.4f,gameTime*15,w.r,w.g,w.b);
             flushObj(vp);
         }
     }

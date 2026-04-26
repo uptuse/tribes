@@ -8,7 +8,7 @@
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap');
     * { margin:0; padding:0; box-sizing:border-box; }
     body { background:#0a0a08; color:#E8DCB8; font-family:'Barlow Condensed',sans-serif; overflow:hidden; height:100vh; display:flex; align-items:center; justify-content:center; }
-    canvas { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); cursor:crosshair; z-index:1; }
+    canvas { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); cursor:crosshair; z-index:1; visibility:hidden; }
 
     .overlay { position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; display:flex; align-items:center; justify-content:center; pointer-events:none; }
     .overlay.active { pointer-events:auto; }
@@ -347,6 +347,7 @@
     }
     function startGame(){
       showScreen(null);gameStarted=true;
+      canvas.style.visibility='visible';
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit);
       canvas.requestPointerLock();
     }
