@@ -25,3 +25,5 @@
 2026-04-25 23:30 | pending | feat(hud): Tier 3.9.1 — all 8 HUD criteria: health/energy bars, ammo counter, weapon SVG icons, dynamic crosshair, kill feed with icons, compass strip, CTF carry banner
 2026-04-25 21:42 | 5ea0e49 | feat(hud): Tier 3.9.1 — full HUD polish, all 8 criteria (accepted 8/8 code-verified)
 2026-04-25 21:43 | pending | review(manus): round 11 — audio system (12 criteria, must hit 9+); fix flag-status menu leak
+2026-04-25 21:52 | 6200943 | feat(audio): Round 11 — full audio system + HUD flagstatus fix (accepted 12/12 code-verified)
+2026-04-25 21:53 | pending | review(manus): round 12 — Tier 4.0 match flow (11 criteria, must hit 9+)

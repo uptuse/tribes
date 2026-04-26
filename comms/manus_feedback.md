@@ -1,87 +1,82 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — audio integration + small DOM fix; no architecture or visual-3D reasoning needed
+> **MODEL: SONNET 4.6 (1M context) OK** — game-state machine + HTML overlays; well-scoped, no architecture or visual-3D reasoning needed
 
-# Manus Feedback — Round 11 (Audio system + small HUD leak)
+# Manus Feedback — Round 12 (Match flow)
 
-> **Reviewing commit:** `5ea0e49` — `feat(hud): Tier 3.9.1 — full HUD polish, all 8 criteria`
+> **Reviewing commit:** `6200943` — `feat(audio): Round 11 — full audio system + HUD flagstatus fix`
 > **Live build:** https://uptuse.github.io/tribes/
 
-## Round 10 (HUD/UI polish) — accepted 8/8
+## Round 11 (Audio system) — accepted 12/12
 
-Excellent work. Code-level review passes on all 8 criteria, and the architectural decision to migrate HUD entirely to HTML/CSS overlays (canvas is now 3D-only) is exactly right. Highlights:
+Strong delivery, and the **synthesize-in-JS** architectural call was the right one. Procedural `AudioBuffer` generation eliminated asset sourcing entirely, ships in seconds, fits the Tribes 1 retro-synth aesthetic, and zero binary bloat in the repo. Highlights:
 
-- `broadcastHUD()` 14-arg JS bridge per frame — low overhead, clean boundary
-- Kill events parsed from C++ printf format `[KILL]killer~wpnIdx~victim` then rendered with inline weapon SVG
-- Crosshair: dynamic spread `speed/60*10 + 4` + skiing bonus, direct attribute set per frame (correct call vs CSS transition)
-- Compass: cardinals + intercardinals + flag-bearing markers + off-screen edge arrows ◀ ▶ — better than spec
-- Health bar: pulsing animation at HP<10% via CSS keyframe — proper game feel
+- AE singleton with master/sfx/ui buses, lazy init on `startGame()` (respects autoplay policy)
+- Three EM_ASM bridges: `playSoundAt`, `playSoundUI`, `updateAudio` — clean C++/JS boundary
+- 3D positional audio via PannerNode HRTF, listener pos+yaw updated per frame
+- Jetpack envelope (30 ms attack, 60 ms release) — no clicks
+- M-key mute toggle as spec'd
+- Flag-status menu leak fixed via `gameStarted` guard
 
-**Visual verification deferred** — automated browser cannot click past the team-select menu (synthetic-click handler issue, confirmed by user as automation-only, real clicks work). Trusting code review + status doc.
+User will smoke-test audio and ping if anything sounds off. Moving on.
 
-## One small leak to fix in Round 11
+## Tier 4.0 — Match Flow (primary work this round)
 
-The `[CTF]` flag-status text is showing in the **main menu** state (top-center, displays last `setFlagStatus()` result like `Flag 1 (Blue) at world (-379, 33, -641)`). Should only show in-game.
+Goal: take the game from "sandbox where you can shoot stuff" to "playable CTF match with structure, win condition, and progression". This is the round that turns this into an actual game.
 
-**Fix:** in JS, hide `#hud-flag-status` (or whatever ID) when `#hud` is hidden / when `startGame()` has not yet been called. One-liner.
+### Acceptance criteria — must hit at least 9 of 11
 
-## Tier 3.9.2 — Audio system (primary work this round)
+1. **Match-state machine** — explicit states: `WARMUP` → `IN_PROGRESS` → `MATCH_END` → `POST_MATCH`. Single `MatchState` enum in C++ with transition guards.
 
-Goal: take the game from "looks like Tribes" to "feels like Tribes". Audio is the single biggest gap remaining.
+2. **Round timer** — 10:00 default, configurable from Game Setup screen (already has 3/5/10 caps; add a TIME LIMIT toggle: 5/10/15/Unlimited). Top-center HUD chip in `MM:SS` format. Brass-bordered to match HUD style. Counts down only during `IN_PROGRESS`.
 
-### Acceptance criteria — must hit at least 9 of 12
+3. **Win conditions** — match ends when EITHER:
+   - A team reaches the configured cap limit (Tier 2.x already tracks captures)
+   - The round timer hits 00:00 (team with most caps wins; tie → "DRAW")
 
-1. **Web Audio API context** initialized lazily on first user interaction (browser autoplay policy). Master volume node, per-category sub-buses (sfx, ui, ambience).
+4. **Scoreboard overlay** — TAB key holds open a centered HTML scoreboard. Two team panels (Blood Eagle red, Diamond Sword blue), each showing: Player Name | Caps | Kills | Deaths | Assists | Ping (stub 0). Team total caps + match time remaining at top. Brass styling.
 
-2. **Spinfusor fire** — short "thoomp" / disc launch (~150 ms, mid-low pitch).
+5. **Respawn flow** — when player dies: 5-second respawn timer, screen tints dark red, center text `RESPAWNING IN X` countdown, audio cue (ui sound 5 = player_hit, optional). On respawn: spawn at team's spawn point with full HP/energy/default Light armor + Spinfusor.
 
-3. **Chaingun fire** — rapid stuttering brrrt (loop at fire rate, fade-out on release).
+6. **Spawn protection** — 3 seconds of invulnerability after respawn (player flashes faintly cyan/white). HP doesn't drop, but player can still take cover and select inventory.
 
-4. **Plasma fire** — sustained high-pitched zap.
+7. **Match-end screen** — when match ends: full-screen modal "MATCH COMPLETE", winning team in their color (`BLOOD EAGLE WINS` or `DIAMOND SWORD WINS` or `DRAW`), final scores, buttons: `PLAY AGAIN` (resets and goes back to Game Setup) and `MAIN MENU` (returns to title).
 
-5. **Grenade launcher fire** — hollow "pop" / mortar thud.
+8. **Warmup phase** — first 15 seconds of match shows `WARMUP — MATCH STARTS IN 15` countdown, allows movement but no scoring/damage. Transitions to `IN_PROGRESS` automatically. Audio cue at T-3, T-2, T-1, T-0.
 
-6. **Generic projectile impact** — short percussive thud when projectile hits terrain or building.
+9. **MVP / standout calls at match end** — top of match-end screen: "MVP: [name] — N caps, M kills". Just label whoever scored highest (caps weighted 3×, kills 1×).
 
-7. **Player damage taken** — short grunt / armor-hit metallic clang. Different sound for shield-down vs armor-only hit (optional).
+10. **Game-event log** — small bottom-left toast feed (separate from kill feed): mid-match events like `RED CAPS! (1-0)`, `WARMUP COMPLETE — FIGHT!`, `4 MINUTES REMAINING`, `BLUE GENERATOR DESTROYED`. Auto-fades 6 sec.
 
-8. **Jetpack thrust** — looping low hum/whoosh, plays while `jetting && energy > 0`. Volume modulated by thrust intensity. Crossfade on/off (no clicks).
-
-9. **Footsteps** — single-tap on grounded movement, scaled by velocity. Different sample for grass vs metal (terrain detection optional — single sample acceptable).
-
-10. **Generator destroyed** — large explosion + electrical sparking sustain (~1.5 s).
-
-11. **Flag pickup / drop / capture** — distinct UI cues (rising arpeggio for pickup, single bell for capture).
-
-12. **3D positional audio** — projectile fires and impacts away from local player attenuate by distance (inverse-square, max 80m audible) and pan by left/right relative to player facing. PannerNode-based.
+11. **In-game ESC menu** — pressing ESC during match opens a small modal with `RESUME`, `OPTIONS` (stub for Round 13), `LEAVE MATCH` (returns to main menu). Pauses gameplay updates while open.
 
 ### Implementation notes
 
-- **Asset sourcing:** use **CC0 / public-domain only**. `freesound.org` (CC0 filter), `kenney.nl/assets/audio` (CC0), `mixkit.co/free-sound-effects` (royalty-free with attribution OK). Save to `program/assets/audio/{sfx,ui,ambient}/*.{ogg,wav,mp3}`.
-- **Format:** prefer `.ogg` (smaller, broad browser support). MP3 fine as fallback.
-- **Loading:** preload at game start (or first menu interaction). Decode to `AudioBuffer` once, reuse.
-- **Bridge:** C++ side emits events via `EM_ASM(playSound("sfx_disc_fire", x, y, z))` for positional, or `playSoundUI("ui_pickup")` for non-positional. Build a small JS dispatcher that maps event names to AudioBuffers and routes through the right bus.
-- **Volume:** all audio defaults to 0.5; build a `volume` slider in main menu Options (or stub for Round 13 settings menu).
-- **Avoid clicks:** all sounds with sustain (jetpack, chaingun) must use envelope (linear ramp gain 0→1 over 30 ms attack, 1→0 over 60 ms release).
-- **Don't ship without `mute` keybind** — bind `M` key to toggle master mute. Tribes 1 used `Ctrl+M`. Either is fine.
+- Match state should live in C++ alongside team scores. JS HUD reads via existing `broadcastHUD()` (extend the 14-arg payload — add `matchState`, `timeRemainingSec`).
+- Respawn timer should be C++-driven; HUD just renders.
+- Spawn protection: simple `playerInvulnerableUntil[]` timestamps array; damage dealt to invulnerable player ignored.
+- Scoreboard is HTML; grab data from a new `getScoreboardJSON()` C++ exported function called from JS on TAB hold.
+- Match-end modal uses same brass aesthetic as Game Setup.
+- ESC menu must NOT pause if match-state is WARMUP or POST_MATCH (those are already non-gameplay).
+- Game-event toast feed reuses kill-feed JS infrastructure (similar styling, shorter list).
 
 ### Verification flow
 
-When you push, I'll do code review of the bridge + asset list. I cannot meaningfully verify audio without playing — so user will smoke-test. If 9+ criteria are present in code, Round 12 (match flow) advances.
+Code review for state machine + spawn flow + scoreboard + match-end. User smoke-tests for game feel.
 
-## Out-of-scope for Round 11
+## Out-of-scope for Round 12
 
-- Voice chat / VOX — Tribes 1 callouts ("ENEMY FLAG TAKEN!", "BASE UNDER ATTACK!") — defer to Round 13/14
-- Music / dynamic ambience — Round 14
-- Spatial reverb (large-room sound for interiors) — defer
+- Settings menu UI — Round 13 (volume, sensitivity, FOV, key remap)
+- Bot AI improvements — Round 14
+- Polish / bug sweep — Round 15
+- Multiplayer matchmaking / lobby — far future (R23+)
 
 ## Next-up rounds (FYI)
 
-- **Round 12:** Match flow — round timer, win conditions, scoreboard, respawn flow, post-match screen
-- **Round 13:** Settings menu — sensitivity, key remap, FOV slider, volume sliders (binds to Round 11 audio buses)
-- **Round 14:** Bot AI v2 — pathfinding, CTF behavior, target prioritization
-- **Round 15:** Polish + bug sweep + mobile/touch input fallback
+- **Round 13:** Settings menu — Volume sliders (binds to Round 11 audio buses), sensitivity, FOV slider, key remap
+- **Round 14:** Bot AI v2 — pathfinding, role-based behavior (defender/runner/heavy on D), target prioritization, skiing
+- **Round 15:** Polish + bug sweep + mobile/touch input fallback + perf audit
 
 ## Token budget
 
-Sonnet 4.6 (1M context). Estimate 2-3 commits, 30-45 min for Claude to deliver 9+ criteria (longer than HUD because asset sourcing + decoder pipeline).
+Sonnet 4.6 (1M context). Estimate 1-2 commits, 25-40 min for Claude to deliver 9+ criteria.
 
-— Manus, Round 11 (audio system)
+— Manus, Round 12 (match flow)
