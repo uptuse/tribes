@@ -1748,6 +1748,31 @@ extern "C" {
 
     // R31.4: 3P state getter — syncs Three.js camera and mesh visibility to C++ flag
     int    getThirdPerson()    { return thirdPerson ? 1 : 0; }
+
+    // R32.1 O1: APPEND interior-shape AABBs to buildings[] without resetting.
+    // Format: 6 floats per AABB — [minX,minY,minZ, maxX,maxY,maxZ] in world space.
+    // Called from renderer.js initInteriorShapes() after it loads canonical.json.
+    // Unlike setMapBuildings (which replaces), this appends so Raindance's own
+    // C++ initBuildings() data (turrets, generators, etc.) is preserved.
+    void   appendInteriorShapeAABBs(int count, float* data) {
+        if(count <= 0 || !data) return;
+        int added = 0;
+        for(int i = 0; i < count; i++){
+            if(numBuildings >= MAX_BUILDINGS){
+                printf("[R32.1] appendInteriorShapeAABBs: MAX_BUILDINGS (%d) reached after %d/%d\n",
+                       MAX_BUILDINGS, added, count);
+                break;
+            }
+            float minX = data[i*6+0], minY = data[i*6+1], minZ = data[i*6+2];
+            float maxX = data[i*6+3], maxY = data[i*6+4], maxZ = data[i*6+5];
+            float cx=(minX+maxX)*0.5f, cy=(minY+maxY)*0.5f, cz=(minZ+maxZ)*0.5f;
+            float hx=(maxX-minX)*0.5f, hy=(maxY-minY)*0.5f, hz=(maxZ-minZ)*0.5f;
+            buildings[numBuildings++] = {{cx,cy,cz},{hx,hy,hz}, 0.38f,0.36f,0.34f, false};
+            added++;
+        }
+        printf("[R32.1] appendInteriorShapeAABBs: added %d collision boxes (total buildings=%d)\n",
+               added, numBuildings);
+    }
     // R31.7 C1: aim-convergence point fed from JS ray-march each frame in 3P
     void   setLocalAimPoint3P(float x, float y, float z) {
         aimPoint3P={x,y,z}; hasAimPoint3P=true;

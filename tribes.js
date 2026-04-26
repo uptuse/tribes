@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp46zykbbe.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4w__a8jf.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -204,25 +204,25 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/larmor.dts", "start": 1878841, "end": 2195287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 2195287, "end": 2196358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 2196358, "end": 2198871}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 2198871, "end": 2202286}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 2202286, "end": 2228286}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 2228286, "end": 2492482}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 2492482, "end": 2590951}, {"filename": "/assets/tribes/marmor.dts", "start": 2590951, "end": 2988093}, {"filename": "/assets/tribes/tower.DTS", "start": 2988093, "end": 3002951}], "remote_package_size": 3002951});
+    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/larmor.dts", "start": 1878841, "end": 2195287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 2195287, "end": 2196358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 2196358, "end": 2198871}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 2198871, "end": 2202286}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 2202286, "end": 2228286}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 2228286, "end": 2492482}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 2492482, "end": 2590951}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.bin", "start": 2590951, "end": 2643693}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.json", "start": 2643693, "end": 2654371}, {"filename": "/assets/tribes/marmor.dts", "start": 2654371, "end": 3051513}, {"filename": "/assets/tribes/tower.DTS", "start": 3051513, "end": 3066371}], "remote_package_size": 3066371});
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp46zykbbe.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpc7a4mflq.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4w__a8jf.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsl5akz_4.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpc7a4mflq.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmplflo68wg.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsl5akz_4.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4a3d9zkm.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmplflo68wg.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp4a3d9zkm.js
 
 
 var arguments_ = [];
@@ -6436,25 +6436,25 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  348668: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 348741: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 348811: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 348858: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348905: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348957: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
- 349014: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 349072: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349130: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349179: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349231: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349280: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 349462: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349524: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 349583: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 349633: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349689: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 349741: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349830: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348828: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348901: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348971: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 349018: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349065: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349117: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 349174: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349232: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349290: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349339: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349391: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349440: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349622: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349684: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349743: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349793: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349849: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349901: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349990: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
@@ -6488,6 +6488,7 @@ var _getCameraFov = Module['_getCameraFov'] = makeInvalidEarlyAccess('_getCamera
 var _getMatchState = Module['_getMatchState'] = makeInvalidEarlyAccess('_getMatchState');
 var _isReady = Module['_isReady'] = makeInvalidEarlyAccess('_isReady');
 var _getThirdPerson = Module['_getThirdPerson'] = makeInvalidEarlyAccess('_getThirdPerson');
+var _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = makeInvalidEarlyAccess('_appendInteriorShapeAABBs');
 var _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = makeInvalidEarlyAccess('_setLocalAimPoint3P');
 var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
 var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
@@ -6542,6 +6543,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['getMatchState'] != 'undefined', 'missing Wasm export: getMatchState');
   assert(typeof wasmExports['isReady'] != 'undefined', 'missing Wasm export: isReady');
   assert(typeof wasmExports['getThirdPerson'] != 'undefined', 'missing Wasm export: getThirdPerson');
+  assert(typeof wasmExports['appendInteriorShapeAABBs'] != 'undefined', 'missing Wasm export: appendInteriorShapeAABBs');
   assert(typeof wasmExports['setLocalAimPoint3P'] != 'undefined', 'missing Wasm export: setLocalAimPoint3P');
   assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
   assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
@@ -6592,6 +6594,7 @@ function assignWasmExports(wasmExports) {
   _getMatchState = Module['_getMatchState'] = createExportWrapper('getMatchState', 0);
   _isReady = Module['_isReady'] = createExportWrapper('isReady', 0);
   _getThirdPerson = Module['_getThirdPerson'] = createExportWrapper('getThirdPerson', 0);
+  _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = createExportWrapper('appendInteriorShapeAABBs', 2);
   _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = createExportWrapper('setLocalAimPoint3P', 3);
   _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
   _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);

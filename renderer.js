@@ -702,6 +702,54 @@ async function initInteriorShapes() {
             placed++;
         }
         console.log('[R32.1] Interior shapes placed:', placed, '(missed', missed, ')');
+
+        // R32.1 O1: push world-space AABBs to C++ for collision.
+        // Each instance's local DIS bounds are transformed via the same rotation as the mesh:
+        //   Step 1: rotation.x = -PI/2 maps DIS local (lx,ly,lz_up) → (lx, lz, -ly)
+        //   Step 2: rotation.z = meshRotZ = -item.rotation[2] rotates around Three.js Z
+        //           combined matrix Rz*Rx: wx = ax*cos(r)-ay*sin(r), wy = ax*sin(r)+ay*cos(r), wz=az
+        //   Step 3: translate by world position
+        if (typeof Module !== 'undefined' && Module._appendInteriorShapeAABBs && Module._malloc && Module.HEAPF32) {
+            const meshBounds = new Map();
+            for (const s of info.meshes) meshBounds.set(s.fileName, { mn: s.bounds_min, mx: s.bounds_max });
+
+            const aabbData = [];
+            for (const item of items) {
+                const bd = meshBounds.get(item.fileName);
+                if (!bd) continue;
+                const [bx0,by0,bz0] = bd.mn, [bx1,by1,bz1] = bd.mx;
+                const w = toWorld(item.position);
+                const meshRotZ = -(item.rotation?.[2] ?? 0);
+                const cosR = Math.cos(meshRotZ), sinR = Math.sin(meshRotZ);
+                const corners = [
+                    [bx0,by0,bz0],[bx1,by0,bz0],[bx0,by1,bz0],[bx1,by1,bz0],
+                    [bx0,by0,bz1],[bx1,by0,bz1],[bx0,by1,bz1],[bx1,by1,bz1],
+                ];
+                let mnX=Infinity,mnY=Infinity,mnZ=Infinity, mxX=-Infinity,mxY=-Infinity,mxZ=-Infinity;
+                for (const [lx,ly,lz] of corners) {
+                    // Rx(-PI/2): (lx,ly,lz) → (lx, lz, -ly)
+                    const ax=lx, ay=lz, az=-ly;
+                    // Rz(meshRotZ): (ax,ay,az) → (ax*cos-ay*sin, ax*sin+ay*cos, az)
+                    const fx = ax*cosR - ay*sinR + w.x;
+                    const fy = ax*sinR + ay*cosR + w.y;
+                    const fz = az + w.z;
+                    mnX=Math.min(mnX,fx); mxX=Math.max(mxX,fx);
+                    mnY=Math.min(mnY,fy); mxY=Math.max(mxY,fy);
+                    mnZ=Math.min(mnZ,fz); mxZ=Math.max(mxZ,fz);
+                }
+                aabbData.push(mnX,mnY,mnZ, mxX,mxY,mxZ);
+            }
+            if (aabbData.length > 0) {
+                const count = aabbData.length / 6;
+                const bytes = aabbData.length * 4;
+                const ptr = Module._malloc(bytes);
+                if (ptr) {
+                    Module.HEAPF32.set(aabbData, ptr / 4);
+                    Module._appendInteriorShapeAABBs(count, ptr);
+                    Module._free(ptr);
+                }
+            }
+        }
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);
     }
