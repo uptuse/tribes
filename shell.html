@@ -277,6 +277,14 @@
     .station-opt:hover,.station-opt.selected { border-color:#D4A030; color:#FFC850; background:rgba(40,35,20,0.7); }
     #station-offline { color:#C8302C; font-family:'Cinzel',serif; font-size:1em; letter-spacing:3px; text-align:center; margin:20px 0; }
   </style>
+  <!-- R15: Three.js renderer (additive, opt-in via ?renderer=three) -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.170.0/build/three.module.js"
+    }
+  }
+  </script>
 </head>
 <body>
   <!-- Loading Screen -->
@@ -851,6 +859,13 @@
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
+      // R15: if Three.js mode requested, swap renderers now (one-shot)
+      if(window.__tribesUseThree && !window.__tribesThreeStarted){
+        window.__tribesThreeStarted = true;
+        if(Module._setRenderMode)Module._setRenderMode(1);
+        import('./renderer.js').then(function(m){m.start();})
+          .catch(function(err){console.error('[R15] renderer.js import failed:', err);});
+      }
       canvas.requestPointerLock();
     }
     function restartGame(){
@@ -1466,7 +1481,18 @@
         this.totalDependencies=Math.max(this.totalDependencies,left);
         Module.setStatus(left?'Loading... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')':'');
       },
-      onRuntimeInitialized:function(){document.getElementById('loading').classList.add('hidden');showScreen('mainmenu');}
+      onRuntimeInitialized:function(){
+        document.getElementById('loading').classList.add('hidden');
+        showScreen('mainmenu');
+        // R15: opt-in Three.js renderer via ?renderer=three URL flag
+        var useThree = new URLSearchParams(location.search).get('renderer') === 'three';
+        if(useThree){
+          console.log('[R15] ?renderer=three detected — switching to Three.js renderer');
+          // Wait for the user to click Play (start the game) so that the canvas
+          // becomes visible and we have a meaningful local player to follow
+          window.__tribesUseThree = true;
+        }
+      }
     };
     Module.setStatus('Downloading...');
   </script>

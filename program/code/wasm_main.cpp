@@ -509,6 +509,73 @@ static bool projectileHitsBuilding(Vec3 pos) {
 }
 
 // ============================================================
+// Render-state export (R15: Three.js renderer)
+// Flat structs in BSS, exported as Float32Array views to JS via HEAPF32.
+// Sizes are deliberately power-of-2 friendly for cacheline alignment.
+// ============================================================
+struct RenderPlayer {        // 32 floats = 128 bytes
+    float pos[3];            // [0..2]
+    float rot[3];            // [3..5] euler XYZ ('YXZ' order in Three.js)
+    float vel[3];            // [6..8]
+    float health;            // [9]
+    float energy;            // [10]
+    float team;              // [11] 0=red, 1=blue, 2=spectator
+    float armor;             // [12] 0=light, 1=medium, 2=heavy
+    float alive;             // [13]
+    float jetting;           // [14]
+    float skiing;            // [15]
+    float weaponIdx;         // [16] -1 = none
+    float carryingFlag;      // [17] -1 = none, else team idx
+    float visible;           // [18]
+    float botRole;           // [19] -1=human, 0=OFF, 1=DEF, 2=MID
+    float reserved[12];      // [20..31] padding to 128 bytes
+};
+struct RenderProjectile {    // 16 floats = 64 bytes
+    float pos[3];
+    float vel[3];
+    float type;              // 0=disc, 1=chain, 2=plasma, 3=grenade, 4=blaster, 5=mortar
+    float age;
+    float team;
+    float alive;
+    float reserved[6];
+};
+struct RenderParticle {      // 8 floats = 32 bytes
+    float pos[3];
+    float vel[3];
+    float type;              // 0=jet, 1=ski, 2=hit, 3=explosion, 4=spark, 5=trail
+    float age;
+};
+struct RenderFlag {          // 8 floats = 32 bytes
+    float pos[3];
+    float team;
+    float state;             // 0=at-base, 1=carried, 2=dropped
+    float carrierIdx;        // -1 or player idx
+    float reserved[2];
+};
+struct RenderBuilding {      // 16 floats = 64 bytes
+    float pos[3];
+    float halfExtents[3];
+    float type;              // 0=interior, 1=tower, 2=generator, 3=turret, 4=station, 5=rock
+    float team;              // -1=neutral, 0=red, 1=blue
+    float alive;
+    float color[3];          // RGB tint for placeholder rendering
+    float reserved[3];
+};
+
+static RenderPlayer       g_rPlayers[16];
+static RenderProjectile   g_rProjectiles[256];
+static RenderParticle     g_rParticles[1024];
+static RenderFlag         g_rFlags[2];
+static RenderBuilding     g_rBuildings[64];
+static int g_rPlayerCount = 0;
+static int g_rProjectileCount = 0;
+static int g_rParticleCount = 0;
+static int g_rBuildingCount = 0;
+static int g_localPlayerIdx = 0;
+static int g_renderMode = 0;     // 0 = legacy WebGL, 1 = Three.js (skip C++ render)
+static int g_renderReady = 0;    // 1 once init has populated buildings
+
+// ============================================================
 // Turrets & Generators
 // ============================================================
 struct Turret {
@@ -1514,12 +1581,118 @@ extern "C" void applyLoadout(int armor,int weapon,int pack){
 }
 
 // ============================================================
+// Render-state population (R15: Three.js bridge)
+// Called once per simulation tick. Writes the live game state into the
+// flat g_r* arrays that JS reads via Float32Array views into HEAPF32.
+// ============================================================
+static void populateRenderState(){
+    g_rPlayerCount = MAX_PLAYERS;
+    for(int i=0;i<MAX_PLAYERS;i++){
+        const Player&p=players[i];
+        RenderPlayer&r=g_rPlayers[i];
+        r.pos[0]=p.pos.x; r.pos[1]=p.pos.y; r.pos[2]=p.pos.z;
+        // Three.js 'YXZ' euler order: yaw around Y, pitch around X
+        r.rot[0]=p.pitch; r.rot[1]=p.yaw; r.rot[2]=0;
+        r.vel[0]=p.vel.x; r.vel[1]=p.vel.y; r.vel[2]=p.vel.z;
+        r.health=p.health; r.energy=p.energy;
+        r.team=(float)p.team; r.armor=(float)p.armor;
+        r.alive=p.alive?1.0f:0.0f;
+        r.jetting=p.jetting?1.0f:0.0f;
+        r.skiing=p.skiing?1.0f:0.0f;
+        r.weaponIdx=(float)p.curWeapon;
+        r.carryingFlag=(float)p.carryingFlag;
+        r.visible=p.active?1.0f:0.0f;
+        r.botRole=p.isBot?(float)p.botRole:-1.0f;
+    }
+
+    // Projectiles
+    g_rProjectileCount = MAX_PROJ;
+    for(int i=0;i<MAX_PROJ;i++){
+        const Projectile&p=projs[i];
+        RenderProjectile&r=g_rProjectiles[i];
+        r.pos[0]=p.pos.x; r.pos[1]=p.pos.y; r.pos[2]=p.pos.z;
+        r.vel[0]=p.vel.x; r.vel[1]=p.vel.y; r.vel[2]=p.vel.z;
+        r.type=(float)p.weapon;
+        r.age=p.life;
+        r.team=(float)p.ownerTeam;
+        r.alive=p.active?1.0f:0.0f;
+    }
+
+    // Particles
+    g_rParticleCount = MAX_PART;
+    for(int i=0;i<MAX_PART;i++){
+        const Particle&p=parts[i];
+        RenderParticle&r=g_rParticles[i];
+        r.pos[0]=p.pos.x; r.pos[1]=p.pos.y; r.pos[2]=p.pos.z;
+        r.vel[0]=p.vel.x; r.vel[1]=p.vel.y; r.vel[2]=p.vel.z;
+        // Type derived from color (rough heuristic, R18 will use proper type)
+        r.type=p.active?(p.r>0.7f&&p.g<0.3f?3.0f:(p.r>0.7f&&p.g>0.5f?0.0f:4.0f)):0.0f;
+        r.age=p.active?p.life:0.0f;
+    }
+
+    // Flags
+    for(int i=0;i<2;i++){
+        const Flag&f=flags[i];
+        RenderFlag&r=g_rFlags[i];
+        r.pos[0]=f.pos.x; r.pos[1]=f.pos.y; r.pos[2]=f.pos.z;
+        r.team=(float)f.team;
+        r.state=f.atHome?0.0f:(f.carried?1.0f:2.0f);
+        r.carrierIdx=(float)f.carrierIdx;
+    }
+}
+
+// ============================================================
+// R15 exports — JS reads these via Module._get*Ptr/Count/Stride
+// ============================================================
+extern "C" {
+    float* getPlayerStatePtr()       { return (float*)g_rPlayers; }
+    int    getPlayerStateCount()     { return g_rPlayerCount; }
+    int    getPlayerStateStride()    { return sizeof(RenderPlayer)/4; }
+    int    getLocalPlayerIdx()       { return g_localPlayerIdx; }
+
+    float* getProjectileStatePtr()   { return (float*)g_rProjectiles; }
+    int    getProjectileStateCount() { return g_rProjectileCount; }
+    int    getProjectileStateStride(){ return sizeof(RenderProjectile)/4; }
+
+    float* getParticleStatePtr()     { return (float*)g_rParticles; }
+    int    getParticleStateCount()   { return g_rParticleCount; }
+    int    getParticleStateStride()  { return sizeof(RenderParticle)/4; }
+
+    float* getFlagStatePtr()         { return (float*)g_rFlags; }
+    int    getFlagStateCount()       { return 2; }
+    int    getFlagStateStride()      { return sizeof(RenderFlag)/4; }
+
+    float* getBuildingPtr()          { return (float*)g_rBuildings; }
+    int    getBuildingCount()        { return g_rBuildingCount; }
+    int    getBuildingStride()       { return sizeof(RenderBuilding)/4; }
+
+    float* getHeightmapPtr()         { return (float*)RAINDANCE_HEIGHTS; }
+    int    getHeightmapCount()       { return RAINDANCE_SIZE*RAINDANCE_SIZE; }
+    int    getHeightmapSize()        { return RAINDANCE_SIZE; }
+    float  getHeightmapWorldScale()  { return TSCALE; }
+
+    float  getCameraFov()            { return g_fov; }
+    int    getMatchState()           { return g_matchState; }
+    int    isReady()                 { return g_renderReady; }
+    void   setRenderMode(int mode){
+        g_renderMode = mode;
+        if(mode == 1){
+            // Three.js drives RAF; cancel the C++ main loop so we don't double-tick
+            emscripten_cancel_main_loop();
+            printf("[R15] Render mode = Three.js. C++ main loop cancelled.\n");
+        }
+    }
+    void mainLoop(); // forward decl (defined below; non-static so tick() can call)
+    void tick(){ mainLoop(); }
+}
+
+// ============================================================
 // Main loop
 // ============================================================
 static float respawnTimer=0;
 static int weaponSwitchCooldown=0;
 
-static void mainLoop(){
+extern "C" void mainLoop(){
     double now=emscripten_get_now()/1000.0;
     float dt=(lastTime>0)?(float)(now-lastTime):TICK;
     if(dt>0.05f)dt=0.05f;
@@ -1950,7 +2123,17 @@ static void mainLoop(){
         }
     }
 
-    // --- Render ---
+    // R15: populate render-state for JS consumers (always runs, regardless of mode)
+    populateRenderState();
+
+    // --- Render --- (LEGACY WebGL path; skipped when Three.js renderer is active)
+    if(g_renderMode != 0) {
+        // Three.js mode: still broadcast HUD + audio state to JS overlays
+        broadcastHUD();
+        EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },
+               me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000));
+        return;
+    }
     Vec3 sunDir=Vec3(0.4f,0.8f,0.3f).normalized();
     float skyT=0.5f+me.pitch*0.3f;
     // Sky: spec §2 — horizon #B8C4C8 (0.72,0.77,0.78) to zenith #5A6A7A (0.35,0.42,0.48)
@@ -2273,6 +2456,19 @@ int main(){
     initBuildings();
     initNavGrid();
 
+    // Populate render-state buildings (static, written once)
+    g_rBuildingCount = numBuildings;
+    for(int i=0;i<numBuildings;i++){
+        const Building&b=buildings[i];
+        RenderBuilding&r=g_rBuildings[i];
+        r.pos[0]=b.pos.x; r.pos[1]=b.pos.y; r.pos[2]=b.pos.z;
+        r.halfExtents[0]=b.halfSize.x; r.halfExtents[1]=b.halfSize.y; r.halfExtents[2]=b.halfSize.z;
+        r.type = b.isRock ? 5.0f : 0.0f;
+        r.team = -1.0f;
+        r.alive = 1.0f;
+        r.color[0]=b.r; r.color[1]=b.g; r.color[2]=b.b;
+    }
+
     // Init turrets
     for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
         float wx=RAINDANCE_TURRETS[i].x, wz=-RAINDANCE_TURRETS[i].y, wy=RAINDANCE_TURRETS[i].z;
@@ -2323,6 +2519,7 @@ int main(){
     for(int i=1;i<MAX_PLAYERS;i++)if(players[i].team==1){if(!first)printf(", ");printf("%s(%s)",players[i].name,armors[players[i].armor].name);first=false;}
     printf("\n\n");
 
+    g_renderReady = 1;
     emscripten_set_main_loop(mainLoop,0,1);
     return 0;
 }

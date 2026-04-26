@@ -18,11 +18,13 @@ mkdir -p build
 
 emcc program/code/wasm_main.cpp -o build/tribes.html \
   -std=c++14 -I program/code \
-  -s USE_WEBGL2=1 -s FULL_ES3=1 -s ALLOW_MEMORY_GROWTH=1 -s INITIAL_MEMORY=134217728 \
+  -s USE_WEBGL2=1 -s FULL_ES3=1 \
+  -s ALLOW_MEMORY_GROWTH=0 -s INITIAL_MEMORY=67108864 -s MAXIMUM_MEMORY=67108864 \
   --shell-file shell.html \
   --preload-file assets@/assets/tribes \
   -O0 -g0 -Wno-format \
-  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings"]' -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString"]'
+  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick"]' \
+  -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 
 echo "[build] Output: build/tribes.html, build/tribes.js, build/tribes.wasm, build/tribes.data"
 
