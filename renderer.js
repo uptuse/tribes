@@ -125,6 +125,7 @@ export async function start() {
     initFlags();
     initParticles();
     initWeaponViewmodel();
+    initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall
     // R29.2: initStateViews() must run BEFORE initPostProcessing() because the
     // RenderPass(scene, camera) constructor captures the camera reference, and
     // initStateViews() is where `camera` is actually created. Previously the
@@ -167,8 +168,9 @@ function initRenderer() {
 
 function initScene() {
     scene = new THREE.Scene();
-    // Exponential fog blends distant geometry to sky horizon
-    scene.fog = new THREE.FogExp2(0xb8c4c8, 0.0006);
+    // R32.0: Raindance.MIS canonical fog — haze 200m, visible 450m, pale overcast
+    scene.fog = new THREE.Fog(0xC0C8D0, 200, 450);
+    scene.background = new THREE.Color(0xC0C8D0);
 }
 
 // ============================================================
@@ -195,8 +197,8 @@ function initSky() {
     u.mieCoefficient.value = 0.005;
     u.mieDirectionalG.value = 0.85;
 
-    // Sun: 55° elevation, roughly south-west — user will see the sun disk clearly
-    const azimuth = 200, elevation = 55;
+    // R32.0: Raindance.MIS canonical sun — azimuth -90° (east), incidence 54°
+    const azimuth = -90 + 180, elevation = 54;  // Three.js: azimuth from south, elevation above horizon
     const phi = THREE.MathUtils.degToRad(90 - elevation);
     const theta = THREE.MathUtils.degToRad(azimuth - 180);
     sunPos.setFromSphericalCoords(1, phi, theta);
@@ -262,30 +264,21 @@ function buildEnvironmentFromSky() {
 function initLights() {
     const tier = readQualityFromSettings();
 
-    // R30.1: also set a fallback scene background color so that if the Sky
-    // shader fails to draw (e.g. behind the camera, broken uniforms), we get
-    // a sky-blue clear instead of WebGL's default black or window white.
-    scene.background = new THREE.Color(0x9bb5d6);
+    // R32.0: Raindance.MIS canonical atmosphere — overcast sky
+    scene.background = new THREE.Color(0xC0C8D0);
 
-    // R31.1: raise exposure 0.5→0.8. R30.2's 0.5 was too dim — it killed
-    // dynamic range and made the sky look flat and washed out ("2003 game").
-    // 0.8 gives proper bright sky + visible sun disk + shadows on terrain.
     if (renderer) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
         renderer.toneMappingExposure = 0.8;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
 
-    // Hemisphere ambient — sky=#9bb5d6 ground=#5a4a32 (per R18 brief)
-    // R30.1: bumped intensity 0.55 → 1.1 so building MeshStandardMaterial
-    // doesn't render as black silhouettes in the absence of direct sun.
-    // Even without the directional light reaching them, hemi alone now
-    // produces visible PBR shading.
-    hemiLight = new THREE.HemisphereLight(0x9bb5d6, 0x5a4a32, 1.1);
+    // R32.0: Raindance.MIS canonical lighting — ambient 0.4 gray + warm ground
+    hemiLight = new THREE.HemisphereLight(0xC0C8D0, 0x4D473B, 1.0);
     scene.add(hemiLight);
 
-    // Directional sun
-    sunLight = new THREE.DirectionalLight(0xfff4e0, 1.4);
+    // R32.0: Sun — azimuth -90°, incidence 54°, intensity 0.6 per .MIS
+    sunLight = new THREE.DirectionalLight(0x999999, 1.4); // 0.6*1.4 ≈ 0.84 effective
     sunLight.castShadow = tier.shadowMap > 0;
     if (tier.shadowMap > 0) {
         sunLight.shadow.mapSize.set(tier.shadowMap, tier.shadowMap);
@@ -983,6 +976,57 @@ function initWeaponViewmodel() {
 // ============================================================
 // Particles — type-aware shader-driven pool
 // ============================================================
+// ============================================================
+// R32.0 Rain — Raindance.MIS "Rain1" Snowfall, intensity 1, wind (-0.22, 0.15, -75)
+// Screen-space streaks anchored to camera; not world-space so they always cover
+// the view regardless of player position.
+// ============================================================
+let _rainGeom = null, _rainSystem = null;
+const RAIN_COUNT = 5000;
+const RAIN_WIND_X = -0.22, RAIN_WIND_Z = 0.15;
+const RAIN_SPEED = 30; // m/s downward (from MIS wind Z magnitude ~75; scaled for feel)
+const RAIN_SPREAD = 80; // half-width of the rain volume around camera (meters)
+const RAIN_HEIGHT = 60; // rain volume above camera
+let _rainPos = null;
+
+function initRain() {
+    _rainGeom = new THREE.BufferGeometry();
+    _rainPos = new Float32Array(RAIN_COUNT * 3);
+    for (let i = 0; i < RAIN_COUNT; i++) {
+        _rainPos[i * 3]     = (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        _rainPos[i * 3 + 1] = (Math.random() - 0.5) * RAIN_HEIGHT + RAIN_HEIGHT * 0.5;
+        _rainPos[i * 3 + 2] = (Math.random() - 0.5) * RAIN_SPREAD * 2;
+    }
+    _rainGeom.setAttribute('position', new THREE.BufferAttribute(_rainPos, 3));
+    const mat = new THREE.PointsMaterial({
+        color: 0xb8c8d8, size: 0.12, transparent: true, opacity: 0.55,
+        depthWrite: false, sizeAttenuation: true,
+    });
+    _rainSystem = new THREE.Points(_rainGeom, mat);
+    _rainSystem.frustumCulled = false;
+    scene.add(_rainSystem);
+}
+
+function updateRain(dt, camPos) {
+    if (!_rainSystem || !_rainPos) return;
+    const fall = RAIN_SPEED * dt;
+    const driftX = RAIN_WIND_X * dt * 10;
+    const driftZ = RAIN_WIND_Z * dt * 10;
+    for (let i = 0; i < RAIN_COUNT; i++) {
+        _rainPos[i * 3]     += driftX;
+        _rainPos[i * 3 + 1] -= fall;
+        _rainPos[i * 3 + 2] += driftZ;
+        // Wrap back to top when streak exits bottom of volume
+        if (_rainPos[i * 3 + 1] < camPos.y - RAIN_HEIGHT * 0.5) {
+            _rainPos[i * 3]     = camPos.x + (Math.random() - 0.5) * RAIN_SPREAD * 2;
+            _rainPos[i * 3 + 1] = camPos.y + RAIN_HEIGHT * 0.5;
+            _rainPos[i * 3 + 2] = camPos.z + (Math.random() - 0.5) * RAIN_SPREAD * 2;
+        }
+    }
+    _rainGeom.attributes.position.needsUpdate = true;
+    _rainSystem.position.set(0, 0, 0); // world-space
+}
+
 function makeSoftCircleTexture() {
     const size = 64;
     const c = document.createElement('canvas');
@@ -1112,7 +1156,8 @@ function initStateViews() {
     // R31.1: near=0.1 (was 0.5). Weapon viewmodel sits at z=-0.45 and was
     // getting clipped by the near plane. 0.1 allows it through without
     // significant depth-buffer precision loss at our 5000m far plane.
-    camera = new THREE.PerspectiveCamera(90, aspect, 0.1, 5000);
+    // R32.0: far plane matches Raindance.MIS visible distance (450m)
+    camera = new THREE.PerspectiveCamera(90, aspect, 0.1, 500);
     // R30.1: place camera high above the basin center so the FIRST FRAME
     // (before WASM spawns the player) shows the terrain + buildings + sky
     // rather than burying the camera at (0,0,0) under the ground.
@@ -1510,6 +1555,7 @@ function loop() {
     syncParticles();
     syncTurretBarrels();
     syncCamera();
+    updateRain(1 / 60, camera.position); // R32.0 rain tick
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
