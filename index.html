@@ -236,6 +236,26 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* R21: Toast notification (centre top, fades out) */
+    #toast { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
+      z-index:60; background:rgba(10,8,4,0.95); border:1px solid #D4A030; color:#FFC850;
+      padding:10px 24px; font-family:'Barlow Condensed',sans-serif; font-size:1em;
+      letter-spacing:2px; box-shadow:0 4px 16px rgba(0,0,0,0.5); pointer-events:none;
+      transition:opacity 0.4s; opacity:1; }
+    #toast.show { display:block; }
+    #toast.fade { opacity:0; }
+
+    /* R21: Tutorial overlay (in-game first-match intro) */
+    #tutorial { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+      z-index:55; background:rgba(0,0,0,0.55); align-items:center; justify-content:center; }
+    #tutorial.active { display:flex; }
+    #tutorial .panel { min-width:520px; max-width:640px; text-align:center; }
+    .tut-step { font-family:'Cinzel',serif; font-size:1.4em; letter-spacing:4px;
+      color:#D4A030; margin-bottom:10px; }
+    .tut-text { font-family:'Barlow Condensed',sans-serif; font-size:1em;
+      letter-spacing:2px; color:#E8DCB8; line-height:1.6; margin-bottom:18px; }
+    .tut-progress { font-size:0.8em; color:#7A6A4A; letter-spacing:3px; margin-bottom:14px; }
+
     /* R20: Lobby browser modal */
     #lobby-browser { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
       z-index:30; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; }
@@ -324,6 +344,13 @@
     .station-opt:hover,.station-opt.selected { border-color:#D4A030; color:#FFC850; background:rgba(40,35,20,0.7); }
     #station-offline { color:#C8302C; font-family:'Cinzel',serif; font-size:1em; letter-spacing:3px; text-align:center; margin:20px 0; }
   </style>
+  <!-- R21: production server URL — replace with your deployed Cloudflare Workers URL -->
+  <script>
+    // Set this to your CF Workers deployed URL after running deploy.sh.
+    // Example: window.__TRIBES_SERVER_URL = 'wss://tribes-lobby.youraccount.workers.dev/ws';
+    // Leave undefined for local dev (?multiplayer=local will hit ws://localhost:8080/ws).
+    // window.__TRIBES_SERVER_URL = 'wss://tribes-server.workers.dev/ws';
+  </script>
   <!-- R15: Three.js renderer (default in R17). R18 adds three/addons for Sky + post-processing. -->
   <script type="importmap">
   {
@@ -429,6 +456,20 @@
     </div>
   </div>
 
+  <!-- R21: Toast (clipboard share, etc.) -->
+  <div id="toast"></div>
+
+  <!-- R21: First-match tutorial overlay -->
+  <div id="tutorial">
+    <div class="panel">
+      <div class="tut-progress" id="tut-progress">STEP 1 / 3</div>
+      <div class="tut-step" id="tut-step">MOVEMENT</div>
+      <div class="tut-text" id="tut-text">WASD to move · Space to jump · Shift to ski</div>
+      <button class="btn" id="tut-next" onclick="tutorialNext()" disabled>Wait 5s…</button>
+      <div class="tut-progress" style="margin-top:10px;">Press Esc to skip tutorial</div>
+    </div>
+  </div>
+
   <!-- R20: Lobby browser modal -->
   <div id="lobby-browser" onclick="if(event.target===this)closeLobbyBrowser()">
     <div class="panel">
@@ -476,6 +517,7 @@
       <div class="menu-grid">
         <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
         <div class="menu-item" onclick="openLobbyBrowser()">MULTIPLAYER</div>
+        <div class="menu-item" onclick="inviteFriends()">INVITE FRIENDS</div>
         <div class="menu-item" onclick="quickStart()">QUICK START</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
@@ -955,6 +997,8 @@
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
+      // R21: show tutorial overlay on first match (skips if user has seen it)
+      showTutorial();
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
       // R15: if Three.js mode requested, swap renderers now (one-shot)
       if(window.__tribesUseThree && !window.__tribesThreeStarted){
@@ -981,6 +1025,7 @@
         if(Module._updateScoreboard)Module._updateScoreboard();
       }
       if(e.keyCode===27){
+        if(document.getElementById('tutorial').classList.contains('active')){closeTutorial();return;}
         if(document.getElementById('settings-modal').classList.contains('active')){closeSettings();return;}
         if(gameStarted){
           var esc=document.getElementById('escmenu');
@@ -1139,6 +1184,78 @@
       var id = '';
       for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
       window.location.href = '?multiplayer=local&lobbyId='+id;
+    }
+
+    // R21: Toast helper (centre top, fades out)
+    var _toastFadeTimer = null, _toastHideTimer = null;
+    function showToast(msg, ms){
+      ms = ms || 4000;
+      var t = document.getElementById('toast');if(!t)return;
+      t.textContent = msg;
+      t.classList.remove('fade');t.classList.add('show');
+      if(_toastFadeTimer)clearTimeout(_toastFadeTimer);
+      if(_toastHideTimer)clearTimeout(_toastHideTimer);
+      _toastFadeTimer = setTimeout(function(){t.classList.add('fade');},ms-400);
+      _toastHideTimer = setTimeout(function(){t.classList.remove('show','fade');},ms);
+    }
+
+    // R21: INVITE FRIENDS — generate lobby ID, copy URL to clipboard
+    function inviteFriends(){
+      var id = '';
+      for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
+      var url = window.location.origin + window.location.pathname + '?multiplayer=remote&lobbyId=' + id;
+      var copied = false;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(url).then(function(){
+          showToast('LINK COPIED — share with friends. Lobby waits 60s before destruct.', 5000);
+        }).catch(function(){
+          // Fallback to textarea+execCommand
+          var ta = document.createElement('textarea');ta.value = url;document.body.appendChild(ta);ta.select();
+          try{document.execCommand('copy');showToast('LINK COPIED — '+url, 6000);}catch(e){}
+          document.body.removeChild(ta);
+        });
+      } else {
+        showToast('Share: '+url, 8000);
+      }
+    }
+
+    // R21: First-match tutorial overlay (3 steps, 5s gate per step, Esc to skip)
+    var _tutStep = 0, _tutCanAdvance = false, _tutTimer = null;
+    var TUT_STEPS = [
+      { title:'MOVEMENT', text:'WASD to move · Space to jump · Shift to ski downhill' },
+      { title:'JETPACK',  text:'Hold Space in air to jet · drains energy · land to recharge' },
+      { title:'COMBAT',   text:'1-5 to switch weapons · Mouse1 to fire · F to grab/cap flag · Tab for scoreboard' },
+    ];
+    function showTutorial(){
+      if(localStorage.getItem('tribes:tutorialDone') === 'v1') return;
+      _tutStep = 0;
+      document.getElementById('tutorial').classList.add('active');
+      paintTutStep();
+    }
+    function paintTutStep(){
+      if(_tutStep >= TUT_STEPS.length){ closeTutorial(); return; }
+      document.getElementById('tut-progress').textContent = 'STEP ' + (_tutStep+1) + ' / ' + TUT_STEPS.length;
+      document.getElementById('tut-step').textContent = TUT_STEPS[_tutStep].title;
+      document.getElementById('tut-text').textContent = TUT_STEPS[_tutStep].text;
+      _tutCanAdvance = false;
+      var btn = document.getElementById('tut-next');
+      btn.disabled = true; btn.textContent = 'Wait 5s…';
+      var remain = 5;
+      if(_tutTimer)clearInterval(_tutTimer);
+      _tutTimer = setInterval(function(){
+        remain--;
+        if(remain <= 0){ clearInterval(_tutTimer); _tutCanAdvance = true; btn.disabled = false; btn.textContent = (_tutStep+1 === TUT_STEPS.length ? 'Got it' : 'Next →'); }
+        else { btn.textContent = 'Wait '+remain+'s…'; }
+      }, 1000);
+    }
+    function tutorialNext(){
+      if(!_tutCanAdvance) return;
+      _tutStep++; paintTutStep();
+    }
+    function closeTutorial(){
+      if(_tutTimer)clearInterval(_tutTimer);
+      document.getElementById('tutorial').classList.remove('active');
+      try{ localStorage.setItem('tribes:tutorialDone', 'v1'); }catch(e){}
     }
 
     // R20: Reconnect grace overlay

@@ -136,10 +136,34 @@ function buildPlayerList(lobby: LobbyState) {
   };
 }
 
+// R21: server-side metrics aggregator (drained by GET /metrics)
+const metrics = {
+    serverStartedMs: Date.now(),
+    matchesStarted: 0, matchesEnded: 0,
+    playersConnected: 0, playersDisconnected: 0,
+    cheatEvents: [] as { wallTime: number; code: string; playerId: number; detail: string }[],
+    slowTicks: [] as { wallTime: number; tickMs: number; players: number; projs: number }[],
+    matchHistory: [] as { matchId: string; durationS: number; peakPlayers: number; totalKills: number; winnerTeam: number }[],
+};
+function recordCheat(playerId: number, code: string, detail: string) {
+    metrics.cheatEvents.push({ wallTime: Date.now(), code, playerId, detail });
+    if (metrics.cheatEvents.length > 50) metrics.cheatEvents.shift();
+    console.log(`[CHEAT] ${code} player=${playerId} ${detail}`);
+}
+function recordSlowTick(tickMs: number, players: number, projs: number) {
+    metrics.slowTicks.push({ wallTime: Date.now(), tickMs, players, projs });
+    if (metrics.slowTicks.length > 50) metrics.slowTicks.shift();
+    console.log(`[SLOW-TICK] tickMs=${tickMs.toFixed(1)} players=${players} projs=${projs}`);
+}
+
 function startMatch(lobby: LobbyState) {
   if (lobby.match) return;
   lobby.match = new Match();
   lobby.rematchVotes = new Set();
+  metrics.matchesStarted++;
+  (lobby as any).matchStartedMs = Date.now();
+  (lobby as any).matchPeakPlayers = 0;
+  console.log(`[METRIC] {event:matchStart, matchId:'${lobby.id}', playerCount:${lobby.members.size}, time:${Date.now()}}`);
   let teamA = 0, teamB = 0;
   for (const pid of lobby.members) {
     const conn = connections.get(pid);
@@ -165,7 +189,13 @@ function startMatch(lobby: LobbyState) {
   // Start tick loops
   lobby.tickInterval = setInterval(() => {
     if (!lobby.match) return;
+    const t0 = performance.now();
     try { lobby.match.tickSimulation(); } catch (e) { console.error('[tick]', e); }
+    const tickMs = performance.now() - t0;
+    if (tickMs > 33) recordSlowTick(tickMs, lobby.match.players.size, lobby.match.projectiles.length);
+    if (lobby.match.players.size > ((lobby as any).matchPeakPlayers ?? 0)) {
+      (lobby as any).matchPeakPlayers = lobby.match.players.size;
+    }
     // R20: drain pending kill events
     if (lobby.match.pendingKillEvents.length > 0) {
       for (const ev of lobby.match.pendingKillEvents) {
@@ -193,6 +223,16 @@ function endMatch(lobby: LobbyState) {
   if (!lobby.match) return;
   const m = lobby.match;
   const mvps = m.getMvpPerTeam();
+  const startedMs = (lobby as any).matchStartedMs ?? Date.now();
+  const durationS = (Date.now() - startedMs) / 1000;
+  const peakPlayers = (lobby as any).matchPeakPlayers ?? m.players.size;
+  let totalKills = 0;
+  for (const p of m.players.values()) totalKills += p.kills;
+  const winnerTeam = m.teamScore[0] > m.teamScore[1] ? 0 : (m.teamScore[1] > m.teamScore[0] ? 1 : -1);
+  metrics.matchesEnded++;
+  metrics.matchHistory.push({ matchId: lobby.id, durationS, peakPlayers, totalKills, winnerTeam });
+  if (metrics.matchHistory.length > 50) metrics.matchHistory.shift();
+  console.log(`[METRIC] {event:matchEnd, matchId:'${lobby.id}', durationS:${durationS.toFixed(1)}, peakPlayers:${peakPlayers}, totalKills:${totalKills}, winnerTeam:${winnerTeam}}`);
   console.log(`[match] end lobby=${lobby.id} score=${m.teamScore[0]}-${m.teamScore[1]}`);
   broadcastJSON(lobby, {
     type: 'matchEnd',
@@ -291,13 +331,42 @@ const server = Bun.serve({
       return ok ? undefined : new Response('Upgrade failed', { status: 400 });
     }
     if (url.pathname === '/health') {
+      // R21: per brief — {status, activeMatches, totalPlayers, uptimeS, version}
+      const activeMatches = [...lobbies.values()].filter(l => !!l.match).length;
+      let totalPlayers = 0;
+      for (const l of lobbies.values()) totalPlayers += l.members.size;
+      const uptimeS = (Date.now() - metrics.serverStartedMs) / 1000;
+      const status = metrics.slowTicks.length > 5 ? 'degraded' : 'ok';
       return new Response(JSON.stringify({
-        status: 'ok',
-        lobbies: lobbies.size,
-        connections: connections.size,
-        activeMatches: [...lobbies.values()].filter(l => !!l.match).length,
-        uptime: process.uptime(),
+        status, activeMatches, totalPlayers, uptimeS, version: 'R21',
+        lobbies: lobbies.size, connections: connections.size,
       }), { headers: { 'content-type': 'application/json' } });
+    }
+    if (url.pathname === '/metrics') {
+      // R21: live observability stats
+      const tickMsP95 = (() => {
+        if (metrics.slowTicks.length === 0) return 0;
+        const sorted = [...metrics.slowTicks].map(s => s.tickMs).sort((a, b) => a - b);
+        return sorted[Math.floor(sorted.length * 0.95)] || 0;
+      })();
+      let totalConnected = 0;
+      for (const l of lobbies.values()) totalConnected += l.members.size;
+      return new Response(JSON.stringify({
+        uptimeS: (Date.now() - metrics.serverStartedMs) / 1000,
+        activeMatches: [...lobbies.values()].filter(l => !!l.match).length,
+        totalConnected,
+        matchesStarted: metrics.matchesStarted,
+        matchesEnded: metrics.matchesEnded,
+        playersConnected: metrics.playersConnected,
+        playersDisconnected: metrics.playersDisconnected,
+        cheatEvents: metrics.cheatEvents.slice(-10).reverse(),
+        tickMsP95,
+        slowTickCount: metrics.slowTicks.length,
+        recentMatches: metrics.matchHistory.slice(-5).reverse(),
+      }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+    }
+    if (url.pathname === '/dashboard') {
+      return new Response(DASHBOARD_HTML, { headers: { 'content-type': 'text/html' } });
     }
     if (url.pathname === '/lobbies') {
       // R20: public lobby browser endpoint
@@ -379,7 +448,9 @@ const server = Bun.serve({
         reconnected,
       }));
       broadcastJSON(lobby, buildPlayerList(lobby));
+      metrics.playersConnected++;
       console.log(`[conn] +${playerId} (id=${numericId}, lobby=${lobby.id}, ${reconnected ? 'reconnect' : 'new'}) ${lobby.members.size}/${MAX_PLAYERS_PER_LOBBY}`);
+      console.log(`[METRIC] {event:connect, playerId:'${playerId}', lobbyId:'${lobby.id}', reconnect:${reconnected}}`);
 
       if (!lobby.match && lobby.matchStartGraceUntil === 0) {
         lobby.matchStartGraceUntil = Date.now() + MATCH_START_GRACE_MS;
@@ -483,7 +554,10 @@ const server = Bun.serve({
           }
         }
         broadcastJSON(lobby, buildPlayerList(lobby));
+        metrics.playersDisconnected++;
+        const sessionS = (Date.now() - conn.joinedAt) / 1000;
         console.log(`[conn] -${playerId} left ${lobby.id} (${lobby.members.size}/${MAX_PLAYERS_PER_LOBBY})`);
+        console.log(`[METRIC] {event:disconnect, playerId:'${playerId}', lobbyId:'${lobby.id}', durationS:${sessionS.toFixed(1)}}`);
         if (lobby.match && lobby.match.players.size === 0) {
           endMatch(lobby);
         }
@@ -492,6 +566,50 @@ const server = Bun.serve({
     },
   },
 });
+
+// R21: minimal HTML dashboard, polls /metrics every 2s
+const DASHBOARD_HTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Tribes Server Dashboard</title>
+<style>body{font:14px/1.5 -apple-system,Segoe UI,sans-serif;background:#0a0a08;color:#E8DCB8;margin:0;padding:20px}
+h1{color:#D4A030;font-weight:300;letter-spacing:3px;margin:0 0 20px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:20px}
+.card{background:#16140e;border:1px solid #3a2c1c;padding:14px}
+.label{color:#7a6a4a;font-size:0.78em;letter-spacing:2px;text-transform:uppercase}
+.value{color:#FFC850;font-size:1.6em;font-weight:600;margin-top:4px}
+table{width:100%;border-collapse:collapse;font-size:0.85em}
+th{color:#D4A030;text-align:left;padding:6px 10px;border-bottom:1px solid #3a2c1c}
+td{padding:5px 10px;border-bottom:1px solid #1f1a10}
+.cheat{color:#C8302C}
+.warn{color:#E07020}
+.ok{color:#2ECC71}
+</style></head><body>
+<h1>TRIBES // SERVER DASHBOARD</h1>
+<div class="grid" id="cards"></div>
+<h3>Recent matches</h3><table id="matches"><tr><th>Match</th><th>Duration</th><th>Peak</th><th>Kills</th><th>Winner</th></tr></table>
+<h3>Last cheat events</h3><table id="cheats"><tr><th>Time</th><th>Player</th><th>Code</th><th>Detail</th></tr></table>
+<script>
+async function refresh(){
+  try{
+    const r = await fetch('/metrics');
+    const m = await r.json();
+    const fmt = n => n != null ? n.toLocaleString() : '-';
+    document.getElementById('cards').innerHTML = [
+      ['Uptime', (m.uptimeS|0)+'s'],
+      ['Active matches', fmt(m.activeMatches)],
+      ['Connected', fmt(m.totalConnected)],
+      ['Matches started', fmt(m.matchesStarted)],
+      ['Matches ended', fmt(m.matchesEnded)],
+      ['Players connected', fmt(m.playersConnected)],
+      ['Tick p95', (m.tickMsP95||0).toFixed(1)+'ms'],
+      ['Slow ticks', fmt(m.slowTickCount)],
+    ].map(([l,v])=>'<div class="card"><div class="label">'+l+'</div><div class="value">'+v+'</div></div>').join('');
+    document.getElementById('matches').innerHTML = '<tr><th>Match</th><th>Duration</th><th>Peak</th><th>Kills</th><th>Winner</th></tr>' +
+      (m.recentMatches||[]).map(rm => '<tr><td>'+rm.matchId+'</td><td>'+rm.durationS.toFixed(0)+'s</td><td>'+rm.peakPlayers+'</td><td>'+rm.totalKills+'</td><td>'+(rm.winnerTeam<0?'DRAW':(rm.winnerTeam===0?'RED':'BLUE'))+'</td></tr>').join('');
+    document.getElementById('cheats').innerHTML = '<tr><th>Time</th><th>Player</th><th>Code</th><th>Detail</th></tr>' +
+      (m.cheatEvents||[]).map(c => '<tr><td>'+new Date(c.wallTime).toLocaleTimeString()+'</td><td>'+c.playerId+'</td><td class="cheat">'+c.code+'</td><td>'+c.detail+'</td></tr>').join('');
+  } catch(e){ console.error(e); }
+}
+refresh(); setInterval(refresh, 2000);
+</script></body></html>`;
 
 console.log(`[tribes-lobby R19] listening on http://localhost:${server.port}`);
 console.log(`[tribes-lobby R19] WebSocket: ws://localhost:${server.port}/ws`);

@@ -47,10 +47,19 @@ function getServerUrl() {
               + (lobbyId && storedUuid ? '&' : '')
               + (storedUuid ? 'uuid=' + encodeURIComponent(storedUuid) : '')
         : '';
+    // Priority: ?server= URL flag → window.__TRIBES_SERVER_URL → mode default
     if (explicit) return explicit + qs;
+    if (window.__TRIBES_SERVER_URL) return window.__TRIBES_SERVER_URL + qs;
     const mode = params.get('multiplayer');
     if (mode === 'local') return 'ws://localhost:8080/ws' + qs;
-    if (mode === 'remote') return 'wss://tribes-lobby.fly.dev/ws' + qs;
+    if (mode === 'remote') {
+        // Default fallback: derive from current host. Production builds should
+        // set window.__TRIBES_SERVER_URL = 'wss://tribes-lobby.<your>.workers.dev/ws'
+        // in index.html or via a build-time injected variable.
+        const fallback = 'wss://tribes-server.workers.dev/ws';
+        console.warn('[NET] window.__TRIBES_SERVER_URL not set; using placeholder ' + fallback);
+        return fallback + qs;
+    }
     return 'ws://localhost:8080/ws' + qs;
 }
 
