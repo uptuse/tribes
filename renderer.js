@@ -281,9 +281,13 @@ function loadHDRISky() {
             pmrem.dispose();
             // Hide the THREE.Sky procedural dome — it would double-draw behind HDRI
             if (sky) sky.visible = false;
-            // R31.2: HDRI is brighter than procedural sky; drop exposure slightly.
+            // R32.10.1: HDRI was overpoweringly bright. Dim the visible sky dome
+            // (backgroundIntensity) but keep environmentIntensity at full so PBR
+            // fill-light from the sky stays correct on metals/armor.
+            scene.backgroundIntensity = 0.45;       // visible sky dimmed to ~45%
+            scene.environmentIntensity = 1.0;       // PBR fill stays at full
             if (renderer) renderer.toneMappingExposure = 0.6;
-            console.log('[R31.2] HDRI sky loaded — real clouds + sun from PolyHaven HDRI');
+            console.log('[R32.10.1] HDRI sky loaded — bg dimmed 0.45, env 1.0');
         },
         undefined,  // progress not needed
         (err) => {
@@ -666,7 +670,7 @@ function initTerrain() {
     // R32.10 — Splat weights + grass-A/B blend + wash with macro variation,
     // path zones (dirt threading from each base toward basin/bridge), and wet patches.
     const splatAttr    = new Float32Array(size * size * 4);  // (grass, rock, dirt, sand)
-    const grassMixAttr = new Float32Array(size * size);       // 0=Grass001, 1=Grass002
+    // R32.10.1: grass species blend moved to fragment shader (per-pixel smooth noise) to kill triangle-edge seams
     const washAttr     = new Float32Array(size * size * 3);
     function H(i, j) {
         i = Math.max(0, Math.min(size - 1, i));
@@ -765,10 +769,6 @@ function initTerrain() {
             splatAttr[aIdx+2] = dt / sum;
             splatAttr[aIdx+3] = sd / sum;
 
-            // ---- Grass A/B blend ----
-            const tMix = (nB - 0.30) / 0.40;
-            grassMixAttr[idx] = Math.max(0, Math.min(1, tMix));
-
             // ---- Watercolor wash with macro grass color drift + wet darkening ----
             const ridgeWarmth = Math.pow(hN, 1.8);
             const valleyCool  = Math.pow(1 - hN, 1.4) * 0.6;
@@ -800,7 +800,6 @@ function initTerrain() {
         }
     }
     geom.setAttribute('aSplat',    new THREE.BufferAttribute(splatAttr, 4));
-    geom.setAttribute('aGrassMix', new THREE.BufferAttribute(grassMixAttr, 1));
     geom.setAttribute('aWash',     new THREE.BufferAttribute(washAttr, 3));
     _splatData = { splatAttr, size };
 
@@ -911,18 +910,15 @@ function initTerrain() {
                  attribute vec4 aSplat;
                  attribute vec3 aWash;
                  attribute float aAO;
-                 attribute float aGrassMix;
                  varying vec4 vSplat;
                  varying vec3 vWash;
                  varying float vAO;
-                 varying float vGrassMix;
                  varying vec2 vWorldXZ;`)
             .replace('#include <begin_vertex>',
                 `#include <begin_vertex>
                  vSplat = aSplat;
                  vWash = aWash;
                  vAO = aAO;
-                 vGrassMix = aGrassMix;
                  vWorldXZ = position.xz;`);
 
         // Fragment shader: stochastic anti-tiling sampling + grass A/B blend + wash + AO
@@ -938,10 +934,17 @@ function initTerrain() {
                  varying vec4 vSplat;
                  varying vec3 vWash;
                  varying float vAO;
-                 varying float vGrassMix;
                  varying vec2 vWorldXZ;
                  // 2D hash → angle in [0..2π)
                  float th_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+                 // R32.10.1: smooth value noise for grass species blend (per-pixel, kills triangle-edge seams)
+                 float vh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+                 float vnoise(vec2 p) {
+                     vec2 i = floor(p), f = fract(p);
+                     vec2 u = f*f*(3.0-2.0*f);
+                     return mix(mix(vh(i), vh(i+vec2(1,0)), u.x),
+                                mix(vh(i+vec2(0,1)), vh(i+vec2(1,1)), u.x), u.y);
+                 }
                  // Stochastic 3-rotation sampling: take 3 differently-rotated samples of
                  // the same texture and blend by hashed weights, breaking the visible loop.
                  vec4 stochasticSample(sampler2D tex, vec2 uv) {
@@ -972,10 +975,12 @@ function initTerrain() {
                  float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
-                 // R32.10: blend two grass tiles by vGrassMix so adjacent regions read as different species.
+                 // R32.10.1: grass species blend computed per-pixel from world-XZ smooth noise.
+                 // Period ~80m so it varies across the map but doesn't show triangle edges.
+                 float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
                  vec4 cG1 = stochasticSample(uTileGrassC,  tUv);
                  vec4 cG2 = stochasticSample(uTileGrassC2, tUv * 0.83 + vec2(13.7, 7.1));  // offset+scale break shared loop
-                 vec4 cG  = mix(cG1, cG2, vGrassMix);
+                 vec4 cG  = mix(cG1, cG2, gMix);
                  vec4 cR  = stochasticSample(uTileRockC,  tUv);
                  vec4 cD  = stochasticSample(uTileDirtC,  tUv);
                  vec4 cS  = stochasticSample(uTileSandC,  tUv);
@@ -988,7 +993,7 @@ function initTerrain() {
                 `vec2 nUv = vWorldXZ / uTileMeters;
                  vec3 nG1 = stochasticSample(uTileGrassN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nG2 = stochasticSample(uTileGrassN2, nUv * 0.83 + vec2(13.7, 7.1)).xyz * 2.0 - 1.0;
-                 vec3 nG  = mix(nG1, nG2, vGrassMix);
+                 vec3 nG  = mix(nG1, nG2, gMix);
                  vec3 nR = stochasticSample(uTileRockN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nD = stochasticSample(uTileDirtN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
@@ -2184,9 +2189,11 @@ function initRain() {
     }
     _rainGeom.setAttribute('position', new THREE.BufferAttribute(_rainPos, 3));
     const mat = new THREE.LineBasicMaterial({
-        color: 0xbcd2e8,
+        // R32.10.1: photoreal rain. Near-white with a faint cool tint, low opacity
+        // so streaks read as motion-blur water, not painted bars.
+        color: 0xeaf0f4,
         transparent: true,
-        opacity: 0.45,
+        opacity: 0.22,
         depthWrite: false,
         blending: THREE.NormalBlending,
         fog: true,
