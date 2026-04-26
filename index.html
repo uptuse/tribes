@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.10.1</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.10.2</div>
     </div>
   </div>
 
@@ -1252,7 +1252,9 @@
 
   <script>
     var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
-    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
+    // R32.10.2: bots default to 0 (Solo) so playtest drops the user straight into the world.
+    // Use the Game Setup screen 2v2/4v4/etc. buttons to opt back in.
+    var gameSettings={botCount:0,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
 
     function showScreen(id){
       document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
@@ -1356,7 +1358,8 @@
     }, 100);
     function quickStart(){
       selectedTeam=0;selectedArmor=0;
-      gameSettings={botCount:4,scoreLimit:5,timeLimit:600};
+      // R32.10.2: 0 bots for visual playtesting (was 4).
+      gameSettings={botCount:0,scoreLimit:5,timeLimit:600};
       startGame();
     }
     function toggleInvert(){
@@ -3483,7 +3486,18 @@
       },
       onRuntimeInitialized:function(){
         document.getElementById('loading').classList.add('hidden');
-        showScreen('mainmenu');
+        // R32.10.2: skip the main menu entirely and drop straight into a Solo
+        // (0-bot) game on Raindance for visual playtesting. Add `?menu=1` to
+        // the URL to restore the original main-menu flow.
+        var _wantMenu = new URLSearchParams(location.search).get('menu') === '1';
+        if(_wantMenu){
+          showScreen('mainmenu');
+        } else {
+          // Defer one tick so the rest of onRuntimeInitialized() (Three.js
+          // module import, render-mode set, network/replay/tier modules) has
+          // a chance to wire up before startGame() requests pointer lock.
+          setTimeout(function(){ try { quickStart(); } catch(e){ console.error('[R32.10.2] auto-quickStart failed:', e); showScreen('mainmenu'); } }, 0);
+        }
         // R17 cutover: Three.js is the DEFAULT renderer.
         // Opt out via ?renderer=legacy (sunsetting in R18.1).
         var rendererFlag = new URLSearchParams(location.search).get('renderer');
