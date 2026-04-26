@@ -1818,7 +1818,7 @@ extern "C" void mainLoop(){
 
         float th=getH(me.pos.x,me.pos.z);
         float groundDist=me.pos.y-th;
-        me.onGround=groundDist<1.5f;
+        me.onGround=groundDist<2.2f;  // R31: raised to match new clamp floor
         me.skiing=keys[16]&&me.onGround;
 
         // Gravity — Tribes uses ~20 m/s² as force (F=ma), so acceleration = 20
@@ -1931,14 +1931,14 @@ extern "C" void mainLoop(){
 
         me.pos+=me.vel*dt;
         th=getH(me.pos.x,me.pos.z);
-        if(me.pos.y<th+1){
+        if(me.pos.y<th+1.8f){
             // Fall damage
             if(me.vel.y<-25){
                 float dmg=(-me.vel.y-25)*ad.damageScale;
                 me.health-=dmg;
                 if(me.health<=0){me.health=0;me.alive=false;me.deaths++;}
             }
-            me.pos.y=th+1;
+            me.pos.y=th+1.8f;
             if(me.vel.y<0&&!me.skiing)me.vel.y=0;
             if(!me.skiing){me.vel.x*=0.9f;me.vel.z*=0.9f;}
         }

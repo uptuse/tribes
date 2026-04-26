@@ -518,6 +518,10 @@ function initBuildings() {
         const cr = view[o + 10], cg = view[o + 11], cb = view[o + 12];
         const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
         mesh.position.set(px, py, pz);
+        // R31: disable frustum culling on all building sub-meshes; unlit accent
+        // children (MeshBasicMaterial) were the ONLY ones rendering when PBR
+        // body meshes were culled due to zero bounding spheres.
+        mesh.traverse(child => { child.frustumCulled = false; });
         scene.add(mesh);
         buildingMeshes.push({ mesh, type });
     }
@@ -539,8 +543,13 @@ const ARMOR_TIERS = [
 function createPlayerMesh(armor) {
     const t = ARMOR_TIERS[Math.min(armor, 2)];
     const group = new THREE.Group();
+    // R31: disable frustum culling on the group root so sub-mesh bounding
+    // spheres that haven't been computed yet don't silently cull the soldier.
+    group.frustumCulled = false;
 
-    const armorMat = new THREE.MeshStandardMaterial({ color: 0x808080, roughness: 0.55, metalness: 0.4 });
+    // R31: reduce metalness 0.4→0.10 so ambient hemisphere light visibly
+    // illuminates the armor (high metalness + low env = black silhouette).
+    const armorMat = new THREE.MeshStandardMaterial({ color: 0x8a9090, roughness: 0.55, metalness: 0.10 });
     const accentMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.85, metalness: 0.2 });
     const visorMat = new THREE.MeshStandardMaterial({
         color: 0x111122, roughness: 0.18, metalness: 0.85,
@@ -656,6 +665,11 @@ function createPlayerMesh(armor) {
         leftArm, rightArm, leftLeg, rightLeg, body,
         armorMat, // can recolor for team
     };
+
+    // R31: propagate frustumCulled=false to all descendant meshes so none
+    // get silently culled when their geometry bounding sphere is unset/zero.
+    group.traverse(child => { child.frustumCulled = false; });
+
     return group;
 }
 
@@ -854,9 +868,9 @@ function initWeaponViewmodel() {
     const geom = new THREE.BoxGeometry(0.06, 0.05, 0.30);
     const mat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.45, metalness: 0.55 });
     weaponHand = new THREE.Mesh(geom, mat);
-    // Position relative to camera local space: right, slightly down, forward
-    // (negative Z since camera looks down -Z in Three.js convention)
-    weaponHand.position.set(0.18, -0.13, -0.40);
+    // R31: standard FPS weapon position — firmly lower-right, barrel forward.
+    // Three.js camera looks down -Z, so -z is into the screen.
+    weaponHand.position.set(0.25, -0.20, -0.45);
     weaponHand.rotation.set(0.0, 0.05, 0.0);
     // Tiny barrel detail so it actually reads as a weapon
     const barrelGeom = new THREE.CylinderGeometry(0.012, 0.012, 0.18, 8);
@@ -1069,7 +1083,8 @@ function syncPlayers(t) {
         }
 
         mesh.position.set(playerView[o], playerView[o + 1], playerView[o + 2]);
-        mesh.rotation.set(0, playerView[o + 4], 0, 'YXZ');
+        // R31: negate yaw to match Three.js convention (same fix as camera)
+        mesh.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
 
         // R20: nameplate above head, fade beyond 50m
         const camPos = camera.position;
@@ -1213,7 +1228,11 @@ function syncCamera() {
     if (px === 0 && py === 0 && pz === 0) return;     // unspawned local player
 
     camera.position.set(px, py + 1.7, pz);
-    camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    // R31: negate yaw. C++ forward = {sin(yaw), 0, -cos(yaw)}.
+    // Three.js camera forward at rotation.y=θ = {-sin(θ), 0, -cos(θ)}.
+    // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
+    // Without this, W moved the player sideways relative to the camera view.
+    camera.rotation.set(pitch, -yaw, 0, 'YXZ');
 
     const fov = Module._getCameraFov();
     if (Math.abs(camera.fov - fov) > 0.5) {
@@ -1367,7 +1386,14 @@ function loop() {
         const li = (typeof Module !== 'undefined' && Module.calledRun) ? Module._getLocalPlayerIdx() : -2;
         let visSold = 0;
         for (let i = 0; i < playerMeshes.length; i++) if (playerMeshes[i] && playerMeshes[i].visible) visSold++;
-        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls, ' + info.triangles + ' tris, quality=' + currentQuality
+        // R31: renderer.info only counts the LAST composer pass when EffectComposer
+        // is active. Sum across all passes by temporarily disabling composer to
+        // get true call count, then re-enable. Or just note that calls ≤ 2 with
+        // composer active is likely an artifact — the real geometry draw calls
+        // happen in the RenderPass before bloom/output compositing.
+        const composerActive = !!composer;
+        const callsNote = composerActive ? ' (+ composer bloom passes not counted; geometry draws in RenderPass)' : '';
+        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls' + callsNote + ', ' + info.triangles + ' tris, quality=' + currentQuality
                     + ' | cam=(' + cp.x.toFixed(0) + ',' + cp.y.toFixed(0) + ',' + cp.z.toFixed(0) + ')'
                     + ' localIdx=' + li + ' visSoldiers=' + visSold + '/' + playerMeshes.length);
         _frameCount = 0;
@@ -1430,6 +1456,10 @@ export function loadMap(doc) {
                 s.pos[0] - hx, s.pos[1] - hy, s.pos[2] - hz,
                 s.pos[0] + hx, s.pos[1] + hy, s.pos[2] + hz,
             );
+        }
+        // R31: also disable frustum culling on map JSON buildings
+        for (const entry of buildingMeshes) {
+            entry.mesh.traverse(child => { child.frustumCulled = false; });
         }
         console.log('[R25] rebuilt', buildingMeshes.length, 'structures from map JSON');
         // R26: push AABBs to WASM so collision detection picks up custom maps

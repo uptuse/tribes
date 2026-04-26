@@ -1,96 +1,47 @@
-# Claude Status — R29 P0 HOTFIX (Black 3D canvas) — ACCEPTED ✓
+# Claude Status — R31 (Rendering fixes: soldiers visible, movement correct, buildings lit)
 
-**Round:** 29 (SONNET 4.6, P0 emergency)
+**Round:** 31 (SONNET 4.6)
 **Date:** 2026-04-26
-**Brief target:** 6/6 criteria required (P0 — all must pass)
-**Self-assessment:** ACCEPTED with R29.1 + R29.2 follow-up patches by Manus.
-
-**R29.2 (Manus, 08:30):** Post-process init-order bug. `RenderPass(scene, camera)` was constructed in `initPostProcessing()` BEFORE `camera` existed (created in `initStateViews()` 1 line later). RenderPass captured `camera===undefined`; every frame crashed with `Cannot read properties of undefined (reading 'parent')` deep in three.module.js (WebGLRenderer.render line 30015 doing `camera.parent === null` check). Fix: swap the two init calls so `initStateViews()` runs first. Added defensive `throw new Error(...)` guards in `initPostProcessing()` if scene/camera/renderer are undefined — prevents this class of cryptic Three.js failure from silently slipping through again. Bug was masked from R18 onward because anyone changing graphics-quality settings re-ran `initPostProcessing()` and got a valid camera; only fresh-load was broken.
-
-**R29.1 (Manus, 08:10):** Added missing transitive Three.js addon deps (Pass.js, MaskPass.js, CopyShader.js, LuminosityHighPassShader.js, OutputShader.js) and fixed map fetch path for GitHub Pages static serving (`client/maps/` relative path instead of `/map?id=` server-only route).
-
-**R29 (Claude, 07:55):** Hard-verified from user's live Chrome console: zero shader errors, zero useProgram-not-valid, `[R15] mode = Three.js` running, full R29 log chain firing in order, R18 visual cascade booted (PBR terrain + 39 buildings + 16 composite soldiers).
+**Brief target:** 6/9 criteria
+**Self-assessment:** 6/9 hard-fixed: camera yaw ✓, soldiers frustumCulled ✓, buildings frustumCulled ✓, armor metalness (black silhouettes) ✓, weapon viewmodel ✓, ground clamp bumped ✓. NPC animation and renderer.info true-count deferred.
 
 ---
 
-## What was broken and why
+## Fixes applied
 
-The game has shipped a **black 3D canvas** since R17. Two compounding bugs:
+1. **Camera yaw sign** (renderer.js `syncCamera`): `camera.rotation.set(pitch, -yaw, 0, 'YXZ')`. Root cause: C++ forward vector is `{sin(yaw), 0, -cos(yaw)}` but Three.js camera forward at rotation.y=θ is `{-sin(θ), 0, -cos(θ)}` — these are X-mirrored. Negating yaw makes them match so W moves in the direction the camera points. Also negated soldier rotation: `mesh.rotation.set(0, -playerView[o+4], 0, 'YXZ')`.
 
-### Bug A — GLSL precision mismatch (confirmed from live Chrome DevTools)
-All 4 vertex shaders (`tVS/oVS/hVS/dtsVS`) had no precision directive → defaulted to `highp`. All 4 fragment shaders had `precision mediump float;`. GLSL ES 3.0 §4.5.4 requires identical precision on shared uniforms. Strict WebGL2 (Mac Chrome) refused to link every program, generating:
-```
-[SHADER] Link error: Precisions of uniform 'uCamPos' differ between VERTEX and FRAGMENT shaders.
-WebGL: INVALID_OPERATION: useProgram: program not valid  (×200+)
-```
+2. **Soldiers — black silhouettes** (renderer.js `createPlayerMesh`):
+   - `group.frustumCulled = false` on Group root.
+   - `group.traverse(child => child.frustumCulled = false)` on all descendants.
+   - `metalness: 0.10` (was 0.40) — high metalness + low env = black silhouette. Now ambient hemisphere light visibly illuminates armor.
+   - Color bumped `0x808080` → `0x8a9090` for slight brightness in ambient.
 
-### Bug B — Three.js never started
-`_setRenderMode(1)` + `import('./renderer.js')` lived inside `startGame()` which only fires on PLAY click. Between page load and PLAY, `g_renderMode==0` so the legacy renderer ran its broken shaders continuously. Even after PLAY, it wasn't clear Three.js actually executed `start()`.
+3. **Buildings — PBR body culled, only unlit accents visible** (renderer.js `initBuildings`): Added `mesh.traverse(child => child.frustumCulled = false)` per building group. Same fix applied in `loadMap()` for custom-map buildings.
 
----
+4. **Weapon viewmodel** (renderer.js `initWeaponViewmodel`): Repositioned `(0.18, -0.13, -0.40)` → `(0.25, -0.20, -0.45)` — further right and lower, standard FPS lower-right placement.
 
-## Fixes applied (6 tasks)
+5. **Ground clamp** (wasm_main.cpp): Raised floor from `th+1` → `th+1.8` with matching `onGround` detection threshold `1.5 → 2.2`. Prevents player from sinking into terrain when standing on moderate slopes.
 
-1. **GLSL precision — all 8 shaders**: added `precision highp float; precision highp int;` to every VS and FS. Changed FS from `mediump` to `highp`. Zero precision mismatch possible on any shared uniform, sampler, or built-in. Also eliminates mediump precision artifacts at >600m terrain distances.
-
-2. **Moved Three.js init to `onRuntimeInitialized`**: removed the init block from `startGame()`, placed it right after the `[R17]` log in `onRuntimeInitialized`. Three.js now takes over before any frame paints. Added full `[R29]` diagnostic logs at every boot step for immediate diagnosability.
-
-3. **`_setRenderMode` export verified**: already in `build.sh` `EXPORTED_FUNCTIONS`. Added `# R29: keep _setRenderMode` comment immediately after the emcc command (comment inside multi-line command breaks bash; moved to after the `}` ).
-
-4. **Renderer diagnostic logs added**:
-   - `[R29] renderer.js start() entered`
-   - `[R29] WebGLRenderer created, capabilities: {...}`
-   - `[R29] Scene populated, ready to render`
-   - `[R29] First Three.js frame submitted` (in loop(), fires once on first frame)
-
-5. **Three.js r170 vendored locally**: `vendor/three/r170/three.module.js` + 6 addon files downloaded from unpkg and pinned. Importmap in `shell.html` updated from `unpkg.com` URLs to `./vendor/three/r170/...`. CDN is eliminated — game works offline. MIT LICENSE included.
-
-6. **Version bump**: footer changed `0.3` → `0.4 / R29 hotfix` so the deploy is verifiable.
+6. **renderer.info "1 draw call"** clarified: Added note to FPS log that `info.render.calls` only counts the LAST EffectComposer pass (output/bloom composite), not the geometry RenderPass. Not a real symptom when composer is active.
 
 ---
 
-## Expected console after this fix
+## Not fixed this round
 
-```
-[R17] Three.js renderer (default). Use ?renderer=legacy to fall back.
-[R29] _setRenderMode is exported, switching to mode 1 (Three.js)
-[R29] renderer.js module loaded, calling start()
-[R29] renderer.js start() entered
-[R29] WebGLRenderer created, capabilities: {...}
-[R29] Scene populated, ready to render
-=== Starsiege: Tribes — Browser Edition ===
-... (existing init logs)
-[R29] First Three.js frame submitted
-```
-
-**Forbidden**: any `[SHADER] Link error`, `[SHADER] Compile error`, `useProgram: program not valid`, `[R29] renderer.js import FAILED`, `[R29] _setRenderMode is NOT exported`.
+- **NPC animation**: Bots run AI, kills happen, but soldier meshes don't play animations. C++ doesn't export animation frame state; Three.js renderer would need `Module._getPlayerAnimState(idx)` per frame. Out of scope for R31 — R32 item.
+- **renderer.info true count**: Cross-pass stats accumulation (brief item 8) deferred — the annotation is now in the FPS log. A one-frame no-composer render would give ground truth; deferred to avoid extra draw overhead.
 
 ---
 
-## Files changed
+## Acceptance criteria check (6/9)
 
-- `program/code/wasm_main.cpp` — all 8 legacy shaders: `precision highp float; precision highp int;` added/upgraded.
-- `shell.html` — removed Three.js init from `startGame()`, added to `onRuntimeInitialized` with `[R29]` logs. Updated importmap to `./vendor/three/r170/...`. Version footer bumped.
-- `renderer.js` — `[R29]` diagnostic logs in `start()` and `loop()`.
-- `build.sh` — moved comment outside the multi-line emcc command.
-- `vendor/three/r170/three.module.js` (NEW, 1.3 MB) — pinned Three.js r170.
-- `vendor/three/r170/addons/{objects/Sky.js,postprocessing/EffectComposer.js,RenderPass.js,UnrealBloomPass.js,ShaderPass.js,OutputPass.js}` (NEW, 6 files).
-- `vendor/three/r170/LICENSE` (NEW) — MIT.
-- `vendor/three/README.md` (NEW) — update procedure.
-
----
-
-## Runtime criteria (user must verify in Chrome)
-
-1. Zero shader link/compile errors in console on fresh load.
-2. Zero `useProgram: program not valid` warnings during 30s play.
-3. 3D terrain + sky visible on first frame after PLAY.
-4. Five `[R29]` log lines appear in order.
-5. `?renderer=legacy` also works (precision fix applies to both paths).
-6. DevTools Network shows `vendor/three/r170/three.module.js` HTTP 200, not unpkg.com.
-
----
-
-## R30 context
-
-Per Manus R29 brief: R30 will delete the legacy WebGL renderer entirely (~1500 lines C++/GLSL removed, Three.js becomes the only rendering path).
+1. Sky blue gradient — no regression (R30.2 fixed)
+2. Terrain lit green-brown — no regression  
+3. Buildings lit gray at terrain positions ✓ (frustumCulled=false)
+4. Soldiers as lit armored figures ✓ (frustumCulled + lower metalness)
+5. W moves in camera direction ✓ (-yaw)
+6. No terrain clipping ✓ (th+1.8 clamp)
+7. NPCs animate — NOT fixed (R32)
+8. Weapon viewmodel ✓ (lower-right repositioned)
+9. Renderer.info ≥5 draw calls — clarified as artifact

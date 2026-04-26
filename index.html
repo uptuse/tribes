@@ -1358,9 +1358,7 @@
       if(_flashTimeout)clearTimeout(_flashTimeout);
       _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
       // R22: also fire damage arc toward nearest visible enemy
-      // R29.3: Module.calledRun guard — R29 build enabled ASSERTIONS, so calling
-      // any export before runtime init now throws Aborted(...) instead of silently
-      // no-opping. The truthy presence check is not enough.
+      // R29.3: Module.calledRun guard
       if(Module && Module.calledRun && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
         var ptr = Module._getPlayerStatePtr();
         var stride = Module._getPlayerStateStride();
@@ -1489,7 +1487,7 @@
     var _lastCompassPx = 0, _lastCompassPz = 0, _lastCompassYaw = 0;
     setInterval(function(){
       try {
-        // R29.3: Module.calledRun guard (see compass-poll comment elsewhere)
+        // R29.3: Module.calledRun guard
         if (window.Module && Module.calledRun && Module._getPlayerStatePtr && Module.HEAPF32) {
           var ptr = Module._getPlayerStatePtr();
           var stride = Module._getPlayerStateStride();
