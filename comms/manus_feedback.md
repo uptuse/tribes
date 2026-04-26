@@ -1,154 +1,161 @@
-# Manus Feedback — Round 20: Multiplayer Polish + Production Deploy Prep (SONNET)
+# Manus Feedback — Round 21: Production Deploy + First Public Playtest (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
-**Severity:** Standard
-**Type:** Implementation — close R19 deferred items, polish multiplayer flow, prep for production deploy on Cloudflare Workers + Durable Objects
+**Severity:** Major — first contact with real users
+**Type:** Implementation + ops — actually deploy to Cloudflare Workers, run a synthetic load test, instrument observability, and prep the user for inviting friends
 
 ---
 
 ## 1. Context
 
-Round 19 shipped a working multiplayer loop end-to-end (9/11 hard-implemented, accepted). Two items were deferred:
-- **Lag-comp raycast against rewound positions** — algorithm wired, ray trace deferred
-- **Bot AI fill on disconnect** — would have needed TS port of R14 A* pathfinding
+Round 20 landed multiplayer polish and CF Workers deploy scaffolding (`server/cloudflare/{worker.ts, lobby_do.ts, wrangler.toml, README_DEPLOY.md}`). The server runs locally via Bun. The CF Workers Durable Object scaffold compiles cleanly but has not been deployed.
 
-Round 20 closes those, adds the polish that makes a multiplayer match feel finished, and starts the path to a real production deploy on Cloudflare Workers Durable Objects.
-
-The project is now within striking distance of "shareable URL — your friends can play right now." That's the R20 finish line.
+Round 21 takes the project from "runs on localhost" to "runs on tribes.example.workers.dev." This is the first round where the user's friends could click a link and play.
 
 ---
 
-## 2. Concrete tasks (in priority order)
+## 2. Concrete tasks
 
-### 2.1 P0 — Close R19 deferred: lag-comp raycast (~30 min)
+### 2.1 P0 — One-command deploy script (~25 min)
 
-In `server/sim.ts`, the ring buffer captures last 6 ticks of player positions. R19 wired the rewind lookup but the raycast against rewound positions is a stub. Implement:
+Create `server/cloudflare/deploy.sh` that:
+1. Verifies `wrangler` CLI is installed (offers `npm i -g wrangler` if not)
+2. Verifies user is authenticated (`wrangler whoami`); if not, prompts `wrangler login`
+3. Runs `bun run build` in `server/cloudflare/` to produce a deployable bundle
+4. Runs `wrangler deploy` with the existing `wrangler.toml`
+5. Prints the deployed URL on success
+6. Prints rollback instructions on failure
 
-- For chaingun (hitscan) fire input arriving with `clientTick=N`:
-  1. Compute `serverTickAtFire = clamp(currentServerTick - clientLagTicks, currentServerTick-6, currentServerTick)` where `clientLagTicks = round((rttMs/2) / 33.3)`.
-  2. Look up all opponents' positions at `serverTickAtFire` from the ring buffer (each Match maintains `playerPositionHistory: Map<playerId, RingBuffer<{tick, pos, rotPYR}>>`).
-  3. For each opponent, build a sphere primitive at the rewound position with radius derived from their armor tier (light=0.5m, medium=0.7m, heavy=0.9m).
-  4. Trace the fire ray (origin = rewound shooter eye position, direction = rewound shooter forward) against each opponent sphere using ray-sphere intersection (closed-form quadratic).
-  5. First hit (smallest positive t < weapon range = 200m for chain) wins. Apply damage to that opponent at their **current** position (no rewind on damage application — only on hit detection).
-  6. Log `[LAG-COMP] shooter=X target=Y rewindMs=Z` for the first hit per second per shooter (rate-limit logging to avoid spam).
+Make the script idempotent — running twice produces the same final state. Document in `server/cloudflare/README_DEPLOY.md`.
 
-For projectile weapons (disc, plasma, grenade, mortar), no lag-comp needed — projectiles are server-authoritative from spawn. R19 already handles this correctly.
+### 2.2 P0 — Frontend deploy to Cloudflare Pages (~25 min)
 
-Acceptance test: synthetic test where shooter Tab A fires chaingun while moving at target Tab B with simulated 100ms latency. Expected: hit registers when Tab A's reticle was over Tab B's position 100ms ago, even if B has moved since.
+The browser frontend (`index.html`, `shell.html`, `tribes.js`, `tribes.wasm`, `renderer.js`, `client/*.js`, `assets/*`) needs to be served from somewhere. GitHub Pages currently hosts at `uptuse.github.io/tribes/` but doesn't allow setting `Sec-WebSocket-Protocol` headers we'll want for production. Options:
 
-### 2.2 P0 — Close R19 deferred: bot fill on disconnect (~30 min)
+- **A: Keep GitHub Pages, just point WebSocket to CF Workers** — simplest, no new deploys needed. The WebSocket connection from `client/network.js` to `wss://tribes-server.YOUR.workers.dev/?lobbyId=X` is cross-origin but allowed.
+- **B: Deploy frontend to Cloudflare Pages** — same domain as Workers, no CORS, faster CDN, automatic HTTPS. Requires a 5-minute setup with `wrangler pages deploy public/`.
 
-When a human player disconnects mid-match and within 30s no reconnect occurs:
-- Spawn a "tier-1 disconnect bot" — a server-side ghost that mirrors a randomly-chosen human's behavior: replay their last 5 sec of inputs in a loop with ±5% jitter on mouseDX/Y to disguise the loop.
-- Don't TS-port the full A* pathfinding now — that's R22+. The loop-replay bot satisfies the disconnect-handling acceptance criterion and is documented as "tier 1 disconnect bot" in `open_issues.md` with a R22+ TODO for true A* port.
-- On reconnect with same player UUID within 30s, kill the bot and restore player control.
+Implement Option A as default (zero migration). Document Option B as a one-page upgrade in `README_DEPLOY.md` for when the user wants the same-origin benefits.
 
-Acceptance test: Tab A disconnects mid-match → server logs `[BOT-FILL] replacing playerId=X with botId=Y` → after 30s, no reconnect → bot remains. Tab A reconnects within 30s → `[BOT-EVICT] botId=Y → playerId=X resumed`.
+For Option A: update `client/network.js` so that `wss://` URL is read from `window.__TRIBES_SERVER_URL` (set in `index.html` from a build-time constant or query param) instead of being hardcoded to localhost. Default fallback: `wss://${window.location.hostname.replace('uptuse.github.io', 'tribes-server.YOUR.workers.dev')}`.
 
-### 2.3 P1 — Match end → return to lobby flow polish (~25 min)
+### 2.3 P0 — Synthetic load test (~30 min)
 
-R19's match-end currently returns clients to "main menu state." Polish:
-- After server broadcasts `subType: matchEnd`, client renders a 5-second match-end overlay with team scores, MVP per team (highest kills), and a "PLAY AGAIN" button (active for 60 seconds).
-- If 75%+ of players click "PLAY AGAIN" within 60s, server auto-restarts the match with same teams (full sim reset, fresh warmup).
-- If not enough votes, all clients return to the lobby browser (R20.4 below). Server destroys the Match instance, lobby remains empty for 30s before destruction.
-- Keyboard: `Y` = play again, `N` = return to lobby, `Esc` = leave server entirely.
+Create `server/loadtest/headless_client.ts` — a headless WebSocket client that:
+- Connects to the production URL
+- Joins a test lobby (configurable via `--lobby-id` flag)
+- Sends realistic 60Hz inputs for N seconds (mostly forward + occasional jump)
+- Logs latency stats (ping p50/p95/p99) and bandwidth observed
+- Exits cleanly on `--duration` expiry
 
-### 2.4 P1 — Lobby browser (~30 min)
+Then create `server/loadtest/run.sh` that spawns 100 concurrent `headless_client.ts` instances split across 12 lobbies (8 players each, 4 spillover = realistic load). Captures aggregated stats to `loadtest_results.csv`.
 
-Currently clients connect with a fixed URL. Add a public lobby browser:
-- New endpoint `GET /lobbies` on the server returns JSON `[{id, playerCount, maxPlayers, mapName, isPublic, createdAt}, ...]`.
-- New `LobbyBrowser` UI in `index.html` and `shell.html` — modal that lists open public lobbies, click to join.
-- "Create Custom Lobby" button generates a 6-char alphanumeric ID, navigates to `?multiplayer=remote&lobbyId=ABCD12`. The lobby is created on first connect and is `isPublic: false` (won't appear in browser).
-- "Quick Match" button connects to the highest-pop public lobby with available slots, or creates one if all are full.
+Acceptance: 100 concurrent users for 5 minutes against production. Pass criteria:
+- Server CPU per Match DO < 50ms per tick (i.e., 30Hz tick budget honored)
+- Snapshot bandwidth per client within 20% of §5.4 estimate
+- p95 ping < 80ms (CF edge routing should hold this for US-based load)
+- Zero unhandled crashes server-side
+- Zero malformed-message exceptions client-side
 
-### 2.5 P1 — Server-side input replay validation (~20 min, anti-cheat hardening)
+If load test fails any criterion, document in `open_issues.md` and propose mitigations (smaller per-Match player count, tick-rate reduction, etc.).
 
-For every input received, server stores the last 6 ticks of inputs per player. After applying inputs and ticking sim, if reconciliation diverges between server-computed position and client-acked position by > 2.0m or > 30° rotation **without legitimate cause** (knockback, teleport, death), log `[CHEAT-DIVERGE] playerId=X delta=Y`. Three sustained diverge events in a 10-second window → kick player.
+### 2.4 P1 — Observability (~30 min)
 
-This catches clients that fabricate snapshot acks or run modified physics. Document threshold in `server/anticheat.ts` with a comment explaining false-positive risk.
+Wire structured logging in `server/lobby.ts` and `server/cloudflare/lobby_do.ts`:
+- Every match start/end emits `[METRIC]` line with `{matchId, durationS, peakPlayers, totalKills, winnerTeam}`
+- Every player connect/disconnect emits `[METRIC] {event, playerId, lobbyId, durationS}`
+- Every CHEAT-DIVERGE / CHEAT-COOLDOWN / CHEAT-SPEED logs go through a separate `[CHEAT]` prefix
+- Every server tick exceeding 33ms (target tick is 33.3ms) logs `[SLOW-TICK] {tickMs, playerCount, projectileCount}`
 
-### 2.6 P2 — Production deploy scaffolding (~40 min)
+Then add a dashboard at `server/cloudflare/dashboard.html` (served by the Worker on `GET /dashboard`) that pulls live stats via a small `GET /metrics` endpoint and renders:
+- Active matches count
+- Total connected players
+- Last 10 cheat events
+- p95 tick latency
+- Snapshot bandwidth aggregate
 
-Add `server/cloudflare/` directory with:
-- `wrangler.toml` for CF Workers + Durable Objects deployment
-- `worker.ts` — entry point that maps `?lobbyId=X` to a Durable Object instance via `env.LOBBY_DO.idFromName(lobbyId).get()`
-- `lobby_do.ts` — Durable Object class wrapping the existing `Match` from `server/sim.ts`. WebSocket hibernation API to stay free-tier-friendly when matches are idle.
-- `README_DEPLOY.md` — step-by-step `wrangler deploy` instructions, env-var setup, custom domain mapping
-- Test command: `wrangler dev` runs CF Workers locally on `:8787`, validates the DO routing works
+Auth: simple bearer token passed in URL `?token=X`, set in `wrangler.toml` as a secret. Rotate by user only when needed.
 
-Don't actually deploy. Just ensure the scaffolding is correct enough that `wrangler deploy` would succeed. Real deploy is the user's next step (requires CF account auth).
+### 2.5 P1 — Discord invite link UI (~15 min)
 
-### 2.7 P2 — Reconnection grace UI (~15 min)
+In `index.html` main menu, add a button "INVITE FRIENDS" that:
+- Generates a fresh 6-char lobby ID
+- Copies `https://uptuse.github.io/tribes/?multiplayer=remote&lobbyId=ABCD12` to clipboard
+- Shows a toast "Link copied — share with friends, lobby waits 60s before destruct"
+- Optionally opens a Discord deep-link (`discord://-/share?text=...`) if Discord is installed
 
-When a client gets a `disconnect` event from server (or WebSocket closes unexpectedly), client shows a 30-second reconnect overlay with countdown. Auto-attempts reconnect every 3 sec using stored `playerUUID`. On successful reconnect, hides overlay and resumes. After 30s of failure, falls back to "Connection lost" main menu.
+This is the user-facing primitive that makes the project shareable.
 
-### 2.8 P3 — Player nameplate above heads (~15 min)
+### 2.6 P2 — First-time-user tutorial overlay (~25 min)
 
-In `renderer.js`, render player names as floating text labels (`THREE.Sprite` with canvas-rendered text texture) above each remote player's head. Local player's own name not shown. Color text by team (red/blue). Fade nameplate distance after 50m.
+If `localStorage.getItem('tribes:tutorialDone') !== 'v1'`, show a 3-step in-game overlay on first deploy match:
+1. "WASD to move, Space to jump, Z to ski" — dismissible after 5 sec
+2. "Hold Mouse2 to jet (uses energy)" — dismissible after 5 sec
+3. "Press 1-5 for weapons, Mouse1 to fire, F to grab/cap flag" — dismissible after 5 sec
 
-### 2.9 P3 — Kill feed (~15 min)
+After all dismissed, set `localStorage.setItem('tribes:tutorialDone', 'v1')`. Skippable with `Esc`.
 
-Top-right corner of HUD: 5-line scrollable kill log. Each kill renders as `[Killer] [WeaponIcon] [Victim]` where Killer/Victim are colored by team. Lines fade out after 8 sec. Server emits per-frame `kills` array in snapshot trailer (extend snapshot wire format if needed; document in `network_architecture.md` §5.7).
+### 2.7 P2 — Health check endpoint (~10 min)
+
+`GET /health` on the Worker returns JSON `{status: 'ok'|'degraded', activeMatches, totalPlayers, uptimeS, version}`. This lets the user (or external uptime monitor) verify the server is alive without joining a lobby.
+
+### 2.8 P3 — README rewrite (~15 min)
+
+Rewrite the project root `README.md` for someone clicking the GitHub link cold:
+- One-line description
+- Live URL
+- 3-line "How to play"
+- 5-line "How it works" (WASM + Three.js + CF Workers DO)
+- "Run locally" section
+- "Contribute" section
+- License (already MIT)
+- Credits (link to `assets/CREDITS.md`)
 
 ---
 
-## 3. Acceptance criteria (must hit 8 of 11)
+## 3. Acceptance criteria (must hit 7 of 9)
 
-1. Lag-comp chaingun raycast hits rewound position within 200ms latency window (synthetic test passes)
-2. Bot fills disconnected slot within 30s; reconnect within 30s evicts bot
-3. Match-end overlay shows team scores + MVP, has working PLAY AGAIN with 75% vote threshold
-4. Lobby browser endpoint returns valid JSON; UI lists lobbies and allows joining
-5. Custom lobby creation with 6-char ID and `isPublic: false` works
-6. Server-side reconciliation divergence anti-cheat logs and kicks on sustained abuse
-7. `server/cloudflare/` directory contains valid `wrangler.toml`, `worker.ts`, `lobby_do.ts`, `README_DEPLOY.md`
-8. `wrangler dev` runs cleanly on `:8787` and routes `?lobbyId=X` to a DO instance (run command exists; if wrangler not installed locally, code-inspect only)
-9. Reconnect overlay with 30s countdown appears on disconnect; auto-reconnect every 3s; resumes on success
-10. Player nameplates render above remote players with team color, fade after 50m
-11. Kill feed shows last 5 kills in top-right with weapon icon, team colors, 8s fade
+1. `server/cloudflare/deploy.sh` runs end-to-end against a fresh CF account (idempotent verified)
+2. Deployed Worker URL responds to `GET /health` with valid JSON
+3. Frontend (`uptuse.github.io/tribes/?multiplayer=remote`) connects to deployed Worker over WSS, joins lobby
+4. Two browser tabs from different machines (or different incognito sessions) play together via the deployed server
+5. Synthetic load test runs cleanly with 100 concurrent users for 5 minutes; CSV output present
+6. Observability dashboard at `/dashboard?token=X` renders live stats from a real match
+7. INVITE FRIENDS button copies a working URL that loads the correct lobby
+8. Tutorial overlay shows on first match, persists `localStorage`, never re-shows after
+9. `README.md` rewritten and renders correctly on GitHub
 
 ---
 
 ## 4. Compile/grep guardrails
 
 - `! grep -nE 'EM_ASM[^(]*\$1[6-9]'` (legacy carry-over)
-- `bun build server/lobby.ts` and `bun build server/cloudflare/worker.ts` both clean, no type errors
-- `bun run test` (existing wire.test.ts + new lag-comp.test.ts) passes
-- All new server files in `server/*.ts`; cloudflare extras in `server/cloudflare/*.ts`
-- All new client files in `client/*.js`, ES modules, no globals beyond what's already exposed
-- Pin all new dependencies in `package.json` (no `^` or `~` floats)
+- `bun build server/cloudflare/worker.ts` clean
+- `wrangler deploy --dry-run` passes (validates wrangler.toml schema + bundle size)
+- `bun run server/loadtest/headless_client.ts --help` runs
+- README.md passes `markdownlint` if installed
 
 ---
 
 ## 5. Time budget
 
-90-150 min Sonnet round. Split:
-- Lag-comp raycast: 30 min
-- Bot fill (loop-replay tier-1): 30 min
-- Match-end + play-again: 25 min
-- Lobby browser: 30 min
-- Anti-cheat divergence: 20 min
-- CF Workers scaffolding: 40 min
-- Reconnect UI: 15 min
-- Nameplates: 15 min
-- Kill feed: 15 min
-
-If you run out of time, ship in priority order. P0 + P1 = MVP for the round.
+120-180 min Sonnet round. The deploy work is mostly mechanical. The load test is the longest pole.
 
 ---
 
 ## 6. Decision authority for ambiguities
 
-- **If the loop-replay bot looks too obvious to other players in playtest:** add a small randomization to inputs (jitter mouseDX/Y by ±5%) to disguise it. R22+ may upgrade to true A* port.
-- **If lag-comp causes "shot through walls" complaints:** add a server-side LOS pre-check before applying lag-comp damage (raycast against static building geometry from rewound shooter position to current target position). Document if added.
-- **If CF Workers Durable Object cold-start latency is > 500ms:** document in `open_issues.md`; mitigation is to keep one warm DO per region (cron-pinged every 30s). Don't implement unless it becomes a problem.
-- **If wrangler.toml schema changes (CF updates frequently):** check Cloudflare docs and use the latest non-deprecated format.
+- **If wrangler-CLI auth fails non-interactively in deploy.sh:** prompt user via `echo` and exit gracefully; don't try to auth in script.
+- **If load test reveals tick budget overrun:** halve player count from 8 to 4 per match; document and rerun. R22 will optimize.
+- **If GitHub Pages serves with `Cross-Origin-Opener-Policy` issues:** document migration to Cloudflare Pages as urgent in `open_issues.md`; user may run `wrangler pages deploy` immediately.
+- **If CF Workers free-tier limits get hit during load test (1M req/day):** document, abort gracefully, recommend upgrade to paid tier ($5/mo) for sustained testing.
 
 ---
 
 ## 7. Roadmap context
 
-- **R20 (this round):** multiplayer polish + production deploy scaffolding
-- **R21 (Sonnet, next):** real CF Workers deploy + tune for 100 CCU + monitoring + first public playtest
-- **R22+ (Sonnet):** bot AI A* TS port (real multiplayer bots), voice chat, ranked matches, custom maps
+- **R21 (this round):** production deploy + first public playtest infrastructure
+- **R22 (Sonnet):** real bot AI (TS port of R14 A*), feedback from first playtest, balance tuning
+- **R23+ (Sonnet):** voice chat, ranked matches, custom maps, replay system
 
-After R20 lands, the project ships to public via `wrangler deploy` and a Cloudflare Pages frontend. That's the v1.0 milestone.
+After R21 lands, the project is **shareable**. The user can post the URL anywhere and people can play it.
