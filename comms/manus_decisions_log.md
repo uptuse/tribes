@@ -47,3 +47,21 @@ User should scan this file when re-engaging to override anything they disagree w
 **Conveyed to Claude in:** Round 9 feedback push (folded into the armor-pivot brief).
 
 ---
+
+## 2026-04-25 21:25 EDT — Round 9.5 interrupt: stop armor work pending user assets
+
+**Decision:** Push interrupt to Claude mid-flight on Tier 3.0 armor pass. Tell Claude to commit WIP and pause.
+
+**Context:** User informed me they already own custom character models they want to use. Continuing Tier 3.0 polish on placeholder armor would be wasted work.
+
+**Rationale:**
+- Sunk-cost trap: any token spent on placeholder armor polish disappears when custom models drop
+- Cascade work: every system touching the player model (weapons-in-hand, jetpack, animations, hit-box, third-person camera) will need to be tuned to whatever model is loaded — tuning twice is double cost
+- User has clear vision; "recreate then enhance" no longer applies to this subsystem
+- Better: get assets, integrate cleanly in Round 10
+
+**Reversibility:** If user changes mind and wants to keep polishing placeholder, easy — re-push the original Round 9 brief. Claude's WIP will be preserved as a commit either way.
+
+**Next step:** Wait for user to provide model files. Then Round 10 with integration brief.
+
+---

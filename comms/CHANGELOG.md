@@ -18,3 +18,4 @@
 2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m
 2026-04-25 21:18 | ca6ab94 | fix(base): Round 8 polish — turret LoS, gen alive pulse, station auto-close, turret HUD msg
 2026-04-25 21:20 | pending | review(manus): round 9 PIVOT — armor quality pass; heightmap accepted as-is; polish verified
+2026-04-25 21:25 | pending | review(manus): round 9.5 INTERRUPT — stop Tier 3.0 armor pass, await user-provided custom character models
