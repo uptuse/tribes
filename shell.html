@@ -236,6 +236,31 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* R20: Lobby browser modal */
+    #lobby-browser { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+      z-index:30; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; }
+    #lobby-browser.active { display:flex; }
+    #lobby-browser .panel { min-width:560px; max-height:80vh; overflow-y:auto; }
+    .lb-row { display:grid; grid-template-columns:80px 1fr 100px 80px 80px;
+      gap:8px; padding:6px 10px; border-bottom:1px solid #2a2010;
+      font-family:'Barlow Condensed',sans-serif; font-size:0.85em;
+      color:#E8DCB8; align-items:center; }
+    .lb-row:hover { background:rgba(40,35,20,0.7); cursor:pointer; }
+    .lb-row.head { color:#D4A030; cursor:default; background:none; border-bottom:1px solid #4A3A2A; font-weight:700; letter-spacing:2px; }
+    .lb-empty { color:#7A6A4A; padding:20px; text-align:center; font-size:0.9em; }
+
+    /* R20: Reconnect grace overlay */
+    #reconnect-overlay { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+      z-index:50; background:rgba(8,6,3,0.92); align-items:center; justify-content:center; flex-direction:column; }
+    #reconnect-overlay.active { display:flex; }
+    #reconnect-title { font-family:'Cinzel',serif; font-size:1.6em; letter-spacing:5px; color:#C8302C; margin-bottom:10px; }
+    #reconnect-sub { font-family:'Barlow Condensed',sans-serif; font-size:1em; letter-spacing:3px; color:#9A8A6A; margin-bottom:20px; }
+    #reconnect-count { font-family:'Cinzel',serif; font-size:3em; color:#FFC850; }
+
+    /* R20 vote display in match-end */
+    #me-vote { font-family:'Barlow Condensed',sans-serif; font-size:0.85em; color:#7A6A4A;
+      letter-spacing:2px; margin:8px 0; }
+
     /* R19 bandwidth telemetry — top-right under FPS counter */
     #bw-telemetry { display:none; position:fixed; top:28px; right:10px; z-index:40;
       font-family:'Barlow Condensed',sans-serif; font-size:0.72em; color:#7a8a9a;
@@ -392,6 +417,7 @@
       <div class="me-winner" id="me-winner">MATCH COMPLETE</div>
       <div class="me-score" id="me-score"></div>
       <div class="me-mvp" id="me-mvp"></div>
+      <div id="me-vote"></div>
       <table class="me-table">
         <thead><tr><th>Name</th><th>Team</th><th>Score</th><th>Kills</th><th>Deaths</th></tr></thead>
         <tbody id="me-tbody"></tbody>
@@ -401,6 +427,30 @@
         <button class="btn btn-back" onclick="toMainMenu()">Main Menu</button>
       </div>
     </div>
+  </div>
+
+  <!-- R20: Lobby browser modal -->
+  <div id="lobby-browser" onclick="if(event.target===this)closeLobbyBrowser()">
+    <div class="panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0">Multiplayer Lobbies</h3>
+        <span onclick="closeLobbyBrowser()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div class="lb-row head"><span>ID</span><span>Map</span><span>Players</span><span>Status</span><span></span></div>
+      <div id="lb-list"><div class="lb-empty">Loading…</div></div>
+      <div style="margin-top:14px;display:flex;gap:10px;">
+        <button class="btn" onclick="quickMatch()">Quick Match</button>
+        <button class="btn" onclick="createCustomLobby()">Create Custom</button>
+        <button class="btn btn-back" onclick="refreshLobbies()">↻ Refresh</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- R20: Reconnect grace overlay -->
+  <div id="reconnect-overlay">
+    <div id="reconnect-title">CONNECTION LOST</div>
+    <div id="reconnect-sub">Attempting to reconnect…</div>
+    <div id="reconnect-count">30</div>
   </div>
 
   <!-- ESC pause menu -->
@@ -425,7 +475,7 @@
       <div class="wordmark">TRIBES</div>
       <div class="menu-grid">
         <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
-        <div class="menu-item" onclick="window.open('https://github.com/uptuse/tribes','_blank')">WEBSITE</div>
+        <div class="menu-item" onclick="openLobbyBrowser()">MULTIPLAYER</div>
         <div class="menu-item" onclick="quickStart()">QUICK START</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
@@ -1037,10 +1087,92 @@
       sbRows=[];
     };
 
+    // R20: in multiplayer mode, playAgain casts a vote; otherwise restart locally
     function playAgain(){
-      document.getElementById('matchend').classList.remove('active');
-      showScreen('gamesetup');
+      if(window.__tribesNet){
+        window.__tribesNet.send({type:'rematchYes'});
+        var ve=document.getElementById('me-vote');
+        if(ve)ve.textContent='Vote cast — waiting for 75% of players…';
+      } else {
+        document.getElementById('matchend').classList.remove('active');
+        showScreen('gamesetup');
+      }
     }
+
+    // R20: Lobby browser
+    function openLobbyBrowser(){
+      document.getElementById('lobby-browser').classList.add('active');
+      refreshLobbies();
+    }
+    function closeLobbyBrowser(){ document.getElementById('lobby-browser').classList.remove('active'); }
+    function refreshLobbies(){
+      var serverUrl = (new URLSearchParams(location.search).get('multiplayer')==='remote')
+        ? 'https://tribes-lobby.fly.dev' : 'http://localhost:8080';
+      fetch(serverUrl + '/lobbies', { method: 'GET' })
+        .then(function(r){ return r.json(); })
+        .then(function(list){
+          var el = document.getElementById('lb-list');
+          if(!el) return;
+          if(!list.length){ el.innerHTML = '<div class="lb-empty">No public lobbies. Click Quick Match to create one.</div>'; return; }
+          el.innerHTML = list.map(function(l){
+            return '<div class="lb-row" onclick="joinLobby(\''+l.id+'\')">' +
+              '<span>'+l.id+'</span>' +
+              '<span>'+l.mapName+'</span>' +
+              '<span>'+l.playerCount+'/'+l.maxPlayers+'</span>' +
+              '<span style="color:'+(l.matchActive?'#C8302C':'#2ECC71')+'">'+(l.matchActive?'In Match':'Open')+'</span>' +
+              '<span style="color:#D4A030">JOIN ▶</span>' +
+            '</div>';
+          }).join('');
+        })
+        .catch(function(err){
+          var el = document.getElementById('lb-list');
+          if(el) el.innerHTML = '<div class="lb-empty">Cannot reach server. Is it running?</div>';
+        });
+    }
+    function joinLobby(id){
+      window.location.href = '?multiplayer=local&lobbyId='+encodeURIComponent(id);
+    }
+    function quickMatch(){
+      window.location.href = '?multiplayer=local';
+    }
+    function createCustomLobby(){
+      var id = '';
+      for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
+      window.location.href = '?multiplayer=local&lobbyId='+id;
+    }
+
+    // R20: Reconnect grace overlay
+    var _reconnectTimer = null, _reconnectCountdown = 30;
+    function showReconnectOverlay(){
+      document.getElementById('reconnect-overlay').classList.add('active');
+      _reconnectCountdown = 30;
+      if(_reconnectTimer) clearInterval(_reconnectTimer);
+      _reconnectTimer = setInterval(function(){
+        _reconnectCountdown--;
+        var el = document.getElementById('reconnect-count');
+        if(el) el.textContent = _reconnectCountdown;
+        // Auto-reconnect every 3s
+        if(_reconnectCountdown % 3 === 0 && _reconnectCountdown > 0 && window.__tribesNet){
+          try { window.__tribesNet.start(); } catch(e){}
+        }
+        if(_reconnectCountdown <= 0){
+          clearInterval(_reconnectTimer); _reconnectTimer = null;
+          hideReconnectOverlay();
+          // Fall back to main menu
+          gameStarted = false;
+          canvas.style.visibility = 'hidden';
+          document.getElementById('hud').classList.remove('active');
+          showScreen('mainmenu');
+          addEventMsg('Connection lost — returned to main menu');
+        }
+      }, 1000);
+    }
+    function hideReconnectOverlay(){
+      document.getElementById('reconnect-overlay').classList.remove('active');
+      if(_reconnectTimer){ clearInterval(_reconnectTimer); _reconnectTimer = null; }
+    }
+    window.__tribesShowReconnect = showReconnectOverlay;
+    window.__tribesHideReconnect = hideReconnectOverlay;
     function leaveMatch(){
       document.getElementById('escmenu').classList.remove('active');
       document.getElementById('matchend').classList.remove('active');
@@ -1058,6 +1190,7 @@
       if(gameStarted)canvas.requestPointerLock();
     }
 
+    window.addKillMsg = addKillMsg;
     function addKillMsg(msg){
       var feed=document.getElementById('killfeed'),div=document.createElement('div');
       div.className='kill-msg';

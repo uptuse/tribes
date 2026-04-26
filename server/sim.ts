@@ -53,6 +53,15 @@ export interface SimPlayer {
     respawnAt: number;         // 0 or wall time
     lastInput?: PlayerInput;
     inputRateWindow: number[]; // timestamps of recent inputs (for sanity check)
+    // R20 additions:
+    recentInputs: RecentInput[];        // ring of last ~5s inputs (for bot replay on disconnect)
+    isBot: boolean;                     // tier-1 disconnect bot if true
+    botReplayCursor: number;            // index into recentInputs being replayed
+    botReplaySource: number;            // playerId whose inputs we're replaying (for jitter seed)
+    divergeViolations: number[];        // wallTime stamps of recent diverge events (10s window)
+    kills: number;                      // for MVP calculation
+    deaths: number;
+    uuid: string;                       // stable across reconnect
 }
 
 export interface SimProjectile {
@@ -74,9 +83,40 @@ export interface SimFlag {
     dropTimer: number;
 }
 
+interface LagCompEntry {
+    pos: [number, number, number];
+    rot: [number, number, number];
+}
 interface LagCompFrame {
     tick: number;
-    positions: Map<number, [number, number, number]>;
+    positions: Map<number, [number, number, number]>;     // legacy
+    entries: Map<number, LagCompEntry>;                    // R20: pos + rot
+}
+
+interface RecentInput {
+    tick: number;
+    input: PlayerInput;
+    wallTime: number;
+}
+
+const HITSCAN_RANGE_M = 200;
+const RECENT_INPUTS_PER_PLAYER = 300; // 5s at 60Hz
+const BOT_INPUT_REPLAY_LOOP_LEN = 300; // 5s
+
+// Ray-sphere intersection helper (returns t > 0 of nearest hit, or null)
+function raySphereIntersect(orig: [number, number, number], dir: [number, number, number],
+                            center: [number, number, number], radius: number): number | null {
+    const ox = orig[0] - center[0], oy = orig[1] - center[1], oz = orig[2] - center[2];
+    const b = ox * dir[0] + oy * dir[1] + oz * dir[2];
+    const c = ox * ox + oy * oy + oz * oz - radius * radius;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    const sq = Math.sqrt(disc);
+    const t1 = -b - sq;
+    if (t1 > 0) return t1;
+    const t2 = -b + sq;
+    if (t2 > 0) return t2;
+    return null;
 }
 
 const NEXT_PROJ_ID = { v: 1 };
@@ -97,7 +137,7 @@ export class Match {
     lagCompBuffer: LagCompFrame[] = [];
     cheatLog: { playerId: number; reason: string; tick: number }[] = [];
 
-    addPlayer(id: number, name: string, team: number, armor = 0): SimPlayer {
+    addPlayer(id: number, name: string, team: number, armor = 0, uuid = ''): SimPlayer {
         const flagPos = this.flags[team].homePos;
         const p: SimPlayer = {
             id, name, team, armor,
@@ -115,6 +155,13 @@ export class Match {
             spawnProtectUntil: Date.now() + SPAWN_PROTECTION_SEC * 1000,
             respawnAt: 0,
             inputRateWindow: [],
+            recentInputs: [],
+            isBot: false,
+            botReplayCursor: 0,
+            botReplaySource: -1,
+            divergeViolations: [],
+            kills: 0, deaths: 0,
+            uuid,
         };
         this.players.set(id, p);
         return p;
@@ -138,10 +185,12 @@ export class Match {
         p.lastInput = input;
         const now = Date.now();
         p.inputRateWindow.push(now);
-        // Trim window to last 1s
         while (p.inputRateWindow.length > 0 && p.inputRateWindow[0] < now - 1000) {
             p.inputRateWindow.shift();
         }
+        // R20: keep recent inputs ring for bot fill on disconnect
+        p.recentInputs.push({ tick: input.tick, input, wallTime: now });
+        if (p.recentInputs.length > RECENT_INPUTS_PER_PLAYER) p.recentInputs.shift();
 
         // Apply rotation (clamped pitch)
         p.rot[0] = Math.max(-1.4, Math.min(1.4, p.rot[0] + input.mouseDY));
@@ -150,6 +199,16 @@ export class Match {
         // Weapon switch
         if (input.weaponSelect != null && input.weaponSelect !== 0xFF && input.weaponSelect < WEAPONS.length) {
             p.weaponIdx = input.weaponSelect;
+        }
+
+        // Hitscan: if firing chaingun (or other hitscan), do lag-comp raycast
+        if ((input.buttons & BTN_FIRE) && (this.matchState === 1) && p.fireCooldown <= 0) {
+            const w = WEAPONS[p.weaponIdx];
+            if (w && w.hitscan) {
+                const cooldown = (w.fireTime + (w.reloadTime || 0));
+                this.fireHitscan(p, input);
+                p.fireCooldown = cooldown;
+            }
         }
     }
 
@@ -319,7 +378,10 @@ export class Match {
                 const d2 = dx*dx + dy*dy + dz*dz;
                 const r = (ARMORS[target.armor]?.hitW ?? 0.6) + 0.5;
                 if (d2 < r * r) {
-                    this.damagePlayer(target, w.damage);
+                    // Find shooter (matches projectile.team to first player on that team is approximate)
+                    let shooter: SimPlayer | undefined;
+                    for (const pp of this.players.values()) { if (pp.team === proj.team) { shooter = pp; break; } }
+                    this.damagePlayer(target, w.damage, shooter);
                     proj.alive = false;
                     break;
                 }
@@ -331,11 +393,23 @@ export class Match {
         }
     }
 
-    damagePlayer(target: SimPlayer, dmg: number) {
+    // R20: kill events accumulated per-tick, drained by lobby for broadcast
+    pendingKillEvents: { killer: string, victim: string, weapon: number, killerTeam: number, victimTeam: number }[] = [];
+
+    damagePlayer(target: SimPlayer, dmg: number, attacker?: SimPlayer) {
         target.health -= dmg;
         if (target.health <= 0) {
             target.health = 0;
             target.alive = false;
+            target.deaths++;
+            if (attacker && attacker.team !== target.team) {
+                attacker.kills++;
+                this.pendingKillEvents.push({
+                    killer: attacker.name, victim: target.name,
+                    weapon: attacker.weaponIdx,
+                    killerTeam: attacker.team, victimTeam: target.team,
+                });
+            }
             target.respawnAt = Date.now() + RESPAWN_TIMER_SEC * 1000;
             if (target.carryingFlag >= 0) {
                 const f = this.flags[target.carryingFlag];
@@ -415,16 +489,17 @@ export class Match {
 
     captureLagCompFrame() {
         const positions = new Map<number, [number, number, number]>();
+        const entries = new Map<number, LagCompEntry>();
         for (const p of this.players.values()) {
             positions.set(p.id, [...p.pos]);
+            entries.set(p.id, { pos: [...p.pos] as [number, number, number], rot: [...p.rot] as [number, number, number] });
         }
-        this.lagCompBuffer.push({ tick: this.tick, positions });
+        this.lagCompBuffer.push({ tick: this.tick, positions, entries });
         if (this.lagCompBuffer.length > LAGCOMP_BUFFER_TICKS) {
             this.lagCompBuffer.shift();
         }
     }
 
-    // Lag-comp lookup (used by hitscan; R19 scaffold doesn't fully wire raycast)
     getRewoundPos(playerId: number, ticksAgo: number): [number, number, number] | null {
         const idx = this.lagCompBuffer.length - 1 - Math.min(ticksAgo, LAGCOMP_BUFFER_TICKS - 1);
         if (idx < 0) return null;
@@ -432,13 +507,195 @@ export class Match {
         return frame.positions.get(playerId) ?? null;
     }
 
+    getRewoundEntry(playerId: number, ticksAgo: number): LagCompEntry | null {
+        const idx = this.lagCompBuffer.length - 1 - Math.min(Math.max(0, ticksAgo), LAGCOMP_BUFFER_TICKS - 1);
+        if (idx < 0) return null;
+        const frame = this.lagCompBuffer[idx];
+        return frame.entries.get(playerId) ?? null;
+    }
+
+    // R20: hitscan with lag compensation
+    private _lagcompLogLast = new Map<number, number>(); // shooterId → wallTime
+    fireHitscan(shooter: SimPlayer, input: PlayerInput) {
+        const w = WEAPONS[shooter.weaponIdx];
+        if (!w || !w.hitscan) return;
+        const rttMs = input.pingMs | 0;
+        const clientLagTicks = Math.round((rttMs / 2) / (1000 / TICK_HZ));
+        const ticksAgo = Math.max(0, Math.min(LAGCOMP_BUFFER_TICKS - 1, clientLagTicks));
+
+        // Use rewound shooter pos+rot (so fire direction matches what shooter saw)
+        const shooterEntry = this.getRewoundEntry(shooter.id, ticksAgo) ??
+            { pos: [...shooter.pos] as [number, number, number], rot: [...shooter.rot] as [number, number, number] };
+        const eye: [number, number, number] = [shooterEntry.pos[0], shooterEntry.pos[1] + 1.6, shooterEntry.pos[2]];
+        const yaw = shooterEntry.rot[1], pitch = shooterEntry.rot[0];
+        const dir: [number, number, number] = [
+            Math.sin(yaw) * Math.cos(pitch),
+            Math.sin(pitch),
+            -Math.cos(yaw) * Math.cos(pitch),
+        ];
+
+        let bestT = HITSCAN_RANGE_M;
+        let bestTarget: SimPlayer | null = null;
+        for (const target of this.players.values()) {
+            if (target.id === shooter.id) continue;
+            if (!target.alive) continue;
+            if (target.team === shooter.team) continue;
+            if (Date.now() < target.spawnProtectUntil) continue;
+            const tEntry = this.getRewoundEntry(target.id, ticksAgo);
+            if (!tEntry) continue;
+            const center: [number, number, number] = [tEntry.pos[0], tEntry.pos[1] + 1.2, tEntry.pos[2]];
+            const r = (ARMORS[target.armor]?.hitW ?? 0.6) + 0.5;
+            const t = raySphereIntersect(eye, dir, center, r);
+            if (t !== null && t < bestT) {
+                bestT = t;
+                bestTarget = target;
+            }
+        }
+        if (bestTarget) {
+            this.damagePlayer(bestTarget, w.damage, shooter);
+            // Rate-limit lag-comp log (1/sec/shooter)
+            const now = Date.now();
+            const last = this._lagcompLogLast.get(shooter.id) ?? 0;
+            if (now - last > 1000) {
+                this._lagcompLogLast.set(shooter.id, now);
+                console.log(`[LAG-COMP] shooter=${shooter.id} target=${bestTarget.id} rewindMs=${ticksAgo * (1000 / TICK_HZ) | 0}`);
+            }
+        }
+    }
+
+    // R20: divergence anti-cheat. Called by lobby with client-acked snapshot data.
+    checkDivergence(playerId: number, clientPos: [number, number, number], clientRotYaw: number): boolean {
+        const p = this.players.get(playerId);
+        if (!p || !p.alive) return true;
+        // Skip checks during spawn protection (just respawned, knockback, etc.)
+        if (Date.now() < p.spawnProtectUntil) return true;
+        const dx = p.pos[0] - clientPos[0];
+        const dy = p.pos[1] - clientPos[1];
+        const dz = p.pos[2] - clientPos[2];
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        const dyaw = Math.abs(p.rot[1] - clientRotYaw) * 180 / Math.PI;
+        if (dist > 2.0 || dyaw > 30) {
+            const now = Date.now();
+            p.divergeViolations.push(now);
+            // Trim to 10s window
+            while (p.divergeViolations.length > 0 && p.divergeViolations[0] < now - 10000) {
+                p.divergeViolations.shift();
+            }
+            console.log(`[CHEAT-DIVERGE] playerId=${playerId} pos=${dist.toFixed(2)}m yaw=${dyaw.toFixed(1)}°`);
+            if (p.divergeViolations.length >= 3) {
+                console.log(`[CHEAT-DIVERGE-KICK] playerId=${playerId} 3+ violations in 10s`);
+                return false; // signal kick
+            }
+        }
+        return true;
+    }
+
+    // R20: bot fill — replay another player's recent inputs with jitter
+    addDisconnectBot(disconnectedPlayer: SimPlayer): SimPlayer {
+        const botId = 1000 + this.tick + Math.floor(Math.random() * 1000);
+        const flagPos = this.flags[disconnectedPlayer.team].homePos;
+        const bot: SimPlayer = {
+            ...disconnectedPlayer,
+            id: botId,
+            name: `Bot_${disconnectedPlayer.name}`,
+            pos: [flagPos[0] + (Math.random() * 6 - 3), flagPos[1] + 5, flagPos[2] + (Math.random() * 6 - 3)],
+            vel: [0, 0, 0],
+            health: 1, energy: 1,
+            alive: true,
+            spawnProtectUntil: Date.now() + SPAWN_PROTECTION_SEC * 1000,
+            respawnAt: 0,
+            isBot: true,
+            botReplayCursor: 0,
+            botReplaySource: disconnectedPlayer.id,
+            recentInputs: [...disconnectedPlayer.recentInputs],
+            inputRateWindow: [],
+            divergeViolations: [],
+            kills: 0, deaths: 0,
+            uuid: '',
+        };
+        this.players.set(botId, bot);
+        console.log(`[BOT-FILL] replacing playerId=${disconnectedPlayer.id} (${disconnectedPlayer.name}) with botId=${botId}`);
+        return bot;
+    }
+
+    evictBot(botId: number) {
+        const bot = this.players.get(botId);
+        if (!bot || !bot.isBot) return;
+        this.players.delete(botId);
+        console.log(`[BOT-EVICT] botId=${botId} (${bot.name}) removed`);
+    }
+
+    // Step bot: cycle through recorded inputs with jitter
+    private stepBotInputs(bot: SimPlayer) {
+        if (bot.recentInputs.length === 0) {
+            // No inputs to replay — bot stands still
+            return;
+        }
+        const entry = bot.recentInputs[bot.botReplayCursor % bot.recentInputs.length];
+        bot.botReplayCursor++;
+        const jitter = (Math.random() - 0.5) * 0.10; // ±5%
+        const fakeInput: PlayerInput = {
+            tick: this.tick,
+            buttons: entry.input.buttons,
+            mouseDX: entry.input.mouseDX * (1 + jitter),
+            mouseDY: entry.input.mouseDY * (1 + jitter),
+            pingMs: 0,
+            weaponSelect: 0xFF,
+        };
+        bot.lastInput = fakeInput;
+        // Apply rotation deltas
+        bot.rot[0] = Math.max(-1.4, Math.min(1.4, bot.rot[0] + fakeInput.mouseDY));
+        bot.rot[1] += fakeInput.mouseDX;
+    }
+
     tickSimulation() {
         this.tick++;
         this.stepMatchState(TICK_DT);
+        // Bots step their replay inputs first (sets lastInput before physics)
+        for (const p of this.players.values()) {
+            if (p.isBot) this.stepBotInputs(p);
+        }
         for (const p of this.players.values()) this.stepPlayerPhysics(p, TICK_DT);
         this.stepProjectiles(TICK_DT);
         this.stepFlags(TICK_DT);
         this.captureLagCompFrame();
+    }
+
+    // R20: full sim reset for "play again" (preserves player roster + teams)
+    resetForRematch() {
+        this.tick = 0;
+        this.projectiles = [];
+        this.teamScore = [0, 0];
+        this.matchState = MATCH_WARMUP;
+        this.warmupTimer = MATCH_WARMUP_SEC;
+        this.roundTimer = 600;
+        this.lagCompBuffer = [];
+        for (const f of this.flags) {
+            f.pos = [...f.homePos];
+            f.state = 0; f.carrierIdx = -1; f.dropTimer = 0;
+        }
+        for (const p of this.players.values()) {
+            p.kills = 0; p.deaths = 0;
+            p.health = 1; p.energy = 1;
+            p.alive = true; p.respawnAt = 0;
+            p.carryingFlag = -1;
+            p.divergeViolations = [];
+            p.spawnProtectUntil = Date.now() + SPAWN_PROTECTION_SEC * 1000;
+            const flagPos = this.flags[p.team].homePos;
+            p.pos = [flagPos[0] + (Math.random() * 6 - 3), flagPos[1] + 5, flagPos[2] + (Math.random() * 6 - 3)];
+            p.vel = [0, 0, 0];
+        }
+    }
+
+    // R20: MVP per team for match-end screen
+    getMvpPerTeam(): { team0: SimPlayer | null, team1: SimPlayer | null } {
+        let m0: SimPlayer | null = null;
+        let m1: SimPlayer | null = null;
+        for (const p of this.players.values()) {
+            if (p.team === 0 && (!m0 || p.kills > m0.kills)) m0 = p;
+            if (p.team === 1 && (!m1 || p.kills > m1.kills)) m1 = p;
+        }
+        return { team0: m0, team1: m1 };
     }
 
     serializeSnapshot(): Uint8Array {

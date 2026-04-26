@@ -603,13 +603,55 @@ function createPlayerMesh(armor) {
 
 function initPlayers() {
     for (let i = 0; i < MAX_PLAYERS; i++) {
-        // Default to medium for slot init; will be replaced if armor changes
         const mesh = createPlayerMesh(1);
         mesh.visible = false;
         scene.add(mesh);
         playerMeshes.push(mesh);
     }
     console.log('[R18] Players: 16 composite soldiers (3 armor tiers)');
+}
+
+// R20: nameplates above remote players. Lazy-built per slot when first needed.
+const nameplateSprites = []; // index = player slot, value = THREE.Sprite or null
+const nameplateLastName = []; // cache of last rendered name to avoid texture rebuild
+
+function makeNameplateTexture(name, teamColor) {
+    const w = 256, h = 64;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = 'rgba(8,6,3,0.55)';
+    ctx.fillRect(0, 0, w, h);
+    ctx.font = 'bold 32px "Barlow Condensed", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = teamColor;
+    ctx.fillText(name, w / 2, h / 2 + 2);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.minFilter = THREE.LinearFilter;
+    return tex;
+}
+
+function ensureNameplate(slot, name, team) {
+    if (nameplateLastName[slot] === name && nameplateSprites[slot]) return nameplateSprites[slot];
+    if (nameplateSprites[slot]) {
+        scene.remove(nameplateSprites[slot]);
+        nameplateSprites[slot].material.map.dispose();
+        nameplateSprites[slot].material.dispose();
+    }
+    const teamColorHex = team === 0 ? '#FFCDCD' : team === 1 ? '#CDD8FF' : '#E8DCB8';
+    const tex = makeNameplateTexture(name, teamColorHex);
+    const mat = new THREE.SpriteMaterial({
+        map: tex, transparent: true, depthWrite: false,
+        depthTest: true, sizeAttenuation: true,
+    });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(2.0, 0.5, 1);
+    scene.add(sprite);
+    nameplateSprites[slot] = sprite;
+    nameplateLastName[slot] = name;
+    return sprite;
 }
 
 function rebuildPlayerMesh(slot, armor) {
@@ -868,13 +910,32 @@ function syncPlayers(t) {
 
         if (i === localIdx) {
             mesh.visible = false;
+            if (nameplateSprites[i]) nameplateSprites[i].visible = false;
             continue;
         }
         mesh.visible = visible && alive;
-        if (!mesh.visible) continue;
+        if (!mesh.visible) {
+            if (nameplateSprites[i]) nameplateSprites[i].visible = false;
+            continue;
+        }
 
         mesh.position.set(playerView[o], playerView[o + 1], playerView[o + 2]);
         mesh.rotation.set(0, playerView[o + 4], 0, 'YXZ');
+
+        // R20: nameplate above head, fade beyond 50m
+        const camPos = camera.position;
+        const dx = playerView[o] - camPos.x;
+        const dz = playerView[o + 2] - camPos.z;
+        const dist = Math.hypot(dx, dz);
+        if (dist < 60) {
+            const np = ensureNameplate(i, 'P' + i, team);
+            np.position.set(playerView[o], playerView[o + 1] + 2.6, playerView[o + 2]);
+            np.visible = true;
+            // Fade alpha from 1.0 at 30m to 0 at 60m
+            np.material.opacity = Math.max(0, Math.min(1, (60 - dist) / 30));
+        } else if (nameplateSprites[i]) {
+            nameplateSprites[i].visible = false;
+        }
 
         // Team color update
         const teamHex = TEAM_TINT_HEX[team] ?? TEAM_TINT_HEX[2];

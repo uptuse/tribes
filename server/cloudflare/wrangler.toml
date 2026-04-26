@@ -1,0 +1,25 @@
+# Cloudflare Workers + Durable Objects deployment for Tribes lobby+match
+# Run `wrangler deploy` from this directory.
+# Requires Cloudflare account auth: `wrangler login` first.
+
+name = "tribes-lobby"
+main = "worker.ts"
+compatibility_date = "2026-04-01"
+compatibility_flags = ["nodejs_compat"]
+
+# WebSocket hibernation API (free-tier-friendly when matches idle)
+# DO instances can sleep between WebSocket messages without losing state.
+[[durable_objects.bindings]]
+name = "LOBBY_DO"
+class_name = "LobbyDO"
+
+[[migrations]]
+tag = "v1"
+new_classes = ["LobbyDO"]
+
+# Free tier: 100,000 DO requests/day, 30s CPU/req. Plenty for early playtests.
+# At 100 CCU across 12 active matches (8p each): ~3M requests/day.
+# Plan for $5/mo Workers Paid once we cross 100k/day. Documented in deploy README.
+
+[observability]
+enabled = true

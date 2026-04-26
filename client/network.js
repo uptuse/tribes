@@ -40,11 +40,18 @@ function log(msg) { console.log('[NET] ' + msg); }
 function getServerUrl() {
     const params = new URLSearchParams(location.search);
     const explicit = params.get('server');
-    if (explicit) return explicit;
+    const lobbyId = params.get('lobbyId') || '';
+    const storedUuid = localStorage.getItem('tribes_player_uuid') || '';
+    const qs = (lobbyId || storedUuid)
+        ? '?' + (lobbyId ? 'lobbyId=' + encodeURIComponent(lobbyId) : '')
+              + (lobbyId && storedUuid ? '&' : '')
+              + (storedUuid ? 'uuid=' + encodeURIComponent(storedUuid) : '')
+        : '';
+    if (explicit) return explicit + qs;
     const mode = params.get('multiplayer');
-    if (mode === 'local') return 'ws://localhost:8080/ws';
-    if (mode === 'remote') return 'wss://tribes-lobby.fly.dev/ws'; // placeholder
-    return 'ws://localhost:8080/ws';
+    if (mode === 'local') return 'ws://localhost:8080/ws' + qs;
+    if (mode === 'remote') return 'wss://tribes-lobby.fly.dev/ws' + qs;
+    return 'ws://localhost:8080/ws' + qs;
 }
 
 function trackInbound(bytes) {
@@ -114,9 +121,12 @@ export function start() {
             myPlayerId = msg.playerId;
             myNumericId = msg.numericId ?? -1;
             myLobbyId = msg.lobbyId;
+            // R20: persist UUID for reconnect grace
+            if (msg.uuid) try { localStorage.setItem('tribes_player_uuid', msg.uuid); } catch {}
             prediction.setLocalNumericId(myNumericId);
             const rttMs = Math.round(lastMessageAt - connectedAt);
-            log('joined ' + myLobbyId + ' as ' + msg.name + ' (id=' + myNumericId + ', RTT ' + rttMs + 'ms)');
+            log('joined ' + myLobbyId + ' as ' + msg.name + ' (id=' + myNumericId + ', RTT ' + rttMs + 'ms' + (msg.reconnected ? ' [RECONNECTED]' : '') + ')');
+            if (msg.reconnected && window.__tribesHideReconnect) window.__tribesHideReconnect();
         } else if (msg.type === 'playerList') {
             log('roster: ' + msg.players.map(p => p.name).join(', '));
             telemetry.matchActive = msg.matchActive;
@@ -132,6 +142,15 @@ export function start() {
             if (window.__tribesOnMatchEnd) window.__tribesOnMatchEnd(msg);
         } else if (msg.type === 'pong') {
             telemetry.pingMs = msg.serverTs - msg.clientTs;
+        } else if (msg.type === 'kill') {
+            // R20: server-side kill → client kill feed (uses existing addKillMsg)
+            if (window.addKillMsg) {
+                const fmt = msg.killer + '~' + (msg.weapon | 0) + '~' + msg.victim;
+                window.addKillMsg(fmt);
+            }
+        } else if (msg.type === 'rematchVote') {
+            const ve = document.getElementById('me-vote');
+            if (ve) ve.textContent = 'PLAY AGAIN votes: ' + msg.votes + ' / ' + msg.eligible + ' (need 75%)';
         } else if (msg.type === 'chat') {
             log('chat ' + msg.from + ': ' + msg.text);
         } else {
@@ -145,13 +164,19 @@ export function start() {
     socket.onerror = (event) => { log('socket error'); console.error('[NET]', event); };
 
     socket.onclose = (event) => {
+        const wasInMatch = telemetry.inMatch;
         log('socket closed (' + event.code + ' ' + event.reason + ')');
         socket = null;
         myPlayerId = null;
         myNumericId = -1;
         myLobbyId = null;
+        telemetry.inMatch = false;
         stopInputLoop();
         prediction.reset();
+        // R20: if we lost connection mid-match, show reconnect overlay
+        if (wasInMatch && window.__tribesShowReconnect) {
+            window.__tribesShowReconnect();
+        }
     };
 
     // Periodic ping for clock-sync (drives telemetry.pingMs)
