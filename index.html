@@ -551,7 +551,7 @@
         <div class="score-team blue" id="sc-blue">0</div>
       </div>
       <table class="score-table">
-        <thead><tr><th>Name</th><th>Armor</th><th>Score</th><th>Kills</th><th>Deaths</th></tr></thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Score</th><th>Kills</th><th>Deaths</th><th>Ping</th></tr></thead>
         <tbody id="sc-body"></tbody>
       </table>
     </div>
@@ -891,8 +891,9 @@
 
     // Scoreboard (populated from C++ via sbRow/sbFinish)
     var sbRows=[];
-    window.sbRow=function(idx,team,score,kills,deaths,hasFlag,name){
-      sbRows.push({idx:idx,team:team,score:score,kills:kills,deaths:deaths,hasFlag:hasFlag,name:name});
+    var ROLE_LABELS=['OFF','DEF','MID'];
+    window.sbRow=function(idx,team,score,kills,deaths,hasFlag,role,name){
+      sbRows.push({idx:idx,team:team,score:score,kills:kills,deaths:deaths,hasFlag:hasFlag,role:role,name:name});
     };
     window.sbFinish=function(rs,bs,matchState,timeRemain,mvpName){
       // Live scoreboard (TAB)
@@ -903,9 +904,10 @@
         sbRows.forEach(function(r){
           var tr=document.createElement('tr');
           var col=r.team===0?'#C8302C':'#2C5AC8';
+          var roleStr=r.role>=0?(ROLE_LABELS[r.role]||''):'';
           tr.innerHTML='<td style="color:'+col+'">'+(r.hasFlag?'⚑ ':'')+r.name+'</td>'
-            +'<td>'+armNames[Math.min(r.idx,2)]+'</td>'
-            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td>';
+            +'<td style="color:#7A6A4A;font-size:0.75em">'+roleStr+'</td>'
+            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td><td>0</td>';
           tbody.appendChild(tr);
         });
         document.getElementById('sc-red').textContent=rs;

@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <vector>
 #include <algorithm>
+#include <queue>
 #include "dts_loader.h"
 
 // ============================================================
@@ -325,6 +326,26 @@ static bool g_warnedTime[3]={}; // [0]=4min, [1]=1min, [2]=warmup countdown soun
 static const float FLAG_RETURN_TIME=45.0f;
 
 // ============================================================
+// Nav grid (64×64, 32m cells) — built once at init from building AABBs
+// ============================================================
+static const int NAV_SIZE=64;
+static const float NAV_CELL=32.0f;
+static bool g_navWalkable[NAV_SIZE][NAV_SIZE];
+
+// A* scratch buffers (global to avoid ~130KB of stack per call)
+static int  s_gCost[NAV_SIZE][NAV_SIZE];
+static bool s_closed[NAV_SIZE][NAV_SIZE];
+static int  s_parent[NAV_SIZE*NAV_SIZE]; // index = i*NAV_SIZE+j, -1 = none
+
+// Per-bot path state (outside Player to avoid memset corruption of std::vector)
+static std::vector<Vec3> g_botPath[8]; // [MAX_PLAYERS]
+static int   g_botPathIdx[8]={};
+static float g_botPathTimer[8]={};
+static Vec3  g_botLastPos[8]={};
+static float g_botStuckAccum[8]={};
+static float g_botFlagEventTimer[8]={}; // cooldown for [EVENT] flag pickup message
+
+// ============================================================
 // Players (human + bots)
 // ============================================================
 static const int MAX_PLAYERS=8;
@@ -350,6 +371,7 @@ struct Player {
     Vec3 botTarget;
     float botThinkTimer;
     int botState; // 0=goto flag, 1=return flag, 2=attack, 3=defend
+    int botRole;  // 0=OFFENSE, 1=DEFENSE, 2=MIDFIELD
     bool active;
     char name[32];
 };
@@ -985,83 +1007,315 @@ static void damagePlayer(int pi,float dmg,int attackerTeam){
     }
 }
 
-static void updateBot(int pi,float dt){
-    Player&p=players[pi];
-    if(!p.alive){
-        static float respawnTimers[MAX_PLAYERS]={};
-        respawnTimers[pi]+=dt;
-        if(respawnTimers[pi]>5.0f){respawnPlayer(pi);respawnTimers[pi]=0;}
-        return;
-    }
-    p.botThinkTimer-=dt;
-    if(p.botThinkTimer<=0){
-        p.botThinkTimer=0.5f+(rand()%1000)/2000.0f;
-        int enemyFlag=1-p.team;
-        if(p.carryingFlag>=0){
-            p.botTarget=flags[p.team].homePos;p.botState=1;
-        }else if(!flags[enemyFlag].carried&&(rand()%3)!=0){
-            p.botTarget=flags[enemyFlag].pos;p.botState=0;
-        }else{
-            // Defend or attack random enemy
-            p.botTarget=flags[p.team].homePos+Vec3((rand()%60)-30,0,(rand()%60)-30);
-            p.botState=3;
+// ============================================================
+// Nav grid + A* pathfinding
+// ============================================================
+static void initNavGrid(){
+    for(int i=0;i<NAV_SIZE;i++) for(int j=0;j<NAV_SIZE;j++){
+        float cx=(i-NAV_SIZE/2)*NAV_CELL+NAV_CELL/2;
+        float cz=(j-NAV_SIZE/2)*NAV_CELL+NAV_CELL/2;
+        g_navWalkable[i][j]=true;
+        for(int k=0;k<numBuildings;k++){
+            if(buildings[k].isRock)continue;
+            const Building&b=buildings[k];
+            if(fabsf(cx-b.pos.x)<b.halfSize.x+10&&fabsf(cz-b.pos.z)<b.halfSize.z+10){
+                g_navWalkable[i][j]=false;break;
+            }
         }
     }
-    Vec3 toTarget=p.botTarget-p.pos;
-    float dist=toTarget.len();
-    if(dist>2){
-        p.yaw=atan2f(toTarget.x,-toTarget.z);
-        p.pitch=atan2f(toTarget.y,sqrtf(toTarget.x*toTarget.x+toTarget.z*toTarget.z))*0.3f;
+    printf("[Nav] Grid initialized (%dx%d, %.0fm cells)\n",NAV_SIZE,NAV_SIZE,NAV_CELL);
+}
+
+static void worldToNav(float wx,float wz,int&ni,int&nj){
+    ni=(int)(wx/NAV_CELL+NAV_SIZE/2);nj=(int)(wz/NAV_CELL+NAV_SIZE/2);
+    ni=std::max(0,std::min(NAV_SIZE-1,ni));nj=std::max(0,std::min(NAV_SIZE-1,nj));
+}
+static Vec3 navToWorld(int ni,int nj){
+    return {(ni-NAV_SIZE/2)*NAV_CELL+NAV_CELL/2,0,(nj-NAV_SIZE/2)*NAV_CELL+NAV_CELL/2};
+}
+
+struct NavNode{int idx,f;bool operator>(const NavNode&o)const{return f>o.f;}};
+
+static std::vector<Vec3> astarPath(float sx,float sz,float ex,float ez){
+    int si,sj,ei,ej;
+    worldToNav(sx,sz,si,sj);worldToNav(ex,ez,ei,ej);
+    if(si==ei&&sj==ej)return {};
+    for(int i=0;i<NAV_SIZE*NAV_SIZE;i++){s_gCost[i/NAV_SIZE][i%NAV_SIZE]=0x7fffffff;s_closed[i/NAV_SIZE][i%NAV_SIZE]=false;s_parent[i]=-1;}
+    std::priority_queue<NavNode,std::vector<NavNode>,std::greater<NavNode>> open;
+    int startIdx=si*NAV_SIZE+sj;
+    s_gCost[si][sj]=0;open.push({startIdx,abs(si-ei)+abs(sj-ej)});
+    int endIdx=ei*NAV_SIZE+ej;
+    int iters=0;
+    static const int DX[]={0,0,1,-1,1,1,-1,-1};
+    static const int DZ[]={1,-1,0,0,1,-1,1,-1};
+    static const int DC[]={10,10,10,10,14,14,14,14};
+    while(!open.empty()&&iters<2000){
+        iters++;
+        NavNode cur=open.top();open.pop();
+        int ci=cur.idx/NAV_SIZE,cj=cur.idx%NAV_SIZE;
+        if(s_closed[ci][cj])continue;
+        s_closed[ci][cj]=true;
+        if(cur.idx==endIdx){
+            std::vector<Vec3> path;
+            int idx=endIdx;
+            while(idx!=-1&&idx!=startIdx){
+                int ni=idx/NAV_SIZE,nj=idx%NAV_SIZE;
+                Vec3 wp=navToWorld(ni,nj);wp.y=getH(wp.x,wp.z)+1.5f;
+                path.push_back(wp);idx=s_parent[idx];
+            }
+            std::reverse(path.begin(),path.end());
+            return path;
+        }
+        for(int d=0;d<8;d++){
+            int ni=ci+DX[d],nj=cj+DZ[d];
+            if(ni<0||ni>=NAV_SIZE||nj<0||nj>=NAV_SIZE)continue;
+            if(!g_navWalkable[ni][nj])continue;
+            int nidx=ni*NAV_SIZE+nj;
+            if(s_closed[ni][nj])continue;
+            int ng=s_gCost[ci][cj]+DC[d];
+            if(ng<s_gCost[ni][nj]){
+                s_gCost[ni][nj]=ng;s_parent[nidx]=cur.idx;
+                open.push({nidx,ng+(abs(ni-ei)+abs(nj-ej))*10});
+            }
+        }
+    }
+    return {};
+}
+
+static void assignBotRole(int pi){
+    Player&p=players[pi];
+    if(!p.isBot)return;
+    // Count existing roles on this team
+    int counts[3]={0,0,0};
+    for(int i=0;i<MAX_PLAYERS;i++){
+        if(i==pi||!players[i].active||!players[i].isBot||players[i].team!=p.team)continue;
+        counts[players[i].botRole]++;
+    }
+    // Target distribution per 4-bot team: 2 OFF / 1 DEF / 1 MID
+    if(counts[1]<1){p.botRole=1;}      // need defender
+    else if(counts[2]<1){p.botRole=2;} // need midfield
+    else{p.botRole=0;}                 // default offense
+}
+
+static void updateBot(int pi,float dt){
+    Player&p=players[pi];
+    // Respawn handling
+    if(!p.alive){
+        static float respawnTimers[8]={};
+        respawnTimers[pi]+=dt;
+        if(respawnTimers[pi]>5.0f){respawnPlayer(pi);assignBotRole(pi);respawnTimers[pi]=0;
+            g_botPath[pi].clear();g_botPathIdx[pi]=0;g_botPathTimer[pi]=0;}
+        return;
+    }
+
+    const ArmorData&ad=armors[p.armor];
+    int enemyTeam=1-p.team;
+
+    // ------- STUCK DETECTION -------
+    g_botStuckAccum[pi]+=dt;
+    if(g_botStuckAccum[pi]>=1.5f){
+        float moved=(p.pos-g_botLastPos[pi]).len();
+        g_botLastPos[pi]=p.pos;g_botStuckAccum[pi]=0;
+        // Check: is bot in active combat? (enemy within 40m counts)
+        bool inCombat=false;
+        for(int i=0;i<MAX_PLAYERS;i++){
+            if(!players[i].active||!players[i].alive||players[i].team==p.team)continue;
+            if((players[i].pos-p.pos).lenSq()<1600){inCombat=true;break;}
+        }
+        if(moved<1.5f&&!inCombat){
+            // Stuck: jump + randomize yaw + clear path
+            p.vel.y+=8.0f;
+            p.yaw+=(rand()%100-50)*0.01f;
+            g_botPath[pi].clear();g_botPathIdx[pi]=0;g_botPathTimer[pi]=0;
+        }
+    }
+
+    // ------- DESTINATION SELECTION -------
+    Vec3 destination={};
+    bool isCarrying=(p.carryingFlag>=0);
+    float pathRecomputeInterval=isCarrying?1.0f:2.0f;
+
+    g_botPathTimer[pi]-=dt;
+    bool needRecompute=(g_botPathTimer[pi]<=0)||
+                       (g_botPathIdx[pi]>=(int)g_botPath[pi].size());
+
+    if(p.botRole==0||isCarrying){ // OFFENSE or flag carrier
+        if(isCarrying){
+            destination=flags[p.team].homePos;
+            // Flag-runner event broadcast (once per pickup)
+            g_botFlagEventTimer[pi]-=dt;
+            if(g_botFlagEventTimer[pi]<=0){
+                g_botFlagEventTimer[pi]=30.0f;
+                printf("[EVENT] %s has the flag — running home!\n",p.name);
+            }
+        }else{
+            // Go for enemy flag
+            destination=flags[enemyTeam].pos;
+        }
+    }else if(p.botRole==1){ // DEFENSE
+        Vec3 homeFlag=flags[p.team].homePos;
+        // If enemy is near home flag or carrying it, engage; else patrol
+        bool flagTaken=flags[p.team].carried;
+        bool enemyNearHome=false;
+        int chaseTarget=-1;
+        for(int i=0;i<MAX_PLAYERS;i++){
+            if(!players[i].active||!players[i].alive||players[i].team==p.team)continue;
+            float d=(players[i].pos-homeFlag).lenSq();
+            if(d<10000||players[i].carryingFlag==p.team){enemyNearHome=true;chaseTarget=i;break;}
+        }
+        if(enemyNearHome&&chaseTarget>=0){
+            destination=players[chaseTarget].pos;
+        }else if(flagTaken&&flags[p.team].carrierIdx>=0){
+            destination=players[flags[p.team].carrierIdx].pos; // chase carrier
+        }else{
+            // Patrol: alternate between home flag and nearest station within 80m
+            static float defPatrolTimer[8]={};
+            defPatrolTimer[pi]-=dt;
+            if(defPatrolTimer[pi]<=0){defPatrolTimer[pi]=5.0f+rand()%4;}
+            float pr=fmodf(gameTime+pi*7.3f,10.0f);
+            if(pr<5){destination=homeFlag;}
+            else{
+                // Find nearest station on same team
+                int bestS=-1;float bestD=1e9f;
+                for(int i=0;i<RAINDANCE_STATION_COUNT;i++){
+                    int st=(strstr(RAINDANCE_STATIONS[i].team,"team0")?0:1);
+                    if(st!=p.team)continue;
+                    Vec3 sp={RAINDANCE_STATIONS[i].x,RAINDANCE_STATIONS[i].z,-RAINDANCE_STATIONS[i].y};
+                    float d=(sp-homeFlag).lenSq();if(d<bestD){bestD=d;bestS=i;}
+                }
+                if(bestS>=0){
+                    destination={RAINDANCE_STATIONS[bestS].x,
+                                 RAINDANCE_STATIONS[bestS].z,
+                                 -RAINDANCE_STATIONS[bestS].y};
+                }else destination=homeFlag;
+            }
+        }
+    }else{ // MIDFIELD
+        // Engage nearest enemy or assist flag carrier
+        int nearest=-1;float bestD=14400; // 120m
+        for(int i=0;i<MAX_PLAYERS;i++){
+            if(!players[i].active||!players[i].alive||players[i].team==p.team)continue;
+            float d=(players[i].pos-p.pos).lenSq();
+            if(d<bestD){bestD=d;nearest=i;}
+        }
+        if(nearest>=0)destination=players[nearest].pos;
+        else{
+            // Roam mid-map
+            destination={(flags[0].homePos.x+flags[1].homePos.x)*0.5f,0,
+                         (flags[0].homePos.z+flags[1].homePos.z)*0.5f};
+        }
+    }
+
+    // ------- PATHFINDING -------
+    if(needRecompute){
+        g_botPathTimer[pi]=pathRecomputeInterval;
+        g_botPath[pi]=astarPath(p.pos.x,p.pos.z,destination.x,destination.z);
+        g_botPathIdx[pi]=0;
+        if(g_botPath[pi].empty()){
+            // Direct fallback
+            g_botPath[pi].push_back({destination.x,getH(destination.x,destination.z)+1.5f,destination.z});
+        }
+    }
+
+    // Current waypoint
+    Vec3 waypoint=destination; // fallback
+    if(g_botPathIdx[pi]<(int)g_botPath[pi].size()){
+        waypoint=g_botPath[pi][g_botPathIdx[pi]];
+        if((p.pos-waypoint).lenSq()<64){ // within 8m → advance
+            g_botPathIdx[pi]++;
+            if(g_botPathIdx[pi]<(int)g_botPath[pi].size())
+                waypoint=g_botPath[pi][g_botPathIdx[pi]];
+        }
+    }
+
+    // ------- MOVEMENT -------
+    Vec3 toWP=waypoint-p.pos;float wpDist=toWP.len();
+    if(wpDist>2){
+        p.yaw=atan2f(toWP.x,-toWP.z);
+        p.pitch=atan2f(toWP.y,sqrtf(toWP.x*toWP.x+toWP.z*toWP.z))*0.4f;
     }
     Vec3 flatFwd={sinf(p.yaw),0,-cosf(p.yaw)};
     float th=getH(p.pos.x,p.pos.z);
     p.onGround=(p.pos.y-th)<1.5f;
-    // Bot movement
-    const ArmorData&ad=armors[p.armor];
+
+    // Skiing intent: downhill path direction + speed not maxed
+    Vec3 norm=getNorm(p.pos.x,p.pos.z);
+    float slope=1.0f-norm.y; // 0=flat, high=steep
+    Vec3 pathDir=(wpDist>1)?toWP*(1.0f/wpDist):Vec3{0,0,0};
+    float downhillDot=-pathDir.dot(norm)*norm.y; // positive if moving downhill
+    bool shouldSki=p.onGround&&((downhillDot>0.1f&&p.speed<ad.maxFwdSpeed*2.2f)||slope>0.4f);
+
     if(p.onGround){
-        Vec3 norm=getNorm(p.pos.x,p.pos.z);
-        float slope=1-norm.y;
-        if(slope>0.3f){
-            // Ski!
+        if(shouldSki){
             Vec3 grav={0,-120*dt,0};
-            p.vel+=grav-norm*grav.dot(norm);
-            p.vel+=flatFwd*(12*dt);
-            p.vel.x*=0.995f;p.vel.z*=0.995f;
+            p.vel+=grav-norm*(grav.dot(norm));
+            p.vel+=flatFwd*(15*dt);
+            p.vel.x*=0.997f;p.vel.z*=0.997f;
         }else{
             p.vel.x=flatFwd.x*ad.maxFwdSpeed;p.vel.z=flatFwd.z*ad.maxFwdSpeed;
             if(p.vel.y<0)p.vel.y=0;
         }
+        p.skiing=shouldSki;
     }else{
-        p.vel+=flatFwd*(24*dt);
+        p.vel+=flatFwd*(28*dt);
+        p.skiing=false;
     }
-    // Jet when going uphill or need height
-    if(th>p.pos.y-5&&p.energy>20&&!p.onGround){
+
+    // Jetting intent: next waypoint is uphill, or flag carrier being chased
+    float waypointDY=waypoint.y-p.pos.y;
+    bool beingChased=false;
+    if(isCarrying){
+        for(int i=0;i<MAX_PLAYERS;i++){
+            if(!players[i].active||!players[i].alive||players[i].team==p.team)continue;
+            if((players[i].pos-p.pos).lenSq()<3600){beingChased=true;break;} // 60m
+        }
+    }
+    bool shouldJet=!p.onGround&&p.energy>ad.minJetEnergy*2.5f&&
+                   (waypointDY>4||beingChased||(th>p.pos.y-5&&p.energy>ad.maxEnergy*0.5f));
+    if(shouldJet){
         p.vel.y+=ad.jetForce/ad.mass*dt;
         p.energy-=ad.jetEnergyDrain/TICK*dt;
         p.jetting=true;
     }else{p.jetting=false;}
+
     if(!p.onGround)p.vel.y-=80*dt;
     p.energy+=ENERGY_RECHARGE*dt;
     if(p.energy>ad.maxEnergy)p.energy=ad.maxEnergy;
     if(p.energy<0)p.energy=0;
+
     p.pos+=p.vel*dt;
     th=getH(p.pos.x,p.pos.z);
     if(p.pos.y<th+1){p.pos.y=th+1;if(p.vel.y<0)p.vel.y=0;}
-    resolvePlayerBuildingCollision(p.pos, p.vel, armors[p.armor].hitW, armors[p.armor].hitH);
-    // Shoot at nearby enemies
+    resolvePlayerBuildingCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
+    p.speed=sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z);
+
+    // ------- ENGAGEMENT (with LOS gating) -------
     p.fireCooldown-=dt;
+    // Flag-runner only engages enemies within 30m
+    float engageRange=(isCarrying?30.0f:80.0f);
     for(int i=0;i<MAX_PLAYERS;i++){
         if(i==pi||!players[i].active||!players[i].alive||players[i].team==p.team)continue;
         float d=(players[i].pos-p.pos).lenSq();
-        if(d<80*80){
-            Vec3 toE=(players[i].pos-p.pos).normalized();
-            p.yaw=atan2f(toE.x,-toE.z);
-            p.pitch=atan2f(toE.y,sqrtf(toE.x*toE.x+toE.z*toE.z));
-            fireWeapon(pi);
-            break;
+        if(d>engageRange*engageRange)continue;
+        Vec3 toE=(players[i].pos-p.pos).normalized();
+        // LoS check: sample 5 points between bot and enemy
+        Vec3 fromPos=p.pos+Vec3(0,1.5f,0);
+        Vec3 toPos=players[i].pos+Vec3(0,1.2f,0);
+        bool los=true;
+        for(int s=1;s<=5;s++){
+            float t=(float)s/6;
+            Vec3 pt=fromPos+toPos*(t)-fromPos*(t); // lerp
+            pt=Vec3(fromPos.x+(toPos.x-fromPos.x)*t,
+                    fromPos.y+(toPos.y-fromPos.y)*t,
+                    fromPos.z+(toPos.z-fromPos.z)*t);
+            if(pt.y<getH(pt.x,pt.z)+0.5f){los=false;break;}
         }
+        if(!los)continue;
+        p.yaw=atan2f(toE.x,-toE.z);
+        p.pitch=atan2f(toE.y,sqrtf(toE.x*toE.x+toE.z*toE.z));
+        fireWeapon(pi);
+        break;
     }
-    p.speed=sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z);
 }
 
 // ============================================================
@@ -1228,9 +1482,11 @@ extern "C" void updateScoreboard(){
     for(int i=0;i<MAX_PLAYERS;i++){
         if(!players[i].active)continue;
         EM_ASM({
-            if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,UTF8ToString($6));
+            if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7));
         },i,players[i].team,players[i].score,players[i].kills,players[i].deaths,
-          players[i].carryingFlag>=0?1:0,players[i].name);
+          players[i].carryingFlag>=0?1:0,
+          players[i].isBot?players[i].botRole:-1,
+          players[i].name);
     }
     // Compute MVP (3*caps + 1*kills)
     int mvpIdx=0,mvpScore=-1;
@@ -2003,6 +2259,7 @@ int main(){
     flags[1]={flag1World,flag1World,1,true,false,-1,0,0};
 
     initBuildings();
+    initNavGrid();
 
     // Init turrets
     for(int i=0;i<RAINDANCE_TURRET_COUNT;i++){
@@ -2037,6 +2294,8 @@ int main(){
         players[i].carryingFlag=-1;
         strcpy(players[i].name,botNames[i-1]);
         respawnPlayer(i);
+        assignBotRole(i);
+        g_botLastPos[i]=players[i].pos;
     }
 
     memset(projs,0,sizeof(projs));
