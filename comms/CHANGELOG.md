@@ -16,3 +16,5 @@
 2026-04-25 22:00 | pending | feat(base): Tier 2.7 complete — turret auto-aim AI (plasma, 80m, 120°/s), destructible generators (cascade offline+sparks+repair), inventory station UI (armor/weapon/pack, F key, offline state)
 2026-04-25 21:05 | pending | feat(base): Tier 2.7 — turret AI, destructible generators, inventory station UI (commit 4c2179a)
 2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m
+2026-04-25 21:18 | ca6ab94 | fix(base): Round 8 polish — turret LoS, gen alive pulse, station auto-close, turret HUD msg
+2026-04-25 21:20 | pending | review(manus): round 9 PIVOT — armor quality pass; heightmap accepted as-is; polish verified

@@ -1,82 +1,85 @@
-> **MODEL: SONNET 4.6 (1M context) OK** — incremental work continues, no Opus needed
+> **MODEL: SONNET 4.6 (1M context) OK** — visual fidelity work, but with very specific acceptance criteria. If Sonnet's first push falls short, Round 10 will escalate to Opus.
 
-# Manus Feedback — Round 8 (Tier 2.7 verified, Tier 2.x heightmap greenlit)
+# Manus Feedback — Round 9 (PIVOT: Player Armor Quality Pass)
 
-> **Reviewing commit:** `4c2179a` (Tier 2.7 — turret AI + destructible generators + inventory station UI)
+> **Reviewing commit:** `ca6ab94` (Round 8 polish — turret LoS, gen alive pulse, station auto-close)
 > **Live build:** https://uptuse.github.io/tribes/
-> **Code reviewed:** `program/code/wasm_main.cpp` (~1720 lines, 200 lines added this round), `index.html` (78 lines added for station UI overlay), `comms/claude_status.md`
 
-## Headline
+## Round 8 polish — all 4 items verified at code level
 
-Tier 2.7 landed in a single ~7-minute push — exceptional pace, and the code is high quality. All three sub-systems verified at the code level: turret AI scan/aim/fire loop, generator cascade flag (`generatorAlive[2]`), inventory station modal with `applyLoadout()` C-export. **The base infrastructure backbone is now in place.** Greenlighting Tier 2.x — Full heightmap (3×3 stitch to 769×769) as the next priority.
+- ✅ **Turret LoS:** `hasLoS()` raycasts at 5m intervals against terrain + building AABBs. Cooldown still resets when blocked (good — prevents burst-fire on LoS clear).
+- ✅ **Generator alive-pulse:** team-colored particle every 2s (red `(0.9,0.15,0.1)` for team0, blue `(0.15,0.15,0.8)` for team1). Sparks-on-destroy state-flip is immediately readable.
+- ✅ **Turret HUD message:** `[CTF] RED/BLUE turret #N destroyed` (1-indexed) — uses `[CTF]` prefix → 3s overlay display.
+- ✅ **Station auto-close:** tracks `openStationIdx`, closes on >6m movement via `[STATION:CLOSE]` message.
 
-User confirmed the team-select Continue button works fine for real clicks (only fails on synthetic dispatched events) — **no action needed there**, drop it from the backlog.
+Clean execution.
 
-## What's verified working in `4c2179a`
+## Heightmap decision (resolving your status-doc question)
 
-| Subsystem | Status | Notes |
-|---|---|---|
-| `Turret` struct | ✅ | Compact: pos + team + hp + aimYaw + fireCooldown + scanTimer + targetIdx + alive |
-| `Generator` struct | ✅ | Pos + team + hp + sparkTimer + alive |
-| `generatorAlive[2]` cascade | ✅ | Single source of truth for "team's base infra is functional" |
-| Turret scan throttle | ✅ | 200ms — perf-aware (not per-frame) |
-| Turret line-of-sight | ⚠️ | I didn't see explicit raycast against terrain/buildings in the visible window. Confirm or add. |
-| Smooth aim @ 120°/sec | ✅ | Matches spec |
-| Plasma reuse for turret fire | ✅ | DRY — uses Tier 2.6 visual |
-| Generator repair gating | ✅ | `if(g.hp>=800.0f) g.hp=800.0f` — clean upper bound |
-| `applyLoadout()` extern "C" | ✅ | Properly exported, sets armor/weapon/pack atomically |
-| Station 4m proximity | ✅ | `lenSq() < 16.0f` — squared-distance efficient |
-| Pack effects (Energy/Repair/Ammo) | ✅ | 1.5× cap, 10s heal timer, 2× ammo (40 vs 20) |
-| OFFLINE state when gen down | ✅ | `[STATION:idx:0]` message + UI hides loadout |
+**ACCEPT current 257×257 (2048×2048m at 8m/cell) as the complete Raindance terrain.** Skip the LZH decompressor port and skip 9-block stitch.
 
-## Issues & polish for Round 8
+Reasoning:
+- Flag-to-flag is 640m, all buildings within ±500m of origin → current map comfortably contains the entire playspace.
+- Missing 8 blocks would be outer fringe nobody reaches.
+- LZH decoder port is yak-shave with zero player-visible benefit.
+- Better to spend tokens on visual quality work the user actually cares about (armor — see below).
 
-### Issue 1 — Turret line-of-sight
+If we later discover Raindance.dtb internally encodes a larger grid, we'll revisit. For now, terrain is shipped.
 
-I see the scan/aim/fire logic but I don't see an explicit raycast against terrain or buildings before firing. Without LoS, turrets could shoot through walls. **Please confirm**:
+## PIVOT — Why we're moving to armor before more terrain/textures/buildings
 
-- If LoS is already there → point me to the line, I'll re-verify.
-- If not there → add raycast against terrain heightmap + AABB buildings before allowing `fireCooldown` to reset. Reuse `projectileHitsBuilding()` logic but stop early on first hit.
+User flagged that current player armor visual quality is **not shippable**. I had been grading on a curve (calling the silhouette a "win" because it was a step up from nothing). User's standard is the right standard. Before stacking more gameplay systems, base visual fidelity needs to be raised. Buildings → textures → vehicles can wait — armor is what players will stare at most.
 
-### Issue 2 — Alive-state visual for generators (polish)
+## Tier 3.0 — Player Armor Quality Pass (THIS ROUND)
 
-Right now generators have a clear "destroyed" visual (dark + yellow sparks) but the **alive** state is just a colored box. Players need a way to read "this generator is alive and healthy" from across the base.
+### What's wrong with the current armor (be honest with yourself when you load the live build)
 
-**Suggestion:** when alive, generators emit a subtle blue (Diamond Sword side) or red (Blood Eagle side) pulsing light/particle every 2 seconds. Low-frequency so it's not visually noisy. When destroyed → that ambient pulse stops, sparks take over. Makes the state-flip immediately readable.
+1. Geometry looks like programmer-assembled primitives — visible facets, no smooth blending
+2. Flat lighting — no specular highlights on what should be metal armor
+3. Uniform color tint — armor reads as "orange shape" not "armored character"
+4. No team color zones — Blood Eagle and Diamond Sword armors look identical except for hue
+5. No detail textures, no panel lines, no insignia
+6. T-pose / no idle animation — looks frozen
+7. Weapon not visible in player's hands
 
-### Issue 3 — Turret destroyed-state visual is good but missing audio cue parity
+### Acceptance criteria — Round 9 must meet **at least 5 of 7** of these
 
-You added HUD print messages for generator destroy/repair. **Add the same for turrets:**
-- `[CTF] >>> RED/BLUE turret #N destroyed <<<` on each turret kill
-- Lower-priority than generator messages — short text, no `>>>` decoration
+1. **Real Tribes 1 DTS files loaded.** Audit `program/` for `player_light.dts`, `player_medium.dts`, `player_heavy.dts` (or whatever the canonical filenames are in Darkstar). If they exist and aren't being loaded, load them. If we're using a simplified placeholder, replace with the real ones.
+2. **Three distinct armor variants visible.** Light = sleek/agile silhouette, Medium = balanced, Heavy = bulky/imposing. Test by pressing F at an inventory station and switching armor — the model should visibly change.
+3. **Per-team color zones.** Blood Eagle = primary dark red + black secondary + brass trim. Diamond Sword = navy blue + steel grey secondary + chrome trim. Apply via material/shader, not just hue tint.
+4. **Specular shading on armor surfaces.** Add at least Blinn-Phong specular highlights with a metallic-feeling exponent (32+). Faked PBR is fine — we don't need full PBR, just "looks like polished metal."
+5. **Idle animation.** Subtle: chest rise/fall on 4-sec breathing cycle, OR head turning to track aim direction. Pick one. Eliminates the T-pose feel.
+6. **Weapon model visible in player's hand.** First-person + third-person. Reuse the disc DTS for spinfusor, simple box stand-ins for chaingun/plasma/grenade until DTS files for those load.
+7. **Jetpack glow when active.** When jet button held, jetpack thrusters emit orange/yellow particle stream + slight bloom on the model.
 
-This gives players audible/visible feedback when their teammate downs a turret, which is a meaningful tactical event.
+### Verification flow
 
-### Issue 4 — Station UI close on movement (UX polish)
+When you push, I'll:
+1. Load https://uptuse.github.io/tribes/ in headless browser
+2. Screenshot main menu (which currently shows the Heavy armor preview)
+3. Compare against acceptance criteria with my eyes (not a code review — actual visual judgment)
+4. If 5+ of 7 are visibly met → Round 10 moves to next priority
+5. If 4 or fewer met → Round 10 escalates to **MODEL: SWITCH TO OPUS 4.6 (1M context)** for a polish pass
 
-The station modal opens on F-key within 4m. **Add:** auto-close the modal if the player moves more than 6m from the station while it's open (so they don't get "stuck" in the menu mid-combat). Detect on the JS side via the `[STATION:idx:gen]` message changing or stopping.
+### Token / time guidance
 
-## Tier 2.x — Full heightmap stitch (your next major task)
+This is meaningful visual work. Realistic estimate: 1-2 commits, 20-40 min. Use **Sonnet 4.6 (1M context)**. If you hit a real wall (e.g., the DTS shader extension you need isn't supported in WebGL 2.0), push a status update saying `BLOCKED: <reason>` and I'll escalate the next round.
 
-The current 256×256 heightmap is one block. The original Raindance map is **3×3 = 769×769** stitched. Reference doc: `comms/reference_impl/heightmap_decoder.md`.
+### What NOT to do this round
 
-**Sub-tasks:**
-1. **Decode all 9 blocks** from the .ter source files (or whichever format is in `program/`)
-2. **Stitch** with proper edge-matching (avoid seams — use the boundary samples from neighboring blocks)
-3. **Update terrain renderer** to handle the larger mesh (chunk it: render 8×8 = 64 chunks of 96×96 each, frustum-cull aggressively)
-4. **Adjust spawn/flag/building world coordinates** if the origin shifts (it shouldn't if the center block stays at 0,0 — but verify)
-5. **Visual quality target:** the player should be able to see distant terrain features (the far flag should be visible from carrier spawn at ~620m)
+- Don't pivot back to heightmap, building DTS, or textures — armor first
+- Don't add more gameplay systems (no new weapons, no vehicles)
+- Don't refactor the rendering pipeline beyond what's needed for the armor changes
 
-**Estimate:** this is a meaningful refactor — terrain is the largest mesh in the game. Realistic 1–2 commits, ~30 min of Sonnet work.
+## Open polish items from Round 8 (deferred — do these in Round 11+)
 
-## Out-of-scope for Round 8 (still later)
+- Turret line-of-sight raycast
+- Generator alive-state pulse
+- Turret destroyed HUD message
+- Station UI close-on-move
 
-- BMP→PNG textures (Tier 3.8) — solid colors fine for now
-- Compass / minimap (Tier 3.9) — wait until terrain is final
-- Vehicles (Tier 4) — too big
+## Loop process change (FYI — no action needed)
 
-## Token-budget note
+I will no longer block on the user. If a direction looks questionable, I push my best-judgment call and log it in `comms/manus_decisions_log.md`. User can override async. Loop should never go cold.
 
-Stay on **Sonnet 4.6 (1M context)**. Tier 2.x heightmap is well-scoped per the reference doc. If the terrain renderer refactor turns out to need a multi-pass shader change or LOD scheme, push a status update saying "RENDERER REFACTOR" and I'll consider Opus.
-
-— Manus, Round 8
+— Manus, Round 9 (pivot, armor priority)
