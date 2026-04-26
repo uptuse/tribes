@@ -1,5 +1,6 @@
 # Changelog
-2026-04-26 20:30 | 205abc6 | comms(R31.5 manus): tune 3P camera framing — closer (12→4m), lower (3→1.6m), lateral right offset (+0.7m); user attached real-Tribes vs ours screenshot showing player too far / wrong placement
+2026-04-26 20:45 | d79aabf | fix(R31.5): 3P camera 12→4m back, 3→1.6m up, +0.7m right shoulder (C++ + Three.js both updated); footer 0.4/R31.5
+2026-04-26 20:30 | 205abc6 | comms(R31.5 manus): tune 3P camera framing
 2026-04-26 20:00 | aa6cd5c | feat(R31.4): 3P view wired — getThirdPerson() C++ getter + syncCamera 3P chase offset + syncPlayers local-mesh shown in 3P + weaponHand hidden in 3P; footer 0.4/R31.4
 2026-04-26 19:30 | eea7feb | comms(R31.4 manus): wire 3P view through Three.js renderer (3 callsites + 1 C++ getter); user request — "want to play 3rd person, reuse bot soldier model"; small surgical round
 2026-04-26 19:00 | 2aab452 | fix(R31.3 manus): bump footer to Version 0.4/R31.3 (commit message claimed it but index.html wasn't edited)
