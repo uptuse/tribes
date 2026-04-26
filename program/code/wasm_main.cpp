@@ -392,7 +392,7 @@ struct Building {
     bool isRock;
 };
 
-static const int MAX_BUILDINGS = 64;
+static const int MAX_BUILDINGS = 256;   // R32.1.2: was 64; 46 base + 32 interior-shape AABBs + ~12 R32.3 static_shapes ≈ 90; 256 gives headroom. 256×36B=9KB, negligible.
 static Building buildings[MAX_BUILDINGS];
 static int numBuildings = 0;
 

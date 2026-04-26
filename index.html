@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.1.1b</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.1.2</div>
     </div>
   </div>
 
@@ -875,11 +875,10 @@
           </div>
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Team Size</div>
           <div style="margin:6px 0;">
-            <button class="btn-small btn-selected" id="size-0" onclick="setBotCount(0)">Solo</button>
-            <button class="btn-small" id="size-2" onclick="setBotCount(2)">2v2</button>
-            <button class="btn-small" id="size-4" onclick="setBotCount(4)">4v4</button>
-            <button class="btn-small" id="size-6" onclick="setBotCount(6)">6v6</button>
-            <button class="btn-small" id="size-8" onclick="setBotCount(8)">8v8</button>
+            <button class="btn-small" onclick="setBotCount(2)">2v2</button>
+            <button class="btn-small btn-selected" id="size-4" onclick="setBotCount(4)">4v4</button>
+            <button class="btn-small" onclick="setBotCount(6)">6v6</button>
+            <button class="btn-small" onclick="setBotCount(8)">8v8</button>
           </div>
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Score Limit</div>
           <div style="margin:6px 0;">
@@ -1253,7 +1252,7 @@
 
   <script>
     var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
-    var gameSettings={botCount:0,scoreLimit:5,timeLimit:600}; // R32.1.1b: bots default to 0 (Solo) for playtest; player can opt back into 2v2/4v4/6v6/8v8
+    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
 
     function showScreen(id){
       document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
@@ -1279,14 +1278,7 @@
         if (n >= 0 && n <= 2) setTimeout(function(){ selectArmor(n); }, 0);
       }
     } catch (e) {}
-    function setBotCount(n){
-      gameSettings.botCount=n;
-      // Visual selection swap on Team Size buttons
-      ['size-0','size-2','size-4','size-6','size-8'].forEach(function(id){
-        var b=document.getElementById(id); if(b) b.classList.remove('btn-selected');
-      });
-      var sel=document.getElementById('size-'+n); if(sel) sel.classList.add('btn-selected');
-    }
+    function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
     // R25: map picker — selectedMapId flows into the WS query string at lobby creation.
@@ -1364,7 +1356,7 @@
     }, 100);
     function quickStart(){
       selectedTeam=0;selectedArmor=0;
-      gameSettings={botCount:0,scoreLimit:5,timeLimit:600};
+      gameSettings={botCount:4,scoreLimit:5,timeLimit:600};
       startGame();
     }
     function toggleInvert(){
