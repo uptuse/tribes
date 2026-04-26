@@ -11,3 +11,4 @@
 2026-04-25 20:45 | 28d988f | chore(comms): comprehensive status handoff for session continuity
 2026-04-25 21:15 | pending | chore(repo): move source into tribes repo — program/code/, build.sh, BUILD.md
 2026-04-25 21:15 | pending | feat(buildings): AABB collision for 30+ mission buildings — interiors, generators, turrets, stations
+2026-04-25 20:30 | pending | review(manus): round 6 — Tier 1 closed (1.5 buildings verified), greenlight Tier 2.6 weapon visuals, blue UI bars cleanup
