@@ -1,5 +1,5 @@
 # Changelog
-2026-04-26 11:30 | (pending) | fix(R31): yaw sign fix (W was sideways) + frustumCulled=false soldiers/buildings + metalness 0.4→0.1 (black silhouettes) + weapon viewmodel std FPS pos + ground clamp th+1.8 + renderer.info multi-pass note
+2026-04-26 11:30 | 8e77a88 | fix(R31): yaw sign fix (W was sideways) + frustumCulled=false soldiers/buildings + metalness 0.4→0.1 (black silhouettes) + weapon viewmodel std FPS pos + ground clamp th+1.8
 2026-04-26 10:30 | c40eac5 | fix(R30.2 manus): visual polish — sky uniforms rebalanced, PMREM env for PBR ambient, sun at boot, weapon viewmodel rescaled, SRGBColorSpace explicit
 2026-04-26 09:50 | 6a0e97e | fix(R30.1 manus): syncCamera below-terrain frustum-cull root cause — camera fell to (0,1.7,0) before player spawn; fix: bail on invalid localIdx, initial cam (0,200,0), scene.background #9bb5d6, hemi 0.55→1.1
 2026-04-26 09:30 | cca2992 | diag(R30.0 manus): scene diagnostic dump on first frame (1 draw call/1 tri despite 39 buildings + 16 soldiers claimed) — ground truth obtained, root cause was syncCamera/local-player init
