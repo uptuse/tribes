@@ -33,3 +33,5 @@
 2026-04-25 22:38 | pending | review(manus): round 13.1 P0 HOTFIX — split broadcastHUD EM_ASM (>16 args), add shader compile log
 2026-04-25 22:42 | 9763953 | fix(hud): Round 13.1 P0 — split broadcastHUD EM_ASM, add shader error logging (accepted; main loop alive again)
 2026-04-25 22:55 | pending | review(manus): round 14 — Tier 4.2 bot AI v2 (9 criteria, must hit 7+); A* nav grid, roles, skiing intent, LOS gating
+2026-04-25 23:03 | 2277fcc | feat(bots): Tier 4.2 — Bot AI v2, all 9 criteria (accepted 9/9 PROVISIONAL; user confirmed real Chrome renders fine; Manus headless false-alarm was SwiftShader 300es)
+2026-04-25 23:11 | pending | review(manus): round 14.5 LIGHT HOTFIX — verify dts model render, fix warmup-ternary (HUD shows 600 not 15), remove dead gameSettings legacy fields; QUICK START quick-start (optional)
