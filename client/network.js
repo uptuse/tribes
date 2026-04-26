@@ -32,6 +32,10 @@ const telemetry = {
     skillRating: 1000,
     matchesPlayed: 0,
     lastRatingDelta: 0,
+    // R26: ranked-mode flag mirrored from joinAck/matchEnd. The client uses
+    // this to label the rating badge "(ranked)" vs "(casual)" and to decide
+    // whether to surface the promotion/demotion animation on match end.
+    ranked: false,
 };
 
 // 60Hz input loop
@@ -145,8 +149,10 @@ export function start() {
             // R24: capture skill rating from joinAck for main-menu display
             if (typeof msg.skillRating === 'number') telemetry.skillRating = msg.skillRating;
             if (typeof msg.matchesPlayed === 'number') telemetry.matchesPlayed = msg.matchesPlayed;
+            if (typeof msg.ranked === 'boolean')      telemetry.ranked = msg.ranked;
             if (window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({
-                rating: telemetry.skillRating, matchesPlayed: telemetry.matchesPlayed, delta: 0,
+                rating: telemetry.skillRating, matchesPlayed: telemetry.matchesPlayed,
+                delta: 0, ranked: telemetry.ranked,
             });
         } else if (msg.type === 'playerList') {
             log('roster: ' + msg.players.map(p => p.name).join(', '));
@@ -166,7 +172,10 @@ export function start() {
             log('matchEnd score=' + msg.teamScore.join('-') + ' winner=' + msg.winner);
             telemetry.inMatch = false;
             stopInputLoop();
-            // R24: pull our rating delta out of the match-end broadcast (rated matches only)
+            // R24/R26: pull our rating delta from the match-end broadcast.
+            // Casual matches won't include our row (server skips ELO update);
+            // we still propagate ranked flag so the UI can label the badge.
+            if (typeof msg.ranked === 'boolean') telemetry.ranked = msg.ranked;
             if (msg.ratings && typeof msg.ratings === 'object') {
                 const myRow = msg.ratings[myNumericId];
                 if (myRow) {
@@ -175,7 +184,7 @@ export function start() {
                     telemetry.matchesPlayed = (telemetry.matchesPlayed | 0) + 1;
                     if (window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({
                         rating: telemetry.skillRating, matchesPlayed: telemetry.matchesPlayed,
-                        delta: telemetry.lastRatingDelta,
+                        delta: telemetry.lastRatingDelta, ranked: telemetry.ranked,
                     });
                 }
             }
@@ -301,10 +310,11 @@ export function getStatus() {
         inMatch: telemetry.inMatch,
         reconciliations: prediction.stats.reconciliations,
         avgDivergence: prediction.stats.avgDivergence.toFixed(3),
-        // R24
+        // R24/R26
         skillRating: telemetry.skillRating,
         matchesPlayed: telemetry.matchesPlayed,
         lastRatingDelta: telemetry.lastRatingDelta,
+        ranked: telemetry.ranked,
     };
 }
 export function getLatestSnapshot() { return latestSnapshot; }

@@ -3,7 +3,37 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Starsiege: Tribes</title>
+  <title>Starsiege: Tribes — Browser Edition</title>
+  <!-- R26: SEO + social-share preview meta -->
+  <meta name="description" content="Starsiege: Tribes — Browser Edition. The 1998 Dynamix classic, ported to WebGL2 + WebAssembly. Skiing, jetpacks, three armor classes, capture-the-flag with bots and friends. No install.">
+  <meta name="keywords" content="Tribes, Starsiege, browser game, WebAssembly, WebGL, FPS, capture the flag, skiing, jetpack">
+  <meta name="author" content="Tribes BE community port (fan project)">
+  <link rel="canonical" href="https://uptuse.github.io/tribes/">
+  <!-- OpenGraph / Facebook / Discord -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="Starsiege: Tribes — Browser Edition">
+  <meta property="og:description" content="The 1998 classic, in your browser. Skiing, jetpacks, CTF — no install.">
+  <meta property="og:image" content="https://uptuse.github.io/tribes/og-preview.png">
+  <meta property="og:url" content="https://uptuse.github.io/tribes/">
+  <meta property="og:site_name" content="Tribes BE">
+  <!-- Twitter Card -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Starsiege: Tribes — Browser Edition">
+  <meta name="twitter:description" content="The 1998 classic, in your browser. Skiing, jetpacks, CTF — no install.">
+  <meta name="twitter:image" content="https://uptuse.github.io/tribes/og-preview.png">
+  <!-- Schema.org VideoGame -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "VideoGame",
+    "name": "Starsiege: Tribes — Browser Edition",
+    "description": "Fan port of the 1998 Dynamix classic to WebGL2 + WebAssembly.",
+    "gamePlatform": "Web Browser",
+    "applicationCategory": "Game",
+    "operatingSystem": "Any modern browser",
+    "url": "https://uptuse.github.io/tribes/"
+  }
+  </script>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700;900&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap');
     * { margin:0; padding:0; box-sizing:border-box; }
@@ -79,6 +109,21 @@
     .map-thumb { width:100%; height:64px; background:#1a1612; border:1px solid #2a2418; margin-bottom:6px; image-rendering:pixelated; }
     .map-name { font-size:0.92em; color:#E0D0A0; font-weight:bold; }
     .map-meta { font-size:0.72em; color:#7E6D55; margin-top:2px; }
+    /* R26: tier promotion/demotion pulse */
+    @keyframes tierpulse { 0% { opacity: 0; transform: translate(-50%,-50%) scale(0.7); } 30% { opacity: 1; transform: translate(-50%,-50%) scale(1.1); } 70% { opacity: 1; transform: translate(-50%,-50%) scale(1.0); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(0.95); } }
+    /* R26: map preview hover loop (animated GIF fallback per brief 6.0).
+       Pure-CSS slow pan that loops every 5s — "video-like" feel without an
+       FFmpeg pipeline. Triggered via .map-preview-pop class. */
+    @keyframes mappan { 0% { background-position: 0% 0%; } 50% { background-position: 100% 100%; } 100% { background-position: 0% 0%; } }
+    .map-preview-pop {
+      position: absolute;
+      width: 256px; height: 144px;
+      border: 2px solid #D4A030; box-shadow: 0 6px 18px rgba(0,0,0,0.7);
+      background-size: 200% 200%;
+      animation: mappan 5s ease-in-out infinite;
+      pointer-events: none; z-index: 10000;
+      image-rendering: pixelated;
+    }
 
     /* Scoreboard */
     #scoreboard { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
@@ -522,9 +567,10 @@
       </table>
       <div class="me-btns">
         <button class="btn" onclick="playAgain()">Play Again</button>
-        <!-- R25: replay save + watch -->
+        <!-- R25: replay save + watch ; R26 adds Share -->
         <button class="btn" id="me-savereplay" onclick="saveCurrentReplay()" style="display:none;">Save Replay</button>
         <button class="btn" id="me-watchreplay" onclick="watchCurrentReplay()" style="display:none;">Watch Replay</button>
+        <button class="btn" id="me-sharereplay" onclick="shareCurrentReplay()" style="display:none;">Share Replay</button>
         <button class="btn btn-back" onclick="toMainMenu()">Main Menu</button>
       </div>
     </div>
@@ -569,6 +615,19 @@
     </div>
   </div>
 
+  <!-- R26: PROFILE modal -->
+  <div id="profile-panel" style="display:none;position:fixed;inset:0;background:rgba(8,6,3,0.92);z-index:9996;align-items:center;justify-content:center;" onclick="if(event.target===this)closeProfile()">
+    <div class="panel" style="min-width:520px;max-width:680px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0">Profile</h3>
+        <span onclick="closeProfile()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div id="profile-body" style="font-size:0.9em;color:#C8B888;line-height:1.6;">
+        Loading…
+      </div>
+    </div>
+  </div>
+
   <!-- R20: Lobby browser modal -->
   <div id="lobby-browser" onclick="if(event.target===this)closeLobbyBrowser()">
     <div class="panel">
@@ -579,7 +638,9 @@
       <div class="lb-row head"><span>ID</span><span>Map</span><span>Players</span><span>Status</span><span></span></div>
       <div id="lb-list"><div class="lb-empty">Loading…</div></div>
       <div style="margin-top:14px;display:flex;gap:10px;">
-        <button class="btn" onclick="quickMatch()">Quick Match</button>
+        <!-- R26: split Quick Match into CASUAL + RANKED -->
+        <button class="btn" onclick="quickMatch(false)">Casual</button>
+        <button class="btn" id="ranked-btn" onclick="quickMatch(true)" title="Requires 3+ matches played">Ranked</button>
         <button class="btn" onclick="createCustomLobby()">Create Custom</button>
         <button class="btn btn-back" onclick="refreshLobbies()">↻ Refresh</button>
       </div>
@@ -608,15 +669,18 @@
     <div class="panel" style="min-width:420px; text-align:center; background:rgba(12,12,10,0.97);">
       <div class="tab-strip">
         <span class="tab-item active">PLAY</span>
+        <span class="tab-item" onclick="openProfile()">PROFILE</span>
         <span class="tab-item" onclick="openSettings()">OPTIONS</span>
         <span class="tab-item" onclick="showScreen('credits')">CREDITS</span>
       </div>
       <div class="subtitle">STARSIEGE</div>
       <div class="wordmark">TRIBES</div>
-      <!-- R24: skill rating display, populated by __tribesOnSkillUpdate -->
+      <!-- R24+R26: skill rating display + tier badge -->
       <div id="player-rating-row" style="margin:6px 0 14px;color:#C8B888;font-size:0.85em;letter-spacing:1px;text-transform:uppercase;">
+        <span id="player-tier-badge" style="margin-right:6px;"></span>
         <span id="player-name-line" style="color:#E0D0A0;">Player</span>
-        &middot; Rating <span id="player-rating-val" style="color:#FFE69A;font-weight:bold;">1000</span>
+        &middot; <span id="player-tier-name" style="color:#FFE69A;">Silver</span>
+        <span id="player-rating-val" style="color:#FFE69A;font-weight:bold;">1000</span>
         <span id="player-rating-delta" style="margin-left:6px;font-weight:bold;"></span>
         <span id="player-rating-count" style="margin-left:6px;color:#7E6D55;font-size:0.85em;">(0 matches)</span>
       </div>
@@ -627,7 +691,8 @@
         <div class="menu-item" onclick="inviteFriends()">INVITE FRIENDS</div>
         <div class="menu-item" onclick="quickStart()">QUICK START</div>
         <!-- R25 -->
-        <div class="menu-item" onclick="document.getElementById('replay-file-input').click()">WATCH REPLAY</div>
+        <div class="menu-item" onclick="document.getElementById('replay-file-input').click()">WATCH REPLAY (FILE)</div>
+        <div class="menu-item" onclick="watchReplayFromPaste()">WATCH REPLAY (URL)</div>
         <div class="menu-item" onclick="openMapEditor()">MAP EDITOR</div>
         <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
@@ -991,7 +1056,18 @@
     function selectArmor(a){
       selectedArmor=a;
       for(var i=0;i<3;i++)document.getElementById('armor-'+i).classList.toggle('selected',i===a);
+      // R26 fix #4: persist class selection so it survives reload (and gets
+      // wiped by SETTINGS RESET, which clears all tribes:* keys).
+      try { localStorage.setItem('tribes:classId', String(a)); } catch (e) {}
     }
+    // Restore persisted class on load
+    try {
+      var _savedClass = localStorage.getItem('tribes:classId');
+      if (_savedClass != null) {
+        var n = parseInt(_savedClass, 10);
+        if (n >= 0 && n <= 2) setTimeout(function(){ selectArmor(n); }, 0);
+      }
+    } catch (e) {}
     function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
@@ -1227,6 +1303,25 @@
     };
 
     var FLAG_POS=[ [-221.8,-21.8], [-379.1,-640.8] ]; // world x,z for Red, Blue flags
+    // R26 fix #1: drive the compass from a per-frame poll of the local player
+    // state (prediction-based, no network round-trip) so it never stutters.
+    // Falls back to the latest HUD-broadcast values when WASM exports aren't
+    // ready yet.
+    var _lastCompassPx = 0, _lastCompassPz = 0, _lastCompassYaw = 0;
+    setInterval(function(){
+      try {
+        if (window.Module && Module._getPlayerStatePtr && Module.HEAPF32) {
+          var ptr = Module._getPlayerStatePtr();
+          var stride = Module._getPlayerStateStride();
+          var idx = Module._getLocalPlayerIdx();
+          if (idx >= 0) {
+            var view = new Float32Array(Module.HEAPF32.buffer, ptr + idx * stride * 4, stride);
+            _lastCompassPx = view[0]; _lastCompassPz = view[2]; _lastCompassYaw = view[4];
+            updateCompass(_lastCompassPx, _lastCompassPz, _lastCompassYaw);
+          }
+        }
+      } catch (e) {}
+    }, 33);  // ~30Hz, much smoother than per-tick HUD broadcast
     function updateCompass(px,pz,yaw){
       var track=document.getElementById('compass-track');if(!track)return;
       var W=380,H=28,half=W/2;
@@ -1386,7 +1481,13 @@
       sbRows.forEach(function(r){
         var tr=document.createElement('tr');
         var col=r.team===0?'me-red':'me-blue';
-        tr.innerHTML='<td class="'+col+'">'+r.name+'</td>'
+        // R26: tier badge in front of name
+        var badge = '';
+        if (window.__tiers && window.__tribesPlayerRoster) {
+          var ros = window.__tribesPlayerRoster.find(function(p){ return p.name === r.name; });
+          if (ros && typeof ros.rating === 'number') badge = window.__tiers.tierBadgeSvg(window.__tiers.tierForRating(ros.rating), 14) + ' ';
+        }
+        tr.innerHTML='<td class="'+col+'">'+badge+r.name+'</td>'
           +'<td class="'+col+'">'+(r.team===0?'Blood Eagle':'Diamond Sword')+'</td>'
           +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td>';
         tbody.appendChild(tr);
@@ -1426,6 +1527,77 @@
       }
     }
 
+    // R26: PROFILE tab
+    function openProfile(){
+      var p = document.getElementById('profile-panel');
+      if (p) p.style.display = 'flex';
+      renderProfile();
+    }
+    function closeProfile(){ var p = document.getElementById('profile-panel'); if (p) p.style.display = 'none'; }
+    function renderProfile(){
+      var body = document.getElementById('profile-body');
+      if (!body) return;
+      var uuid = '';
+      try { uuid = localStorage.getItem('tribes_player_uuid') || ''; } catch (e) {}
+      var name = '';
+      try { name = (JSON.parse(localStorage.getItem('tribes:settings') || '{}').playerName) || ''; } catch (e) {}
+      var rating = 1000, matchesPlayed = 0, ranked = false;
+      if (window.__tribesNet && window.__tribesNet.getStatus){
+        var s = window.__tribesNet.getStatus();
+        rating = s.skillRating; matchesPlayed = s.matchesPlayed; ranked = s.ranked;
+      }
+      var tier = window.__tiers ? window.__tiers.tierForRating(rating) : { name: 'Silver', color: '#B0B0B8' };
+      var badgeSvg = window.__tiers ? window.__tiers.tierBadgeSvg(tier, 32) : '';
+      // Try to fetch live stats from server (best-effort, falls back to local)
+      var html = ''
+        + '<div style="display:flex;align-items:center;gap:14px;margin-bottom:14px;padding:10px;background:rgba(20,16,10,0.7);border:1px solid #3A3020;">'
+        +   '<div>'+ badgeSvg +'</div>'
+        +   '<div>'
+        +     '<div style="font-size:1.2em;color:#E0D0A0;">'+ (name || 'Unnamed Player') +'</div>'
+        +     '<div style="font-size:0.78em;color:#7E6D55;">UUID: '+ (uuid ? uuid.slice(0, 12) + '…' : '(none yet)') +'</div>'
+        +     '<div style="margin-top:4px;">'
+        +       '<span style="color:'+ tier.color +'">'+ tier.name +'</span> · '
+        +       '<b>'+ rating +'</b> rating · '
+        +       matchesPlayed +' matches ('+ (ranked ? 'last: ranked' : 'last: casual') +')'
+        +     '</div>'
+        +   '</div>'
+        + '</div>'
+        + '<h4 style="color:#D4A030;letter-spacing:2px;font-size:0.78em;margin:10px 0 4px;">RECENT MATCHES</h4>'
+        + '<div id="profile-recent">Loading…</div>';
+      body.innerHTML = html;
+      var orig = getServerOrigin();
+      fetch(orig + '/player-stats?uuid=' + encodeURIComponent(uuid))
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          var rec = document.getElementById('profile-recent');
+          if (!rec) return;
+          if (!data.recentMatches || data.recentMatches.length === 0){
+            rec.innerHTML = '<div style="color:#7A6A4A;font-style:italic;">No completed matches yet — play one to see it here.</div>';
+            return;
+          }
+          rec.innerHTML = data.recentMatches.map(function(m){
+            var winColor = m.winnerTeam === 0 ? '#C8302C' : (m.winnerTeam === 1 ? '#2C5AC8' : '#D4A030');
+            var winLabel = m.winnerTeam === 0 ? 'Blood Eagle' : (m.winnerTeam === 1 ? 'Diamond Sword' : 'Draw');
+            var hasReplay = (data.replays || []).indexOf(m.matchId) !== -1;
+            var replayBtn = hasReplay
+              ? '<button class="btn-small" onclick="window.__replay && window.__replay.openFromUrl(\''+ orig +'/replay?matchId='+ encodeURIComponent(m.matchId) +'\')">Watch Replay</button>'
+              : '';
+            return '<div style="padding:8px;border:1px solid #3A3020;background:rgba(20,16,10,0.5);margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;">'
+              +    '<div>'
+              +      '<b>'+ m.matchId +'</b> &middot; '
+              +      '<span style="color:'+ winColor +'">'+ winLabel +' won</span> &middot; '
+              +      m.peakPlayers +' peak players &middot; '
+              +      m.totalKills +' kills'
+              +    '</div>'
+              +    '<div>'+ replayBtn +'</div>'
+              +  '</div>';
+          }).join('');
+        }).catch(function(e){
+          var rec = document.getElementById('profile-recent');
+          if (rec) rec.innerHTML = '<div style="color:#E04A4A;">Server unreachable: '+ e.message +'</div>';
+        });
+    }
+
     // R20: Lobby browser
     function openLobbyBrowser(){
       document.getElementById('lobby-browser').classList.add('active');
@@ -1446,13 +1618,22 @@
             var thumb = '';
             try { thumb = localStorage.getItem('tribes:thumb:' + (l.mapId || 'raindance')) || ''; } catch (e) {}
             var thumbStyle = thumb ? "background:url("+thumb+") center/cover #1a1612;" : "background:#1a1612;";
+            // R26: tier badge for the lobby's avg rating + ranked tag
+            var tierBadge = '';
+            if (window.__tiers && typeof l.avgSkillRating === 'number') {
+              var t = window.__tiers.tierForRating(l.avgSkillRating);
+              tierBadge = window.__tiers.tierBadgeSvg(t, 14) + ' ';
+            }
+            var rankedTag = l.ranked ? '<span style="color:#FF6BAB;font-size:0.75em;margin-left:4px;">RANKED</span>' : '';
+            // R26: hover-preview enlarged map (5s autopan loop, fallback per brief)
+            var thumbAttr = thumb ? thumb.replace(/"/g, '&quot;') : '';
             return '<div class="lb-row" onclick="joinLobby(\''+l.id+'\')">' +
               '<span>'+l.id+'</span>' +
               '<span style="display:inline-flex;align-items:center;gap:6px;">' +
-                '<span style="display:inline-block;width:24px;height:18px;border:1px solid #3A3020;'+thumbStyle+'"></span>' +
+                '<span class="lb-map-thumb" data-thumb="'+thumbAttr+'" data-mapid="'+l.mapId+'" onmouseenter="showMapPreview(this,event)" onmouseleave="hideMapPreview()" style="display:inline-block;width:24px;height:18px;border:1px solid #3A3020;'+thumbStyle+'"></span>' +
                 l.mapName +
               '</span>' +
-              '<span>'+l.playerCount+'/'+l.maxPlayers+'</span>' +
+              '<span>'+tierBadge+l.playerCount+'/'+l.maxPlayers+rankedTag+'</span>' +
               '<span style="color:'+(l.matchActive?'#C8302C':'#2ECC71')+'">'+(l.matchActive?'In Match':'Open')+'</span>' +
               '<span style="color:#D4A030">JOIN ▶</span>' +
             '</div>';
@@ -1466,8 +1647,44 @@
     function joinLobby(id){
       window.location.href = '?multiplayer=local&lobbyId='+encodeURIComponent(id);
     }
-    function quickMatch(){
-      window.location.href = '?multiplayer=local';
+    // R26: lobby-row hover preview — 500ms delay before pop, animated CSS pan
+    var _mapPreviewTimer = null;
+    var _mapPreviewEl = null;
+    function showMapPreview(el, evt){
+      if(_mapPreviewTimer) clearTimeout(_mapPreviewTimer);
+      _mapPreviewTimer = setTimeout(function(){
+        var thumb = el.getAttribute('data-thumb');
+        if(!thumb){
+          // Fall back to fetching + rendering on the fly
+          var mid = el.getAttribute('data-mapid');
+          if(mid && typeof renderMapThumb === 'function') renderMapThumb(mid);
+          try { thumb = localStorage.getItem('tribes:thumb:' + mid) || ''; } catch (e) {}
+          if(!thumb) return;
+        }
+        if(_mapPreviewEl) try { _mapPreviewEl.remove(); } catch(e){}
+        var rect = el.getBoundingClientRect();
+        var pop = document.createElement('div');
+        pop.className = 'map-preview-pop';
+        pop.style.left = (rect.right + 12) + 'px';
+        pop.style.top  = (rect.top - 12) + 'px';
+        pop.style.background = "url("+thumb+")";
+        pop.style.backgroundSize = '200% 200%';
+        document.body.appendChild(pop);
+        _mapPreviewEl = pop;
+      }, 500);
+    }
+    function hideMapPreview(){
+      if(_mapPreviewTimer) { clearTimeout(_mapPreviewTimer); _mapPreviewTimer = null; }
+      if(_mapPreviewEl) { try { _mapPreviewEl.remove(); } catch(e){} _mapPreviewEl = null; }
+    }
+    function quickMatch(ranked){
+      // R26: ranked requires the local matchesPlayed >= 3 sanity gate
+      if (ranked) {
+        var mp = (window.__tribesNet && window.__tribesNet.getStatus && window.__tribesNet.getStatus().matchesPlayed) || 0;
+        if (mp < 3) { alert('Ranked mode requires 3+ casual matches played first. You have ' + mp + '.'); return; }
+      }
+      var qs = '?multiplayer=local' + (ranked ? '&ranked=1' : '');
+      window.location.href = qs;
     }
     function createCustomLobby(){
       var id = '';
@@ -1495,6 +1712,25 @@
       if(window.__replay) window.__replay.openFromUrl(url);
       else alert('Replay engine not loaded.');
     }
+    // R26: upload binary replay to /replay-upload, copy share URL to clipboard
+    function shareCurrentReplay(){
+      if(!window.__lastReplayUrl){ alert('No replay available for this match.'); return; }
+      var srcUrl = getServerOrigin() + window.__lastReplayUrl;
+      fetch(srcUrl).then(function(r){ return r.arrayBuffer(); }).then(function(buf){
+        return fetch(getServerOrigin() + '/replay-upload', {
+          method: 'POST',
+          headers: { 'content-type': 'application/octet-stream' },
+          body: buf,
+        });
+      }).then(function(r){ return r.json(); }).then(function(j){
+        if(j.shareUrl){
+          if(navigator.clipboard) navigator.clipboard.writeText(j.shareUrl).catch(function(){});
+          alert('Share URL copied to clipboard:\n\n' + j.shareUrl + '\n\n(Replay link expires in 7 days.)');
+        } else {
+          alert('Share failed: ' + (j.error || 'unknown'));
+        }
+      }).catch(function(e){ alert('Share failed: ' + e.message); });
+    }
     function watchReplayFromFile(input){
       var f = input && input.files && input.files[0];
       if(!f){ return; }
@@ -1516,11 +1752,13 @@
       }
     }
     function renderMatchEndExtras(){
-      // Show save/watch buttons if a replay URL was provided
+      // Show save/watch/share buttons if a replay URL was provided
       var sb = document.getElementById('me-savereplay');
       var wb = document.getElementById('me-watchreplay');
+      var hb = document.getElementById('me-sharereplay');
       if (sb) sb.style.display = window.__lastReplayUrl ? '' : 'none';
       if (wb) wb.style.display = window.__lastReplayUrl ? '' : 'none';
+      if (hb) hb.style.display = window.__lastReplayUrl ? '' : 'none';
       // Populate map vote options
       var mv = document.getElementById('me-mapvote');
       var opts = document.getElementById('me-mapvote-opts');
@@ -1610,9 +1848,22 @@
 
     // R21: INVITE FRIENDS — generate lobby ID, copy URL to clipboard
     function inviteFriends(){
-      var id = '';
-      for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
-      var url = window.location.origin + window.location.pathname + '?multiplayer=remote&lobbyId=' + id;
+      // R26 fix #2: if we're already in a custom lobby, share THAT lobby's id;
+      // if we're in a public quick-match, just share the bare URL so the
+      // friend joins quick-match too (sane fallback).
+      var currentLobby = (window.__tribesNet && window.__tribesNet.getStatus && window.__tribesNet.getStatus().lobbyId) || null;
+      var inCustomLobby = !!new URLSearchParams(location.search).get('lobbyId');
+      var url;
+      if (inCustomLobby && currentLobby) {
+        url = window.location.origin + window.location.pathname + '?multiplayer=remote&lobbyId=' + currentLobby;
+      } else if (currentLobby) {
+        // Public quick-match: just the bare URL, the friend joins quick-match
+        url = window.location.origin + window.location.pathname + '?multiplayer=remote';
+      } else {
+        var id = '';
+        for(var i=0;i<6;i++) id += 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'.charAt(Math.floor(Math.random()*32));
+        url = window.location.origin + window.location.pathname + '?multiplayer=remote&lobbyId=' + id;
+      }
       var copied = false;
       if(navigator.clipboard && navigator.clipboard.writeText){
         navigator.clipboard.writeText(url).then(function(){
@@ -2461,6 +2712,13 @@
           .catch(function(e){ console.warn('[R25] replay.js import failed:', e); });
         import('./client/mapeditor.js').then(function(){ console.log('[R25] mapeditor.js loaded'); })
           .catch(function(e){ console.warn('[R25] mapeditor.js import failed:', e); });
+        // R26: tier helper expose for the main-menu badge + ranked overlays
+        import('./client/tiers.js').then(function(m){
+          window.__tiers = m;
+          console.log('[R26] tiers.js loaded');
+          // Trigger an initial badge render with the default rating
+          if(window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({ rating: 1000, matchesPlayed: 0, delta: 0, ranked: false });
+        }).catch(function(e){ console.warn('[R26] tiers.js import failed:', e); });
         // R16/R19: opt-in network client via ?multiplayer=local|remote URL flag
         var mp = new URLSearchParams(location.search).get('multiplayer');
         if(mp === 'local' || mp === 'remote'){
@@ -2517,7 +2775,7 @@
             })();
             // Match-start / match-end handlers
             window.__tribesOnMatchStart = function(msg){
-              addEventMsg('Match started — ' + msg.players.length + ' players');
+              addEventMsg('Match started — ' + msg.players.length + ' players' + (msg.ranked ? ' [RANKED]' : ' [CASUAL]'));
               // R25: fetch the map JSON and apply via the renderer's override hook.
               if (msg.mapId && msg.mapId !== window.__tribesActiveMapId && window.__tribesLoadMap) {
                 window.__tribesActiveMapId = msg.mapId;
@@ -2526,6 +2784,14 @@
                   .then(function(doc){ if (doc) window.__tribesLoadMap(doc); })
                   .catch(function(e){ console.warn('[R25] map fetch failed:', e); });
               }
+              // R26: stash per-player ratings so the nameplate can paint tier color
+              window.__tribesPlayerRatings = window.__tribesPlayerRatings || {};
+              for (var i = 0; i < msg.players.length; i++) {
+                var p = msg.players[i];
+                if (typeof p.rating === 'number') window.__tribesPlayerRatings[p.id] = p.rating;
+              }
+              // Also stash for the scoreboard
+              window.__tribesPlayerRoster = msg.players;
             };
             window.__tribesOnMatchEnd = function(msg){
               addEventMsg('Match ended — score ' + msg.teamScore.join('-'));
@@ -2544,20 +2810,47 @@
                 if (t) t.textContent = 'votes: ' + Object.entries(msg.tally).map(function(p){return p[0]+'='+p[1];}).join(', ') + ' (' + msg.voters + ' voters)';
               }
             });
-            // R24: skill rating updates (joinAck + matchEnd) → main-menu display
+            // R24+R26: skill rating updates (joinAck + matchEnd) → main-menu display
+            //          + tier badge + promotion/demotion animation
             window.__tribesOnSkillUpdate = function(info){
               var rv = document.getElementById('player-rating-val');
               var rd = document.getElementById('player-rating-delta');
               var rc = document.getElementById('player-rating-count');
-              if(rv) rv.textContent = (info.rating|0);
-              if(rc) rc.textContent = '(' + (info.matchesPlayed|0) + ' matches)';
+              var tb = document.getElementById('player-tier-badge');
+              var tn = document.getElementById('player-tier-name');
+              var newRating = info.rating | 0;
+              if(rv) rv.textContent = newRating;
+              if(rc) rc.textContent = '(' + (info.matchesPlayed|0) + ' matches' + (info.ranked ? ', ranked' : ', casual') + ')';
               if(rd){
                 var d = info.delta|0;
                 if(d > 0)      { rd.textContent = '+' + d; rd.style.color = '#5DD66B'; }
                 else if(d < 0) { rd.textContent = String(d); rd.style.color = '#E04A4A'; }
                 else           { rd.textContent = ''; }
               }
+              // Tier badge + promotion/demotion detection (defer to tiers.js)
+              if(window.__tiers){
+                var T = window.__tiers;
+                var newTier = T.tierForRating(newRating);
+                if(tb) tb.innerHTML = T.tierBadgeSvg(newTier, 18);
+                if(tn) { tn.textContent = newTier.name; tn.style.color = newTier.color; }
+                // Detect tier crossings on rated matches with a non-zero delta
+                var prevRating = (window.__lastRatingShown != null) ? window.__lastRatingShown : newRating;
+                if(info.delta && info.delta !== 0){
+                  var prevTier = T.tierForRating(prevRating);
+                  if(prevTier.id !== newTier.id){
+                    showTierToast(newTier, info.delta > 0);
+                  }
+                }
+                window.__lastRatingShown = newRating;
+              }
             };
+            function showTierToast(tier, promoted){
+              var t = document.createElement('div');
+              t.style.cssText = 'position:fixed;top:30%;left:50%;transform:translate(-50%,-50%);z-index:9997;background:rgba(20,16,10,0.95);color:'+tier.color+';border:2px solid '+tier.color+';padding:18px 32px;font-family:Cinzel,serif;font-size:1.4em;letter-spacing:2px;text-transform:uppercase;animation:tierpulse 2s ease-out;';
+              t.innerHTML = (promoted ? 'Promoted to ' : 'Demoted to ') + tier.name;
+              document.body.appendChild(t);
+              setTimeout(function(){ try { t.remove(); } catch(e) {} }, 2500);
+            }
             // Bandwidth telemetry overlay + R24 connection-quality bar updater
             setInterval(function(){
               var bw = document.getElementById('bw-telemetry');

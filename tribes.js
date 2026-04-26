@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpd0v5gsnf.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcvwb2yqk.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -205,21 +205,21 @@ Module['FS_createPath']("/assets", "tribes", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpd0v5gsnf.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsss0k4hb.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpcvwb2yqk.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpos7vfi4e.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsss0k4hb.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpso0cfs8v.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpos7vfi4e.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpwt1yxi7_.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpso0cfs8v.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpwt1yxi7_.js
 
 
 var arguments_ = [];
@@ -423,10 +423,6 @@ function assert(condition, text) {
 
 // We used to include malloc/free by default in the past. Show a helpful error in
 // builds with assertions.
-function _free() {
-  // Show a helpful error since we used to include free by default in the past.
-  abort('free() called but not included in the build - add `_free` to EXPORTED_FUNCTIONS');
-}
 
 /**
  * Indicates whether filename is delivered via file protocol (as opposed to http/https)
@@ -6437,21 +6433,21 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  348236: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 348309: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 348379: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 348426: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348473: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348525: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 348583: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 348641: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 348690: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348742: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348791: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 348850: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
- 348909: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 348959: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349048: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348348: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348421: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348491: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 348538: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348585: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348637: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 348695: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 348753: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 348802: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348854: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348903: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 348962: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349021: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349071: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349160: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
@@ -6459,6 +6455,7 @@ var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings
 var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
 var _updateScoreboard = Module['_updateScoreboard'] = makeInvalidEarlyAccess('_updateScoreboard');
 var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
+var _setMapBuildings = Module['_setMapBuildings'] = makeInvalidEarlyAccess('_setMapBuildings');
 var _setLocalPlayerNetCorrection = Module['_setLocalPlayerNetCorrection'] = makeInvalidEarlyAccess('_setLocalPlayerNetCorrection');
 var _getPlayerStatePtr = Module['_getPlayerStatePtr'] = makeInvalidEarlyAccess('_getPlayerStatePtr');
 var _getPlayerStateCount = Module['_getPlayerStateCount'] = makeInvalidEarlyAccess('_getPlayerStateCount');
@@ -6487,7 +6484,8 @@ var _setRenderMode = Module['_setRenderMode'] = makeInvalidEarlyAccess('_setRend
 var _tick = Module['_tick'] = makeInvalidEarlyAccess('_tick');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
 var _fflush = makeInvalidEarlyAccess('_fflush');
-var _malloc = makeInvalidEarlyAccess('_malloc');
+var _free = Module['_free'] = makeInvalidEarlyAccess('_free');
+var _malloc = Module['_malloc'] = makeInvalidEarlyAccess('_malloc');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
 var _emscripten_stack_get_base = makeInvalidEarlyAccess('_emscripten_stack_get_base');
 var _strerror = makeInvalidEarlyAccess('_strerror');
@@ -6506,6 +6504,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
   assert(typeof wasmExports['updateScoreboard'] != 'undefined', 'missing Wasm export: updateScoreboard');
   assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
+  assert(typeof wasmExports['setMapBuildings'] != 'undefined', 'missing Wasm export: setMapBuildings');
   assert(typeof wasmExports['setLocalPlayerNetCorrection'] != 'undefined', 'missing Wasm export: setLocalPlayerNetCorrection');
   assert(typeof wasmExports['getPlayerStatePtr'] != 'undefined', 'missing Wasm export: getPlayerStatePtr');
   assert(typeof wasmExports['getPlayerStateCount'] != 'undefined', 'missing Wasm export: getPlayerStateCount');
@@ -6534,6 +6533,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['tick'] != 'undefined', 'missing Wasm export: tick');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
+  assert(typeof wasmExports['free'] != 'undefined', 'missing Wasm export: free');
   assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
   assert(typeof wasmExports['emscripten_stack_get_base'] != 'undefined', 'missing Wasm export: emscripten_stack_get_base');
@@ -6549,6 +6549,7 @@ function assignWasmExports(wasmExports) {
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
   _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
+  _setMapBuildings = Module['_setMapBuildings'] = createExportWrapper('setMapBuildings', 2);
   _setLocalPlayerNetCorrection = Module['_setLocalPlayerNetCorrection'] = createExportWrapper('setLocalPlayerNetCorrection', 5);
   _getPlayerStatePtr = Module['_getPlayerStatePtr'] = createExportWrapper('getPlayerStatePtr', 0);
   _getPlayerStateCount = Module['_getPlayerStateCount'] = createExportWrapper('getPlayerStateCount', 0);
@@ -6577,7 +6578,8 @@ function assignWasmExports(wasmExports) {
   _tick = Module['_tick'] = createExportWrapper('tick', 0);
   _main = Module['_main'] = createExportWrapper('main', 2);
   _fflush = createExportWrapper('fflush', 1);
-  _malloc = createExportWrapper('malloc', 1);
+  _free = Module['_free'] = createExportWrapper('free', 1);
+  _malloc = Module['_malloc'] = createExportWrapper('malloc', 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];
   _emscripten_stack_get_base = wasmExports['emscripten_stack_get_base'];
   _strerror = createExportWrapper('strerror', 1);

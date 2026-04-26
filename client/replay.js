@@ -189,12 +189,35 @@ function renderTimelineMarkers() {
     const tl = document.getElementById('replay-timeline-markers');
     if (!tl || !_state) return;
     const total = _state.snaps.length;
-    const marks = (_state.meta.killEvents || []).map(k => {
-        const tickIdx = Math.round(k.tick / Math.max(1, _state.meta.snapshotHz || 10) * (_state.meta.snapshotHz || 10));
-        const idx = Math.min(total - 1, Math.max(0, Math.round(k.tick / 3)));   // sim tick → snapshot index, ~30Hz/10Hz
+    const tlW = tl.clientWidth || 800;
+    // R26 fix #5: cluster kill markers within 5px of each other to avoid
+    // unreadable overlap on dense fights. The cluster carries a count badge.
+    const points = (_state.meta.killEvents || []).map(k => {
+        const idx = Math.min(total - 1, Math.max(0, Math.round(k.tick / 3)));
         const pct = (idx / Math.max(1, total - 1)) * 100;
-        const color = k.killerTeam === 0 ? '#C8302C' : '#2C5AC8';
-        return `<div class="rep-mark" style="left:${pct.toFixed(2)}%;background:${color};" title="kill: ${k.killer}→${k.victim} (wpn ${k.weapon}) @ tick ${k.tick}" onclick="window.__replay && window.__replay.seek(${idx})"></div>`;
+        return { idx, pct, killerTeam: k.killerTeam, k };
+    }).sort((a, b) => a.pct - b.pct);
+    const clusters = [];
+    for (const p of points) {
+        const last = clusters[clusters.length - 1];
+        // 5px threshold expressed as percentage of timeline width
+        const threshPct = (5 / tlW) * 100;
+        if (last && Math.abs(p.pct - last.pct) <= threshPct) {
+            last.count++;
+            last.kills.push(p.k);
+            // Mixed-team clusters get neutral marker
+            if (last.killerTeam !== p.killerTeam) last.killerTeam = -1;
+        } else {
+            clusters.push({ idx: p.idx, pct: p.pct, killerTeam: p.killerTeam, count: 1, kills: [p.k] });
+        }
+    }
+    const marks = clusters.map(c => {
+        const color = c.killerTeam === 0 ? '#C8302C' : c.killerTeam === 1 ? '#2C5AC8' : '#D4A030';
+        const badge = c.count > 1 ? `<span style="position:absolute;top:-8px;left:50%;transform:translateX(-50%);background:${color};color:#000;font-size:9px;padding:0 3px;border-radius:6px;">${c.count}</span>` : '';
+        const titleText = c.count > 1
+            ? `${c.count} kills near tick ${c.kills[0].tick}`
+            : `kill: ${c.kills[0].killer}→${c.kills[0].victim} (wpn ${c.kills[0].weapon}) @ tick ${c.kills[0].tick}`;
+        return `<div class="rep-mark" style="position:absolute;left:${c.pct.toFixed(2)}%;width:${c.count > 1 ? 6 : 3}px;height:8px;background:${color};border:1px solid #000;cursor:pointer;" title="${titleText}" onclick="window.__replay && window.__replay.seek(${c.idx})">${badge}</div>`;
     });
     tl.innerHTML = marks.join('');
 }

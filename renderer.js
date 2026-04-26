@@ -635,13 +635,30 @@ function initPlayers() {
 const nameplateSprites = []; // index = player slot, value = THREE.Sprite or null
 const nameplateLastName = []; // cache of last rendered name to avoid texture rebuild
 
-function makeNameplateTexture(name, teamColor) {
+// R26: tier color lookup mirrors client/tiers.js (kept inline so renderer
+// has no module dependency cycle). If __tribesPlayerRatings has the slot's
+// rating, we paint a colored stripe on the left of the nameplate.
+const _RENDERER_TIERS = [
+    { min: 0,    color: '#A87040' }, { min: 1000, color: '#B0B0B8' },
+    { min: 1200, color: '#D4A030' }, { min: 1400, color: '#5DD6E0' },
+    { min: 1600, color: '#9B6BFF' }, { min: 1800, color: '#FF6BAB' },
+];
+function _tierColorForRating(r) {
+    for (let i = _RENDERER_TIERS.length - 1; i >= 0; i--) if (r >= _RENDERER_TIERS[i].min) return _RENDERER_TIERS[i].color;
+    return _RENDERER_TIERS[0].color;
+}
+
+function makeNameplateTexture(name, teamColor, tierColor) {
     const w = 256, h = 64;
     const c = document.createElement('canvas');
     c.width = w; c.height = h;
     const ctx = c.getContext('2d');
     ctx.fillStyle = 'rgba(8,6,3,0.55)';
     ctx.fillRect(0, 0, w, h);
+    if (tierColor) {
+        ctx.fillStyle = tierColor;
+        ctx.fillRect(0, 0, 8, h);
+    }
     ctx.font = 'bold 32px "Barlow Condensed", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
@@ -654,14 +671,19 @@ function makeNameplateTexture(name, teamColor) {
 }
 
 function ensureNameplate(slot, name, team) {
-    if (nameplateLastName[slot] === name && nameplateSprites[slot]) return nameplateSprites[slot];
+    // R26: invalidate cache when the rating-derived tier color changes
+    const ratings = window.__tribesPlayerRatings || {};
+    const rating = ratings[slot];
+    const tierColor = (typeof rating === 'number') ? _tierColorForRating(rating) : null;
+    const cacheKey = name + '|' + (tierColor || '');
+    if (nameplateLastName[slot] === cacheKey && nameplateSprites[slot]) return nameplateSprites[slot];
     if (nameplateSprites[slot]) {
         scene.remove(nameplateSprites[slot]);
         nameplateSprites[slot].material.map.dispose();
         nameplateSprites[slot].material.dispose();
     }
     const teamColorHex = team === 0 ? '#FFCDCD' : team === 1 ? '#CDD8FF' : '#E8DCB8';
-    const tex = makeNameplateTexture(name, teamColorHex);
+    const tex = makeNameplateTexture(name, teamColorHex, tierColor);
     const mat = new THREE.SpriteMaterial({
         map: tex, transparent: true, depthWrite: false,
         depthTest: true, sizeAttenuation: true,
@@ -670,7 +692,7 @@ function ensureNameplate(slot, name, team) {
     sprite.scale.set(2.0, 0.5, 1);
     scene.add(sprite);
     nameplateSprites[slot] = sprite;
-    nameplateLastName[slot] = name;
+    nameplateLastName[slot] = cacheKey;
     return sprite;
 }
 
@@ -1199,9 +1221,11 @@ export function loadMap(doc) {
     if (Array.isArray(doc.structures)) {
         for (const entry of buildingMeshes) scene.remove(entry.mesh);
         buildingMeshes.length = 0;
+        // R26: also push AABBs into C++ collision space
+        const collidables = [];
         for (const s of doc.structures) {
             const type = s.type | 0;
-            if (type === 5) continue;            // rocks (visual filler)
+            if (type === 5) continue;            // rocks (visual filler, no collision)
             const hx = s.halfSize?.[0] ?? 3, hy = s.halfSize?.[1] ?? 3, hz = s.halfSize?.[2] ?? 3;
             const cr = s.color?.[0] ?? 0.4,    cg = s.color?.[1] ?? 0.4,    cb = s.color?.[2] ?? 0.4;
             const mesh = createBuildingMesh(type, [hx, hy, hz], [cr, cg, cb]);
@@ -1209,8 +1233,25 @@ export function loadMap(doc) {
             if (typeof s.rot === 'number') mesh.rotation.y = s.rot * Math.PI / 180;
             scene.add(mesh);
             buildingMeshes.push({ mesh, type });
+            // [minX, minY, minZ, maxX, maxY, maxZ]
+            collidables.push(
+                s.pos[0] - hx, s.pos[1] - hy, s.pos[2] - hz,
+                s.pos[0] + hx, s.pos[1] + hy, s.pos[2] + hz,
+            );
         }
         console.log('[R25] rebuilt', buildingMeshes.length, 'structures from map JSON');
+        // R26: push AABBs to WASM so collision detection picks up custom maps
+        if (window.Module && Module._setMapBuildings && Module._malloc && Module.HEAPF32) {
+            const count = (collidables.length / 6) | 0;
+            const bytes = collidables.length * 4;
+            const ptr = Module._malloc(bytes);
+            if (ptr) {
+                Module.HEAPF32.set(collidables, ptr / 4);
+                Module._setMapBuildings(count, ptr);
+                Module._free(ptr);
+                console.log('[R26] pushed', count, 'AABBs to C++ for collision');
+            }
+        }
     }
 
     // Update atmosphere

@@ -1586,6 +1586,32 @@ extern "C" void applyLoadout(int armor,int weapon,int pack){
 // snapshot diverges from the predicted local-player state. Smooth
 // correction is the JS layer's job (200ms interpolation per architecture
 // §7); this function just sets the authoritative target.
+// R26: replace `buildings[]` with map-driven AABBs. Packed format per brief:
+//   6 floats per building = [minX, minY, minZ, maxX, maxY, maxZ].
+// Caps at MAX_BUILDINGS (64) — silently truncates with a printf warning.
+// Both resolvePlayerBuildingCollision() and projectileHitsBuilding() iterate
+// buildings[] so collision automatically picks up the new geometry.
+extern "C" void setMapBuildings(int count, float* aabbData){
+    if(count > MAX_BUILDINGS){
+        printf("[R26] setMapBuildings: count=%d exceeds MAX_BUILDINGS=%d, truncating\n", count, MAX_BUILDINGS);
+        count = MAX_BUILDINGS;
+    }
+    if(count < 0) count = 0;
+    numBuildings = count;
+    for(int i = 0; i < count; i++){
+        float minX = aabbData[i*6 + 0], minY = aabbData[i*6 + 1], minZ = aabbData[i*6 + 2];
+        float maxX = aabbData[i*6 + 3], maxY = aabbData[i*6 + 4], maxZ = aabbData[i*6 + 5];
+        float cx = (minX + maxX) * 0.5f;
+        float cy = (minY + maxY) * 0.5f;
+        float cz = (minZ + maxZ) * 0.5f;
+        float hx = (maxX - minX) * 0.5f;
+        float hy = (maxY - minY) * 0.5f;
+        float hz = (maxZ - minZ) * 0.5f;
+        buildings[i] = {{cx, cy, cz}, {hx, hy, hz}, 0.40f, 0.38f, 0.34f, false};
+    }
+    printf("[R26] setMapBuildings: %d AABBs installed\n", count);
+}
+
 extern "C" void setLocalPlayerNetCorrection(float x, float y, float z, float yaw, float pitch){
     Player&me=players[localPlayer];
     me.pos.x = x; me.pos.y = y; me.pos.z = z;

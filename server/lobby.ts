@@ -24,6 +24,7 @@ import { decodeInput } from './wire.ts';
 import { AntiCheat } from './anticheat.ts';
 import { TICK_HZ, SNAPSHOT_HZ, DELTA_HZ, MATCH_END, MATCH_END_REMATCH_HOLD_SEC } from './constants.ts';
 import { computeRatingDeltas, isRatedMatch, defaultSkillRow, SKILL_INITIAL, type SkillRow } from './skill.ts';
+import { tierForRating, RANKED_MIN_MATCHES_PLAYED } from './tiers.ts';
 import { appendFileSync, existsSync, writeFileSync, readFileSync } from 'fs';
 
 // R25: known map ids (resolves ?map= query param to a file path)
@@ -86,6 +87,7 @@ interface LobbyState {
   createdAt: number;
   lastActivity: number;
   isPublic: boolean;             // R20: false for custom-ID lobbies
+  ranked: boolean;               // R26: true when joined via Quick Match RANKED button
   mapName: string;
   mapId: string;                 // R25: stable id from .tribes-map (filename minus extension)
   mapDoc: MapDoc | null;         // R25: cached parsed map JSON; loaded lazily on first match start
@@ -130,6 +132,29 @@ function pruneReplays() {
     if (!oldest) break;
     replayStore.delete(oldest);
   }
+}
+
+// R26: shared-replay store. POST /replay-upload assigns a 16-hex hash and
+// stores the binary under that key with a 7-day expiry timestamp. R2 setup
+// is deferred per brief 6.0 decision authority (no CF auth in this env);
+// when R27 wires R2, swap this map for the S3 SDK calls.
+interface SharedReplayEntry { bytes: Uint8Array; expiresAt: number; }
+const sharedReplayStore = new Map<string, SharedReplayEntry>();
+const SHARED_REPLAY_TTL_MS = 7 * 24 * 60 * 60 * 1000;   // 7 days (DO-fallback rotation)
+const SHARED_REPLAY_MAX = 256;
+function pruneSharedReplays() {
+  const now = Date.now();
+  for (const [k, v] of sharedReplayStore) if (v.expiresAt < now) sharedReplayStore.delete(k);
+  while (sharedReplayStore.size > SHARED_REPLAY_MAX) {
+    const oldest = sharedReplayStore.keys().next().value as string | undefined;
+    if (!oldest) break;
+    sharedReplayStore.delete(oldest);
+  }
+}
+function shareHash(): string {
+  const buf = new Uint8Array(8);
+  crypto.getRandomValues(buf);
+  return [...buf].map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
 // R25: per-lobby replay capture buffer — one entry per emitted snapshot.
@@ -186,6 +211,7 @@ function newLobby(id: string, isPublic: boolean): LobbyState {
     createdAt: Date.now(),
     lastActivity: Date.now(),
     isPublic,
+    ranked: false,
     mapName: 'Raindance',
     mapId: 'raindance',
     mapDoc: null,
@@ -204,7 +230,7 @@ function newLobby(id: string, isPublic: boolean): LobbyState {
   };
 }
 
-function findOrCreateLobby(requestedLobbyId?: string): LobbyState {
+function findOrCreateLobby(requestedLobbyId?: string, opts?: { ranked?: boolean; rating?: number }): LobbyState {
   if (requestedLobbyId) {
     // R20: explicit lobbyId means custom (private) lobby
     let lobby = lobbies.get(requestedLobbyId);
@@ -215,12 +241,36 @@ function findOrCreateLobby(requestedLobbyId?: string): LobbyState {
     }
     return lobby;
   }
+  // R26: when joining ranked, prefer lobbies whose ranked flag matches AND
+  // (best effort) whose existing avg rating tier matches the joining player's.
+  // Falls back to any open lobby if no tier-matched one is available.
+  const wantRanked = !!opts?.ranked;
+  const wantTier = opts?.rating !== undefined ? tierForRating(opts.rating).id : null;
+  let bestSameTier: LobbyState | null = null;
+  let anyOpen: LobbyState | null = null;
   for (const lobby of lobbies.values()) {
-    if (lobby.isPublic && lobby.members.size < MAX_PLAYERS_PER_LOBBY && !lobby.match) return lobby;
+    if (!lobby.isPublic || lobby.members.size >= MAX_PLAYERS_PER_LOBBY || lobby.match) continue;
+    if (lobby.ranked !== wantRanked) continue;
+    anyOpen = anyOpen || lobby;
+    if (wantTier && lobby.members.size > 0) {
+      // Compute the lobby's current avg-tier from skillStore lookups
+      let total = 0, n = 0;
+      for (const pid of lobby.members) {
+        const c = connections.get(pid);
+        const u = c && (c.ws as any).data?.uuid;
+        const row = u ? skillStore.get(u) : null;
+        if (row) { total += row.rating; n++; }
+      }
+      const avg = n > 0 ? total / n : SKILL_INITIAL;
+      if (tierForRating(avg).id === wantTier) { bestSameTier = lobby; break; }
+    }
   }
+  if (bestSameTier) return bestSameTier;
+  if (anyOpen) return anyOpen;
   const lobby = newLobby(shortId().toUpperCase(), true);
+  lobby.ranked = wantRanked;
   lobbies.set(lobby.id, lobby);
-  console.log(`[lobby] created ${lobby.id} (public)`);
+  console.log(`[lobby] created ${lobby.id} (public, ranked=${wantRanked})`);
   return lobby;
 }
 
@@ -311,8 +361,11 @@ function startMatch(lobby: LobbyState) {
     lobbyId: lobby.id,
     mapId: lobby.mapId,                  // R25
     mapName: lobby.mapName,              // R25
+    ranked: lobby.ranked,                // R26
     players: [...lobby.match.players.values()].map(p => ({
       id: p.id, name: p.name, team: p.team, armor: p.armor,
+      // R26: include rating so client can render tier badges on scoreboard + nameplate
+      rating: p.uuid ? (skillStore.get(p.uuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL,
     })),
     serverTime: Date.now(),
   });
@@ -381,8 +434,9 @@ function endMatch(lobby: LobbyState) {
   writeTelemetryRow(lobby.id, tsnap);
 
   // R24: skill rating updates (only if match qualifies as rated)
+  // R26: additionally requires the lobby to be in ranked mode (CASUAL = no rating change)
   const ratingDeltas = new Map<number, number>();
-  if (isRatedMatch(durationS, tsnap.humanCount)) {
+  if (lobby.ranked && isRatedMatch(durationS, tsnap.humanCount)) {
     const teams: { team: 0 | 1; players: { id: number; uuid: string; rating: number; matchesPlayed: number }[] }[] = [
       { team: 0, players: [] }, { team: 1, players: [] }
     ];
@@ -490,6 +544,7 @@ function endMatch(lobby: LobbyState) {
     mapId: lobby.mapId,                       // R25
     mapName: lobby.mapName,
     mapVoteOptions: lobby.mapVoteOptions,     // R25
+    ranked: lobby.ranked,                     // R26
     rematchHoldSec: MATCH_END_REMATCH_HOLD_SEC,
   });
   lobby.rematchHoldUntil = Date.now() + MATCH_END_REMATCH_HOLD_SEC * 1000;
@@ -503,8 +558,21 @@ function endMatch(lobby: LobbyState) {
 
 function checkPlayAgainVote(lobby: LobbyState) {
   if (!lobby.match) return;
-  const eligible = lobby.match.players.size;
-  if (eligible === 0) return;
+  // R26 fix #3: only count *connected* humans toward the vote quorum.
+  // Disconnected players (replaced by bots, or cleanly gone) shouldn't stall
+  // the vote at 75% just because they never sent a yes.
+  let eligible = 0;
+  for (const p of lobby.match.players.values()) {
+    if (p.isBot) continue;
+    // A player counts as connected if their numericId still appears in connections
+    let stillHere = false;
+    for (const pid of lobby.members) {
+      const conn = connections.get(pid);
+      if (conn && conn.numericId === p.id) { stillHere = true; break; }
+    }
+    if (stillHere) eligible++;
+  }
+  if (eligible === 0) eligible = 1;             // guard against div-by-zero
   const votes = lobby.rematchVotes.size;
   if (votes / eligible >= 0.75) {
     // R25: tally the map vote — winner is highest tally; ties favour current map.
@@ -595,7 +663,10 @@ const server = Bun.serve({
       // R25: map selection on lobby creation. Only honoured the first time a
       // given lobbyId is seen (subsequent joins inherit the existing lobby's map).
       const mapReq = url.searchParams.get('map') || '';
-      const ok = srv.upgrade(req, { data: { lobbyIdReq: lobbyId, uuid, mapReq } });
+      // R26: ranked-mode opt-in. Only public lobbies created via the RANKED
+      // button send ranked=1; casual matches default to ranked=false.
+      const rankedReq = url.searchParams.get('ranked') === '1';
+      const ok = srv.upgrade(req, { data: { lobbyIdReq: lobbyId, uuid, mapReq, rankedReq } });
       return ok ? undefined : new Response('Upgrade failed', { status: 400 });
     }
     if (url.pathname === '/health') {
@@ -619,6 +690,36 @@ const server = Bun.serve({
       })();
       let totalConnected = 0;
       for (const l of lobbies.values()) totalConnected += l.members.size;
+      // R26 dashboard extensions: per-map play counts (last 24h-ish, our
+      // matchHistory is ~50 entries deep so it's a rough recency window),
+      // top 10 by rating, queue depth per tier (= count of public ranked
+      // lobbies whose avg-tier matches the bucket).
+      const perMap: Record<string, number> = {};
+      for (const m of metrics.matchHistory) {
+        // matchId is also the lobbyId; we don't store mapId on the history
+        // entry directly (history is bounded). Best-effort lookup: if the
+        // lobby still exists, use its current mapId; otherwise unknown.
+        const lob = lobbies.get(m.matchId);
+        const mid = lob?.mapId || 'unknown';
+        perMap[mid] = (perMap[mid] || 0) + 1;
+      }
+      const topRated = [...skillStore.entries()]
+        .map(([uuid, row]) => ({ uuid: uuid.slice(0, 8), rating: row.rating, matches: row.matchesPlayed, tier: tierForRating(row.rating).id }))
+        .sort((a, b) => b.rating - a.rating)
+        .slice(0, 10);
+      const queueDepth: Record<string, number> = {};
+      for (const l of lobbies.values()) {
+        if (!l.isPublic || !l.ranked) continue;
+        let total = 0, n = 0;
+        for (const pid of l.members) {
+          const c = connections.get(pid);
+          const u = c && (c.ws as any).data?.uuid;
+          const row = u ? skillStore.get(u) : null;
+          if (row) { total += row.rating; n++; }
+        }
+        const t = tierForRating(n > 0 ? total / n : SKILL_INITIAL).id;
+        queueDepth[t] = (queueDepth[t] || 0) + l.members.size;
+      }
       return new Response(JSON.stringify({
         uptimeS: (Date.now() - metrics.serverStartedMs) / 1000,
         activeMatches: [...lobbies.values()].filter(l => !!l.match).length,
@@ -631,6 +732,10 @@ const server = Bun.serve({
         tickMsP95,
         slowTickCount: metrics.slowTicks.length,
         recentMatches: metrics.matchHistory.slice(-5).reverse(),
+        // R26: new metrics
+        perMapPlayCounts: perMap,
+        topRated,
+        rankedQueueDepth: queueDepth,
       }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
     }
     if (url.pathname === '/dashboard') {
@@ -657,6 +762,7 @@ const server = Bun.serve({
             mapId: l.mapId,                  // R25: stable id for client routing/thumbnails
             mapName: l.mapName,
             isPublic: l.isPublic,
+            ranked: l.ranked,                // R26
             matchActive: !!l.match,
             createdAt: l.createdAt,
             avgSkillRating,
@@ -715,6 +821,32 @@ const server = Bun.serve({
         return new Response('?', { status: 400 });
       }).catch(() => new Response('bad json', { status: 400 }));
     }
+    // R26: per-player aggregate stats from the telemetry CSV + skillStore.
+    // Returns lifetime totals so the PROFILE tab can render without a heavy
+    // client-side aggregation. Uses uuid as the lookup key.
+    if (url.pathname === '/player-stats') {
+      const uuid = url.searchParams.get('uuid') || '';
+      const row = uuid ? skillStore.get(uuid) : null;
+      // The telemetry CSV is per-match aggregate, not per-player; for R26 we
+      // surface the skillStore row + the per-conn observed stats (matches the
+      // server has in memory). Lifetime per-player K/D would require a new
+      // per-uuid table — left for R27.
+      const stats = {
+        uuid,
+        rating: row?.rating ?? SKILL_INITIAL,
+        matchesPlayed: row?.matchesPlayed ?? 0,
+        lastActiveMs: row?.lastActiveMs ?? 0,
+        tier: row ? tierForRating(row.rating).id : 'silver',
+        // Recent matches: most-recent N from metrics.matchHistory the player participated in
+        // (we can't filter by uuid without joining; surface server-wide last 5)
+        recentMatches: metrics.matchHistory.slice(-5).reverse(),
+        // Surface the share-able replay list so profile can deep-link
+        replays: [...replayStore.keys()].slice(-5).reverse(),
+      };
+      return new Response(JSON.stringify(stats), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
     // R25: serve `.tribes-map` JSON. Same-origin static fallback for the renderer.
     if (url.pathname === '/map') {
       const id = url.searchParams.get('id') || '';
@@ -749,6 +881,42 @@ const server = Bun.serve({
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
       });
     }
+    // R26: shared replay download by hash (paste-link flow)
+    if (url.pathname === '/replay-shared') {
+      const hash = url.searchParams.get('h') || '';
+      pruneSharedReplays();
+      const entry = sharedReplayStore.get(hash);
+      if (!entry) return new Response('not found or expired', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+      return new Response(entry.bytes, {
+        headers: {
+          'content-type': 'application/octet-stream',
+          'access-control-allow-origin': '*',
+          'content-disposition': `attachment; filename="shared-${hash}.tribes-replay"`,
+        },
+      });
+    }
+    // R26: shared replay upload — accepts a binary blob and returns {shareUrl}
+    if (url.pathname === '/replay-upload' && req.method === 'POST') {
+      return req.arrayBuffer().then(buf => {
+        const bytes = new Uint8Array(buf);
+        // Light validation — must start with 'TRBR' magic
+        if (bytes.length < 8 || bytes[0] !== 0x54 || bytes[1] !== 0x52 || bytes[2] !== 0x42 || bytes[3] !== 0x52) {
+          return new Response(JSON.stringify({ error: 'not a .tribes-replay file' }), { status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        if (bytes.length > 16 * 1024 * 1024) {
+          return new Response(JSON.stringify({ error: 'replay too large (>16MB)' }), { status: 413, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        pruneSharedReplays();
+        const hash = shareHash();
+        sharedReplayStore.set(hash, { bytes, expiresAt: Date.now() + SHARED_REPLAY_TTL_MS });
+        const origin = url.origin;     // server origin; client builds full URL
+        const shareUrl = `${origin}/replay-shared?h=${hash}`;
+        console.log(`[REPLAY-SHARE] uploaded ${hash} (${(bytes.length / 1024).toFixed(1)} KB)`);
+        return new Response(JSON.stringify({ shareUrl, hash, expiresAt: Date.now() + SHARED_REPLAY_TTL_MS }), {
+          headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        });
+      }).catch(e => new Response(JSON.stringify({ error: 'upload failed: ' + (e as Error).message }), { status: 500, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } }));
+    }
     return new Response('Tribes Lobby + Match Server (R20). WebSocket: /ws  Browse: /lobbies', { status: 200 });
   },
   websocket: {
@@ -757,12 +925,17 @@ const server = Bun.serve({
       const requestedLobbyId = wsData.lobbyIdReq as string | undefined;
       const incomingUuid = wsData.uuid as string;
       const requestedMap = (wsData.mapReq as string) || '';
-      const lobby = findOrCreateLobby(requestedLobbyId);
+      const requestedRanked = !!wsData.rankedReq;
+      // R26: look up the joiner's current rating to allow tier-preferred routing.
+      const joinerRow = incomingUuid ? skillStore.get(incomingUuid) : null;
+      const lobby = findOrCreateLobby(requestedLobbyId, { ranked: requestedRanked, rating: joinerRow?.rating });
       // R25: only honour ?map= if the lobby has no match yet AND no other map
       // was already chosen by an earlier connection. Default stays Raindance.
       if (requestedMap && !lobby.match && lobby.mapId === 'raindance' && requestedMap !== 'raindance') {
         setLobbyMap(lobby, requestedMap);
       }
+      // R26: only the first-joining player sets ranked mode (others inherit).
+      if (lobby.members.size === 0 && !lobby.match) lobby.ranked = requestedRanked;
 
       // R20: reconnect path — same uuid as a pending-reconnect entry?
       let reconnected = false;
@@ -821,6 +994,7 @@ const server = Bun.serve({
         reconnected,
         skillRating: row.rating,
         matchesPlayed: row.matchesPlayed,
+        ranked: lobby.ranked,                     // R26: client uses this to label the badge
       }));
       broadcastJSON(lobby, buildPlayerList(lobby));
       metrics.playersConnected++;
@@ -1011,6 +1185,17 @@ td{padding:5px 10px;border-bottom:1px solid #1f1a10}
 </style></head><body>
 <h1>TRIBES // SERVER DASHBOARD</h1>
 <div class="grid" id="cards"></div>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px;">
+  <div>
+    <h3>Per-map play counts (recent ~50)</h3>
+    <table id="permap"><tr><th>Map</th><th>Plays</th></tr></table>
+  </div>
+  <div>
+    <h3>Ranked queue depth per tier</h3>
+    <table id="queuedepth"><tr><th>Tier</th><th>Players queued</th></tr></table>
+  </div>
+</div>
+<h3>Top 10 by rating</h3><table id="toprated"><tr><th>UUID</th><th>Rating</th><th>Tier</th><th>Matches</th></tr></table>
 <h3>Recent matches</h3><table id="matches"><tr><th>Match</th><th>Duration</th><th>Peak</th><th>Kills</th><th>Winner</th></tr></table>
 <h3>Last cheat events</h3><table id="cheats"><tr><th>Time</th><th>Player</th><th>Code</th><th>Detail</th></tr></table>
 <script>
@@ -1033,6 +1218,16 @@ async function refresh(){
       (m.recentMatches||[]).map(rm => '<tr><td>'+rm.matchId+'</td><td>'+rm.durationS.toFixed(0)+'s</td><td>'+rm.peakPlayers+'</td><td>'+rm.totalKills+'</td><td>'+(rm.winnerTeam<0?'DRAW':(rm.winnerTeam===0?'RED':'BLUE'))+'</td></tr>').join('');
     document.getElementById('cheats').innerHTML = '<tr><th>Time</th><th>Player</th><th>Code</th><th>Detail</th></tr>' +
       (m.cheatEvents||[]).map(c => '<tr><td>'+new Date(c.wallTime).toLocaleTimeString()+'</td><td>'+c.playerId+'</td><td class="cheat">'+c.code+'</td><td>'+c.detail+'</td></tr>').join('');
+    // R26 dashboard extensions
+    const pm = m.perMapPlayCounts || {};
+    document.getElementById('permap').innerHTML = '<tr><th>Map</th><th>Plays</th></tr>' +
+      Object.entries(pm).sort((a,b)=>b[1]-a[1]).map(([k,v]) => '<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('');
+    const qd = m.rankedQueueDepth || {};
+    document.getElementById('queuedepth').innerHTML = '<tr><th>Tier</th><th>Players queued</th></tr>' +
+      Object.entries(qd).sort((a,b)=>b[1]-a[1]).map(([k,v]) => '<tr><td>'+k+'</td><td>'+v+'</td></tr>').join('') ||
+      '<tr><td colspan=2 style="color:#7a6a4a">No ranked queue activity</td></tr>';
+    document.getElementById('toprated').innerHTML = '<tr><th>UUID</th><th>Rating</th><th>Tier</th><th>Matches</th></tr>' +
+      (m.topRated||[]).map(t => '<tr><td>'+t.uuid+'…</td><td>'+t.rating+'</td><td>'+t.tier+'</td><td>'+t.matches+'</td></tr>').join('');
   } catch(e){ console.error(e); }
 }
 refresh(); setInterval(refresh, 2000);
