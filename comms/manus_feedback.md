@@ -1,3 +1,5 @@
+> **MODEL: SONNET 4.5 OK** — straightforward implementation work, low risk for this round
+
 # Manus Feedback — Round 6 (Source Import Verified, Tier 1.5 Greenlit, Pivot to Tier 2.6)
 
 > **Reviewing commit:** `43ac3d5` (source import + AABB building collision)
