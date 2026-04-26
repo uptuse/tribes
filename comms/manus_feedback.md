@@ -1,254 +1,168 @@
-# R29 — P0 HOTFIX: BLACK 3D CANVAS (shader precision + renderer-selection)
+# R31 — Visible playtest bugs (Claude Sonnet, please own this round)
 
-**Model:** Sonnet 4.6
-**Round type:** P0 EMERGENCY HOTFIX — block all other work until this lands
-**Estimated scope:** 60–120 min; 3 surgical patches (shaders, renderer-init, vendor Three.js)
-**Acceptance threshold:** 6/6 hard criteria (this is a P0; everything must pass)
+**Status:** Manus has been doing direct surgical edits for R29-R30.2 to unblock the black-canvas bug. We got the canvas alive and made real visual progress — but I (Manus) have hit the limit of what I can fix without your full design context on `renderer.js` and the C++ render bridge. Handing back to you.
 
----
-
-## TL;DR for Claude
-
-The game ships a **black 3D canvas** in real Chrome on Mac. R28 is otherwise fine — HUD, compass, audio, input, and the WASM core all run. **Only the 3D render is broken.** Two compounding bugs are both real and confirmed from a live console dump:
-
-1. **Legacy GLSL shaders fail to link** because `uniform vec3 uCamPos` (and likely several other shared uniforms) have **mismatched precision qualifiers** between the vertex and fragment stages. The console prints exactly:
-   ```
-   [SHADER] Link error: Precisions of uniform 'uCamPos' differ between VERTEX and FRAGMENT shaders.
-   ```
-   Followed by hundreds of `WebGL: INVALID_OPERATION: useProgram: program not valid`. Every legacy shader pair has the same defect — VS has no precision directive (defaults to `highp`), FS has `precision mediump float;` so any `uniform vec3` in the FS becomes `mediump`. Strict desktop drivers (Mac Chrome) refuse to link; SwiftShader (CI/sandbox) ALSO refused — this is reproducible on every modern WebGL2 implementation.
-
-2. **The renderer-selection logic does not actually disable the legacy renderer at boot.** `Module._setRenderMode(1)` is called inside `startGame()` (`index.html` line 1549–1554), which only fires when the user clicks **PLAY**. From page load until PLAY, `g_renderMode == 0` and the legacy render loop spams shader-link errors into the canvas. After PLAY, even if `_setRenderMode(1)` runs, there's no evidence in the console that it succeeded — `renderer.js`'s `start()` may be failing silently, or `_setRenderMode` itself may not be in the exported list. (Console line 1 says `[R17] Three.js renderer (default)` but **no Three.js init log follows** — so `renderer.js` likely never loaded or never executed `start()`.)
-
-Both must be fixed in this round. After R29, the canvas must show terrain + sky on first frame, with zero shader errors in the console.
+This brief is **honest and complete**: what's working, what I tried, what I broke, and what's still wrong. Please absorb the full picture before patching, then push **one comprehensive R31** that addresses the visible bugs the user reported during today's playtest.
 
 ---
 
-## Confirmed evidence (from user's live Chrome DevTools console, Apr 26 2026)
+## TL;DR — what user sees right now (after R30.2)
 
-```
-tribes/:3328 [R17] Three.js renderer (default). Use ?renderer=legacy to fall back.
-tribes/:3297 === Starsiege: Tribes — Browser Edition ===
-...
-tribes/:3297 [SHADER] Link error: Precisions of uniform 'uCamPos' differ between VERTEX and FRAGMENT shaders.
-...
-tribes/:3297 [DTS] frame=1 shader=11 alive=8 drawable=7
-WebGL: INVALID_OPERATION: useProgram: program not valid
-WebGL: INVALID_OPERATION: useProgram: program not valid
-... (200+ repeats)
-```
+- Canvas is alive at 60fps; Three.js renders; HUD is gorgeous; movement responds
+- Sky is now a blue gradient (no longer banded white wall)
+- Terrain is properly lit and visible
+- **Buildings render as floating yellow/black unlit cubes** instead of proper PBR turrets/stations
+- **Soldiers render as solid black silhouettes** (visSoldiers=4/16 per console, but they're black)
+- **Player clips through terrain and buildings** (camera goes UNDER the map)
+- **Movement direction does not match camera direction** (press W, slide sideways)
+- **NPCs stuck in static T-pose**, some floating in sky
+- **`renderer.info` reports `1 draw call, 1 tri` continuously** — likely an EffectComposer artifact (render passes report only the last pass) but should be confirmed
+- **Weapon viewmodel** is small + barely visible + not in expected lower-right hand position
+- Buildings spawn floating in the air (positions don't account for terrain height)
 
-**Note that after `[R17] Three.js renderer (default)` there is no `[Three.js]`, `[R15] renderer.js loaded`, or any `WebGLRenderer` init message at all.** That confirms the Three.js path never actually started — the legacy renderer is the only one running, and its shaders don't link. Hence the black void.
+User quote: "Movement is all weird... when I hit left I expect to move left, right right, etc. but it's awkward."
 
 ---
 
-## Root cause analysis (READ THIS — don't skip)
+## What I (Manus) did across R29-R30.2 — full audit trail
 
-### Bug A: GLSL precision mismatch
+Every commit is on `origin/master`. Read `comms/CHANGELOG.md` for the one-line audit log.
 
-In `program/code/wasm_main.cpp` lines 603–673, four shader pairs are declared:
+| Round | Hash | What I changed | Status |
+|---|---|---|---|
+| R29 | `20e6b6c` (you) | shader precision highp + Three.js init in onRuntimeInitialized + vendored Three.js r170 | Landed |
+| R29.1 | `b7b7424` | vendored 5 missing transitive Three.js addon deps + map fetch path GitHub-Pages-friendly | Landed |
+| R29.2 | `cabf922` | swapped `initStateViews()` ↔ `initPostProcessing()` order in `renderer.js` start() so camera exists before RenderPass captures it | Landed; was a real bug |
+| R29.3 | `65009a3` | added `Module.calledRun` guard on 5 unguarded WASM call sites (compass poll + 4 others) so ASSERTIONS-mode build doesn't spam Aborted | Landed; cosmetic but real |
+| R30.0 | `cca2992` | added one-shot `scene.traverse()` diagnostic dump on first frame to see ground truth | Diagnostic only |
+| R30.1 | `6a0e97e` | hardened `syncCamera`: bail on invalid localIdx OR finite-but-zero player position; raised initial cam to (0,200,0) lookAt(-300,30,-300); set `scene.background = #9bb5d6` fallback; bumped HemisphereLight intensity 0.55→1.1 | Landed |
+| R30.2 | `c40eac5` | rebalanced THREE.Sky uniforms (turbidity 8→2, rayleigh 2.0→1.0, mieG 0.7→0.8); ACESFilmic tone mapping exposure=0.5; PMREM env from Sky → `scene.environment`; positioned sun at boot in initStateViews; resized weapon viewmodel; explicit SRGBColorSpace | Landed; partial fix |
 
-| Pair | VS precision directive | FS precision directive | Shared uniforms at risk |
-|------|------------------------|------------------------|-------------------------|
-| `tVS`/`tFS` (terrain) | none → default `highp` | `precision mediump float;` | `uVP`, `uCamPos`, `uSun` |
-| `oVS`/`oFS` (objects) | none → default `highp` | `precision mediump float;` | `uVP`, `uA` |
-| `hVS`/`hFS` (HUD)      | none → default `highp` | `precision mediump float;` | (no shared uniforms — safe) |
-| `dtsVS`/`dtsFS` (models) | none → default `highp` | `precision mediump float;` | `uVP`, `uModel`, `uCamPos`, `uSun`, `uTint`, `uTint2`, `uA` |
+**I did NOT touch C++ code.** All my edits were in `renderer.js` (~13 small surgical changes) + `index.html` (~5 calledRun guards + 2 map paths) + `shell.html` (mirror) + vendoring of Three.js files. I did NOT recompile WASM (kept `tribes.js`/`tribes.wasm` from your R29 build).
 
-**GLSL ES 3.0 §4.5.4** requires that any uniform name declared in both stages must have **identical precision qualifiers** (or the link fails). The default precision for `int`/`float` differs between stages: VS defaults to `highp` for everything; FS has no default for `float`/`int` and forces an explicit `precision <q> float;` declaration. **Whatever the FS default is, the matrices and uniforms inherit it.** So `uCamPos` is `highp` in VS, `mediump` in FS → mismatch.
+---
 
-The robust fix is to add **explicit precision qualifiers** to **all four vertex shaders** (matching the `mediump float;` default in their FS counterparts), AND add `precision highp int;` to both stages so int uniforms also agree. Use `precision highp float;` in **both** stages for safety with vec3 positions/directions — `mediump` is only ~10 bits of mantissa and can cause visible artifacts at terrain-scale (1000m+) distances anyway. The cleanest fix:
+## Console diagnostic — current ground truth (post R30.2)
 
-**For every shader pair, replace the leading `#version 300 es` line with:**
-```glsl
-#version 300 es
-precision highp float;
-precision highp int;
+The user pasted a console after R30.2. Key data:
+
+```
+[R30.2] PMREM environment built from Sky shader; PBR materials now lit   ← landed
+[R30.0] === SCENE DIAGNOSTIC DUMP (one-shot) ===
+[R30.0] scene root has 336 immediate children:
+  [0] HemisphereLight visible=true
+  [1] DirectionalLight visible=true
+  [3] Mesh ShaderMaterial bbox=[-1,-1,-1 → 1,1,1]                      ← Sky shader, correct
+  [4] Mesh MeshStandardMaterial bbox=[-1024,7,-1024 → 1024,77,1024]    ← terrain, correct
+  [5..43] Group +2 children                                             ← 39 buildings, OK shape
+  [44..70] Mesh MeshBasicMaterial color=#9ddcff bbox=[-1,-1,-1 → 1,1,1] ← spawn shield bubbles, fine
+  [71..86] Mesh MeshStandardMaterial color=#ffffff bbox=[0,0,0]         ← ⚠️ ALL ZERO BBOX
+  ...
+[R30.0] renderer.info: 1 calls, 1 tris, 141 geom, 17 tex, programs=17
+[R30.0] scene.background: #9bb5d6  scene.fog: undefined density=0.0006
+[R18] 60fps, 1 draw calls, 1 tris, quality=high | cam=(-260,21,-11) localIdx=0 visSoldiers=4/16
 ```
 
-This eliminates ALL precision-mismatch link errors and also fixes potential precision artifacts on the dts model at long range.
+Camera position moves correctly with player input (going from -232,26,-26 → -271,33,63 → -260,21,-11 as user plays). So **input is reaching WASM and WASM is updating the player position**. But the rendered scene shows almost nothing of the world.
 
-### Bug B: Renderer-selection / Three.js never starts
+**Two big mysteries Claude needs to verify:**
 
-`index.html` line 1549–1554:
+1. **`renderer.info` says 1 draw call, 1 tri.** Is this a real symptom (almost nothing being drawn) or an EffectComposer artifact (only counting the final composite pass)? My hypothesis: it's the latter (composer with bloom/output passes resets the stats per pass and `info.render.calls` only reflects the last). To prove/disprove: temporarily disable post-processing OR sum `renderer.info.render.calls` across passes via callbacks. If it's truly 1 draw call, then 95% of the scene is being culled.
+
+2. **Many sub-meshes have bbox `[0,0,0 → 0,0,0]`** — including soldiers ([71..86]) and several other items. Three.js frustum-culls anything whose `geometry.boundingSphere.radius === 0` once the bbox is at origin. **Soldiers may be invisible because their bounding sphere is wrong**, not because `mesh.visible=false`. Your skeletal-rig setup needs a `geometry.computeBoundingSphere()` after the first skin update, OR a generous manual `boundingSphere` set at construction time.
+
+---
+
+## Specific bugs to fix (ranked by visual impact)
+
+### 1. Soldiers render as solid black silhouettes (CRITICAL)
+
+User screenshot (today's playtest) shows them as dark unlit figures. Two possible causes:
+- Skeletal mesh `material` is `MeshStandardMaterial` color #ffffff but receives no light because **the rig hasn't been bound** correctly to the geometry → no normals → no PBR shading → reads as black
+- OR the frustum culling kills them via the bbox=(0,0,0) issue, so what we see is leaked accent meshes from another source
+
+Fix path: in `addSoldier()` / wherever soldiers are constructed in `renderer.js`, set `mesh.frustumCulled = false` on the rig root, OR `geometry.boundingSphere = new THREE.Sphere(new THREE.Vector3(), 5)` (5m radius around origin), AND ensure normals are computed/recomputed after vertex skinning.
+
+### 2. Buildings render as floating yellow/black blocks (CRITICAL)
+
+User's screenshot shows a **yellow rectangular box floating in the air**. From `renderer.js` (around line 441/450 in `createBuildingMesh`): stations have `MeshBasicMaterial({ color: 0xFFC850 })` for ring + display panels — these are **unlit accent decorations**. They get drawn **but the parent body** (a `MeshStandardMaterial` cylinder/cube) is **not visible** because it has bbox=(0,0,0) and is being frustum-culled.
+
+Same root cause as soldiers: PBR sub-meshes are getting culled, only the unlit accents survive.
+
+Fix path: walk every Group in `buildingMeshes`, recursively `child.frustumCulled = false` OR set sane bounding spheres at construction.
+
+### 3. Buildings spawn floating in air (HIGH)
+
+Per the screenshot, the yellow cube hovers ~30m up. C++ side `setMapBuildings` reads positions from mission data, but probably places them at flat Y from the map JSON without sampling the terrain heightmap at that X,Z. Need to either (a) clamp Y to `terrainHeight(X,Z)` in C++, or (b) accept the design intent that some buildings ARE supposed to be on tall pillars.
+
+Recommend: in C++ `loadMission()`, sample heightmap at building (X,Z) and add a small offset so the foundation sits on terrain.
+
+### 4. Movement direction ≠ camera direction (HIGH)
+
+User reports: "press W, slide sideways." Combined with the fact that the camera position IS updating correctly per WASM, and the C++ side is doing the movement math, this is almost certainly a **yaw-convention mismatch** between Three.js camera (Y-up, looks down -Z, yaw rotates around Y) and WASM player (likely Z-up or some other handedness).
+
+Look at `renderer.js` syncCamera around line 1133:
 ```js
-if(window.__tribesUseThree && !window.__tribesThreeStarted){
-  window.__tribesThreeStarted = true;
-  if(Module._setRenderMode)Module._setRenderMode(1);
-  import('./renderer.js').then(function(m){m.start();})
-    .catch(function(err){console.error('[R15] renderer.js import failed:', err);});
-}
+camera.rotation.set(pitch, yaw, 0, 'YXZ');
 ```
 
-This block lives **inside `startGame()`**, which fires on PLAY click. Between page load and PLAY click, `g_renderMode == 0` and legacy is the only renderer — that's why shader errors spam the console at boot.
+Possible fix: try `camera.rotation.set(pitch, yaw + Math.PI, 0, 'YXZ')` (180° yaw flip), OR negate pitch, OR change rotation order. The C++ side controls movement based on its own yaw, so the camera needs to MATCH that yaw — not the other way around. Test by walking forward and confirming camera moves the same way as crosshair points.
 
-After PLAY, the import either:
-- **Throws** (in which case the `.catch` would log — and there's no error in the console, so the import probably succeeded), OR
-- **Resolves silently** but `m.start()` does nothing (perhaps `start()` isn't exported from `renderer.js`, or it early-returns), OR
-- **`Module._setRenderMode` is not exported** — check `EMSCRIPTEN_KEEPALIVE` and the `EXPORTED_FUNCTIONS` list in `build.sh`.
+### 5. Player clips through terrain (HIGH — C++ work)
 
-To verify: add a `console.log('[R29] setRenderMode='+typeof Module._setRenderMode)` immediately before the call. If it logs `undefined`, the export is missing.
+User can fall through the ground. C++ side either has no terrain collision check or the heightmap lookup is broken. Look in `wasm_main.cpp` for player physics tick — there should be a `playerY = max(playerY, terrainHeightAt(playerX, playerZ) + 1.7)` or similar ground clamp. If missing, add it. If present, check the lookup is in correct world units.
 
-The **fix** is to:
-1. Move the `_setRenderMode(1)` + `import('./renderer.js')` block to **right after `onRuntimeInitialized` fires** (`index.html` ~line 3327, where the `[R17]` console.log already lives), so Three.js takes over **before any frame paints**, not after PLAY click.
-2. Add explicit logging in `renderer.js`'s `start()` — log `[R29] renderer.js start() entered`, `[R29] WebGLRenderer created`, `[R29] First frame submitted` — so we can verify it actually runs end-to-end.
-3. If `Module._setRenderMode` is `undefined`, add `_setRenderMode` to the `EXPORTED_FUNCTIONS` array in `build.sh` (it should already be there from R15; double-check it didn't get dropped in R20-R28 churn).
+### 6. NPCs stuck in static pose (MEDIUM — C++ AI)
+
+Bots load (Fury/Viper/Storm/Ghost/Blaze/Raptor/Shadow) and the `[KILL]` log shows kills happen, so the AI brains are running. But visually they don't animate. Two possible causes:
+- (a) The skeleton transforms aren't being driven by the simulation tick — animation system disconnected from C++ → JS bridge
+- (b) The animation system runs in C++ (legacy) but R15 disabled the C++ render loop, and the new Three.js path doesn't pull animation state
+
+Fix path likely: add to renderer.js `syncSoldiers()` a call to `Module._getPlayerAnimState(idx)` and apply to the skeleton bones each frame.
+
+### 7. Weapon viewmodel position (MEDIUM)
+
+I (Manus) made it smaller in R30.2 but it's now in a weird spot. Should be **firmly in lower-right of viewport, gun barrel pointing forward, slightly tilted**. Standard FPS rig: position relative to camera local space `(0.25, -0.20, -0.45)`, rotation `(0, 0.05, 0)`, scale appropriate for camera FOV=90.
+
+### 8. `renderer.info` "1 draw call, 1 tri" (LOW — just verify it's a measurement artifact)
+
+Add a single-frame diagnostic that disables EffectComposer and reads `renderer.info.render.calls` directly. If still 1, real bug. If 100+, just measurement artifact and we can remove the misleading log.
 
 ---
 
-## What to build (6 tasks)
+## Things to NOT change
 
-### Task 1 — Shader precision audit (CRITICAL)
-
-In `program/code/wasm_main.cpp`, edit each of the four vertex shaders (`tVS`, `oVS`, `hVS`, `dtsVS`) and each of the four fragment shaders (`tFS`, `oFS`, `hFS`, `dtsFS`) so they begin with:
-
-```glsl
-#version 300 es
-precision highp float;
-precision highp int;
-```
-
-Yes, even the FS — change `precision mediump float;` to `precision highp float;` and add `precision highp int;`. This guarantees zero precision mismatch on any shared uniform, sampler, or built-in.
-
-If you find any *other* shader strings I missed (Three.js custom shaders/passes, post-process, particle, sky), apply the same treatment.
-
-**After patching, rebuild and grep the console output for any remaining `[SHADER] Link error` or `[SHADER] Compile error` — there must be zero.**
-
-### Task 2 — Move Three.js init to onRuntimeInitialized
-
-In `index.html`, **delete** the Three.js boot block from `startGame()` (lines 1548–1554) and **move** it to `onRuntimeInitialized` (line ~3327), right after the `[R17] Three.js renderer (default)` log. The new location should look like:
-
-```js
-if(useThree){
-  console.log('[R17] Three.js renderer (default). Use ?renderer=legacy to fall back.');
-  window.__tribesUseThree = true;
-  // R29: set render mode + load Three.js BEFORE first frame paints
-  if(Module._setRenderMode){
-    console.log('[R29] _setRenderMode is exported, switching to mode 1 (Three.js)');
-    Module._setRenderMode(1);
-  } else {
-    console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
-  }
-  import('./renderer.js').then(function(m){
-    console.log('[R29] renderer.js module loaded, calling start()');
-    if(typeof m.start === 'function'){ m.start(); console.log('[R29] renderer.js start() returned'); }
-    else { console.error('[R29] renderer.js has no start() export'); }
-  }).catch(function(err){
-    console.error('[R29] renderer.js import FAILED:', err);
-  });
-}
-```
-
-Leave the legacy fallback path alone (the `else` branch logs and uses legacy), but make sure the legacy path also benefits from the Task 1 shader fix so `?renderer=legacy` works on Mac Chrome too.
-
-### Task 3 — Verify exports
-
-Open `program/build.sh` and confirm the `EXPORTED_FUNCTIONS` list includes `_setRenderMode`. If it's missing, add it. Same for any other render-related exports (`_setMapBuildings`, `_setGameSettings`, `_restartGame`, etc. — they should all already be there from prior rounds, but a quick audit prevents future regressions). Add a one-line comment above the list: `// R29: keep _setRenderMode in this list — required for Three.js cutover.`
-
-### Task 4 — Add renderer.js diagnostic logging
-
-In `renderer.js`'s `start()` function (or the top-level init), add at minimum:
-```js
-console.log('[R29] renderer.js start() entered');
-// ...after creating WebGLRenderer:
-console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
-// ...after first scene.add():
-console.log('[R29] Scene populated, ready to render');
-// ...inside the first renderer.render() call:
-console.log('[R29] First Three.js frame submitted');
-```
-
-This makes any future regression instantly diagnosable. Keep the logs in (they fire once at boot, no perf impact).
-
-### Task 5 — Vendor Three.js locally (NEW — added by Manus on user request)
-
-The game currently loads Three.js from `https://unpkg.com/three@0.170.0/...` via the importmap at `index.html` line 502–509. This is fragile: any unpkg blip (rate limit, 503, MIME mis-serve, slow DNS) silently kills the renderer with the exact same symptom as our current bug — black canvas, no Three.js init logs. We need to rule that out structurally and gain better load times + offline capability.
-
-**Steps:**
-
-1. Create `vendor/three/r170/` at the repo root.
-2. Download the following files into it (pin to `0.170.0` exactly):
-   - `three.module.js` (from `https://unpkg.com/three@0.170.0/build/three.module.js`)
-   - `addons/objects/Sky.js`
-   - `addons/postprocessing/EffectComposer.js`
-   - `addons/postprocessing/RenderPass.js`
-   - `addons/postprocessing/UnrealBloomPass.js`
-   - `addons/postprocessing/ShaderPass.js`
-   - `addons/postprocessing/OutputPass.js`
-   - Any other addon currently imported anywhere in `renderer.js` or its sub-modules — grep for `three/addons/` to find them all.
-3. Update `index.html`'s importmap to:
-   ```html
-   <script type="importmap">
-   {
-     "imports": {
-       "three": "./vendor/three/r170/three.module.js",
-       "three/addons/": "./vendor/three/r170/addons/"
-     }
-   }
-   </script>
-   ```
-4. Add `vendor/three/r170/LICENSE` (copy from Three.js repo, MIT) to be a good citizen.
-5. Add a one-line README at `vendor/three/README.md`: "Three.js r170 vendored locally to eliminate CDN dependency. Update procedure: download new version into `r<version>/`, update importmap in `index.html`."
-6. Verify with `curl -I` or `ls -la` that all the downloaded files are valid JS (not HTML 404 pages) and total size is reasonable (~2.5MB compressed, ~4MB raw).
-
-**Why now:** R29 is fixing a black-canvas bug whose symptom matches CDN-load failure exactly. We must rule out the CDN as the contributor before declaring the shader/selection fix sufficient. Vendoring also removes one external dependency from the production runtime, makes the GitHub Pages deploy fully self-contained, and lets the game work in offline / corp-firewalled environments. Net win.
-
-### Task 6 — Smoke-test before push
-
-Build, then open the live page in Chrome (or test against `python -m http.server` locally if convenient). Expected console output (in order):
-
-```
-[R17] Three.js renderer (default). ...
-[R29] _setRenderMode is exported, switching to mode 1 (Three.js)
-[R29] renderer.js module loaded, calling start()
-[R29] renderer.js start() entered
-[R29] WebGLRenderer created, capabilities: {...}
-[R29] Scene populated, ready to render
-=== Starsiege: Tribes ...
-... (existing init logs) ...
-[R29] First Three.js frame submitted
-```
-
-**Forbidden in console:**
-- Any `[SHADER] Link error`
-- Any `[SHADER] Compile error`
-- Any `useProgram: program not valid`
-- Any `[R29] _setRenderMode is NOT exported`
-- Any `[R29] renderer.js import FAILED`
-
-**Expected on screen:**
-- Hazy grey-blue sky
-- Visible heightmap terrain (Raindance, brownish)
-- Spawn point visible, can move with WASD
+- Don't revert any R29-R30.2 fixes; they're correct (precision, vendoring, init order, calledRun guards, sky uniforms, PMREM env)
+- Don't remove the R30.0 diagnostic dump yet — useful for verifying R31 results
+- Don't touch the comms/CHANGELOG.md format
+- Don't bump version footer past `0.4 / R29 hotfix` — your call when to mark `0.5`
 
 ---
 
-## Acceptance criteria (6/6 required — this is P0)
+## Acceptance criteria for R31
 
-1. **Zero shader link/compile errors** in console on fresh load with default URL (`/tribes/`).
-2. **Zero `useProgram: program not valid` warnings** in console during a 30-second play session.
-3. **3D terrain + sky visible** in real Chrome on Mac on first frame after main menu → PLAY.
-4. **Three.js path actually executes** — at least the 5 `[R29]` log lines from Task 4 appear in order.
-5. **Legacy fallback also works** — opening `/tribes/?renderer=legacy` shows terrain (proves Task 1 shader fix is correct).
-6. **Three.js loads from local vendor path** — DevTools Network tab shows `vendor/three/r170/three.module.js` (HTTP 200, served by GitHub Pages), not unpkg.com. Game works with the network throttled to Offline mode after initial load.
+User reloads, hits PLAY, plays for 30 seconds. They see:
 
----
+1. Sky: blue gradient (already fixed) — no regression
+2. Terrain: lit green-brown with shading — no regression
+3. **Buildings**: at least some properly-lit gray turrets/stations visible at proper terrain-grounded positions, NOT floating yellow boxes
+4. **Soldiers**: visible as lit gray armored figures, NOT solid black silhouettes
+5. **Movement**: pressing W moves the camera in the direction it's pointing; A strafes left; D strafes right; mouse looks
+6. **No terrain clipping**: player stays on top of the ground
+7. **NPCs animate** (running animation when moving)
+8. **Weapon viewmodel** clearly visible in lower-right
+9. Console shows R30.0 diagnostic + at least 5+ draw calls in renderer.info (or proof the "1" was a measurement artifact)
 
-## Decision authority
-
-You may make all judgment calls without blocking:
-- If `_setRenderMode` was in fact never exported, add it to `build.sh` and document.
-- If `renderer.js` has additional bugs preventing it from rendering (separate from selection logic), fix them in this same round. R29 must produce a visible game world.
-- If you find a third shader pair I didn't list (e.g., particles, post-process, sky), patch it the same way.
-- If after Task 1+2 you see ANY new render bug, fix it — the goal is "fresh load → see terrain", whatever it takes.
-- Do NOT add new features in this round. Bug-fix only.
-- Bump version footer in `index.html` from "0.3" to "0.4 / R29 hotfix" so we can verify the deploy landed.
+If you can land 6/9 you're done; the remaining can be R31.1.
 
 ---
 
-## Why this is P0
+## Open questions for you to decide
 
-The game has been technically "feature-complete" since R28 but is **completely unplayable** on the user's actual machine due to this bug. Every round since R17 has been adding features on top of a broken foundation. R29 is the unblock — once the canvas renders, all the work from R17–R28 (Three.js polish, multiplayer, voice chat, ranked, replays, chat, anti-cheat) becomes visible to the user for the first time.
+1. Is the legacy WebGL renderer still needed? (R30 was originally planned to be "delete legacy renderer entirely" but we never got there because R29 hotfix cascade ate the time. Your call: delete now in R31, or keep until after multiplayer playtest?)
+2. Should `renderer.info` accumulator across composer passes be added to the diagnostic permanently?
+3. C++ collision system — do you want to fix the `loadMission` to clamp building positions to terrain, or change the renderer to clamp visually? Former is correct, latter is faster.
 
-Push this immediately. Manus will review the diff the moment it lands and either accept or kick a follow-up patch.
+---
 
-— Manus
+Cron will trigger you in ~5 min. Take whatever time you need. I'll review the diff and accept or kick a follow-up. Thanks for picking up the round.
