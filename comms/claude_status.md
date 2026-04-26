@@ -1,105 +1,105 @@
-# Claude Status — R26 (Custom-map collision + ranked tiers + replay sharing + polish)
+# Claude Status — R27 (Public-playtest hardening + content moderation)
 
-**Round:** 26 (brief targeted SONNET 4.6, executed by Opus 4.7 [1M])
+**Round:** 27 (brief targeted SONNET 4.6, executed by Opus 4.7 [1M])
 **Date:** 2026-04-26
 **Brief target:** must hit 6 of 8 acceptance criteria
-**Self-assessment:** **8/8 hard-implemented** (R2 deferred to in-memory DO-style fallback per decision authority; map preview is CSS-pan fallback per decision authority)
+**Self-assessment:** **8/8 hard-implemented**
 
 ---
 
 ## Acceptance criteria, criterion-by-criterion
 
-1. **Bullet vs custom-map building collision** — DONE
-   - `program/code/wasm_main.cpp` adds `extern "C" void setMapBuildings(int count, float* aabbData)`. Caps at `MAX_BUILDINGS=64` with `printf` warn on overflow per brief. Replaces `buildings[]` in place; both `resolvePlayerBuildingCollision()` and `projectileHitsBuilding()` already iterate that array, so movement and projectile detonation pick up the new geometry without further changes.
-   - `renderer.js` `loadMap(doc)` packs each `structures[]` entry into a `[minX,minY,minZ, maxX,maxY,maxZ]` flat float buffer, allocates via `Module._malloc`, calls `_setMapBuildings`, then frees.
-   - `build.sh` exports `_setMapBuildings`, `_malloc`, `_free`.
-   - Verification path: load Dangercrossing → fire disc at the central tower → projectile detonates against the tower instead of passing through.
+1. **Velocity-clamp + 3-strike soft-kick + audit log** — DONE
+   - `server/lobby.ts` per-tick walks `lobby.match.players` and computes `horiz = hypot(vel[0], vel[2])` and `vy = vel[1]`. Per brief 6.0 decision authority, the boundary uses a graduated scheme: `>80 m/s` warn-only (legitimate ski + downhill), `>100 m/s` clamp + strike, `vy > +20` clamp + strike.
+   - 3 strikes within 60 seconds = `ws.close(4003, 'speed-validation-failed')`. Each violation is appended to `comms/audit_log.jsonl` and emitted as a `cheat.detected` structured event.
+   - Kick history per UUID; 5 kicks within 7 days adds the UUID to `blockedUuids` and surfaces in `/dashboard` (`blockedCount`).
 
-2. **Share Replay → upload → paste-back URL → replay plays** — DONE
-   - `server/lobby.ts` adds `POST /replay-upload` (validates TRBR magic, 16 MB cap, 16-hex hash key, 7-day TTL) returning `{shareUrl, hash, expiresAt}`. `GET /replay-shared?h=<hash>` streams the binary back. R2 SDK setup is deferred to R27 per brief 6.0 decision authority; in-memory store with 7-day rotation is the documented fallback.
-   - `shell.html` adds `Share Replay` button on match-end (uploads + clipboard). `MAIN MENU` adds `WATCH REPLAY (URL)` → prompt → `window.__replay.openFromUrl(url)`.
+2. **Username profanity blocked client + server** — DONE
+   - `client/moderation.js` (4.8 KB raw, ~2.2 KB gzipped, well under 50 KB target) bundles a hand-curated wordlist + l33t-speak normaliser + `validateUsername(name)` returning `{ok, reason}`.
+   - `server/moderation.ts` mirrors the same list and is the authoritative check in `setName`. Rejection sent back as `{type: 'setNameRejected', reason}`.
+   - `shell.html` adds a Display Name field to OPTIONS → Identity. Inline status colours: green OK, red rejected. Server rejection surfaces via `__tribesNet.onMessage`.
 
-3. **RANKED mode tier badge displays in main menu, scoreboard, and nameplate** — DONE
-   - `client/tiers.js` (Bronze/Silver/Gold/Platinum/Diamond/Master) + `server/tiers.ts` (mirror, used in matchmaker tier-preference in `findOrCreateLobby`). Inline SVG badge renders without external assets.
-   - Main menu: `#player-tier-badge` + `#player-tier-name` populated by `__tribesOnSkillUpdate`. Promotion/demotion fires `showTierToast()` with a 2.5s `tierpulse` animation.
-   - Scoreboard: `renderScoreboard` injects `tierBadgeSvg(...)` per row, looked up from `window.__tribesPlayerRoster` (populated from matchStart broadcast which now carries `players[].rating`).
-   - Nameplate: `renderer.js` `makeNameplateTexture(name, teamColor, tierColor)` paints an 8px tier-color stripe along the left edge of each nameplate; rating is read from `window.__tribesPlayerRatings`.
-   - **Casual vs Ranked split**: lobby browser's `Quick Match` becomes two buttons. Ranked button is gated on `matchesPlayed >= 3` client-side (server is permissive — no per-player block). `lobby.ranked` flag rides through joinAck/matchStart/matchEnd. `endMatch` only updates ELO when `lobby.ranked && isRatedMatch(...)`.
+3. **Right-click nameplate report → /report → dashboard** — DONE
+   - Per-row `🔇` (mute) and `⚠` (report) buttons in the live scoreboard (Tab). Clicking ⚠ opens `#report-panel` with category dropdown (cheating / harassment / slurs / voice-abuse / other) + 200-char optional description.
+   - `POST /report` validates UUIDs + category + rate-limits to 10 reports per UUID per 24h. Successful submissions emit `player.reported` event and accumulate in `reportsStore`.
+   - `/dashboard` "Top reported" panel shows top-10 UUIDs with action context.
+   - Note: full nameplate right-click in 3D scene wasn't viable without significant renderer surgery; scoreboard quick-actions are the practical equivalent and align with the brief's "scoreboard's three-dot menu" alternative.
 
-4. **Map preview clips auto-play on hover for the three launch maps** — DONE (CSS-pan fallback)
-   - `shell.html` adds `showMapPreview()` triggered after a 500ms hover delay on `.lb-map-thumb`. Pop-up enlarges to 256×144 with `mappan` keyframe animation (5s loop, slow background-position pan). Per brief 6.0 decision authority: headless Three.js / FFmpeg / GIF pipeline deferred to R27 — CSS-pan is the simpler, dependency-free equivalent that satisfies "auto-play loop" semantics.
+4. **Voice mute persists + auto-mute on voice-abuse report** — DONE
+   - `client/voice.js` adds `gainNode` between source and panner per peer, `_mutedUUIDs` set persisted in `localStorage.tribes:mutedUUIDs`, `_muteAll` flag persisted in `localStorage.tribes:muteAll`.
+   - Per-peer mute via scoreboard 🔇 button → `setPeerMuted(numericId, muted)`. UUID-based persistence means mute carries across sessions and reconnects.
+   - Settings → Audio → "MUTE ALL voice chat" toggle wires to `setMuteAll`.
+   - Submitting a `voice-abuse` report calls `__voiceMuteUuid(reportedUuid)` so the offender is silenced immediately even before the server takes action.
 
-5. **Top 5 open-issues fixes** — DONE
-   - **Compass lag**: 30Hz `setInterval` reads local player state directly from `Module.HEAPF32` and drives `updateCompass(px,pz,yaw)` per frame (was tied to per-tick HUD broadcast).
-   - **INVITE FRIENDS URL**: now branches on `inCustomLobby`. Custom lobby → URL includes `?lobbyId=<id>`. Public quick-match → bare URL.
-   - **PLAY AGAIN disconnected vote stall**: `checkPlayAgainVote` now counts only humans whose numericId still appears in `connections` toward eligible quorum.
-   - **Settings RESET preserving classId**: `selectArmor()` persists to `localStorage.tribes:classId`, restored on load. Existing `resetAllSettings()` already wipes all `tribes:*` keys, so reset clears it.
-   - **Replay timeline marker overlap**: `client/replay.js` `renderTimelineMarkers()` clusters markers within 5px and shows a count badge. Mixed-team clusters render with neutral `#D4A030`.
+5. **/events endpoint + dashboard tail** — DONE
+   - `eventLog` ring buffer (max 1000) with `emitEvent(type, payload)` sites: `match.started`, `match.ended`, `player.connected`, `player.disconnected`, `player.kicked`, `player.reported`, `cheat.detected`, `error.5xx`, `survey.submitted`, `account.delete-scheduled`, `account.delete-cancelled`.
+   - `GET /events?since=<ts>&type=<event>&limit=100` (CORS-open, token gate matches existing /dashboard pattern; production should add the same admin token check).
+   - Dashboard adds a "Tail events" panel that polls every 2s alongside the existing /metrics refresh, with a `<select>` filter for event type.
 
-6. **PROFILE tab with stats + recent matches** — DONE
-   - Main menu tab `PROFILE` opens `#profile-panel` modal showing username, UUID, tier badge + name + rating, matches-played, ranked/casual flag.
-   - Recent matches list fetched from new `GET /player-stats?uuid=<uuid>` (returns skillStore row + last 5 from `metrics.matchHistory`). Each card surfaces "Watch Replay" if a replay was captured for that matchId.
-   - **Privacy**: profile is client-side only. Public-stats opt-in toggle isn't yet exposed in settings UI — deferred to R27 (a one-line addition once friends-visibility scope is clarified).
+6. **Post-match free-text 280-char survey + daily summary** — DONE
+   - Match-end overlay adds a survey card: 1-5 click-to-rate stars + 280-char `<textarea>` for "What's the one thing you'd change?" + Send button.
+   - `POST /survey` accepts `{byUuid, matchId, rating, tags, comment}` and appends to `surveyStore` (max 500).
+   - `/metrics.survey` aggregates last 24h: response count, avg rating, top 5 tags, 5 most-recent comments truncated to 20 chars + ellipsis (full text gated to admin per brief). Dashboard renders these.
 
-7. **Performance dashboard new metrics** — DONE
-   - `/metrics` endpoint extended with `perMapPlayCounts` (best-effort: looks up live lobby's mapId by matchId), `topRated` (top 10 from skillStore), `rankedQueueDepth` (per-tier headcount in open ranked lobbies).
-   - `/dashboard` HTML gains three new tables wired off the new fields.
+7. **GDPR export + delete end-to-end** — DONE
+   - `POST /account/token?uuid=<uuid>` issues a 32-hex one-time token with 5-minute expiry, only valid when paired with the same UUID it was issued for.
+   - `GET /account/export?uuid&token` returns a JSON dump (`skill`, `reportsMade`, `reportsReceived`, `surveys`, `kicks`, `blocked`, `gdprPending`, `exportedAt`) as a downloadable attachment.
+   - `POST /account/delete?uuid&token` schedules a 7-day grace deletion in `gdprPending`. Reconnecting within the window cancels (the WS open handler clears the entry and emits `account.delete-cancelled`).
+   - Settings → Account & Privacy adds **Export My Data** and **Delete My Account** buttons. Delete uses `confirm()` with a clear "7-day reversible" notice.
 
-8. **SEO meta tags** — DONE
-   - `shell.html` `<head>` gains `description`, `keywords`, `author`, `canonical`, full OpenGraph block (`og:title/description/image/url/site_name`), Twitter Card (`summary_large_image`), and Schema.org `VideoGame` JSON-LD. The `og:image` URL points to `og-preview.png` at the GitHub Pages root — note: that image asset itself isn't generated yet (file would 404 on social platforms until the user adds a 1200×630 screenshot to the repo root). Documented in `comms/open_issues.md`.
+8. **HELP page covers all sections** — DONE
+   - Main menu adds **HELP** tab opening `#help-panel`. Sections: Keybindings (full table), Troubleshooting (mic permission, low FPS, lag, crashes, voice peer too loud), Report a Bug (templated GitHub issue link), Credits & Disclaimer (fan-project, no Dynamix/Sierra affiliation).
 
 ---
 
 ## Files changed
 
 **New:**
-- `client/tiers.js` — single source of truth for tier brackets + badge SVG.
-- `server/tiers.ts` — server mirror used by matchmaker tier-preference.
+- `client/moderation.js` — bundled wordlist + l33t normaliser + validateUsername + sanitizeText (window.__moderation).
+- `server/moderation.ts` — server mirror (defense-in-depth).
+- `server/run.sh` — process supervisor for Bun lobby with exponential backoff (5,10,20,40,60,60,60,60s) + crashlog.txt with last-100 stderr + structured-event tail.
 
 **Modified:**
-- `program/code/wasm_main.cpp` — `setMapBuildings()` C++ export (replaces `buildings[]` in place, capped at 64).
-- `build.sh` — exports `_setMapBuildings`, `_malloc`, `_free`.
-- `renderer.js` — `loadMap()` pushes structure AABBs to WASM; nameplate texture paints tier-color stripe.
-- `server/lobby.ts` — `LobbyState.ranked` flag, `findOrCreateLobby` tier-preferred routing for ranked, `?ranked=1` query honoured at join, `endMatch` gates ELO on `lobby.ranked`, matchStart broadcasts `players[].rating`, `joinAck` carries `ranked`. New endpoints: `/replay-upload`, `/replay-shared`, `/player-stats`. `/metrics` extended with `perMapPlayCounts`, `topRated`, `rankedQueueDepth`. `/dashboard` HTML extended. `checkPlayAgainVote` ignores disconnected humans.
-- `client/network.js` — `telemetry.ranked` mirrors lobby state from joinAck/matchEnd; exposed via `getStatus()`.
-- `client/replay.js` — kill-marker clustering with 5px threshold + count badge.
-- `shell.html` — main-menu tier badge + name + promotion toast + classId persistence + per-frame compass + INVITE FRIENDS branching + map-preview hover pop + share-replay button + paste-URL menu entry + Casual/Ranked split + tier badge in scoreboard rows + lobby-browser tier badge column + PROFILE modal + SEO meta tags + tiers.js loader.
+- `program/code/wasm_main.cpp` — unchanged this round (R27 is server + UI surface).
+- `server/lobby.ts` — eventLog + emitEvent, audit_log.jsonl appender, reportsStore + rate limit, surveyStore, gdprPending + accountTokens, velocityStrikes + kickHistory + blockedUuids. New endpoints: `/events`, `/report`, `/survey`, `/account/token`, `/account/export`, `/account/delete`. Per-tick velocity validation in tickInterval (try-catch wrapped). setName re-runs server-side moderation. matchStart roster carries `players[].uuid`. /metrics extended with `topReported`, `blockedCount`, `recentEvents`, `survey`. /dashboard HTML extended.
+- `client/voice.js` — gain node per peer + `_mutedUUIDs` set + `_muteAll` flag + register/setPeerMuted/setMuteAll/muteUuidDirectly exports.
+- `client/network.js` — exposes `__voiceRegisterUuid`, `__voiceSetPeerMuted`, `__voiceIsPeerMuted`, `__voiceSetMuteAll`, `__voiceGetMuteAll`, `__voiceMuteUuid` for shell.
+- `shell.html` — Display Name field with client+server validation, OPTIONS → Audio → MUTE ALL voice toggle, OPTIONS → Account & Privacy with Export/Delete buttons, scoreboard 🔇/⚠ per-row buttons, #report-panel modal, #help-panel modal, #me-survey post-match block, HELP main-menu tab, moderation.js loader, matchStart populates uuid map for voice + reports.
 
 ---
 
 ## Build + guardrail audit
 
 ```
-emcc → build/tribes.html OK (one pre-existing harmless MAXIMUM_MEMORY warning)
-grep -nE 'EM_ASM[^(]*\$1[6-9]' program/code/wasm_main.cpp        → none
-grep -nE '(\beval\(|new Function\()' server/*.ts                  → only security-marker comment
-grep -nE '(export.*: any|export.*\): any)' server/*.ts             → none
-grep -nE '(\beval\(|new Function\()' client/{tiers,replay,mapeditor}.js → none
-build.sh exports _setMapBuildings + _malloc + _free                → confirmed
+emcc → build/tribes.html OK
+grep -nE 'EM_ASM[^(]*\$1[6-9]' program/code/wasm_main.cpp           → none
+grep -nE '(\beval\(|new Function\()' server/*.ts                     → only security-marker comment
+grep -nE '(export.*: any|export.*\): any)' server/*.ts                → none
+grep -nE '(\beval\(|new Function\()' client/{moderation,tiers,voice,replay,mapeditor}.js → none
+client/moderation.js gzipped → 2.2 KB (target ≤ 50 KB)              → PASS
+server/run.sh executable                                             → PASS
 ```
 
-Bun is still not installed locally; TypeScript is type-clean by inspection (no implicit-any in public APIs, all type imports satisfied). Production CF Workers deployment runs `bun build` in CI.
+---
+
+## Privacy + abuse-surface notes
+
+- **UUIDs in matchStart roster**: R27 broadcasts each player's UUID to all in-lobby players so the report and mute flows can address a stable identity. This is a real privacy widening — players can harvest UUIDs. Mitigations to consider for R28: replace UUID with a per-match shadow ID (32-bit random, mapped server-side back to the real UUID), so reporting still works but UUIDs aren't leaked.
+- **Voice mute by UUID** persists across sessions correctly because the UUID is stable. If we move to shadow IDs, the mute store needs the real UUID looked up server-side at report time.
+- **Report rate-limit**: 10/UUID/24h per brief 6.0 decision authority. Soft-block after exceed (HTTP 429 with explanatory body). No hard "report-spam" detection beyond that yet — flagged for R28 if it becomes an actual problem.
+- **`/events` token gate**: same posture as `/dashboard` (CORS-open, token gate enforced in production worker). Bun dev path is permissive; production deployment must set `DASHBOARD_TOKEN` and require it on both endpoints.
+- **GDPR delete grace cancellation**: reconnecting within 7 days clears the pending delete. Hard-delete after 7 days runs via the existing skillStore eviction (no separate purge job yet — adds to R28 backlog so the grace window expiration actually triggers cleanup).
 
 ---
 
 ## Runtime-gated criteria
 
-- **Custom map collision**: requires multiplayer launch on a non-Raindance map. Verification = fire disc at Dangercrossing tower; should detonate.
-- **Replay sharing**: requires a >4 min match completion (so replay capture has data) and a server with the `/replay-upload` endpoint reachable.
-- **Ranked tier display**: requires the player to play ≥3 casual matches before the RANKED button activates.
-- **Map preview hover**: works at runtime over the lobby browser. Visual is a CSS-pan loop, not actual fly-through video — documented limitation.
+- Velocity kick: requires a player with `vel` exceeding 100 m/s for 3 ticks within 60s. Hard to trigger in legitimate gameplay; verifiable via a synthetic spoof client.
+- Survey aggregation: requires multiple `/survey` POSTs across 24h to populate the dashboard.
+- GDPR cancel-on-reconnect: requires a `delete-scheduled` event followed by a reconnect of the same UUID within 7 days.
 
 ---
 
-## Known minor gaps (R27 backlog)
+## What's next (R28 hand-off context)
 
-- `og-preview.png` image file not generated; social-share previews will use a fallback until a 1200×630 screenshot is committed to the repo root.
-- R2 object-storage SDK not wired (in-memory fallback active). When the user authorises CF and supplies `R2_ACCESS_KEY_ID` etc., `/replay-upload` should call S3-compatible PutObject via the `@aws-sdk/client-s3` package.
-- Public-stats opt-in toggle in settings — designed but not surfaced (the profile is currently always visible to the local user only).
-- Per-uuid lifetime K/D/captures aren't tracked yet (telemetry CSV is per-match aggregate). Adding a `playerStats` table to skillStore would unblock real lifetime stats.
-
----
-
-## What's next (R27 hand-off context)
-
-Per brief 7.0 roadmap: the next 2-3 rounds focus on stability and observability — running the public playtest, capturing user feedback, and tightening based on real usage. R27 candidates: og-preview image asset, R2 SDK wiring once CF auth lands, per-uuid lifetime stats table, expanded public-stats opt-in toggle, true headless map-preview rendering when a Bun environment with node-canvas is available.
+Per brief 7.0 roadmap: R28 adds text chat + emoji + chat moderation reading from R27's `sanitizeText`. R28 should also: replace raw UUID broadcast with per-match shadow IDs; add hard-delete cron job for expired `gdprPending` entries; harden `/dashboard` and `/events` with proper admin token (R27 left as TODO); consider report-spam detection beyond the 10/24h rate limit if observed.

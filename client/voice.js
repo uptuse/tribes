@@ -149,18 +149,78 @@ function attachPositional(otherId, peer) {
     }
     try {
         const src = listenerCtx.createMediaStreamSource(peer.stream);
+        // R27: gain node between src and panner so we can mute per-peer.
+        const gain = listenerCtx.createGain();
+        gain.gain.value = _isPeerMuted(otherId) ? 0 : 1;
         const panner = listenerCtx.createPanner();
         panner.panningModel = 'HRTF';
         panner.distanceModel = 'inverse';
         panner.refDistance = 6;
         panner.maxDistance = 80;
         panner.rolloffFactor = 1.5;
-        src.connect(panner);
+        src.connect(gain);
+        gain.connect(panner);
         panner.connect(listenerCtx.destination);
         peer.panner = panner;
+        peer.gain = gain;
     } catch (e) {
         console.error('[VOICE] positional setup failed:', e);
     }
+}
+
+// ============================================================
+// R27 — voice mute (per-peer + MUTE ALL)
+// ============================================================
+let _mutedUUIDs = new Set();
+let _muteAll = false;
+const _uuidByNumericId = new Map();   // populated from matchStart roster
+
+try {
+    const raw = localStorage.getItem('tribes:mutedUUIDs') || '[]';
+    _mutedUUIDs = new Set(JSON.parse(raw));
+} catch (e) {}
+try {
+    _muteAll = localStorage.getItem('tribes:muteAll') === '1';
+} catch (e) {}
+
+function _persistMuted() {
+    try { localStorage.setItem('tribes:mutedUUIDs', JSON.stringify([..._mutedUUIDs])); } catch (e) {}
+}
+function _isPeerMuted(numericId) {
+    if (_muteAll) return true;
+    const uuid = _uuidByNumericId.get(numericId);
+    return uuid ? _mutedUUIDs.has(uuid) : false;
+}
+function _applyAllGains() {
+    for (const [id, peer] of peers) {
+        if (peer.gain) peer.gain.gain.value = _isPeerMuted(id) ? 0 : 1;
+    }
+}
+
+export function registerPeerUuid(numericId, uuid) {
+    if (uuid) _uuidByNumericId.set(numericId, uuid);
+    _applyAllGains();
+}
+export function setPeerMuted(numericId, muted) {
+    const uuid = _uuidByNumericId.get(numericId);
+    if (!uuid) return false;
+    if (muted) _mutedUUIDs.add(uuid); else _mutedUUIDs.delete(uuid);
+    _persistMuted();
+    _applyAllGains();
+    return true;
+}
+export function isPeerMuted(numericId) { return _isPeerMuted(numericId); }
+export function setMuteAll(on) {
+    _muteAll = !!on;
+    try { localStorage.setItem('tribes:muteAll', _muteAll ? '1' : '0'); } catch (e) {}
+    _applyAllGains();
+}
+export function getMuteAll() { return _muteAll; }
+export function muteUuidDirectly(uuid) {
+    if (!uuid) return;
+    _mutedUUIDs.add(uuid);
+    _persistMuted();
+    _applyAllGains();
 }
 
 /** Called per-frame from renderer with peer world positions (from snapshot). */

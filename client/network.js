@@ -11,6 +11,13 @@ import { MSG_SNAPSHOT, MSG_DELTA, INPUT_HZ } from './constants.js';
 import * as prediction from './prediction.js';
 import * as voice from './voice.js';
 window.__voiceUpdatePeer = voice.updatePeerPosition;
+// R27: expose voice mute API to non-module shell.html
+window.__voiceRegisterUuid = voice.registerPeerUuid;
+window.__voiceSetPeerMuted = voice.setPeerMuted;
+window.__voiceIsPeerMuted = voice.isPeerMuted;
+window.__voiceSetMuteAll = voice.setMuteAll;
+window.__voiceGetMuteAll = voice.getMuteAll;
+window.__voiceMuteUuid = voice.muteUuidDirectly;
 
 let socket = null;
 let connectedAt = 0;

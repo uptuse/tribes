@@ -565,6 +565,19 @@
         <thead><tr><th>Name</th><th>Team</th><th>Score</th><th>Kills</th><th>Deaths</th></tr></thead>
         <tbody id="me-tbody"></tbody>
       </table>
+      <!-- R27: post-match survey — 1-5 stars + free-text -->
+      <div id="me-survey" style="margin:10px 0;padding:10px;background:rgba(20,16,10,0.7);border:1px solid #3A3020;">
+        <div style="color:#D4A030;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-bottom:6px;">Quick Feedback (Optional)</div>
+        <div style="margin-bottom:6px;">
+          <span id="me-stars" style="font-size:1.3em;cursor:pointer;color:#7E6D55;letter-spacing:4px;">★ ★ ★ ★ ★</span>
+          <span id="me-stars-label" style="margin-left:8px;color:#9A8A6A;font-size:0.85em;">Click to rate</span>
+        </div>
+        <textarea id="me-comment" maxlength="280" placeholder="What's the one thing you'd change about Tribes? (optional, 280 chars)"
+          style="width:100%;height:54px;background:rgba(8,6,3,0.6);color:#E0D0A0;border:1px solid #3A3020;padding:6px;font-family:inherit;font-size:0.85em;resize:vertical;"></textarea>
+        <div style="display:flex;justify-content:flex-end;margin-top:4px;">
+          <button class="btn-small" onclick="submitSurvey()">Send Feedback</button>
+        </div>
+      </div>
       <div class="me-btns">
         <button class="btn" onclick="playAgain()">Play Again</button>
         <!-- R25: replay save + watch ; R26 adds Share -->
@@ -611,6 +624,79 @@
       <div id="friends-list"></div>
       <div style="margin-top:14px;font-size:0.78em;color:#7A6A4A;">
         Add friends from the match-end screen by clicking + FRIEND next to a player's name.
+      </div>
+    </div>
+  </div>
+
+  <!-- R27: HELP modal -->
+  <div id="help-panel" style="display:none;position:fixed;inset:0;background:rgba(8,6,3,0.92);z-index:9994;align-items:center;justify-content:center;" onclick="if(event.target===this)closeHelp()">
+    <div class="panel" style="min-width:560px;max-width:740px;max-height:80vh;overflow:auto;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0">Help &amp; Support</h3>
+        <span onclick="closeHelp()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div style="font-size:0.88em;color:#C8B888;line-height:1.55;">
+        <h4 style="color:#D4A030;margin-top:0;letter-spacing:2px;font-size:0.88em;">KEYBINDINGS</h4>
+        <table style="width:100%;border-collapse:collapse;font-size:0.85em;">
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">W A S D</td><td>Move</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Space (hold)</td><td>Jetpack thrust</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Shift (hold)</td><td>Ski (no friction on terrain)</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Mouse</td><td>Look + fire</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">1 – 6</td><td>Weapon select</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">R</td><td>Use repair pack</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">F</td><td>Inventory station</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">T (hold)</td><td>Voice push-to-talk</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">M</td><td>Mute all audio</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">V</td><td>Toggle 3rd person</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">C</td><td>Command map (planned)</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Tab (hold)</td><td>Scoreboard</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Esc</td><td>Pause / menu</td></tr>
+          <tr><td style="padding:3px 8px;color:#7A6A4A;">Ctrl + ,</td><td>In-match settings</td></tr>
+        </table>
+        <h4 style="color:#D4A030;margin-top:14px;letter-spacing:2px;font-size:0.88em;">TROUBLESHOOTING</h4>
+        <ul style="margin-left:20px;">
+          <li><b>No mic for voice chat:</b> click the camera/mic icon in the address bar to grant permission, then refresh.</li>
+          <li><b>Low FPS:</b> open Options → Video and drop Graphics Quality to Medium or Low.</li>
+          <li><b>Lag / rubber-banding:</b> check the connection-quality bar in the top-right; below 2 bars indicates a network issue. Try the Casual queue if Ranked has long routing.</li>
+          <li><b>Crashes / freezes:</b> reload the page; your position will resume mid-match if you reconnect within 30s.</li>
+          <li><b>Voice peer too loud:</b> open the scoreboard (Tab) and click the 🔇 next to their name to mute that player only.</li>
+        </ul>
+        <h4 style="color:#D4A030;margin-top:14px;letter-spacing:2px;font-size:0.88em;">REPORT A BUG</h4>
+        <p>Open a GitHub issue at <a href="https://github.com/uptuse/tribes/issues" target="_blank" style="color:#FFE69A;">github.com/uptuse/tribes/issues</a> with:</p>
+        <ul style="margin-left:20px;">
+          <li>Browser + OS version</li>
+          <li>Steps to reproduce</li>
+          <li>Expected vs actual behaviour</li>
+          <li>Console output (DevTools → Console)</li>
+        </ul>
+        <h4 style="color:#D4A030;margin-top:14px;letter-spacing:2px;font-size:0.88em;">CREDITS &amp; DISCLAIMER</h4>
+        <p>Fan project — <b>not affiliated with Dynamix or Sierra On-Line</b>. Original Starsiege: Tribes © Dynamix / Sierra (1998). This browser port is a community technical exercise. Source: <a href="https://github.com/uptuse/tribes" target="_blank" style="color:#FFE69A;">github.com/uptuse/tribes</a>.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- R27: Report player modal -->
+  <div id="report-panel" style="display:none;position:fixed;inset:0;background:rgba(8,6,3,0.92);z-index:9995;align-items:center;justify-content:center;" onclick="if(event.target===this)closeReportMenu()">
+    <div class="panel" style="min-width:360px;">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+        <h3 style="margin:0">Report player</h3>
+        <span onclick="closeReportMenu()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div style="font-size:0.85em;color:#9A8A6A;margin-bottom:8px;">Reporting <b id="report-target">—</b></div>
+      <div style="margin:8px 0;">
+        <select id="report-category" style="width:100%;background:#1a1612;color:#E0D0A0;border:1px solid #3A3020;padding:5px;">
+          <option value="cheating">Cheating</option>
+          <option value="harassment">Harassment</option>
+          <option value="slurs">Slurs</option>
+          <option value="voice-abuse">Voice abuse (auto-mutes)</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <textarea id="report-desc" maxlength="200" placeholder="Optional details (200 chars)"
+        style="width:100%;height:54px;background:rgba(8,6,3,0.6);color:#E0D0A0;border:1px solid #3A3020;padding:6px;font-family:inherit;font-size:0.85em;"></textarea>
+      <div style="display:flex;justify-content:flex-end;gap:6px;margin-top:8px;">
+        <button class="btn-small" onclick="closeReportMenu()">Cancel</button>
+        <button class="btn-small btn-selected" onclick="submitReport()">Submit Report</button>
       </div>
     </div>
   </div>
@@ -670,6 +756,7 @@
       <div class="tab-strip">
         <span class="tab-item active">PLAY</span>
         <span class="tab-item" onclick="openProfile()">PROFILE</span>
+        <span class="tab-item" onclick="openHelp()">HELP</span>
         <span class="tab-item" onclick="openSettings()">OPTIONS</span>
         <span class="tab-item" onclick="showScreen('credits')">CREDITS</span>
       </div>
@@ -871,7 +958,7 @@
         <div class="score-team blue" id="sc-blue">0</div>
       </div>
       <table class="score-table">
-        <thead><tr><th>Name</th><th>Role</th><th>Score</th><th>Kills</th><th>Deaths</th><th>Ping</th></tr></thead>
+        <thead><tr><th>Name</th><th>Role</th><th>Score</th><th>Kills</th><th>Deaths</th><th>Mod</th></tr></thead>
         <tbody id="sc-body"></tbody>
       </table>
     </div>
@@ -965,6 +1052,11 @@
           <input type="checkbox" class="s-check" id="s-muted" onchange="sSave('muted',this.checked);applyAudio()">
           <span style="font-size:0.82em;color:#9A8A6A;letter-spacing:1px">Mute all (M key)</span>
         </label></div>
+        <!-- R27: voice mute-all toggle -->
+        <div class="s-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" class="s-check" id="s-voiceMuteAll" onchange="if(window.__voiceSetMuteAll)window.__voiceSetMuteAll(this.checked)">
+          <span style="font-size:0.82em;color:#9A8A6A;letter-spacing:1px">MUTE ALL voice chat (incoming)</span>
+        </label></div>
         <hr class="s-divider">
         <div class="s-row"><div class="s-label">Master Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-master" oninput="sSave('masterVolume',+this.value);sVal('s-master-v',this.value);applyAudio()"></div><div class="s-val" id="s-master-v">80</div></div>
         <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
@@ -974,6 +1066,17 @@
 
       <!-- CONTROLS TAB -->
       <div class="stab" id="stab-controls">
+        <div class="s-section">Identity</div>
+        <div class="s-row">
+          <div class="s-label">Display Name</div>
+          <div class="s-ctrl">
+            <input id="s-name" type="text" maxlength="20" placeholder="3–20 chars, A–Z 0–9 _ -"
+              style="background:#1a1612;color:#E0D0A0;border:1px solid #3A3020;padding:4px 6px;font-family:inherit;width:100%;"
+              oninput="onDisplayNameChange(this)">
+          </div>
+          <div class="s-val" id="s-name-status" style="font-size:0.78em;color:#7A6A4A;">&mdash;</div>
+        </div>
+        <hr class="s-divider">
         <div class="s-section">Mouse &amp; View</div>
         <div class="s-row"><div class="s-label">Sensitivity</div><div class="s-ctrl"><input type="range" class="s-slider" min="1" max="30" id="s-sens" oninput="sSave('sensitivity',this.value/10);sVal('s-sens-v',this.value/10+'×');applyToCpp()"></div><div class="s-val" id="s-sens-v">1.0×</div></div>
         <div class="s-row"><div class="s-label">Invert Y</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-inverty" onchange="sSave('invertY',this.checked);applyToCpp()"></div></div>
@@ -1032,6 +1135,17 @@
         <button class="btn btn-back" onclick="importSettingsClick()" style="flex:1">Import</button>
       </div>
       <input type="file" id="s-import-file" accept=".json,application/json" style="display:none" onchange="onSettingsFileChosen(event)">
+      <!-- R27: GDPR-lite — export + delete -->
+      <hr class="s-divider">
+      <div style="font-size:0.78em;color:#9A8A6A;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Account &amp; Privacy</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;">
+        <button class="btn btn-back" onclick="exportMyData()" style="flex:1">Export My Data</button>
+        <button class="btn btn-back" onclick="deleteMyAccount()" style="flex:1;border-color:#7a3030;color:#E04A4A;">Delete My Account</button>
+      </div>
+      <div style="font-size:0.72em;color:#7A6A4A;margin-top:6px;line-height:1.4;">
+        Export downloads a JSON dump of all data tied to your UUID.
+        Delete schedules a 7-day removal — reconnect within that window cancels.
+      </div>
     </div>
   </div>
 
@@ -1444,9 +1558,16 @@
           var tr=document.createElement('tr');
           var col=r.team===0?'#C8302C':'#2C5AC8';
           var roleStr=r.role>=0?(ROLE_LABELS[r.role]||''):'';
+          // R27: per-row mute + report quick actions (only for non-self)
+          var meId = (window.__tribesNet && window.__tribesNet.getStatus && window.__tribesNet.getStatus().numericId);
+          var modBtns = '';
+          if (r.idx !== meId) {
+            modBtns = '<button class="btn-small" onclick="event.stopPropagation();togglePeerMute('+r.idx+')" title="Mute voice">🔇</button> '
+                    + '<button class="btn-small" onclick="event.stopPropagation();openReportMenu('+r.idx+')" title="Report">⚠</button>';
+          }
           tr.innerHTML='<td style="color:'+col+'">'+(r.hasFlag?'⚑ ':'')+r.name+'</td>'
             +'<td style="color:#7A6A4A;font-size:0.75em">'+roleStr+'</td>'
-            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td><td>0</td>';
+            +'<td>'+r.score+'</td><td>'+r.kills+'</td><td>'+r.deaths+'</td><td>'+modBtns+'</td>';
           tbody.appendChild(tr);
         });
         document.getElementById('sc-red').textContent=rs;
@@ -1525,6 +1646,131 @@
         document.getElementById('matchend').classList.remove('active');
         showScreen('gamesetup');
       }
+    }
+
+    // R27: display name with client-side moderation + server-side defense
+    function onDisplayNameChange(input){
+      var status = document.getElementById('s-name-status');
+      var name = input.value || '';
+      if(window.__moderation && window.__moderation.validateUsername){
+        var v = window.__moderation.validateUsername(name);
+        if(!v.ok){
+          if(status){ status.textContent = v.reason; status.style.color = '#E04A4A'; }
+          input.style.borderColor = '#7a3030';
+          return;
+        }
+      }
+      if(status){ status.textContent = 'OK'; status.style.color = '#5DD66B'; }
+      input.style.borderColor = '#3A3020';
+      // Persist + push to server (server re-validates as defense-in-depth)
+      sSave('playerName', name);
+      if(window.__tribesNet && window.__tribesNet.send){
+        window.__tribesNet.send({ type: 'setName', name: name });
+      }
+    }
+    // Restore display name on load
+    setTimeout(function(){
+      try {
+        var saved = (JSON.parse(localStorage.getItem('tribes:settings') || '{}').playerName) || '';
+        var el = document.getElementById('s-name');
+        if(el && saved){ el.value = saved; onDisplayNameChange(el); }
+      } catch (e) {}
+    }, 200);
+    // Server may reject — show an inline notice via __tribesNet onMessage
+    setTimeout(function(){
+      if(window.__tribesNet && window.__tribesNet.onMessage){
+        window.__tribesNet.onMessage(function(msg){
+          if(msg && msg.type === 'setNameRejected'){
+            var status = document.getElementById('s-name-status');
+            if(status){ status.textContent = 'Server: ' + (msg.reason || 'rejected'); status.style.color = '#E04A4A'; }
+          }
+        });
+      }
+    }, 1500);
+
+    // R27: HELP modal
+    function openHelp(){ var p = document.getElementById('help-panel'); if (p) p.style.display = 'flex'; }
+    function closeHelp(){ var p = document.getElementById('help-panel'); if (p) p.style.display = 'none'; }
+
+    // R27: GDPR-lite — export + delete
+    function _gdprToken(uuid){
+      return fetch(getServerOrigin() + '/account/token?uuid=' + encodeURIComponent(uuid))
+        .then(function(r){ return r.json(); })
+        .then(function(j){ return j.token; });
+    }
+    function exportMyData(){
+      var uuid = '';
+      try { uuid = localStorage.getItem('tribes_player_uuid') || ''; } catch (e) {}
+      if(!uuid){ alert('No UUID stored locally — connect to a server at least once first.'); return; }
+      _gdprToken(uuid).then(function(token){
+        var url = getServerOrigin() + '/account/export?uuid=' + encodeURIComponent(uuid) + '&token=' + encodeURIComponent(token);
+        var a = document.createElement('a');
+        a.href = url; a.download = 'tribes-data-' + uuid.slice(0,8) + '.json';
+        document.body.appendChild(a); a.click(); a.remove();
+        showToast('Data export downloaded.', 2500);
+      }).catch(function(e){ alert('Export failed: ' + e.message); });
+    }
+    function deleteMyAccount(){
+      if(!confirm('Delete your account? This schedules a 7-day removal. Reconnecting within that window CANCELS the delete. After 7 days the deletion is final.')) return;
+      var uuid = '';
+      try { uuid = localStorage.getItem('tribes_player_uuid') || ''; } catch (e) {}
+      if(!uuid){ alert('No UUID stored locally.'); return; }
+      _gdprToken(uuid).then(function(token){
+        return fetch(getServerOrigin() + '/account/delete?uuid=' + encodeURIComponent(uuid) + '&token=' + encodeURIComponent(token), { method: 'POST' });
+      }).then(function(r){ return r.json(); }).then(function(j){
+        if(j.ok){
+          var d = new Date(j.expiresAt);
+          alert('Account delete scheduled. Final purge: ' + d.toLocaleString() + '. Reconnecting before then cancels.');
+        } else {
+          alert('Delete failed: ' + (j.error || 'unknown'));
+        }
+      }).catch(function(e){ alert('Delete failed: ' + e.message); });
+    }
+
+    // R27: voice mute + report flows
+    function togglePeerMute(numericId){
+      if(window.__voiceSetPeerMuted){
+        var nowMuted = !window.__voiceIsPeerMuted(numericId);
+        window.__voiceSetPeerMuted(numericId, nowMuted);
+        showToast(nowMuted ? 'Voice muted for this player' : 'Voice unmuted', 1800);
+      }
+    }
+    var _reportTargetId = -1;
+    function openReportMenu(numericId){
+      _reportTargetId = numericId;
+      var ros = (window.__tribesPlayerRoster || []).find(function(p){ return p.id === numericId; });
+      var t = document.getElementById('report-target');
+      if(t) t.textContent = ros ? ros.name : ('player #' + numericId);
+      var p = document.getElementById('report-panel');
+      if(p) p.style.display = 'flex';
+    }
+    function closeReportMenu(){
+      var p = document.getElementById('report-panel');
+      if(p) p.style.display = 'none';
+    }
+    function submitReport(){
+      var byUuid = '';
+      try { byUuid = localStorage.getItem('tribes_player_uuid') || ''; } catch (e) {}
+      var reportedUuid = (window.__tribesPlayerUuids || {})[_reportTargetId] || '';
+      var category = (document.getElementById('report-category') || {}).value || 'other';
+      var desc = (document.getElementById('report-desc') || {}).value || '';
+      if (!reportedUuid){ alert('Cannot identify reported player UUID.'); return; }
+      fetch(getServerOrigin() + '/report', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ byUuid: byUuid, reportedUuid: reportedUuid, category: category, desc: desc }),
+      }).then(function(r){ return r.json(); }).then(function(j){
+        if(j.ok){
+          showToast('Report submitted. Thanks for keeping the lobby safe.', 3000);
+          // Voice-abuse auto-mutes the reported player
+          if(category === 'voice-abuse' && window.__voiceMuteUuid){
+            window.__voiceMuteUuid(reportedUuid);
+          }
+          closeReportMenu();
+        } else {
+          alert('Report failed: ' + (j.error || 'unknown'));
+        }
+      }).catch(function(e){ alert('Report failed: ' + e.message); });
     }
 
     // R26: PROFILE tab
@@ -1751,6 +1997,47 @@
         opts[i].classList.toggle('btn-selected', opts[i].getAttribute('data-mapid') === mapId);
       }
     }
+    // R27: post-match survey
+    var _meRating = 0;
+    function setSurveyRating(n){
+      _meRating = n;
+      var el = document.getElementById('me-stars');
+      if(el){
+        var stars = '';
+        for(var i=1;i<=5;i++) stars += i<=n ? '★' : '☆';
+        el.textContent = stars.replace(/(.)/g,'$1 ').trim();
+        el.style.color = n>0 ? '#FFC850' : '#7E6D55';
+      }
+      var lbl = document.getElementById('me-stars-label');
+      if(lbl) lbl.textContent = n>0 ? 'Rated ' + n + '/5' : 'Click to rate';
+    }
+    document.addEventListener('click', function(e){
+      if(e.target && e.target.id === 'me-stars'){
+        // Click-to-cycle 1..5
+        var next = ((_meRating || 0) % 5) + 1;
+        setSurveyRating(next);
+      }
+    });
+    function submitSurvey(){
+      var rating = _meRating || 3;
+      var comment = (document.getElementById('me-comment') || {}).value || '';
+      var uuid = '';
+      try { uuid = localStorage.getItem('tribes_player_uuid') || ''; } catch (e) {}
+      var matchId = window.__lastReplayUrl ? (window.__lastReplayUrl.split('matchId=')[1] || '') : '';
+      fetch(getServerOrigin() + '/survey', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ byUuid: uuid, matchId: matchId, rating: rating, tags: [], comment: comment }),
+      }).then(function(r){ return r.json(); }).then(function(j){
+        if(j.ok){
+          showToast('Thanks for the feedback!', 2500);
+          var s = document.getElementById('me-survey'); if(s) s.style.opacity = '0.4';
+        } else {
+          alert('Survey failed: ' + (j.error || 'unknown'));
+        }
+      }).catch(function(e){ alert('Survey failed: ' + e.message); });
+    }
+
     function renderMatchEndExtras(){
       // Show save/watch/share buttons if a replay URL was provided
       var sb = document.getElementById('me-savereplay');
@@ -2719,6 +3006,9 @@
           // Trigger an initial badge render with the default rating
           if(window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({ rating: 1000, matchesPlayed: 0, delta: 0, ranked: false });
         }).catch(function(e){ console.warn('[R26] tiers.js import failed:', e); });
+        // R27: moderation primitives — needed for client-side name validation
+        import('./client/moderation.js').then(function(){ console.log('[R27] moderation.js loaded'); })
+          .catch(function(e){ console.warn('[R27] moderation.js import failed:', e); });
         // R16/R19: opt-in network client via ?multiplayer=local|remote URL flag
         var mp = new URLSearchParams(location.search).get('multiplayer');
         if(mp === 'local' || mp === 'remote'){
@@ -2786,9 +3076,15 @@
               }
               // R26: stash per-player ratings so the nameplate can paint tier color
               window.__tribesPlayerRatings = window.__tribesPlayerRatings || {};
+              window.__tribesPlayerUuids = window.__tribesPlayerUuids || {};
               for (var i = 0; i < msg.players.length; i++) {
                 var p = msg.players[i];
                 if (typeof p.rating === 'number') window.__tribesPlayerRatings[p.id] = p.rating;
+                // R27: register peer uuid with voice module so per-uuid mute persists
+                if (p.uuid) {
+                  window.__tribesPlayerUuids[p.id] = p.uuid;
+                  if (window.__voiceRegisterUuid) window.__voiceRegisterUuid(p.id, p.uuid);
+                }
               }
               // Also stash for the scoreboard
               window.__tribesPlayerRoster = msg.players;

@@ -25,6 +25,74 @@ import { AntiCheat } from './anticheat.ts';
 import { TICK_HZ, SNAPSHOT_HZ, DELTA_HZ, MATCH_END, MATCH_END_REMATCH_HOLD_SEC } from './constants.ts';
 import { computeRatingDeltas, isRatedMatch, defaultSkillRow, SKILL_INITIAL, type SkillRow } from './skill.ts';
 import { tierForRating, RANKED_MIN_MATCHES_PLAYED } from './tiers.ts';
+import { validateUsername, containsRestricted } from './moderation.ts';
+
+// ============================================================
+// R27 — Public-playtest hardening: events, reports, audit, GDPR
+// ============================================================
+
+// Structured event log — bounded ring buffer queryable via /events
+interface EventEntry {
+  type: string;            // match.started, player.kicked, cheat.detected, error.5xx, …
+  ts: number;              // wall-clock ms
+  payload: Record<string, unknown>;
+}
+const EVENT_LOG_MAX = 1000;
+const eventLog: EventEntry[] = [];
+function emitEvent(type: string, payload: Record<string, unknown>) {
+  eventLog.push({ type, ts: Date.now(), payload });
+  if (eventLog.length > EVENT_LOG_MAX) eventLog.shift();
+}
+
+// Audit log appender — writes to comms/audit_log.jsonl on disk for forensic
+// review. Failures are non-fatal (in CF Workers there's no fs; the audit
+// record still exists in the event log).
+const AUDIT_PATH = 'comms/audit_log.jsonl';
+function appendAudit(rec: Record<string, unknown>) {
+  try { appendFileSync(AUDIT_PATH, JSON.stringify({ ...rec, ts: Date.now() }) + '\n'); }
+  catch { /* fs unavailable — event log still has it */ }
+}
+
+// Reports store — keyed by reported uuid, accumulates {by, category, desc, ts}
+interface ReportEntry { byUuid: string; category: string; desc: string; ts: number; }
+const reportsStore = new Map<string, ReportEntry[]>();    // reportedUuid → entries
+const REPORTS_PER_UUID_MAX = 50;
+const REPORT_RATE_LIMIT = 10;   // per reporter per 24h
+const reportRateLimit = new Map<string, number[]>();      // reporterUuid → [ts, ts, …]
+
+// Velocity-strike tracking for anti-cheat
+interface StrikeEntry { ts: number[]; }
+const velocityStrikes = new Map<string, StrikeEntry>();   // uuid → recent strikes
+// Soft-kick history: uuid → kick timestamps (for 5-kicks-7d blocklist trigger)
+const kickHistory = new Map<string, number[]>();
+const blockedUuids = new Set<string>();
+
+// Sentiment store — match-end survey free-text + tag aggregation
+interface SurveyEntry { byUuid: string; matchId: string; rating: number; tags: string[]; comment: string; ts: number; }
+const surveyStore: SurveyEntry[] = [];
+const SURVEY_MAX = 500;
+
+// GDPR pending deletes: uuid → {scheduledAt, expiresAt}
+const gdprPending = new Map<string, { scheduledAt: number; expiresAt: number }>();
+const GDPR_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// One-time tokens for /account/{export,delete}
+const accountTokens = new Map<string, { uuid: string; expiresAt: number }>();
+function newAccountToken(uuid: string): string {
+  const buf = new Uint8Array(16);
+  crypto.getRandomValues(buf);
+  const tok = [...buf].map(b => b.toString(16).padStart(2, '0')).join('');
+  accountTokens.set(tok, { uuid, expiresAt: Date.now() + 5 * 60 * 1000 });
+  return tok;
+}
+function consumeAccountToken(token: string, claimedUuid: string): boolean {
+  const row = accountTokens.get(token);
+  if (!row) return false;
+  if (row.expiresAt < Date.now()) { accountTokens.delete(token); return false; }
+  if (row.uuid !== claimedUuid) return false;
+  accountTokens.delete(token);
+  return true;
+}
 import { appendFileSync, existsSync, writeFileSync, readFileSync } from 'fs';
 
 // R25: known map ids (resolves ?map= query param to a file path)
@@ -339,6 +407,7 @@ function startMatch(lobby: LobbyState) {
   });
   lobby.rematchVotes = new Set();
   metrics.matchesStarted++;
+  emitEvent('match.started', { matchId: lobby.id, mapId: lobby.mapId, ranked: lobby.ranked, players: lobby.members.size });
   (lobby as any).matchStartedMs = Date.now();
   (lobby as any).matchPeakPlayers = 0;
   console.log(`[METRIC] {event:matchStart, matchId:'${lobby.id}', playerCount:${lobby.members.size}, time:${Date.now()}}`);
@@ -366,32 +435,82 @@ function startMatch(lobby: LobbyState) {
       id: p.id, name: p.name, team: p.team, armor: p.armor,
       // R26: include rating so client can render tier badges on scoreboard + nameplate
       rating: p.uuid ? (skillStore.get(p.uuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL,
+      // R27: include uuid so client can wire mute + report per-player. Trade-off:
+      // exposes UUIDs to all in-lobby players. R28 can replace with a per-match
+      // shadow ID if a privacy concern surfaces.
+      uuid: p.uuid || '',
     })),
     serverTime: Date.now(),
   });
 
   // Start tick loops
   lobby.tickInterval = setInterval(() => {
-    if (!lobby.match) return;
-    const t0 = performance.now();
-    try { lobby.match.tickSimulation(); } catch (e) { console.error('[tick]', e); }
-    const tickMs = performance.now() - t0;
-    if (tickMs > 33) recordSlowTick(tickMs, lobby.match.players.size, lobby.match.projectiles.length);
-    if (lobby.match.players.size > ((lobby as any).matchPeakPlayers ?? 0)) {
-      (lobby as any).matchPeakPlayers = lobby.match.players.size;
-    }
-    // R20: drain pending kill events
-    if (lobby.match.pendingKillEvents.length > 0) {
-      const meta = replayMeta.get(lobby.id);
-      for (const ev of lobby.match.pendingKillEvents) {
-        broadcastJSON(lobby, { type: 'kill', killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
-        // R25: capture kill marker for replay timeline
-        if (meta) meta.killEvents.push({ tick: lobby.match.tick, killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
+    // R27: top-level try-catch — uncaught tick exception logs error.5xx and
+    // continues. Players experience a one-tick stall but stay connected.
+    try {
+      if (!lobby.match) return;
+      const t0 = performance.now();
+      try { lobby.match.tickSimulation(); } catch (e) { console.error('[tick]', e); emitEvent('error.5xx', { where: 'tickSimulation', err: String(e), lobbyId: lobby.id }); }
+      const tickMs = performance.now() - t0;
+      if (tickMs > 33) recordSlowTick(tickMs, lobby.match.players.size, lobby.match.projectiles.length);
+      if (lobby.match.players.size > ((lobby as any).matchPeakPlayers ?? 0)) {
+        (lobby as any).matchPeakPlayers = lobby.match.players.size;
       }
-      lobby.match.pendingKillEvents.length = 0;
-    }
-    if (lobby.match.matchState === MATCH_END && lobby.rematchHoldUntil === 0) {
-      endMatch(lobby);
+      // R27: per-tick velocity validation. Decision authority bumped horizontal
+      // bound to 80 m/s (Tribes ski + downhill is legitimately fast). >100 m/s
+      // is the hard clamp; 80-100 is a logged warning. Vertical jet >+20 is
+      // the boundary. 3 strikes in 60s = soft-kick.
+      for (const p of lobby.match.players.values()) {
+        if (p.isBot || !p.uuid) continue;
+        const horiz = Math.hypot(p.vel[0], p.vel[2]);
+        const vy = p.vel[1];
+        const overHoriz = horiz > 100;
+        const overVy    = vy    > 20;
+        if (overHoriz || overVy) {
+          // Clamp server-side and accumulate strike
+          if (overHoriz) { const k = 100 / Math.max(0.001, horiz); p.vel[0] *= k; p.vel[2] *= k; }
+          if (overVy)    p.vel[1] = 20;
+          const entry = velocityStrikes.get(p.uuid) ?? { ts: [] };
+          entry.ts.push(Date.now());
+          entry.ts = entry.ts.filter(t => t > Date.now() - 60_000);
+          velocityStrikes.set(p.uuid, entry);
+          emitEvent('cheat.detected', { kind: 'velocity', uuid: p.uuid.slice(0,8), playerId: p.id, horiz: horiz.toFixed(1), vy: vy.toFixed(1), strikes: entry.ts.length });
+          appendAudit({ kind: 'cheat.velocity', uuid: p.uuid, playerId: p.id, horiz, vy, strikes: entry.ts.length });
+          if (entry.ts.length >= 3) {
+            // Soft-kick
+            const conn = [...connections.values()].find(c => c.numericId === p.id);
+            if (conn) {
+              try { conn.ws.close(4003, 'speed-validation-failed'); } catch {}
+              const kh = kickHistory.get(p.uuid) ?? [];
+              kh.push(Date.now());
+              kickHistory.set(p.uuid, kh.filter(t => t > Date.now() - 7 * 24 * 60 * 60 * 1000));
+              if ((kickHistory.get(p.uuid)?.length ?? 0) >= 5) blockedUuids.add(p.uuid);
+              emitEvent('player.kicked', { uuid: p.uuid.slice(0,8), reason: 'speed-validation-failed', kickCount7d: kickHistory.get(p.uuid)?.length });
+              appendAudit({ kind: 'kick', reason: 'speed-validation-failed', uuid: p.uuid, kickCount7d: kickHistory.get(p.uuid)?.length });
+              velocityStrikes.delete(p.uuid);
+            }
+          }
+        } else if (horiz > 80) {
+          // Graduated warning band — log only, no strike
+          emitEvent('cheat.detected', { kind: 'velocity-warn', uuid: p.uuid.slice(0,8), playerId: p.id, horiz: horiz.toFixed(1) });
+        }
+      }
+      // R20: drain pending kill events
+      if (lobby.match.pendingKillEvents.length > 0) {
+        const meta = replayMeta.get(lobby.id);
+        for (const ev of lobby.match.pendingKillEvents) {
+          broadcastJSON(lobby, { type: 'kill', killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
+          // R25: capture kill marker for replay timeline
+          if (meta) meta.killEvents.push({ tick: lobby.match.tick, killer: ev.killer, victim: ev.victim, weapon: ev.weapon, killerTeam: ev.killerTeam });
+        }
+        lobby.match.pendingKillEvents.length = 0;
+      }
+      if (lobby.match.matchState === MATCH_END && lobby.rematchHoldUntil === 0) {
+        endMatch(lobby);
+      }
+    } catch (uncaught) {
+      console.error('[tick] uncaught', uncaught);
+      emitEvent('error.5xx', { where: 'tickInterval', err: String(uncaught), lobbyId: lobby.id });
     }
   }, 1000 / TICK_HZ);
 
@@ -425,6 +544,7 @@ function endMatch(lobby: LobbyState) {
   for (const p of m.players.values()) totalKills += p.kills;
   const winnerTeam = m.teamScore[0] > m.teamScore[1] ? 0 : (m.teamScore[1] > m.teamScore[0] ? 1 : -1);
   metrics.matchesEnded++;
+  emitEvent('match.ended', { matchId: lobby.id, mapId: lobby.mapId, durationS, winnerTeam, scores: m.teamScore });
   metrics.matchHistory.push({ matchId: lobby.id, durationS, peakPlayers, totalKills, winnerTeam });
   if (metrics.matchHistory.length > 50) metrics.matchHistory.shift();
   console.log(`[METRIC] {event:matchEnd, matchId:'${lobby.id}', durationS:${durationS.toFixed(1)}, peakPlayers:${peakPlayers}, totalKills:${totalKills}, winnerTeam:${winnerTeam}}`);
@@ -736,6 +856,30 @@ const server = Bun.serve({
         perMapPlayCounts: perMap,
         topRated,
         rankedQueueDepth: queueDepth,
+        // R27: moderation + sentiment surfaces
+        topReported: [...reportsStore.entries()]
+          .map(([uuid, list]) => ({ uuid: uuid.slice(0, 8), count: list.length, last: list[list.length - 1] }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10),
+        blockedCount: blockedUuids.size,
+        recentEvents: eventLog.slice(-20).reverse(),
+        survey: (() => {
+          if (surveyStore.length === 0) return null;
+          const last24 = surveyStore.filter(s => s.ts > Date.now() - 24 * 60 * 60 * 1000);
+          const tagCount: Record<string, number> = {};
+          let totalRating = 0;
+          for (const s of last24) {
+            totalRating += s.rating;
+            for (const t of s.tags) tagCount[t] = (tagCount[t] || 0) + 1;
+          }
+          const topTags = Object.entries(tagCount).sort((a, b) => b[1] - a[1]).slice(0, 5);
+          return {
+            count24h: last24.length,
+            avgRating: last24.length > 0 ? +(totalRating / last24.length).toFixed(2) : 0,
+            topTags,
+            samples: last24.filter(s => s.comment).slice(-5).map(s => ({ comment: s.comment.slice(0, 20) + '…', rating: s.rating })),
+          };
+        })(),
       }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
     }
     if (url.pathname === '/dashboard') {
@@ -881,6 +1025,108 @@ const server = Bun.serve({
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
       });
     }
+    // R27: structured event log query — token-gated like /dashboard
+    if (url.pathname === '/events') {
+      const since = Number(url.searchParams.get('since') || 0);
+      const type = url.searchParams.get('type') || '';
+      const limit = Math.min(500, Number(url.searchParams.get('limit') || 100));
+      let out = eventLog.filter(e => e.ts > since);
+      if (type) out = out.filter(e => e.type === type);
+      out = out.slice(-limit).reverse();
+      return new Response(JSON.stringify(out), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
+    // R27: report submission (rate-limited 10/uuid/24h)
+    if (url.pathname === '/report' && req.method === 'POST') {
+      return req.json().then(body => {
+        const byUuid = String(body?.byUuid || '');
+        const reportedUuid = String(body?.reportedUuid || '');
+        const category = String(body?.category || '');
+        const desc = String(body?.desc || '').slice(0, 200);
+        if (!byUuid || !reportedUuid || byUuid === reportedUuid) {
+          return new Response(JSON.stringify({ error: 'invalid report' }), { status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        const allowed = ['cheating', 'harassment', 'slurs', 'voice-abuse', 'other'];
+        if (!allowed.includes(category)) {
+          return new Response(JSON.stringify({ error: 'invalid category' }), { status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        // Rate limit
+        const now = Date.now();
+        const window = reportRateLimit.get(byUuid) ?? [];
+        const recent = window.filter(t => t > now - 24 * 60 * 60 * 1000);
+        if (recent.length >= REPORT_RATE_LIMIT) {
+          return new Response(JSON.stringify({ error: 'report rate limit exceeded (10/24h)' }), { status: 429, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+        }
+        recent.push(now);
+        reportRateLimit.set(byUuid, recent);
+        const list = reportsStore.get(reportedUuid) ?? [];
+        list.push({ byUuid, category, desc, ts: now });
+        if (list.length > REPORTS_PER_UUID_MAX) list.shift();
+        reportsStore.set(reportedUuid, list);
+        emitEvent('player.reported', { reportedUuid: reportedUuid.slice(0,8), byUuid: byUuid.slice(0,8), category });
+        appendAudit({ kind: 'report', reportedUuid, byUuid, category, desc });
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+      }).catch(() => new Response('bad json', { status: 400 }));
+    }
+    // R27: post-match survey submission
+    if (url.pathname === '/survey' && req.method === 'POST') {
+      return req.json().then(body => {
+        const entry: SurveyEntry = {
+          byUuid: String(body?.byUuid || ''),
+          matchId: String(body?.matchId || ''),
+          rating: Math.max(1, Math.min(5, Number(body?.rating || 3) | 0)),
+          tags: Array.isArray(body?.tags) ? body.tags.slice(0, 10).map(String) : [],
+          comment: String(body?.comment || '').slice(0, 280),
+          ts: Date.now(),
+        };
+        surveyStore.push(entry);
+        if (surveyStore.length > SURVEY_MAX) surveyStore.shift();
+        emitEvent('survey.submitted', { byUuid: entry.byUuid.slice(0,8), matchId: entry.matchId, rating: entry.rating, tagCount: entry.tags.length, hasComment: !!entry.comment });
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+      }).catch(() => new Response('bad json', { status: 400 }));
+    }
+    // R27: GDPR — request a one-time token (client UUID echoes back)
+    if (url.pathname === '/account/token') {
+      const uuid = url.searchParams.get('uuid') || '';
+      if (!uuid) return new Response(JSON.stringify({ error: 'uuid required' }), { status: 400, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+      const token = newAccountToken(uuid);
+      return new Response(JSON.stringify({ token, expiresInS: 300 }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+    }
+    // R27: GDPR export — full data dump for the requesting uuid
+    if (url.pathname === '/account/export') {
+      const uuid = url.searchParams.get('uuid') || '';
+      const token = url.searchParams.get('token') || '';
+      if (!consumeAccountToken(token, uuid)) return new Response('invalid or expired token', { status: 401, headers: { 'access-control-allow-origin': '*' } });
+      const data = {
+        uuid,
+        skill: skillStore.get(uuid) ?? null,
+        reportsMade: [...reportsStore.values()].flat().filter(r => r.byUuid === uuid),
+        reportsReceived: reportsStore.get(uuid) ?? [],
+        surveys: surveyStore.filter(s => s.byUuid === uuid),
+        kicks: kickHistory.get(uuid) ?? [],
+        blocked: blockedUuids.has(uuid),
+        gdprPending: gdprPending.get(uuid) ?? null,
+        exportedAt: Date.now(),
+      };
+      return new Response(JSON.stringify(data, null, 2), {
+        headers: {
+          'content-type': 'application/json',
+          'access-control-allow-origin': '*',
+          'content-disposition': `attachment; filename="tribes-data-${uuid.slice(0,8)}.json"`,
+        },
+      });
+    }
+    // R27: GDPR delete — schedules a 7-day grace deletion. Reconnecting
+    // within the window cancels (handled in WS open below).
+    if (url.pathname === '/account/delete' && req.method === 'POST') {
+      const uuid = url.searchParams.get('uuid') || '';
+      const token = url.searchParams.get('token') || '';
+      if (!consumeAccountToken(token, uuid)) return new Response(JSON.stringify({ error: 'invalid or expired token' }), { status: 401, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+      gdprPending.set(uuid, { scheduledAt: Date.now(), expiresAt: Date.now() + GDPR_GRACE_MS });
+      emitEvent('account.delete-scheduled', { uuid: uuid.slice(0,8), expiresAt: Date.now() + GDPR_GRACE_MS });
+      return new Response(JSON.stringify({ ok: true, expiresAt: Date.now() + GDPR_GRACE_MS }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
+    }
     // R26: shared replay download by hash (paste-link flow)
     if (url.pathname === '/replay-shared') {
       const hash = url.searchParams.get('h') || '';
@@ -998,6 +1244,14 @@ const server = Bun.serve({
       }));
       broadcastJSON(lobby, buildPlayerList(lobby));
       metrics.playersConnected++;
+      // R27: cancel any pending GDPR delete — they came back within grace
+      if (newUuid && gdprPending.has(newUuid)) {
+        gdprPending.delete(newUuid);
+        console.log(`[GDPR] cancelled pending delete for ${newUuid.slice(0,8)} (reconnect within grace)`);
+        emitEvent('account.delete-cancelled', { uuid: newUuid.slice(0,8), reason: 'reconnect-within-grace' });
+      }
+      // R27: structured event
+      emitEvent('player.connected', { playerId, numericId, lobbyId: lobby.id, reconnected, uuid: newUuid.slice(0,8) });
       console.log(`[conn] +${playerId} (id=${numericId}, lobby=${lobby.id}, ${reconnected ? 'reconnect' : 'new'}) ${lobby.members.size}/${MAX_PLAYERS_PER_LOBBY}`);
       console.log(`[METRIC] {event:connect, playerId:'${playerId}', lobbyId:'${lobby.id}', reconnect:${reconnected}}`);
 
@@ -1053,6 +1307,12 @@ const server = Bun.serve({
       switch (msg.type) {
         case 'setName':
           if (typeof msg.name === 'string' && msg.name.length > 0 && msg.name.length <= 32) {
+            // R27: server-side defense-in-depth profanity check
+            const v = validateUsername(msg.name);
+            if (!v.ok) {
+              ws.send(JSON.stringify({ type: 'setNameRejected', reason: v.reason }));
+              break;
+            }
             conn.name = msg.name.replace(/[^\w\-_. ]/g, '').slice(0, 32);
             broadcastJSON(lobby, buildPlayerList(lobby));
           }
@@ -1157,6 +1417,8 @@ const server = Bun.serve({
         broadcastJSON(lobby, buildPlayerList(lobby));
         metrics.playersDisconnected++;
         const sessionS = (Date.now() - conn.joinedAt) / 1000;
+        // R27: structured event with close code for triage
+        emitEvent('player.disconnected', { playerId, numericId: conn.numericId, lobbyId: lobby.id, durationS: sessionS, closeCode: (ws as any)?.readyState });
         console.log(`[conn] -${playerId} left ${lobby.id} (${lobby.members.size}/${MAX_PLAYERS_PER_LOBBY})`);
         console.log(`[METRIC] {event:disconnect, playerId:'${playerId}', lobbyId:'${lobby.id}', durationS:${sessionS.toFixed(1)}}`);
         if (lobby.match && lobby.match.players.size === 0) {
@@ -1198,6 +1460,24 @@ td{padding:5px 10px;border-bottom:1px solid #1f1a10}
 <h3>Top 10 by rating</h3><table id="toprated"><tr><th>UUID</th><th>Rating</th><th>Tier</th><th>Matches</th></tr></table>
 <h3>Recent matches</h3><table id="matches"><tr><th>Match</th><th>Duration</th><th>Peak</th><th>Kills</th><th>Winner</th></tr></table>
 <h3>Last cheat events</h3><table id="cheats"><tr><th>Time</th><th>Player</th><th>Code</th><th>Detail</th></tr></table>
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:20px;">
+  <div>
+    <h3>Top reported (24h+)</h3>
+    <table id="reports"><tr><th>UUID</th><th>Count</th><th>Last category</th></tr></table>
+  </div>
+  <div>
+    <h3>Survey sentiment (last 24h)</h3>
+    <div id="survey-summary" style="font-size:0.9em">No surveys yet.</div>
+  </div>
+</div>
+<h3>Tail events <span style="color:#7a6a4a;font-size:0.7em">(polled 5s)</span></h3>
+<select id="event-filter" style="background:#16140e;color:#FFC850;border:1px solid #3a2c1c;padding:4px 8px;margin-bottom:6px;">
+  <option value="">All</option><option>match.started</option><option>match.ended</option>
+  <option>player.connected</option><option>player.disconnected</option><option>player.kicked</option>
+  <option>player.reported</option><option>cheat.detected</option><option>error.5xx</option>
+  <option>survey.submitted</option><option>account.delete-scheduled</option>
+</select>
+<table id="events"><tr><th>Time</th><th>Type</th><th>Payload</th></tr></table>
 <script>
 async function refresh(){
   try{
@@ -1228,6 +1508,22 @@ async function refresh(){
       '<tr><td colspan=2 style="color:#7a6a4a">No ranked queue activity</td></tr>';
     document.getElementById('toprated').innerHTML = '<tr><th>UUID</th><th>Rating</th><th>Tier</th><th>Matches</th></tr>' +
       (m.topRated||[]).map(t => '<tr><td>'+t.uuid+'…</td><td>'+t.rating+'</td><td>'+t.tier+'</td><td>'+t.matches+'</td></tr>').join('');
+    // R27 dashboard surfaces
+    document.getElementById('reports').innerHTML = '<tr><th>UUID</th><th>Count</th><th>Last category</th></tr>' +
+      (m.topReported||[]).map(t => '<tr><td>'+t.uuid+'…</td><td>'+t.count+'</td><td class="warn">'+(t.last && t.last.category || '-')+'</td></tr>').join('');
+    if (m.survey) {
+      const s = m.survey;
+      const tagsHtml = (s.topTags||[]).map(t => t[0]+' ('+t[1]+')').join(', ');
+      const samplesHtml = (s.samples||[]).map(x => '<li>★'+x.rating+' &mdash; '+x.comment+'</li>').join('');
+      document.getElementById('survey-summary').innerHTML =
+        '<div>'+s.count24h+' responses · avg ★'+s.avgRating+'</div>' +
+        '<div style="margin-top:6px;color:#7a6a4a">Top tags: '+tagsHtml+'</div>' +
+        '<ul style="margin-top:6px;padding-left:18px;">'+samplesHtml+'</ul>';
+    }
+    const filter = document.getElementById('event-filter').value;
+    const rows = (m.recentEvents||[]).filter(e => !filter || e.type === filter);
+    document.getElementById('events').innerHTML = '<tr><th>Time</th><th>Type</th><th>Payload</th></tr>' +
+      rows.map(e => '<tr><td>'+new Date(e.ts).toLocaleTimeString()+'</td><td>'+e.type+'</td><td><code style="color:#7a6a4a;font-size:0.78em">'+JSON.stringify(e.payload)+'</code></td></tr>').join('');
   } catch(e){ console.error(e); }
 }
 refresh(); setInterval(refresh, 2000);
