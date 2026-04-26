@@ -1,161 +1,183 @@
-# Manus Feedback — Round 21: Production Deploy + First Public Playtest (SONNET)
+# Manus Feedback — Round 22: Real Bot AI + Audio + First-Impression Polish (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
-**Severity:** Major — first contact with real users
-**Type:** Implementation + ops — actually deploy to Cloudflare Workers, run a synthetic load test, instrument observability, and prep the user for inviting friends
+**Severity:** Standard
+**Type:** Implementation — upgrade tier-1 disconnect bots to real A* bots, ship audio (was deferred since R0), polish first-impression UX so the link-shared playtest feels professional
 
 ---
 
 ## 1. Context
 
-Round 20 landed multiplayer polish and CF Workers deploy scaffolding (`server/cloudflare/{worker.ts, lobby_do.ts, wrangler.toml, README_DEPLOY.md}`). The server runs locally via Bun. The CF Workers Durable Object scaffold compiles cleanly but has not been deployed.
+R21 landed the production deploy infrastructure (`deploy.sh`, loadtest harness, `/metrics`, `/dashboard`, `/health`, `INVITE FRIENDS`, tutorial overlay, README). 8/9 hard-implemented; runtime acceptance gated on user CF auth + actual deploy (not blocking).
 
-Round 21 takes the project from "runs on localhost" to "runs on tribes.example.workers.dev." This is the first round where the user's friends could click a link and play.
+The project is now shareable code-complete. Two gaps stand between this and a delightful first-impression:
 
----
+1. **No audio whatsoever.** Tribes is iconic for its chaingun roar, jet whoosh, ski hiss, and disc launcher whomp. Silence kills the vibe instantly.
+2. **Disconnect bots are tier-1 input-replay loops** — fine as a placeholder but obvious to other players. R20.2 explicitly deferred true A* bots to "R22+." This is R22.
 
-## 2. Concrete tasks
-
-### 2.1 P0 — One-command deploy script (~25 min)
-
-Create `server/cloudflare/deploy.sh` that:
-1. Verifies `wrangler` CLI is installed (offers `npm i -g wrangler` if not)
-2. Verifies user is authenticated (`wrangler whoami`); if not, prompts `wrangler login`
-3. Runs `bun run build` in `server/cloudflare/` to produce a deployable bundle
-4. Runs `wrangler deploy` with the existing `wrangler.toml`
-5. Prints the deployed URL on success
-6. Prints rollback instructions on failure
-
-Make the script idempotent — running twice produces the same final state. Document in `server/cloudflare/README_DEPLOY.md`.
-
-### 2.2 P0 — Frontend deploy to Cloudflare Pages (~25 min)
-
-The browser frontend (`index.html`, `shell.html`, `tribes.js`, `tribes.wasm`, `renderer.js`, `client/*.js`, `assets/*`) needs to be served from somewhere. GitHub Pages currently hosts at `uptuse.github.io/tribes/` but doesn't allow setting `Sec-WebSocket-Protocol` headers we'll want for production. Options:
-
-- **A: Keep GitHub Pages, just point WebSocket to CF Workers** — simplest, no new deploys needed. The WebSocket connection from `client/network.js` to `wss://tribes-server.YOUR.workers.dev/?lobbyId=X` is cross-origin but allowed.
-- **B: Deploy frontend to Cloudflare Pages** — same domain as Workers, no CORS, faster CDN, automatic HTTPS. Requires a 5-minute setup with `wrangler pages deploy public/`.
-
-Implement Option A as default (zero migration). Document Option B as a one-page upgrade in `README_DEPLOY.md` for when the user wants the same-origin benefits.
-
-For Option A: update `client/network.js` so that `wss://` URL is read from `window.__TRIBES_SERVER_URL` (set in `index.html` from a build-time constant or query param) instead of being hardcoded to localhost. Default fallback: `wss://${window.location.hostname.replace('uptuse.github.io', 'tribes-server.YOUR.workers.dev')}`.
-
-### 2.3 P0 — Synthetic load test (~30 min)
-
-Create `server/loadtest/headless_client.ts` — a headless WebSocket client that:
-- Connects to the production URL
-- Joins a test lobby (configurable via `--lobby-id` flag)
-- Sends realistic 60Hz inputs for N seconds (mostly forward + occasional jump)
-- Logs latency stats (ping p50/p95/p99) and bandwidth observed
-- Exits cleanly on `--duration` expiry
-
-Then create `server/loadtest/run.sh` that spawns 100 concurrent `headless_client.ts` instances split across 12 lobbies (8 players each, 4 spillover = realistic load). Captures aggregated stats to `loadtest_results.csv`.
-
-Acceptance: 100 concurrent users for 5 minutes against production. Pass criteria:
-- Server CPU per Match DO < 50ms per tick (i.e., 30Hz tick budget honored)
-- Snapshot bandwidth per client within 20% of §5.4 estimate
-- p95 ping < 80ms (CF edge routing should hold this for US-based load)
-- Zero unhandled crashes server-side
-- Zero malformed-message exceptions client-side
-
-If load test fails any criterion, document in `open_issues.md` and propose mitigations (smaller per-Match player count, tick-rate reduction, etc.).
-
-### 2.4 P1 — Observability (~30 min)
-
-Wire structured logging in `server/lobby.ts` and `server/cloudflare/lobby_do.ts`:
-- Every match start/end emits `[METRIC]` line with `{matchId, durationS, peakPlayers, totalKills, winnerTeam}`
-- Every player connect/disconnect emits `[METRIC] {event, playerId, lobbyId, durationS}`
-- Every CHEAT-DIVERGE / CHEAT-COOLDOWN / CHEAT-SPEED logs go through a separate `[CHEAT]` prefix
-- Every server tick exceeding 33ms (target tick is 33.3ms) logs `[SLOW-TICK] {tickMs, playerCount, projectileCount}`
-
-Then add a dashboard at `server/cloudflare/dashboard.html` (served by the Worker on `GET /dashboard`) that pulls live stats via a small `GET /metrics` endpoint and renders:
-- Active matches count
-- Total connected players
-- Last 10 cheat events
-- p95 tick latency
-- Snapshot bandwidth aggregate
-
-Auth: simple bearer token passed in URL `?token=X`, set in `wrangler.toml` as a secret. Rotate by user only when needed.
-
-### 2.5 P1 — Discord invite link UI (~15 min)
-
-In `index.html` main menu, add a button "INVITE FRIENDS" that:
-- Generates a fresh 6-char lobby ID
-- Copies `https://uptuse.github.io/tribes/?multiplayer=remote&lobbyId=ABCD12` to clipboard
-- Shows a toast "Link copied — share with friends, lobby waits 60s before destruct"
-- Optionally opens a Discord deep-link (`discord://-/share?text=...`) if Discord is installed
-
-This is the user-facing primitive that makes the project shareable.
-
-### 2.6 P2 — First-time-user tutorial overlay (~25 min)
-
-If `localStorage.getItem('tribes:tutorialDone') !== 'v1'`, show a 3-step in-game overlay on first deploy match:
-1. "WASD to move, Space to jump, Z to ski" — dismissible after 5 sec
-2. "Hold Mouse2 to jet (uses energy)" — dismissible after 5 sec
-3. "Press 1-5 for weapons, Mouse1 to fire, F to grab/cap flag" — dismissible after 5 sec
-
-After all dismissed, set `localStorage.setItem('tribes:tutorialDone', 'v1')`. Skippable with `Esc`.
-
-### 2.7 P2 — Health check endpoint (~10 min)
-
-`GET /health` on the Worker returns JSON `{status: 'ok'|'degraded', activeMatches, totalPlayers, uptimeS, version}`. This lets the user (or external uptime monitor) verify the server is alive without joining a lobby.
-
-### 2.8 P3 — README rewrite (~15 min)
-
-Rewrite the project root `README.md` for someone clicking the GitHub link cold:
-- One-line description
-- Live URL
-- 3-line "How to play"
-- 5-line "How it works" (WASM + Three.js + CF Workers DO)
-- "Run locally" section
-- "Contribute" section
-- License (already MIT)
-- Credits (link to `assets/CREDITS.md`)
+R22 closes both gaps and lands the rest of the polish that turns "playable demo" into "I want to keep playing."
 
 ---
 
-## 3. Acceptance criteria (must hit 7 of 9)
+## 2. Concrete tasks (priority order)
 
-1. `server/cloudflare/deploy.sh` runs end-to-end against a fresh CF account (idempotent verified)
-2. Deployed Worker URL responds to `GET /health` with valid JSON
-3. Frontend (`uptuse.github.io/tribes/?multiplayer=remote`) connects to deployed Worker over WSS, joins lobby
-4. Two browser tabs from different machines (or different incognito sessions) play together via the deployed server
-5. Synthetic load test runs cleanly with 100 concurrent users for 5 minutes; CSV output present
-6. Observability dashboard at `/dashboard?token=X` renders live stats from a real match
-7. INVITE FRIENDS button copies a working URL that loads the correct lobby
-8. Tutorial overlay shows on first match, persists `localStorage`, never re-shows after
-9. `README.md` rewritten and renders correctly on GitHub
+### 2.1 P0 — Real bot AI: A* TS port for server-side bots (~50 min)
+
+Currently `server/sim.ts:addDisconnectBot` clones the disconnected player's input ring and replays it with jitter. Upgrade to real A* navigation matching the C++ R14 implementation in `program/code/wasm_main.cpp`.
+
+Implementation:
+- New file `server/bot_ai.ts` (~250L target)
+- Port the R14 C++ bot AI: 64×64 nav grid (server reads heightmap from WASM module on match start via existing `getHeightmapPtr` export pattern, or use a static cached version stored in `server/data/heightmap.bin` written at build time)
+- Bot roles: offense (push enemy flag), defense (orbit home flag), midfield (hunt opponents in midmap)
+- Per-tick (30Hz): bot evaluates current goal → A* path to next waypoint → produces synthetic `Input` with appropriate WASD bits + mouseDX/Y to face waypoint + occasional jet/ski/fire
+- Skiing: when downhill grade > 5°, set `keys |= ButtonBits.SKI`
+- Jetting: when uphill grade > 3° AND energy > 30, set `keys |= ButtonBits.JET`
+- Firing: if LOS to target opponent within 80m AND aim-to-target angle < 8° → fire weapon
+- Use existing weapon table from `client/constants.js` (shared)
+
+Replace `addDisconnectBot` to use `BotAI` instead of input-replay. Keep input-replay as `addStubBot()` fallback for when bot AI fails (rare).
+
+Acceptance test: spawn 4 bots in an empty lobby, watch them path to enemy flag, defenders orbit home flag, fire when LOS established. Stuck-detection: if bot doesn't move 1m in 2 seconds, repath.
+
+### 2.2 P0 — Audio system foundation (~45 min)
+
+New file `client/audio.js` (~150L). Web Audio API based.
+
+Sound bank (procedurally generated to avoid licensing/asset concerns; see decision authority for upgrade path):
+- `chaingun_loop` — 5Hz sawtooth-pulsed white noise burst, ~0.2s length, looping
+- `disc_launch` — 80Hz sine sweep down to 30Hz over 0.4s + low-pass noise tail
+- `plasma_zap` — 1500Hz square sweep down to 400Hz over 0.15s
+- `grenade_thump` — 60Hz sine tone, 0.1s envelope
+- `mortar_boom` — pink noise burst with low-pass + reverb tail (1.5s)
+- `jet_loop` — band-pass white noise, 200-800Hz, looping
+- `ski_loop` — pink noise low-passed at 400Hz, looping (volume scales with velocity magnitude)
+- `damage_take` — 220Hz triangle, 0.15s decay
+- `damage_give` — 880Hz sine, 0.1s decay (hit-confirm "tink")
+- `flag_grab` — bell-like FM synth, 0.4s
+- `flag_capture` — choir-like additive synth, 1.5s, polyphonic
+- `respawn` — descending arpeggio (C5 → G4 → C4), 0.8s
+- `match_start_horn` — sawtooth fundamental + 2 harmonics, 1.2s decrescendo
+- `match_end_horn` — same but ascending, 1.5s
+
+Generate via `OfflineAudioContext` once at game-start, cache as `AudioBuffer` instances. Play via `AudioBufferSourceNode` with positional `PannerNode` for 3D spatialization (HRTF panning model).
+
+Wiring:
+- Listener position/orientation updated each render frame from `Module._getCameraPosX/Y/Z/Yaw/Pitch`
+- Each fire event from snapshot → spawn one-shot at projectile origin
+- Each player's `keys` bit for SKI / JET → start/stop their corresponding loop tied to player position
+- Volume slider in settings (already exists from R13 `ST.audioMaster`); also `ST.audioSfx` and `ST.audioMusic` for separate channels
+
+Music: simple 8-track ambient drone procedurally synthesized, loops 4 minutes. Optional `?nomusic=1` flag to disable.
+
+### 2.3 P1 — Spawn protection visual + invuln (~15 min)
+
+Currently spawn protection is mechanical (no damage for 3s after spawn) but invisible. Add:
+- Server marks player with `spawnProtUntil: Tick` field in snapshot
+- Client renderer wraps the player mesh in a translucent cyan shield sphere (pulsing 0.5→1.0 alpha at 2Hz)
+- Local player sees a "INVULNERABLE 2.7s" HUD label countdown
+- Shield disappears on damage-attempt or on timer expiry (whichever first)
+
+### 2.4 P1 — Improved warmup → match transition (~15 min)
+
+Currently warmup ends with `g_matchState=1` flip and clients see warmup banner disappear. Add:
+- 5-4-3-2-1 visible countdown overlay synced to server warmup timer
+- "GO!" flash for 1 second on match start
+- Match start horn audio cue (R22.2)
+- Smooth fade-in of compass and scoreboard from 0→1 alpha over 1s
+
+### 2.5 P1 — Damage indicators (~15 min)
+
+When local player takes damage, render a directional arc on the HUD edge pointing toward the attacker:
+- Red arc, 60° wide, fades over 1.5s
+- Position derived from `attackerWorldPos - localPlayerWorldPos` projected onto screen
+- Multiple simultaneous damage = stacked arcs (max 4 visible)
+- Server includes `lastDamageFrom: PlayerId | null` in per-player snapshot field
+
+### 2.6 P2 — Settings persistence improvements (~15 min)
+
+Currently settings persist via `ST.persist()` to localStorage. Polish:
+- Add `Reset to Defaults` button in settings modal (clears localStorage tribes:* keys, reloads page)
+- Add `Export Settings` (downloads tribes_settings.json) and `Import Settings` (uploads JSON, validates schema, applies)
+- Migrate any v1 settings format to v2 with version-tagged schema. Document in `network_architecture.md` §11.
+
+### 2.7 P2 — Per-class loadout selection (~25 min)
+
+Currently armor selection happens at deploy. Add proper class-based loadouts:
+- **Light:** Blaster + Disc + Chaingun + Grenade (3 grenades, fast respawn)
+- **Medium:** Blaster + Disc + Chaingun + Plasma + Grenade (5 grenades)
+- **Heavy:** Blaster + Plasma + Mortar + Grenade (8 grenades, 2x repair pack)
+
+Loadout reflected in HUD ammo display. Server validates loadout-weapon match per fire input (anti-cheat extension: heavy can't fire chaingun).
+
+### 2.8 P3 — In-game scoreboard hotkey (~10 min)
+
+Hold `Tab` → translucent scoreboard overlay shows team rosters with:
+- Player name (team-colored)
+- Kills / Deaths / Captures / Returns
+- Ping
+- Class icon
+Release Tab → hides.
+
+Server already broadcasts roster + scores; client just needs the overlay.
+
+---
+
+## 3. Acceptance criteria (must hit 7 of 10)
+
+1. Real A* bots in `server/bot_ai.ts` correctly path to enemy flag, defenders orbit home flag, midfielders hunt
+2. Bots ski downhill, jet uphill, fire on LOS within 80m + 8° aim cone
+3. Stuck-detection causes bot to repath when stuck > 2s
+4. `client/audio.js` generates and plays all 14 procedural sounds; HRTF positional 3D works
+5. Spawn protection cyan shield visual + INVULNERABLE HUD label
+6. 5-4-3-2-1 + GO! countdown on match start with horn audio
+7. Damage indicator arcs render correctly toward attacker
+8. Reset/Export/Import settings buttons functional with v1→v2 migration
+9. Per-class loadout selection at deploy + HUD ammo + server validation
+10. Tab-hold scoreboard overlay shows correct stats
 
 ---
 
 ## 4. Compile/grep guardrails
 
 - `! grep -nE 'EM_ASM[^(]*\$1[6-9]'` (legacy carry-over)
-- `bun build server/cloudflare/worker.ts` clean
-- `wrangler deploy --dry-run` passes (validates wrangler.toml schema + bundle size)
-- `bun run server/loadtest/headless_client.ts --help` runs
-- README.md passes `markdownlint` if installed
+- `bun build server/bot_ai.ts` and `bun build server/lobby.ts` clean
+- `bun run test` (existing wire.test.ts + new bot_ai.test.ts) passes
+- All new server files in `server/*.ts`; all new client files in `client/*.js` ES modules
+- Pin all new dependencies in `package.json` (no `^` or `~` floats)
+- No third-party audio dependencies (Web Audio API only)
 
 ---
 
 ## 5. Time budget
 
-120-180 min Sonnet round. The deploy work is mostly mechanical. The load test is the longest pole.
+150-210 min Sonnet round. Split:
+- Bot AI A* port: 50 min
+- Audio system: 45 min
+- Spawn protection visual: 15 min
+- Match start countdown: 15 min
+- Damage indicators: 15 min
+- Settings persistence polish: 15 min
+- Class loadouts: 25 min
+- Tab scoreboard: 10 min
+
+If you run out, ship in priority order. P0 + P1 = bare minimum.
 
 ---
 
 ## 6. Decision authority for ambiguities
 
-- **If wrangler-CLI auth fails non-interactively in deploy.sh:** prompt user via `echo` and exit gracefully; don't try to auth in script.
-- **If load test reveals tick budget overrun:** halve player count from 8 to 4 per match; document and rerun. R22 will optimize.
-- **If GitHub Pages serves with `Cross-Origin-Opener-Policy` issues:** document migration to Cloudflare Pages as urgent in `open_issues.md`; user may run `wrangler pages deploy` immediately.
-- **If CF Workers free-tier limits get hit during load test (1M req/day):** document, abort gracefully, recommend upgrade to paid tier ($5/mo) for sustained testing.
+- **If procedural audio sounds too synthetic/cheap:** add a `client/audio_assets/` folder structure for future real-sample overrides (load from URL if present, fall back to procedural). Don't ship samples in R22 (license/size); document the loader as ready for community sample packs.
+- **If A* bot pathfinding is too slow on server tick:** switch to BFS for first pass, A* only when path > 30 cells. Document profile data in `open_issues.md`.
+- **If HRTF positional audio causes performance hits on mobile:** fall back to stereo PannerNode (panning model `equalpower`) when navigator.userAgent includes mobile patterns.
+- **If class loadout breaks save-game compatibility:** version-bump localStorage schema to v2 with migration; warn user of one-time settings reset.
 
 ---
 
 ## 7. Roadmap context
 
-- **R21 (this round):** production deploy + first public playtest infrastructure
-- **R22 (Sonnet):** real bot AI (TS port of R14 A*), feedback from first playtest, balance tuning
-- **R23+ (Sonnet):** voice chat, ranked matches, custom maps, replay system
+- **R22 (this round):** real bots + audio + first-impression polish
+- **R23 (Sonnet):** post-playtest balance tuning (driven by user feedback from first deploy), potential gameplay tweaks (jet thrust, ski friction, weapon damage curves)
+- **R24 (Sonnet):** voice chat (WebRTC mesh on top of existing infrastructure)
+- **R25+ (Sonnet):** ranked matches, custom maps, replay system, mod loader
 
-After R21 lands, the project is **shareable**. The user can post the URL anywhere and people can play it.
+After R22 lands, the user can deploy with confidence that the first-impression survives a stranger clicking the link cold.
