@@ -1,183 +1,121 @@
-# Manus Feedback — Round 22: Real Bot AI + Audio + First-Impression Polish (SONNET)
+# Manus Feedback — Round 23: Voice Chat + R22 Deferred + Balance Pass (SONNET)
 
 **MODEL:** **SONNET 4.6** (1M context)
 **Severity:** Standard
-**Type:** Implementation — upgrade tier-1 disconnect bots to real A* bots, ship audio (was deferred since R0), polish first-impression UX so the link-shared playtest feels professional
+**Type:** Implementation — close R22 deferred items (per-class loadouts, settings export/import), add voice chat (WebRTC mesh layered on existing WebSocket signaling), and apply a first balance pass driven by simulated playtest data
 
 ---
 
 ## 1. Context
 
-R21 landed the production deploy infrastructure (`deploy.sh`, loadtest harness, `/metrics`, `/dashboard`, `/health`, `INVITE FRIENDS`, tutorial overlay, README). 8/9 hard-implemented; runtime acceptance gated on user CF auth + actual deploy (not blocking).
+R22 shipped real A* bots, 14-sound procedural audio, spawn shields, match countdown, damage arcs (8/10 hard-implemented). Two items deferred to R23 per priority-order shipping discipline: settings export/import (#8) and per-class loadouts (#9).
 
-The project is now shareable code-complete. Two gaps stand between this and a delightful first-impression:
-
-1. **No audio whatsoever.** Tribes is iconic for its chaingun roar, jet whoosh, ski hiss, and disc launcher whomp. Silence kills the vibe instantly.
-2. **Disconnect bots are tier-1 input-replay loops** — fine as a placeholder but obvious to other players. R20.2 explicitly deferred true A* bots to "R22+." This is R22.
-
-R22 closes both gaps and lands the rest of the polish that turns "playable demo" into "I want to keep playing."
+R23 closes those, adds the missing-feature most likely to determine whether playtesters actually have fun together (voice chat — without it the social loop dies), and applies an evidence-based balance pass to fix any obvious imbalances surfaced by the loadtest harness.
 
 ---
 
-## 2. Concrete tasks (priority order)
+## 2. Concrete tasks
 
-### 2.1 P0 — Real bot AI: A* TS port for server-side bots (~50 min)
+### 2.1 P0 — Per-class loadouts with server validation (~30 min)
 
-Currently `server/sim.ts:addDisconnectBot` clones the disconnected player's input ring and replays it with jitter. Upgrade to real A* navigation matching the C++ R14 implementation in `program/code/wasm_main.cpp`.
+R22 deferred this. Implementation lives in three places:
 
-Implementation:
-- New file `server/bot_ai.ts` (~250L target)
-- Port the R14 C++ bot AI: 64×64 nav grid (server reads heightmap from WASM module on match start via existing `getHeightmapPtr` export pattern, or use a static cached version stored in `server/data/heightmap.bin` written at build time)
-- Bot roles: offense (push enemy flag), defense (orbit home flag), midfield (hunt opponents in midmap)
-- Per-tick (30Hz): bot evaluates current goal → A* path to next waypoint → produces synthetic `Input` with appropriate WASD bits + mouseDX/Y to face waypoint + occasional jet/ski/fire
-- Skiing: when downhill grade > 5°, set `keys |= ButtonBits.SKI`
-- Jetting: when uphill grade > 3° AND energy > 30, set `keys |= ButtonBits.JET`
-- Firing: if LOS to target opponent within 80m AND aim-to-target angle < 8° → fire weapon
-- Use existing weapon table from `client/constants.js` (shared)
+The deploy-screen UI in `shell.html` and `index.html` adds a class picker (Light / Medium / Heavy) shown after team selection. Each class displays its weapon list and grenade count in a 3-column comparison panel. The selected class is sent to the server in the `joinAck` request.
 
-Replace `addDisconnectBot` to use `BotAI` instead of input-replay. Keep input-replay as `addStubBot()` fallback for when bot AI fails (rare).
+The server in `server/sim.ts` validates the class on join and stores `Player.classId`. The respawn function gives the player only the weapons in that class's loadout (replaces the current weapon-give-all logic). Definition lives in `client/constants.js` (and re-exported via `server/constants.ts`):
 
-Acceptance test: spawn 4 bots in an empty lobby, watch them path to enemy flag, defenders orbit home flag, fire when LOS established. Stuck-detection: if bot doesn't move 1m in 2 seconds, repath.
+> Light: blaster, disc, chaingun, grenade. 3 grenades. Spawn time 4s. Energy regen 1.0×.
+> Medium: blaster, disc, chaingun, plasma, grenade. 5 grenades. Spawn time 6s. Energy regen 0.85×.
+> Heavy: blaster, plasma, mortar, grenade. 8 grenades. Spawn time 9s. Energy regen 0.6×. Repair pack inventory item.
 
-### 2.2 P0 — Audio system foundation (~45 min)
+The anti-cheat layer adds a fire-input check: if the input's `weaponSelect` is not in the player's class loadout, drop with `[CHEAT-LOADOUT] playerId=X selected=Y class=Z`. Three sustained violations in 10s kicks the player.
 
-New file `client/audio.js` (~150L). Web Audio API based.
+### 2.2 P0 — Settings export/import + reset (~20 min)
 
-Sound bank (procedurally generated to avoid licensing/asset concerns; see decision authority for upgrade path):
-- `chaingun_loop` — 5Hz sawtooth-pulsed white noise burst, ~0.2s length, looping
-- `disc_launch` — 80Hz sine sweep down to 30Hz over 0.4s + low-pass noise tail
-- `plasma_zap` — 1500Hz square sweep down to 400Hz over 0.15s
-- `grenade_thump` — 60Hz sine tone, 0.1s envelope
-- `mortar_boom` — pink noise burst with low-pass + reverb tail (1.5s)
-- `jet_loop` — band-pass white noise, 200-800Hz, looping
-- `ski_loop` — pink noise low-passed at 400Hz, looping (volume scales with velocity magnitude)
-- `damage_take` — 220Hz triangle, 0.15s decay
-- `damage_give` — 880Hz sine, 0.1s decay (hit-confirm "tink")
-- `flag_grab` — bell-like FM synth, 0.4s
-- `flag_capture` — choir-like additive synth, 1.5s, polyphonic
-- `respawn` — descending arpeggio (C5 → G4 → C4), 0.8s
-- `match_start_horn` — sawtooth fundamental + 2 harmonics, 1.2s decrescendo
-- `match_end_horn` — same but ascending, 1.5s
+R22 deferred this. Add three buttons to the existing settings modal: "Reset to Defaults", "Export Settings", "Import Settings". Reset clears all `tribes:*` localStorage keys and reloads. Export downloads `tribes_settings.json` containing the current `ST` object plus a `version: 2` field. Import accepts a JSON file, validates against the v2 schema (field names + types), applies via `Module._setSettings(JSON.stringify(parsed))`, and persists.
 
-Generate via `OfflineAudioContext` once at game-start, cache as `AudioBuffer` instances. Play via `AudioBufferSourceNode` with positional `PannerNode` for 3D spatialization (HRTF panning model).
+Document the schema-versioning approach in `network_architecture.md` §11. Add a v1→v2 migration path that tags any pre-v2 settings with `version: 1` on first load and translates fields (`fov` field renamed `viewFov`, `audio` split into `audioMaster`/`audioSfx`/`audioMusic`).
 
-Wiring:
-- Listener position/orientation updated each render frame from `Module._getCameraPosX/Y/Z/Yaw/Pitch`
-- Each fire event from snapshot → spawn one-shot at projectile origin
-- Each player's `keys` bit for SKI / JET → start/stop their corresponding loop tied to player position
-- Volume slider in settings (already exists from R13 `ST.audioMaster`); also `ST.audioSfx` and `ST.audioMusic` for separate channels
+### 2.3 P0 — Voice chat: WebRTC mesh layered on WebSocket signaling (~50 min)
 
-Music: simple 8-track ambient drone procedurally synthesized, loops 4 minutes. Optional `?nomusic=1` flag to disable.
+The existing WebSocket lobby is a natural signaling channel for WebRTC peer-to-peer voice. Don't build a SFU — direct mesh works fine for 8-player teams.
 
-### 2.3 P1 — Spawn protection visual + invuln (~15 min)
+The server in `server/lobby.ts` adds three message types: `voiceOffer`, `voiceAnswer`, `voiceCandidate`. Each gets routed from sender to addressee without server interpretation. Server logs `[VOICE] from=X to=Y` for diagnostics. No voice data flows through the server itself — only signaling.
 
-Currently spawn protection is mechanical (no damage for 3s after spawn) but invisible. Add:
-- Server marks player with `spawnProtUntil: Tick` field in snapshot
-- Client renderer wraps the player mesh in a translucent cyan shield sphere (pulsing 0.5→1.0 alpha at 2Hz)
-- Local player sees a "INVULNERABLE 2.7s" HUD label countdown
-- Shield disappears on damage-attempt or on timer expiry (whichever first)
+The client in `client/voice.js` (~200L target) wraps `RTCPeerConnection` per opponent. On match start, the client creates one `RTCPeerConnection` to each teammate (mesh = 7 connections in 8-player team, manageable). It captures local `getUserMedia({audio: true})`, attaches the track, and renders incoming tracks via `<audio autoplay>` elements positioned via Web Audio API `MediaStreamAudioSourceNode` → `PannerNode` for 3D voice positional spatialization (same HRTF model as R22 audio).
 
-### 2.4 P1 — Improved warmup → match transition (~15 min)
+Push-to-talk: hold `V` to enable mic, release to mute. Open mic toggle in settings (`ST.voiceMode = 'pushToTalk' | 'open'`).
 
-Currently warmup ends with `g_matchState=1` flip and clients see warmup banner disappear. Add:
-- 5-4-3-2-1 visible countdown overlay synced to server warmup timer
-- "GO!" flash for 1 second on match start
-- Match start horn audio cue (R22.2)
-- Smooth fade-in of compass and scoreboard from 0→1 alpha over 1s
+Visual indicator in the HUD: speaking teammates get a cyan pulse on their nameplate (extend R20 nameplate Sprite with an `speaking` flag fed from RTC stats `audioLevel > threshold`).
 
-### 2.5 P1 — Damage indicators (~15 min)
+Decision authority: if WebRTC NAT traversal fails (~10% of users behind symmetric NAT), document fallback to a Cloudflare-hosted TURN relay in `open_issues.md`; defer implementation to R24+.
 
-When local player takes damage, render a directional arc on the HUD edge pointing toward the attacker:
-- Red arc, 60° wide, fades over 1.5s
-- Position derived from `attackerWorldPos - localPlayerWorldPos` projected onto screen
-- Multiple simultaneous damage = stacked arcs (max 4 visible)
-- Server includes `lastDamageFrom: PlayerId | null` in per-player snapshot field
+### 2.4 P1 — Balance pass v1 driven by loadtest data (~25 min)
 
-### 2.6 P2 — Settings persistence improvements (~15 min)
+Run `server/loadtest/run.sh` against a local instance for 5 minutes. Capture per-weapon kill-rate, per-class K/D, and ski-vs-walk movement distribution into `loadtest_balance.csv`. Feed these into the analysis script `server/loadtest/analyze.ts` (~80L) that prints suggested constants tweaks. Apply only the changes with high confidence:
 
-Currently settings persist via `ST.persist()` to localStorage. Polish:
-- Add `Reset to Defaults` button in settings modal (clears localStorage tribes:* keys, reloads page)
-- Add `Export Settings` (downloads tribes_settings.json) and `Import Settings` (uploads JSON, validates schema, applies)
-- Migrate any v1 settings format to v2 with version-tagged schema. Document in `network_architecture.md` §11.
+The likely tweaks (calibrate from data, don't ship blind):
+> Mortar damage 80→70 if mortar K/D > 1.5× weapon median.
+> Chaingun spread cone 0.05→0.07 rad if chaingun kill share > 35%.
+> Light armor max HP 100→110 if light class K/D < 0.85× class median.
+> Jet energy cost 1.0→0.85 if average jet airtime per match < 15s (suggests too punitive).
+> Ski friction 0.02→0.018 if ski distance per match < 200m median (too sticky).
 
-### 2.7 P2 — Per-class loadout selection (~25 min)
+Document each shipped change in `comms/balance_log.md` with the data-driven rationale and the source CSV row.
 
-Currently armor selection happens at deploy. Add proper class-based loadouts:
-- **Light:** Blaster + Disc + Chaingun + Grenade (3 grenades, fast respawn)
-- **Medium:** Blaster + Disc + Chaingun + Plasma + Grenade (5 grenades)
-- **Heavy:** Blaster + Plasma + Mortar + Grenade (8 grenades, 2x repair pack)
+### 2.5 P1 — Server-broadcast `lastDamageFrom` for accurate damage arcs (~15 min)
 
-Loadout reflected in HUD ammo display. Server validates loadout-weapon match per fire input (anti-cheat extension: heavy can't fire chaingun).
+R22 used a nearest-enemy heuristic for damage arcs. Replace with server-authoritative source: when the server applies damage to a player in `server/sim.ts`, it stamps `Player.lastDamageFromId = attackerId, lastDamageAtTick = currentTick`. The snapshot wire format (`server/wire.ts`) extends per-player payload by 1 byte (`lastDamageFromIdx` packed into existing reserved slot — no new bandwidth). Client `client/wire.js` decodes and feeds to `showDamageArc(attackerWorldPos)`.
 
-### 2.8 P3 — In-game scoreboard hotkey (~10 min)
+### 2.6 P2 — Repair pack inventory + use (~20 min)
 
-Hold `Tab` → translucent scoreboard overlay shows team rosters with:
-- Player name (team-colored)
-- Kills / Deaths / Captures / Returns
-- Ping
-- Class icon
-Release Tab → hides.
+Heavy class spawns with one repair pack (+50 HP over 5s, single use). Bind to `R` key when pickup available. Server tracks `Player.inventory: { repairPack: 0|1 }`. Use input is a new `keys` bit `USE_REPAIR`. Pickup spawn at inventory-station-equivalent locations (server picks 4 fixed map points). Visual: floating cyan box on terrain + whoosh sound on pickup + chime on use.
 
-Server already broadcasts roster + scores; client just needs the overlay.
+### 2.7 P2 — Replay recording (local only, R23 scaffold) (~25 min)
+
+Server records every snapshot + delta + input arrival to a `Match.replayBuffer: ArrayBuffer[]` while the match is live. On match end, server offers a `GET /replay/:matchId` endpoint that streams the buffer as a `.tribes-replay` binary file. Client's match-end overlay adds a "Save Replay" button.
+
+Don't implement playback yet (R25+). Just capture and download. Document the binary format in `network_architecture.md` §12.
+
+### 2.8 P3 — Color-blind mode (~10 min)
+
+The team-color red/blue choice is friendly to most users but ~8% of men have red/green deficiency that can confuse blue/red distinction with the game's brown terrain. Add `ST.colorBlindMode = 'off' | 'deuteranopia' | 'protanopia' | 'tritanopia'` setting. When enabled, swap team colors:
+> deuteranopia: red→orange (255, 140, 0), blue stays.
+> protanopia: red→yellow (255, 220, 0), blue stays.
+> tritanopia: blue→magenta (255, 0, 255), red stays.
+
+Apply at render time in `renderer.js` and HUD CSS via CSS variables (`--team-red`, `--team-blue`). Test by toggling each mode against a screenshot of the play-screen.
 
 ---
 
-## 3. Acceptance criteria (must hit 7 of 10)
+## 3. Acceptance criteria (must hit 6 of 8)
 
-1. Real A* bots in `server/bot_ai.ts` correctly path to enemy flag, defenders orbit home flag, midfielders hunt
-2. Bots ski downhill, jet uphill, fire on LOS within 80m + 8° aim cone
-3. Stuck-detection causes bot to repath when stuck > 2s
-4. `client/audio.js` generates and plays all 14 procedural sounds; HRTF positional 3D works
-5. Spawn protection cyan shield visual + INVULNERABLE HUD label
-6. 5-4-3-2-1 + GO! countdown on match start with horn audio
-7. Damage indicator arcs render correctly toward attacker
-8. Reset/Export/Import settings buttons functional with v1→v2 migration
-9. Per-class loadout selection at deploy + HUD ammo + server validation
-10. Tab-hold scoreboard overlay shows correct stats
+The first six lines below capture what must function end-to-end. Lines 7-8 capture polish that is nice-to-have but not gating.
+
+A class picker with three options renders during deploy and Light/Medium/Heavy spawn with the documented loadouts and energy regen modifiers. Server validates fire inputs against the player's class loadout and kicks on three sustained violations. Settings export downloads a v2 JSON, import validates and applies, reset wipes localStorage. Two browser tabs join the same lobby, opt into voice chat with `V` push-to-talk, and hear each other with 3D positional audio (close → loud, far → quiet). The HUD nameplate of a speaking teammate pulses cyan. The balance log records at least one data-driven constant change with CSV evidence. Damage arcs point at the actual attacker (verifiable by triggering damage from a known direction). Heavy class can pick up and use a repair pack. Color-blind mode swaps team colors when enabled.
 
 ---
 
 ## 4. Compile/grep guardrails
 
-- `! grep -nE 'EM_ASM[^(]*\$1[6-9]'` (legacy carry-over)
-- `bun build server/bot_ai.ts` and `bun build server/lobby.ts` clean
-- `bun run test` (existing wire.test.ts + new bot_ai.test.ts) passes
-- All new server files in `server/*.ts`; all new client files in `client/*.js` ES modules
-- Pin all new dependencies in `package.json` (no `^` or `~` floats)
-- No third-party audio dependencies (Web Audio API only)
+The standard guardrails apply: no `EM_ASM \$1[6-9]`, all new server files in `server/*.ts` typed without `:any` in public APIs, all new client files as ES modules, dependencies pinned, vanilla-JS client, `bun build` and `bun run test` clean.
 
 ---
 
 ## 5. Time budget
 
-150-210 min Sonnet round. Split:
-- Bot AI A* port: 50 min
-- Audio system: 45 min
-- Spawn protection visual: 15 min
-- Match start countdown: 15 min
-- Damage indicators: 15 min
-- Settings persistence polish: 15 min
-- Class loadouts: 25 min
-- Tab scoreboard: 10 min
-
-If you run out, ship in priority order. P0 + P1 = bare minimum.
+A reasonable Sonnet round is 150-200 minutes. The voice chat work is the longest pole because WebRTC requires careful state management around offer/answer/candidate exchange and stream lifecycle. Class loadouts and settings export/import are both mechanical follow-throughs from R22. Balance pass is fast if the loadtest harness already runs cleanly from R21.
 
 ---
 
 ## 6. Decision authority for ambiguities
 
-- **If procedural audio sounds too synthetic/cheap:** add a `client/audio_assets/` folder structure for future real-sample overrides (load from URL if present, fall back to procedural). Don't ship samples in R22 (license/size); document the loader as ready for community sample packs.
-- **If A* bot pathfinding is too slow on server tick:** switch to BFS for first pass, A* only when path > 30 cells. Document profile data in `open_issues.md`.
-- **If HRTF positional audio causes performance hits on mobile:** fall back to stereo PannerNode (panning model `equalpower`) when navigator.userAgent includes mobile patterns.
-- **If class loadout breaks save-game compatibility:** version-bump localStorage schema to v2 with migration; warn user of one-time settings reset.
+If voice chat reveals echo or feedback issues, enable `RTCRtpSender.setParameters` with `degradationPreference: 'maintain-framerate'` and add a server-side per-track audio-level threshold filter; document any audible-quality compromises in `open_issues.md`. If balance changes feel too aggressive in self-play, halve the magnitude and re-run loadtest. If repair pack pickup spawns conflict with existing buildings or terrain features, snap to the nearest open ground tile within a 4m radius. If color-blind mode breaks any HUD readability, default the affected element to a neutral white outline.
 
 ---
 
 ## 7. Roadmap context
 
-- **R22 (this round):** real bots + audio + first-impression polish
-- **R23 (Sonnet):** post-playtest balance tuning (driven by user feedback from first deploy), potential gameplay tweaks (jet thrust, ski friction, weapon damage curves)
-- **R24 (Sonnet):** voice chat (WebRTC mesh on top of existing infrastructure)
-- **R25+ (Sonnet):** ranked matches, custom maps, replay system, mod loader
+R23 is the first round that closes the social loop end-to-end: people can hear each other, pick a class, and play with sensible balance. R24 will implement matchmaking improvements (skill-based pairing, friend lists), R25 will add custom maps and replay playback, R26+ enters mod-loader and ranked-mode territory.
 
-After R22 lands, the user can deploy with confidence that the first-impression survives a stranger clicking the link cold.
+After R23 lands and the user has run the actual CF Workers deploy, the project is ready for a public Day-1 playtest. That is the milestone.
