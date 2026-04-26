@@ -648,11 +648,14 @@ async function initInteriorShapes() {
         }
         console.log('[R32.1] Loaded', meshes.size, 'unique interior-shape meshes');
 
-        // Build a shared material — neutral grey PBR; can be enhanced with
-        // per-surface materials in a follow-up round
+        // R32.1.1: lighter, double-sided material so meshes are visible even if a
+        // few backface-winding outliers slip through the index flip. Concrete-grey
+        // tint with subtle warmth — matches the Raindance lush-base palette.
         const baseMat = new THREE.MeshStandardMaterial({
-            color: 0x6E6660, roughness: 0.85, metalness: 0.05,
+            color: 0xA89D90, roughness: 0.78, metalness: 0.08,
             flatShading: true,
+            side: THREE.DoubleSide,
+            emissive: 0x1a1814, emissiveIntensity: 0.35,
         });
 
         // Create a parent group for easy hide/show + selective culling
@@ -663,7 +666,10 @@ async function initInteriorShapes() {
         // Helper: convert MIS position to world
         const toWorld = (mp) => ({ x: mp[0], y: mp[2], z: -mp[1] });
 
-        // Build BufferGeometry once per unique fileName, reuse across instances
+        // Build BufferGeometry once per unique fileName, reuse across instances.
+        // Tribes 1 used DirectX-style left-handed coords with CW winding; Three.js
+        // is right-handed with CCW winding. We flip the index winding (i,j,k)->(i,k,j)
+        // so face normals computed by computeVertexNormals point outward.
         const geomCache = new Map();
         const getGeom = (fileName) => {
             if (geomCache.has(fileName)) return geomCache.get(fileName);
@@ -671,7 +677,14 @@ async function initInteriorShapes() {
             if (!m) return null;
             const g = new THREE.BufferGeometry();
             g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
-            g.setIndex(new THREE.BufferAttribute(m.indices, 1));
+            // Flip winding
+            const flipped = new Uint32Array(m.indices.length);
+            for (let t = 0; t < m.indices.length; t += 3) {
+                flipped[t]   = m.indices[t];
+                flipped[t+1] = m.indices[t+2];
+                flipped[t+2] = m.indices[t+1];
+            }
+            g.setIndex(new THREE.BufferAttribute(flipped, 1));
             g.computeVertexNormals();
             g.computeBoundingBox();
             g.computeBoundingSphere();
@@ -679,26 +692,29 @@ async function initInteriorShapes() {
             return g;
         };
 
-        // Place every neutral_interior_shapes instance
+        // Place every neutral_interior_shapes instance.
+        // Use a Group-wrapper-per-instance so we can apply yaw (around world Y)
+        // INDEPENDENTLY from the local Tribes-z-up to Three-y-up rotation.
         let placed = 0, missed = 0;
         const items = (canon.neutral_interior_shapes || []);
         for (const item of items) {
             const geom = getGeom(item.fileName);
             if (!geom) { missed++; continue; }
             const mesh = new THREE.Mesh(geom, baseMat);
-            const w = toWorld(item.position);
-            mesh.position.set(w.x, w.y, w.z);
-            // Tribes 1 building local-frame is z-up; rotate -90deg around X to
-            // align local z-up to Three.js y-up
+            // Inner: rotate -90deg around X to map Tribes local-z-up to Three y-up
             mesh.rotation.x = -Math.PI / 2;
-            // Apply MIS yaw (rotation around Tribes z-axis = world y-axis)
-            const rotZ = (item.rotation && item.rotation[2]) ? -item.rotation[2] : 0;
-            mesh.rotation.z = rotZ; // post-X-rotation, this rotates around the original z-axis = world y-axis
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             mesh.frustumCulled = false; // mirror existing buildings policy
-            mesh.userData = { fileName: item.fileName, isInterior: true };
-            interiorShapesGroup.add(mesh);
+            // Outer group: positions in world, applies yaw around world Y
+            const outer = new THREE.Group();
+            const w = toWorld(item.position);
+            outer.position.set(w.x, w.y, w.z);
+            const rotZ = (item.rotation && item.rotation[2]) ? -item.rotation[2] : 0;
+            outer.rotation.y = rotZ;
+            outer.add(mesh);
+            outer.userData = { fileName: item.fileName, isInterior: true };
+            interiorShapesGroup.add(outer);
             placed++;
         }
         console.log('[R32.1] Interior shapes placed:', placed, '(missed', missed, ')');
