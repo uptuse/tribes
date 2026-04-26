@@ -236,6 +236,38 @@
       transform:translate(-50%,-50%); z-index:22; min-width:260px; text-align:center; }
     #escmenu.active { display:block; }
 
+    /* Settings modal */
+    #settings-modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%;
+      z-index:35; background:rgba(0,0,0,0.6); align-items:center; justify-content:center; }
+    #settings-modal.active { display:flex; }
+    #settings-panel { min-width:620px; max-width:720px; max-height:88vh; overflow-y:auto; }
+    .stab { display:none; }
+    .stab.active { display:block; }
+    .s-row { display:flex; align-items:center; margin:8px 0; gap:12px; }
+    .s-label { flex:0 0 180px; font-size:0.82em; letter-spacing:1px; color:#9A8A6A; }
+    .s-ctrl { flex:1; }
+    .s-val { flex:0 0 36px; text-align:right; font-size:0.82em; color:#D4A030; }
+    input[type=range].s-slider { width:100%; accent-color:#D4A030; }
+    input[type=checkbox].s-check { accent-color:#D4A030; width:14px; height:14px; }
+    .s-divider { border:none; border-top:1px solid #2A2010; margin:12px 0; }
+    .s-section { font-size:0.72em; color:#7A6A4A; letter-spacing:3px; text-transform:uppercase;
+      margin:14px 0 6px; }
+    .key-row { display:flex; align-items:center; margin:4px 0; gap:8px; }
+    .key-action { flex:0 0 160px; font-size:0.8em; color:#9A8A6A; }
+    .key-btn { font-family:'Barlow Condensed',sans-serif; font-size:0.78em; padding:3px 10px;
+      border:1px solid #4A3A2A; background:rgba(20,18,14,0.9); color:#D4A030;
+      letter-spacing:2px; cursor:pointer; min-width:80px; }
+    .key-btn:hover { border-color:#D4A030; }
+    .key-btn.listening { border-color:#FFC850; color:#FFC850; }
+    .key-conflict { font-size:0.7em; color:#C0392B; margin-left:6px; }
+    .color-swatch { display:inline-block; width:20px; height:16px; border:1px solid #4A3A2A;
+      cursor:pointer; margin-right:4px; vertical-align:middle; }
+    .color-swatch.selected { border:2px solid #D4A030; }
+    .s-note { font-size:0.72em; color:#5A4A3A; font-style:italic; }
+    #fps-counter { display:none; position:fixed; top:8px; right:10px; z-index:40;
+      font-family:'Barlow Condensed',sans-serif; font-size:0.75em; color:#5A4A3A;
+      pointer-events:none; }
+
     /* Inventory Station */
     #stationui { display:none; position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); z-index:20; }
     #stationui.active { display:block; }
@@ -341,7 +373,7 @@
     <div class="panel" style="text-align:center;min-width:220px;">
       <h3>Paused</h3>
       <button class="btn" onclick="resumeGame()" style="margin-top:10px;">Resume</button>
-      <button class="btn" onclick="showScreen('options')">Options</button>
+      <button class="btn" onclick="openSettings()">Options</button>
       <button class="btn btn-back" onclick="leaveMatch()">Leave Match</button>
     </div>
   </div>
@@ -351,7 +383,7 @@
     <div class="panel" style="min-width:420px; text-align:center; background:rgba(12,12,10,0.97);">
       <div class="tab-strip">
         <span class="tab-item active">PLAY</span>
-        <span class="tab-item" onclick="showScreen('options')">OPTIONS</span>
+        <span class="tab-item" onclick="openSettings()">OPTIONS</span>
         <span class="tab-item" onclick="showScreen('credits')">CREDITS</span>
       </div>
       <div class="subtitle">STARSIEGE</div>
@@ -360,7 +392,7 @@
         <div class="menu-item" onclick="showScreen('gamesetup')">PLAY GAME</div>
         <div class="menu-item" onclick="window.open('https://github.com/uptuse/tribes','_blank')">WEBSITE</div>
         <div class="menu-item" onclick="showScreen('gamesetup')">QUICK START</div>
-        <div class="menu-item" onclick="showScreen('options')">OPTIONS</div>
+        <div class="menu-item" onclick="openSettings()">OPTIONS</div>
       </div>
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
       <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.3</div>
@@ -577,6 +609,78 @@
     </div>
   </div>
 
+  <!-- FPS counter -->
+  <div id="fps-counter">0 fps</div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" onclick="if(event.target===this)closeSettings()">
+    <div class="panel" id="settings-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <h3 style="margin:0">Settings</h3>
+        <span onclick="closeSettings()" style="cursor:pointer;color:#7A6A4A;font-size:1.4em;line-height:1">×</span>
+      </div>
+      <div class="tab-strip" id="settings-tabs">
+        <span class="tab-item active" onclick="setStab('audio')">Audio</span>
+        <span class="tab-item" onclick="setStab('controls')">Controls</span>
+        <span class="tab-item" onclick="setStab('video')">Video</span>
+        <span class="tab-item" onclick="setStab('gameplay')">Gameplay</span>
+      </div>
+
+      <!-- AUDIO TAB -->
+      <div class="stab active" id="stab-audio">
+        <div class="s-row"><label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" class="s-check" id="s-muted" onchange="sSave('muted',this.checked);applyAudio()">
+          <span style="font-size:0.82em;color:#9A8A6A;letter-spacing:1px">Mute all (M key)</span>
+        </label></div>
+        <hr class="s-divider">
+        <div class="s-row"><div class="s-label">Master Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-master" oninput="sSave('masterVolume',+this.value);sVal('s-master-v',this.value);applyAudio()"></div><div class="s-val" id="s-master-v">80</div></div>
+        <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
+        <div class="s-row"><div class="s-label">UI Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ui" oninput="sSave('uiVolume',+this.value);sVal('s-ui-v',this.value);applyAudio()"></div><div class="s-val" id="s-ui-v">80</div></div>
+        <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value)"></div><div class="s-val" id="s-music-v">60</div><span class="s-note">&nbsp;(future)</span></div>
+      </div>
+
+      <!-- CONTROLS TAB -->
+      <div class="stab" id="stab-controls">
+        <div class="s-section">Mouse &amp; View</div>
+        <div class="s-row"><div class="s-label">Sensitivity</div><div class="s-ctrl"><input type="range" class="s-slider" min="1" max="30" id="s-sens" oninput="sSave('sensitivity',this.value/10);sVal('s-sens-v',this.value/10+'×');applyToCpp()"></div><div class="s-val" id="s-sens-v">1.0×</div></div>
+        <div class="s-row"><div class="s-label">Invert Y</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-inverty" onchange="sSave('invertY',this.checked);applyToCpp()"></div></div>
+        <div class="s-row"><div class="s-label">Field of View</div><div class="s-ctrl"><input type="range" class="s-slider" min="60" max="110" step="5" id="s-fov" oninput="sSave('fov',+this.value);sVal('s-fov-v',this.value+'°');applyToCpp()"></div><div class="s-val" id="s-fov-v">90°</div></div>
+        <div class="s-row"><div class="s-label">Jet Mode</div><div class="s-ctrl">
+          <label style="cursor:pointer;font-size:0.82em;color:#9A8A6A;margin-right:12px"><input type="radio" name="jetmode" value="hold" onchange="sSave('jetToggle',false);applyToCpp()"> Hold</label>
+          <label style="cursor:pointer;font-size:0.82em;color:#9A8A6A"><input type="radio" name="jetmode" value="toggle" onchange="sSave('jetToggle',true);applyToCpp()"> Toggle</label>
+        </div></div>
+        <hr class="s-divider">
+        <div class="s-section">Key Bindings</div>
+        <div id="keybinding-list"></div>
+        <button class="btn btn-back" onclick="resetKeybindings()" style="margin-top:8px;width:auto;display:inline-block">Reset to Defaults</button>
+      </div>
+
+      <!-- VIDEO TAB -->
+      <div class="stab" id="stab-video">
+        <div class="s-row"><div class="s-label">Resolution Scale</div><div class="s-ctrl"><input type="range" class="s-slider" min="50" max="150" step="10" id="s-res" oninput="sSave('resolutionScale',+this.value);sVal('s-res-v',this.value+'%')"></div><div class="s-val" id="s-res-v">100%</div><span class="s-note">&nbsp;on close</span></div>
+        <div class="s-row"><div class="s-label">Render Distance</div><div class="s-ctrl"><input type="range" class="s-slider" min="5" max="30" id="s-rdist" oninput="sSave('renderDist',this.value/10);sVal('s-rdist-v',this.value/10+'×');applyToCpp()"></div><div class="s-val" id="s-rdist-v">1.0×</div></div>
+        <div class="s-row"><div class="s-label">Shadows</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-shadows" onchange="sSave('shadows',this.checked)"><span class="s-note"> (stub — R17)</span></div></div>
+        <div class="s-row"><div class="s-label">VSync</div><div class="s-ctrl"><span class="s-note">Browser-controlled</span></div></div>
+        <div class="s-row"><div class="s-label">Show FPS</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-fps" onchange="sSave('showFPS',this.checked);document.getElementById('fps-counter').style.display=this.checked?'block':'none'"></div></div>
+      </div>
+
+      <!-- GAMEPLAY TAB -->
+      <div class="stab" id="stab-gameplay">
+        <div class="s-section">Crosshair</div>
+        <div class="s-row"><div class="s-label">Color</div><div class="s-ctrl" id="xhair-colors"></div></div>
+        <div class="s-row"><div class="s-label">Scale</div><div class="s-ctrl"><input type="range" class="s-slider" min="5" max="15" id="s-xscale" oninput="sSave('crosshairScale',this.value/10);sVal('s-xscale-v',this.value/10+'×');applyCrosshair()"></div><div class="s-val" id="s-xscale-v">1.0×</div></div>
+        <hr class="s-divider">
+        <div class="s-section">Toggles</div>
+        <div class="s-row"><div class="s-label">Damage Numbers</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-dmgnum" onchange="sSave('showDamageNumbers',this.checked)"></div></div>
+        <div class="s-row"><div class="s-label">Kill Feed</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-killfeed" onchange="sSave('showKillFeed',this.checked);document.getElementById('killfeed').style.display=this.checked?'block':'none'"></div></div>
+        <div class="s-row"><div class="s-label">Auto-pickup Ammo</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-ammoauto" onchange="sSave('autoPickupAmmo',this.checked)"></div></div>
+      </div>
+
+      <hr class="s-divider">
+      <button class="btn btn-back" onclick="resetAllSettings()" style="margin-top:4px">Reset All Settings to Defaults</button>
+    </div>
+  </div>
+
   <!-- Kill Feed -->
   <div id="killfeed"></div>
   <!-- Flag Status -->
@@ -734,6 +838,7 @@
 
     function startGame(){
       AE.init(); // lazy init on first real user interaction
+      applySettings(); // apply all settings including audio now that AE is up
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
@@ -755,13 +860,19 @@
         document.getElementById('scoreboard').classList.add('active');
         if(Module._updateScoreboard)Module._updateScoreboard();
       }
-      if(e.keyCode===27&&gameStarted){
-        var esc=document.getElementById('escmenu');
-        if(esc.classList.contains('active')){resumeGame();}
-        else{document.exitPointerLock();esc.classList.add('active');}
+      if(e.keyCode===27){
+        if(document.getElementById('settings-modal').classList.contains('active')){closeSettings();return;}
+        if(gameStarted){
+          var esc=document.getElementById('escmenu');
+          if(esc.classList.contains('active')){resumeGame();}
+          else{document.exitPointerLock();esc.classList.add('active');}
+        }
       }
       if(e.keyCode===70&&document.getElementById('stationui').classList.contains('active')){stClose();}
-      if(e.keyCode===77){AE.mute();}
+      if(e.keyCode===77&&!document.getElementById('settings-modal').classList.contains('active')){
+        AE.mute();ST.muted=AE.muted;saveSettings();
+        var mc=document.getElementById('s-muted');if(mc)mc.checked=ST.muted;
+      }
     });
     document.addEventListener('keyup',function(e){
       if(e.keyCode===9)document.getElementById('scoreboard').classList.remove('active');
@@ -1056,6 +1167,265 @@
       if(!AE.ctx)return;
       AE.update(jetting===1,onGround===1,speed10/10,health1000/1000);
     };
+
+    // ============================================================
+    // SETTINGS SYSTEM
+    // ============================================================
+    var SETTINGS_KEY='tribes_settings_v1';
+    var XHAIR_COLORS={amber:'#C4A14C',white:'#FFFFFF',cyan:'#00CFFF',green:'#2ECC71',red:'#C0392B'};
+    var KB_ACTIONS=[
+      {id:'forward',label:'Forward',def:87,defKey:'W'},
+      {id:'back',label:'Back',def:83,defKey:'S'},
+      {id:'left',label:'Left',def:65,defKey:'A'},
+      {id:'right',label:'Right',def:68,defKey:'D'},
+      {id:'jump',label:'Jump / Jet',def:32,defKey:'Space'},
+      {id:'ski',label:'Ski',def:16,defKey:'Shift'},
+      {id:'use',label:'Use Inventory',def:70,defKey:'F'},
+      {id:'thirdPerson',label:'Toggle 3rd Person',def:86,defKey:'V'},
+      {id:'mute',label:'Mute',def:77,defKey:'M'},
+      {id:'scoreboard',label:'Scoreboard',def:9,defKey:'Tab'},
+      {id:'weapPrev',label:'Prev Weapon',def:81,defKey:'Q'},
+      {id:'weapNext',label:'Next Weapon',def:69,defKey:'E'}
+    ];
+    var DEFAULT_SETTINGS={
+      _v:1,
+      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:60,muted:false,
+      sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
+      keybindings:{},
+      resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
+      crosshairColor:'amber',crosshairScale:1.0,
+      showDamageNumbers:true,showKillFeed:true,autoPickupAmmo:true
+    };
+    // Populate default keybindings
+    KB_ACTIONS.forEach(function(a){DEFAULT_SETTINGS.keybindings[a.id]=a.def;});
+    var ST=JSON.parse(JSON.stringify(DEFAULT_SETTINGS)); // working copy
+
+    function loadSettings(){
+      try{
+        var raw=localStorage.getItem(SETTINGS_KEY);if(!raw)return;
+        var saved=JSON.parse(raw);
+        if(!saved._v){console.warn('tribes: settings missing version, using defaults');return;}
+        Object.keys(DEFAULT_SETTINGS).forEach(function(k){
+          if(saved.hasOwnProperty(k))ST[k]=saved[k];
+        });
+        // Merge keybindings
+        if(saved.keybindings)Object.keys(DEFAULT_SETTINGS.keybindings).forEach(function(k){
+          if(saved.keybindings.hasOwnProperty(k))ST.keybindings[k]=saved.keybindings[k];
+        });
+      }catch(e){console.warn('tribes: failed to load settings, using defaults:',e);}
+    }
+    function saveSettings(){
+      try{localStorage.setItem(SETTINGS_KEY,JSON.stringify(ST));}catch(e){}
+    }
+    function sSave(key,val){
+      if(key.indexOf('kb.')===0){ST.keybindings[key.slice(3)]=val;}
+      else{ST[key]=val;}
+      saveSettings();
+    }
+    function sVal(id,v){var el=document.getElementById(id);if(el)el.textContent=v;}
+
+    function applyAudio(){
+      if(!AE.ctx)return;
+      AE.muted=ST.muted;
+      if(AE.master)AE.master.gain.value=ST.muted?0:(ST.masterVolume/100)*0.55;
+      if(AE.sfxBus)AE.sfxBus.gain.value=ST.sfxVolume/100;
+      if(AE.uiBus)AE.uiBus.gain.value=ST.uiVolume/100;
+    }
+    function applyToCpp(){
+      if(!Module._setSettings)return;
+      var j='{"sensitivity":'+ST.sensitivity+',"fov":'+ST.fov+',"renderDist":'+ST.renderDist
+           +',"jetToggle":'+(ST.jetToggle?'true':'false')+',"invertY":'+(ST.invertY?'true':'false')+'}';
+      Module._setSettings(j);
+    }
+    function applyCrosshair(){
+      var col=XHAIR_COLORS[ST.crosshairColor]||'#C4A14C';
+      document.documentElement.style.setProperty('--xhair-color',col);
+      var scale=ST.crosshairScale;
+      // Applied in updateHUD spread calculation
+    }
+    function applySettings(){
+      applyAudio();
+      // Crosshair color
+      applyCrosshair();
+      // Kill feed
+      var kf=document.getElementById('killfeed');
+      if(kf)kf.style.display=ST.showKillFeed?'block':'none';
+      // FPS counter
+      var fc=document.getElementById('fps-counter');
+      if(fc)fc.style.display=ST.showFPS?'block':'none';
+      applyToCpp();
+      // Sync AE mute with M-key state
+      if(AE.ctx)AE.muted=ST.muted;
+      setupKeyInterceptor();
+    }
+
+    // Key rebinding interceptor
+    var _remappedEvents=typeof WeakSet!=='undefined'?new WeakSet():null;
+    var _keyInterceptor=null;
+    function setupKeyInterceptor(){
+      if(_keyInterceptor)document.removeEventListener('keydown',_keyInterceptor,true);
+      var reverseMap={};
+      KB_ACTIONS.forEach(function(a){
+        if(ST.keybindings[a.id]!==a.def)reverseMap[ST.keybindings[a.id]]=a.def;
+      });
+      if(Object.keys(reverseMap).length===0){_keyInterceptor=null;return;}
+      _keyInterceptor=function(e){
+        if(_remappedEvents&&_remappedEvents.has(e))return;
+        var mapped=reverseMap[e.keyCode];
+        if(mapped!==undefined){
+          e.stopPropagation();
+          var fake=new KeyboardEvent('keydown',{keyCode:mapped,which:mapped,bubbles:true,cancelable:true});
+          if(_remappedEvents)_remappedEvents.add(fake);
+          document.dispatchEvent(fake);
+        }
+      };
+      document.addEventListener('keydown',_keyInterceptor,true);
+    }
+
+    function populateSettingsUI(){
+      // Audio
+      var el;
+      function sv(id,v){var e=document.getElementById(id);if(e)e.value=v;}
+      function sc(id,v){var e=document.getElementById(id);if(e)e.checked=v;}
+      sv('s-master',ST.masterVolume);sVal('s-master-v',ST.masterVolume);
+      sv('s-sfx',ST.sfxVolume);sVal('s-sfx-v',ST.sfxVolume);
+      sv('s-ui',ST.uiVolume);sVal('s-ui-v',ST.uiVolume);
+      sv('s-music',ST.musicVolume);sVal('s-music-v',ST.musicVolume);
+      sc('s-muted',ST.muted);
+      // Controls
+      sv('s-sens',Math.round(ST.sensitivity*10));sVal('s-sens-v',ST.sensitivity.toFixed(1)+'×');
+      sc('s-inverty',ST.invertY);
+      sv('s-fov',ST.fov);sVal('s-fov-v',ST.fov+'°');
+      document.querySelectorAll('input[name="jetmode"]').forEach(function(r){r.checked=(r.value==='hold')!==ST.jetToggle;});
+      // Keybindings
+      buildKeybindingList();
+      // Video
+      sv('s-res',ST.resolutionScale);sVal('s-res-v',ST.resolutionScale+'%');
+      sv('s-rdist',Math.round(ST.renderDist*10));sVal('s-rdist-v',ST.renderDist.toFixed(1)+'×');
+      sc('s-shadows',ST.shadows);sc('s-fps',ST.showFPS);
+      // Gameplay
+      buildColorSwatches();
+      sv('s-xscale',Math.round(ST.crosshairScale*10));sVal('s-xscale-v',ST.crosshairScale.toFixed(1)+'×');
+      sc('s-dmgnum',ST.showDamageNumbers);sc('s-killfeed',ST.showKillFeed);sc('s-ammoauto',ST.autoPickupAmmo);
+    }
+
+    var _listeningAction=null;
+    function buildKeybindingList(){
+      var list=document.getElementById('keybinding-list');if(!list)return;list.innerHTML='';
+      KB_ACTIONS.forEach(function(a){
+        var div=document.createElement('div');div.className='key-row';
+        var kc=ST.keybindings[a.id]||a.def;
+        var keyLabel=keyCodeToLabel(kc);
+        div.innerHTML='<div class="key-action">'+a.label+'</div>'
+          +'<button class="key-btn" id="kb-btn-'+a.id+'" onclick="startRebind(\''+a.id+'\')">'+keyLabel+'</button>'
+          +'<span class="key-conflict" id="kb-conflict-'+a.id+'"></span>';
+        list.appendChild(div);
+      });
+    }
+    function startRebind(actionId){
+      if(_listeningAction)cancelRebind(_listeningAction);
+      _listeningAction=actionId;
+      var btn=document.getElementById('kb-btn-'+actionId);
+      if(btn){btn.textContent='Press a key…';btn.classList.add('listening');}
+      document.addEventListener('keydown',captureRebind,{once:true,capture:true});
+    }
+    function cancelRebind(actionId){
+      if(_listeningAction===actionId){
+        var btn=document.getElementById('kb-btn-'+actionId);
+        var kc=ST.keybindings[actionId];
+        if(btn){btn.textContent=keyCodeToLabel(kc);btn.classList.remove('listening');}
+        _listeningAction=null;
+      }
+    }
+    function captureRebind(e){
+      e.preventDefault();e.stopPropagation();
+      var actionId=_listeningAction;_listeningAction=null;
+      if(e.keyCode===27){cancelRebind(actionId);return;}
+      // Conflict check
+      var conflict=null;
+      KB_ACTIONS.forEach(function(a){
+        if(a.id!==actionId&&(ST.keybindings[a.id]||a.def)===e.keyCode)conflict=a.label;
+      });
+      var btn=document.getElementById('kb-btn-'+actionId);
+      var conflictEl=document.getElementById('kb-conflict-'+actionId);
+      if(conflict){
+        if(btn){btn.textContent=keyCodeToLabel(ST.keybindings[actionId]||0);btn.classList.remove('listening');}
+        if(conflictEl)conflictEl.textContent='⚠ Conflict with '+conflict;
+        setTimeout(function(){if(conflictEl)conflictEl.textContent='';},2000);
+        return;
+      }
+      ST.keybindings[actionId]=e.keyCode;saveSettings();
+      if(btn){btn.textContent=keyCodeToLabel(e.keyCode);btn.classList.remove('listening');}
+      if(conflictEl)conflictEl.textContent='';
+      setupKeyInterceptor();
+    }
+    function resetKeybindings(){
+      KB_ACTIONS.forEach(function(a){ST.keybindings[a.id]=a.def;});
+      saveSettings();buildKeybindingList();setupKeyInterceptor();
+    }
+    function keyCodeToLabel(kc){
+      var m={8:'Backspace',9:'Tab',13:'Enter',16:'Shift',17:'Ctrl',18:'Alt',27:'Esc',32:'Space',
+             37:'←',38:'↑',39:'→',40:'↓',186:';',187:'=',188:',',189:'-',190:'.',191:'/',
+             220:'\\',221:']',219:'[',222:"'"};
+      if(m[kc])return m[kc];
+      if(kc>=65&&kc<=90)return String.fromCharCode(kc);
+      if(kc>=48&&kc<=57)return String.fromCharCode(kc);
+      if(kc>=96&&kc<=105)return 'Num'+(kc-96);
+      if(kc>=112&&kc<=123)return 'F'+(kc-111);
+      return '('+kc+')';
+    }
+    function buildColorSwatches(){
+      var c=document.getElementById('xhair-colors');if(!c)return;c.innerHTML='';
+      Object.keys(XHAIR_COLORS).forEach(function(name){
+        var s=document.createElement('span');s.className='color-swatch'+(ST.crosshairColor===name?' selected':'');
+        s.style.background=XHAIR_COLORS[name];s.title=name;
+        s.onclick=function(){sSave('crosshairColor',name);applyCrosshair();buildColorSwatches();};
+        c.appendChild(s);
+      });
+    }
+
+    // Tab switching
+    function setStab(tab){
+      document.querySelectorAll('.stab').forEach(function(el){el.classList.remove('active');});
+      document.getElementById('stab-'+tab).classList.add('active');
+      document.querySelectorAll('#settings-tabs .tab-item').forEach(function(el,i){
+        var tabs=['audio','controls','video','gameplay'];
+        el.classList.toggle('active',tabs[i]===tab);
+      });
+    }
+    function openSettings(){
+      populateSettingsUI();
+      document.getElementById('settings-modal').classList.add('active');
+    }
+    function closeSettings(){
+      document.getElementById('settings-modal').classList.remove('active');
+      // Apply resolution scale on close
+      var res=ST.resolutionScale/100;
+      var c2=document.getElementById('canvas');
+      if(c2){c2.width=Math.round(1024*res);c2.height=Math.round(768*res);}
+    }
+    function resetAllSettings(){
+      if(!confirm('Reset all settings to defaults? This cannot be undone.'))return;
+      localStorage.removeItem(SETTINGS_KEY);
+      ST=JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+      KB_ACTIONS.forEach(function(a){ST.keybindings[a.id]=a.def;});
+      populateSettingsUI();applySettings();
+    }
+
+    // FPS counter
+    var _fpsFrames=0,_fpsLast=0;
+    function updateFPS(now){
+      _fpsFrames++;
+      if(now-_fpsLast>=1000){
+        var el=document.getElementById('fps-counter');
+        if(el&&ST.showFPS)el.textContent=_fpsFrames+' fps';
+        _fpsFrames=0;_fpsLast=now;
+      }
+      requestAnimationFrame(updateFPS);
+    }
+    requestAnimationFrame(updateFPS);
+
+    loadSettings(); // load immediately before anything else
 
     var canvas=document.getElementById('canvas');
     canvas.width=1024;canvas.height=768;

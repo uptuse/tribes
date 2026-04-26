@@ -79,6 +79,39 @@ struct Mat4 {
 #include "raindance_heightmap.h"
 #include "raindance_mission.h"
 
+// ============================================================
+// Runtime settings (overridden by JS via setSettings)
+// ============================================================
+static float g_mouseSensitivity=1.0f;
+static float g_fov=90.0f;
+static float g_renderDistMul=1.0f;
+static bool  g_jetToggle=false;
+static bool  g_invertY=false;
+static bool  g_jetActive=false; // for toggle mode state
+
+static double sGetF(const char*j,const char*k,double d){
+    char s[64];snprintf(s,sizeof(s),"\"%s\":",k);
+    const char*p=strstr(j,s);if(!p)return d;
+    p+=strlen(s);while(*p==' ')p++;
+    if(*p=='"'||*p=='{'||*p=='[')return d;
+    return strtod(p,nullptr);
+}
+static bool sGetB(const char*j,const char*k,bool d){
+    char s[64];snprintf(s,sizeof(s),"\"%s\":",k);
+    const char*p=strstr(j,s);if(!p)return d;
+    p+=strlen(s);while(*p==' ')p++;
+    if(strncmp(p,"true",4)==0)return true;
+    if(strncmp(p,"false",5)==0)return false;
+    return d;
+}
+extern "C" void setSettings(const char*json){
+    g_mouseSensitivity=(float)sGetF(json,"sensitivity",1.0);
+    g_fov=(float)sGetF(json,"fov",90.0);
+    g_renderDistMul=(float)sGetF(json,"renderDist",1.0);
+    g_jetToggle=sGetB(json,"jetToggle",false);
+    g_invertY=sGetB(json,"invertY",false);
+}
+
 static const int TSIZE=RAINDANCE_SIZE; // 257
 static const float TSCALE=8.0f; // 8 meters per terrain cell (Tribes default)
 static const float THEIGHT=RAINDANCE_HEIGHT_MAX;
@@ -1222,8 +1255,8 @@ static void mainLoop(){
     Player&me=players[localPlayer];
 
     // --- Input ---
-    me.yaw+=mDX*0.003f;
-    me.pitch-=mDY*0.003f;
+    me.yaw+=mDX*0.003f*g_mouseSensitivity;
+    me.pitch-=(g_invertY?-1.0f:1.0f)*mDY*0.003f*g_mouseSensitivity;
     if(me.pitch>1.4f)me.pitch=1.4f;if(me.pitch<-1.4f)me.pitch=-1.4f;
     mDX=mDY=0;
 
@@ -1339,7 +1372,16 @@ static void mainLoop(){
         // Jetting — from playerUpdate.cpp lines 644-702
         // Jet splits force between lateral (toward input direction) and vertical
         // Split ratio based on current velocity vs maxJetForwardVelocity
-        me.jetting=keys[32]&&me.energy>=ad.minJetEnergy&&!me.onGround;
+        if(g_jetToggle){
+            static bool jetKeyWas=false;
+            if(keys[32]&&!jetKeyWas)g_jetActive=!g_jetActive;
+            jetKeyWas=keys[32];
+            if(!me.onGround&&me.energy<ad.minJetEnergy)g_jetActive=false;
+            me.jetting=g_jetActive&&me.energy>=ad.minJetEnergy&&!me.onGround;
+        }else{
+            g_jetActive=false;
+            me.jetting=keys[32]&&me.energy>=ad.minJetEnergy&&!me.onGround;
+        }
         if(me.jetting){
             me.energy-=ad.jetEnergyDrain/TICK*dt;
             if(me.energy<0)me.energy=0;
@@ -1653,7 +1695,7 @@ static void mainLoop(){
     if(thirdPerson)eye=me.pos+Vec3(0,3,0)-fwd*12;
     else eye=me.pos+Vec3(0,2.5f,0);
     Mat4 view=Mat4::lookAt(eye,fwd,{0,1,0});
-    Mat4 proj=Mat4::perspective(75*DEG2RAD,(float)CANVAS_W/CANVAS_H,1.0f,2000.0f);
+    Mat4 proj=Mat4::perspective(g_fov*DEG2RAD,(float)CANVAS_W/CANVAS_H,1.0f,2000.0f*g_renderDistMul);
     Mat4 vp=proj*view;
 
     // Terrain
