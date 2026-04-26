@@ -1011,60 +1011,34 @@ static void hQ(float x1,float y1,float x2,float y2,float r,float g,float b){
     hBatch.push_back({x2,y1,r,g,b});hBatch.push_back({x2,y2,r,g,b});hBatch.push_back({x1,y2,r,g,b});
 }
 static void drawHUD(){
-    glDisable(GL_DEPTH_TEST);glUseProgram(hShader);hBatch.clear();
+    // HUD is now fully HTML/CSS — canvas is 3D-only.
+    // This function is retained as a stub; HUD state is broadcast via EM_ASM in mainLoop.
+    glEnable(GL_DEPTH_TEST);
+}
+
+static void broadcastHUD(){
     Player&p=players[localPlayer];
     const ArmorData&ad=armors[p.armor];
-    // Crosshair
-    float cs=0.015f;
-    hQ(-cs*0.2f,-cs,cs*0.2f,cs,0,1,0.3f);hQ(-cs,-cs*0.2f,cs,cs*0.2f,0,1,0.3f);
-    // Health bar
-    float hpPct=p.health/ad.maxDamage;
-    float hr=hpPct>0.5f?0.1f:0.9f,hg=hpPct>0.3f?0.8f:0.2f;
-    hQ(-0.95f,-0.85f,-0.65f,-0.81f,0.12f,0.12f,0.12f);
-    hQ(-0.95f,-0.85f,-0.95f+0.3f*hpPct,-0.81f,hr,hg,0.2f);
-    // Energy bar (amber/brass — no blue in HUD)
-    float enPct=p.energy/ad.maxEnergy;
-    hQ(-0.95f,-0.92f,-0.65f,-0.88f,0.12f,0.12f,0.12f);
-    hQ(-0.95f,-0.92f,-0.95f+0.3f*enPct,-0.88f,0.9f,0.70f,0.10f);
-    // Speed
-    float sw=0.25f*fminf(p.speed/200.0f,1.0f);
-    hQ(0.65f,-0.92f,0.9f,-0.88f,0.12f,0.12f,0.12f);
-    float sr=p.skiing?0.9f:0.5f,sg=p.skiing?0.6f:0.5f;
-    hQ(0.65f,-0.92f,0.65f+sw,-0.88f,sr,sg,0.2f);
-    // Weapon indicator
-    const WeaponData&wd=weapons[p.curWeapon];
-    hQ(0.55f,-0.82f,0.95f,-0.78f,0.1f,0.1f,0.1f);
-    // Ammo count as bar width
-    if(wd.usesAmmo){
-        float amPct=(float)p.ammo[p.curWeapon]/20.0f;
-        hQ(0.55f,-0.82f,0.55f+0.4f*fminf(amPct,1.0f),-0.78f,wd.r*0.5f,wd.g*0.5f,wd.b*0.5f);
-    }else{
-        hQ(0.55f,-0.82f,0.95f,-0.78f,wd.r*0.3f,wd.g*0.3f,wd.b*0.3f);
-    }
-    // Cooldown
-    if(p.fireCooldown>0){
-        float cw=0.08f*(p.fireCooldown/(wd.fireTime+wd.reloadTime));
-        hQ(-cw,0.04f,cw,0.055f,0.8f,0.2f,0.1f);
-    }
-    // Jet indicator
-    if(p.jetting)hQ(-0.03f,-0.7f,0.03f,-0.66f,1,0.6f,0.1f);
-    // Score
-    float scoreW=0.02f;
-    // Red score bars
-    for(int i=0;i<teamScore[0]&&i<SCORE_LIMIT;i++)
-        hQ(-0.15f+i*0.03f,0.9f,-0.15f+i*0.03f+0.025f,0.95f,0.9f,0.15f,0.15f);
-    // Blue score bars
-    for(int i=0;i<teamScore[1]&&i<SCORE_LIMIT;i++)
-        hQ(0.05f+i*0.03f,0.9f,0.05f+i*0.03f+0.025f,0.95f,0.15f,0.15f,0.9f);
-    // Flag carrier indicator
-    if(p.carryingFlag>=0)hQ(-0.05f,0.8f,0.05f,0.85f,0.2f,0.3f,1.0f);
-
-    glBindVertexArray(hVAO);glBindBuffer(GL_ARRAY_BUFFER,hVBO);
-    glBufferData(GL_ARRAY_BUFFER,hBatch.size()*sizeof(HV),hBatch.data(),GL_DYNAMIC_DRAW);
-    glVertexAttribPointer(0,2,GL_FLOAT,0,sizeof(HV),(void*)0);glEnableVertexAttribArray(0);
-    glVertexAttribPointer(1,3,GL_FLOAT,0,sizeof(HV),(void*)8);glEnableVertexAttribArray(1);
-    glDrawArrays(GL_TRIANGLES,0,hBatch.size());
-    glEnable(GL_DEPTH_TEST);
+    float hpPct=p.alive?(p.health/ad.maxDamage)*100.0f:0.0f;
+    float enCap=ad.maxEnergy*(p.pack==1?1.5f:1.0f);
+    float enPct=(enCap>0)?(p.energy/enCap)*100.0f:0.0f;
+    int curWpn=p.curWeapon;
+    int ammo=p.ammo[curWpn];
+    // Max ammo per armor
+    int maxAmmo=20;
+    if(curWpn==WPN_CHAINGUN)maxAmmo=(p.armor==ARMOR_LIGHT?100:p.armor==ARMOR_MEDIUM?150:200);
+    else if(curWpn==WPN_DISC)maxAmmo=15;
+    else if(curWpn==WPN_PLASMA)maxAmmo=(p.armor==ARMOR_LIGHT?30:p.armor==ARMOR_MEDIUM?40:50);
+    else if(curWpn==WPN_GRENADE_LAUNCHER)maxAmmo=(p.armor==ARMOR_HEAVY?15:10);
+    else if(curWpn==WPN_MORTAR)maxAmmo=10;
+    if(p.pack==3)maxAmmo*=2;
+    int speed10=(int)(p.speed*10);
+    EM_ASM({
+        if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13);
+    },(int)hpPct,(int)enPct,ammo,maxAmmo,curWpn,speed10,
+       p.skiing?1:0,p.carryingFlag,
+       (int)p.pos.x,(int)p.pos.z,(int)(p.yaw*1000),
+       teamScore[0],teamScore[1],(int)p.armor);
 }
 
 // ============================================================
@@ -1430,7 +1404,9 @@ static void mainLoop(){
                 damagePlayer(j,w.damage,projs[i].ownerTeam);
                 if(!players[j].alive&&projs[i].ownerTeam!=players[j].team){
                     for(int k=0;k<MAX_PLAYERS;k++)if(players[k].active&&players[k].team==projs[i].ownerTeam){
-                        players[k].kills++;players[k].score++;break;
+                        players[k].kills++;players[k].score++;
+                        printf("[KILL]%s~%d~%s\n",players[k].name,projs[i].weapon,players[j].name);
+                        break;
                     }
                 }
                 hitPlayer=true;break;
@@ -1730,6 +1706,7 @@ static void mainLoop(){
     glDepthMask(1);glDisable(GL_BLEND);
 
     drawHUD();
+    broadcastHUD();
 
     if(frameCount%1800==1){
         printf("[Game] Score: Red %d - Blue %d | %s: HP=%.0f%% EN=%.0f%% SPD=%.0f WPN=%s\n",

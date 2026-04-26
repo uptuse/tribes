@@ -11,14 +11,15 @@
 2026-04-25 20:45 | 28d988f | chore(comms): comprehensive status handoff for session continuity
 2026-04-25 21:15 | pending | chore(repo): move source into tribes repo — program/code/, build.sh, BUILD.md
 2026-04-25 21:15 | pending | feat(buildings): AABB collision for 30+ mission buildings — interiors, generators, turrets, stations
-2026-04-25 21:30 | pending | fix(hud): hide canvas during menu (no blue HUD behind main menu); energy bar amber not blue
-2026-04-25 21:30 | pending | feat(weapons/visuals): Tier 2.6 — distinct projectile visuals: disc white+cyan trail, chaingun yellow tracer, plasma red-orange jitter, grenade dark+bounce+red blink
-2026-04-25 22:00 | pending | feat(base): Tier 2.7 complete — turret auto-aim AI (plasma, 80m, 120°/s), destructible generators (cascade offline+sparks+repair), inventory station UI (armor/weapon/pack, F key, offline state)
-2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m
 2026-04-25 21:18 | ca6ab94 | fix(base): Round 8 polish — turret LoS, gen alive pulse, station auto-close, turret HUD msg
 2026-04-25 21:20 | pending | review(manus): round 9 PIVOT — armor quality pass; heightmap accepted as-is; polish verified
 2026-04-25 21:25 | pending | review(manus): round 9.5 INTERRUPT — stop Tier 3.0 armor pass, await user-provided custom character models
+2026-04-25 21:30 | pending | feat(weapons/visuals): Tier 2.6 — distinct projectile visuals: disc white+cyan trail, chaingun yellow tracer, plasma red-orange jitter, grenade dark+bounce+red blink
+2026-04-25 21:30 | pending | fix(hud): hide canvas during menu (no blue HUD behind main menu); energy bar amber not blue
 2026-04-25 21:30 | pending | review(manus): round 10 PIVOT — HUD/UI polish (model-free); 8 acceptance criteria for health/energy/ammo/icon/crosshair/killfeed/compass/CTF banner
-2026-04-25 23:00 | pending | feat(armor): Tier 3.0 partial — zone coloring, fixed specular/viewDir, breathing anim, jetpack glow (committed before Round 9.5 interrupt arrived)
 2026-04-25 21:32 | f3039a2 | feat(armor): Tier 3.0 quality pass — 6/7 acceptance criteria met (accepted as baseline)
 2026-04-25 21:33 | pending | review(manus): round 10.5 — accept Tier 3.0 armor (6/7) as baseline; drop .upk asset pivot; re-confirm HUD/UI polish
+2026-04-25 22:00 | pending | feat(base): Tier 2.7 complete — turret auto-aim AI (plasma, 80m, 120°/s), destructible generators (cascade offline+sparks+repair), inventory station UI (armor/weapon/pack, F key, offline state)
+2026-04-25 22:30 | pending | fix(base): Round 8 polish — turret LoS raycast, generator alive pulse, turret #N HUD message, station auto-close at 6m
+2026-04-25 23:00 | pending | feat(armor): Tier 3.0 partial — zone coloring, fixed specular/viewDir, breathing anim, jetpack glow (committed before Round 9.5 interrupt arrived)
+2026-04-25 23:30 | pending | feat(hud): Tier 3.9.1 — all 8 HUD criteria: health/energy bars, ammo counter, weapon SVG icons, dynamic crosshair, kill feed with icons, compass strip, CTF carry banner

@@ -95,14 +95,82 @@
     .victory-text { font-family:'Cinzel',serif; font-size:2.5em; font-weight:900; letter-spacing:6px; color:#D4A030; }
     .victory-sub { font-size:1em; color:#E8DCB8; margin-top:10px; letter-spacing:2px; }
 
-    /* Kill feed */
-    #killfeed { position:absolute; top:50px; right:15px; z-index:12; text-align:right; pointer-events:none; }
-    .kill-msg { font-size:0.8em; padding:2px 6px; margin:2px 0; background:rgba(15,15,12,0.6); opacity:1; transition:opacity 0.5s; white-space:nowrap; color:#E8DCB8; }
-    .kill-msg.fade { opacity:0; }
+    /* =================== IN-GAME HUD =================== */
+    #hud { display:none; position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; z-index:11; }
+    #hud.active { display:block; }
 
-    /* Flag status */
-    #flagstatus { position:absolute; top:15px; left:50%; transform:translateX(-50%); z-index:12; text-align:center; pointer-events:none; }
-    .flag-msg { font-family:'Barlow Condensed',sans-serif; font-size:1em; letter-spacing:2px; padding:4px 12px; background:rgba(15,15,12,0.7); border:1px solid #4A3A2A; color:#FFC850; }
+    /* Health & Energy — bottom-left */
+    #hud-bl { position:absolute; bottom:22px; left:18px; }
+    .hud-bar-row { display:flex; align-items:center; margin:4px 0; }
+    .hud-lbl { font-family:'Barlow Condensed',sans-serif; font-size:0.68em; letter-spacing:2px; color:#9A8A6A; width:22px; text-align:right; margin-right:5px; }
+    .hud-bar-bg { width:200px; height:10px; background:rgba(8,6,3,0.75); border:1px solid #5A4A2A; position:relative; }
+    .hud-bar-fill { height:100%; width:0%; transition:width 0.15s, background 0.3s; }
+    .hud-seg { position:absolute; top:0; height:100%; width:1px; background:rgba(60,50,30,0.7); }
+    #hp-fill { background:#2ECC71; }
+    #hp-fill.amber { background:#D4A030; }
+    #hp-fill.danger { background:#C0392B; }
+    #hp-fill.critical { animation:hpPulse 0.4s infinite alternate; }
+    @keyframes hpPulse { from{opacity:1} to{opacity:0.4} }
+    #en-fill { background:#00AADD; }
+
+    /* Ammo & Weapon — bottom-right */
+    #hud-br { position:absolute; bottom:22px; right:18px; text-align:right; }
+    #hud-wpn-icon { width:44px; height:44px; margin-left:auto; margin-bottom:5px;
+      display:flex; align-items:center; justify-content:flex-end; }
+    #hud-wpn-icon svg { width:40px; height:40px; opacity:0.9; transition:opacity 0.2s; }
+    #hud-ammo { font-family:'Barlow Condensed',sans-serif; font-size:1.7em; font-weight:700;
+      letter-spacing:1px; color:#D4A030; line-height:1; }
+    .ammo-max { font-size:0.55em; color:#7A6A4A; }
+
+    /* Crosshair — center */
+    #hud-xhair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+      width:60px; height:60px; pointer-events:none; }
+    #hud-xhair svg { width:60px; height:60px; overflow:visible; }
+    #xhair-arms { transition:transform 0.08s; }
+
+    /* Compass — top-center */
+    #hud-compass { position:absolute; top:10px; left:50%; transform:translateX(-50%);
+      width:380px; height:28px; overflow:hidden; pointer-events:none; }
+    #compass-track { position:relative; height:100%; background:rgba(8,6,3,0.6);
+      border:1px solid #3A2A10; }
+    .cmp-label { position:absolute; top:50%; transform:translate(-50%,-50%);
+      font-family:'Barlow Condensed',sans-serif; font-size:0.72em; font-weight:600;
+      letter-spacing:2px; color:#9A8A6A; }
+    .cmp-marker { position:absolute; top:50%; transform:translate(-50%,-50%);
+      width:8px; height:8px; border-radius:50%; }
+    .cmp-tick { position:absolute; top:0; width:1px; height:40%; background:#3A2A10;
+      transform:translateX(-50%); }
+
+    /* Score — top-center below compass */
+    #hud-score { position:absolute; top:44px; left:50%; transform:translateX(-50%);
+      font-family:'Barlow Condensed',sans-serif; font-size:1.15em; font-weight:700;
+      letter-spacing:4px; color:#E8DCB8; background:rgba(8,6,3,0.5);
+      border:1px solid #2A1800; padding:1px 12px; white-space:nowrap; }
+    .hs-red { color:#C8302C; }
+    .hs-blue { color:#2C5AC8; }
+    .hs-sep { color:#4A3A2A; }
+
+    /* Kill feed */
+    #killfeed { position:absolute; top:78px; right:15px; z-index:12; text-align:right; pointer-events:none; }
+    .kill-msg { font-family:'Barlow Condensed',sans-serif; font-size:0.82em; padding:2px 8px;
+      margin:2px 0; background:rgba(10,8,4,0.75); border-left:2px solid #4A3A2A;
+      opacity:1; transition:opacity 0.5s; white-space:nowrap; color:#E8DCB8; }
+    .kill-msg.fade { opacity:0; }
+    .km-killer { font-weight:600; }
+    .km-victim { color:#9A8A6A; }
+    .km-wpn { display:inline-block; width:14px; height:14px; vertical-align:middle; opacity:0.8; }
+
+    /* CTF flag carry banner */
+    #hud-flag-carry { position:absolute; top:50%; left:50%; transform:translate(-50%,-120px);
+      font-family:'Barlow Condensed',sans-serif; font-size:0.9em; font-weight:600;
+      letter-spacing:3px; color:#FFC850; background:rgba(10,8,4,0.82);
+      border:1px solid #7A5A10; padding:5px 18px; text-align:center; display:none; }
+    #hud-flag-carry.active { display:block; animation:flagPulse 1s ease-in-out infinite alternate; }
+    @keyframes flagPulse { from{border-color:#7A5A10} to{border-color:#D4A030;box-shadow:0 0 12px rgba(212,160,48,0.4)} }
+
+    /* Flag status (for event messages) */
+    #flagstatus { position:absolute; top:80px; left:50%; transform:translateX(-50%); z-index:12; text-align:center; pointer-events:none; }
+    .flag-msg { font-family:'Barlow Condensed',sans-serif; font-size:0.95em; letter-spacing:2px; padding:4px 14px; background:rgba(12,10,5,0.82); border:1px solid #5A4A2A; color:#FFC850; }
 
     /* Loading */
     #loading { position:absolute; top:0; left:0; width:100%; height:100%; z-index:30; background:#0a0a08; display:flex; flex-direction:column; align-items:center; justify-content:center; }
@@ -135,6 +203,55 @@
 
   <!-- Game Canvas -->
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+
+  <!-- In-Game HUD -->
+  <div id="hud">
+    <!-- Health + Energy — bottom-left -->
+    <div id="hud-bl">
+      <div class="hud-bar-row">
+        <div class="hud-lbl">HP</div>
+        <div class="hud-bar-bg">
+          <div class="hud-bar-fill" id="hp-fill"></div>
+          <div class="hud-seg" style="left:25%"></div>
+          <div class="hud-seg" style="left:50%"></div>
+          <div class="hud-seg" style="left:75%"></div>
+        </div>
+      </div>
+      <div class="hud-bar-row">
+        <div class="hud-lbl">EN</div>
+        <div class="hud-bar-bg">
+          <div class="hud-bar-fill" id="en-fill"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Weapon icon + Ammo — bottom-right -->
+    <div id="hud-br">
+      <div id="hud-wpn-icon"></div>
+      <div id="hud-ammo"><span id="ammo-cur">0</span><span class="ammo-max"> / <span id="ammo-max">0</span></span></div>
+    </div>
+    <!-- Crosshair — center -->
+    <div id="hud-xhair">
+      <svg viewBox="-30 -30 60 60" xmlns="http://www.w3.org/2000/svg" id="xhair-svg">
+        <g id="xhair-arms" stroke="#C4A14C" stroke-width="1.5" fill="none" opacity="0.85">
+          <line id="xh-t" x1="0" y1="-8" x2="0" y2="-18"/>
+          <line id="xh-b" x1="0" y1="8" x2="0" y2="18"/>
+          <line id="xh-l" x1="-8" y1="0" x2="-18" y2="0"/>
+          <line id="xh-r" x1="8" y1="0" x2="18" y2="0"/>
+        </g>
+        <circle id="xhair-dot" cx="0" cy="0" r="1.5" fill="#C4A14C" opacity="0.85"/>
+      </svg>
+    </div>
+    <!-- Compass — top-center -->
+    <div id="hud-compass"><div id="compass-track"></div></div>
+    <!-- Score — below compass -->
+    <div id="hud-score">
+      <span class="hs-red" id="hs-red">0</span>
+      <span class="hs-sep"> — </span>
+      <span class="hs-blue" id="hs-blue">0</span>
+    </div>
+    <!-- Flag carry indicator -->
+    <div id="hud-flag-carry">▶ ENEMY FLAG — RETURN TO BASE ◀</div>
+  </div>
 
   <!-- Main Menu -->
   <div class="overlay" id="mainmenu">
@@ -388,9 +505,105 @@
       gameSettings.invertY=!gameSettings.invertY;
       document.getElementById('invert-btn').textContent=gameSettings.invertY?'ON':'OFF';
     }
+    // Weapon SVG icons (inline, brass tinted)
+    var WPN_ICONS=[
+      // 0 Blaster
+      '<svg viewBox="0 0 20 20"><polyline points="4,16 10,4 16,16" stroke="#C4A14C" stroke-width="1.5" fill="none"/><line x1="10" y1="4" x2="10" y2="1" stroke="#C4A14C" stroke-width="1.5"/></svg>',
+      // 1 Chaingun
+      '<svg viewBox="0 0 20 20"><line x1="3" y1="7" x2="17" y2="7" stroke="#C4A14C" stroke-width="1.8"/><line x1="3" y1="10" x2="17" y2="10" stroke="#C4A14C" stroke-width="1.8"/><line x1="3" y1="13" x2="17" y2="13" stroke="#C4A14C" stroke-width="1.8"/></svg>',
+      // 2 Disc (Spinfusor)
+      '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="7" stroke="#C4A14C" stroke-width="1.5" fill="none"/><line x1="10" y1="3" x2="10" y2="17" stroke="#C4A14C" stroke-width="1"/><line x1="3" y1="10" x2="17" y2="10" stroke="#C4A14C" stroke-width="1"/></svg>',
+      // 3 Grenade
+      '<svg viewBox="0 0 20 20"><path d="M5,15 Q3,10 8,7 Q13,4 17,8" stroke="#C4A14C" stroke-width="1.5" fill="none"/><circle cx="17" cy="9" r="2.5" stroke="#C4A14C" stroke-width="1.2" fill="none"/></svg>',
+      // 4 Plasma
+      '<svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="5" stroke="#C4A14C" stroke-width="1.5" fill="rgba(196,161,76,0.2)"/><circle cx="10" cy="10" r="8" stroke="#C4A14C" stroke-width="0.6" fill="none" opacity="0.4"/></svg>',
+      // 5 Mortar
+      '<svg viewBox="0 0 20 20"><path d="M3,17 Q10,3 17,17" stroke="#C4A14C" stroke-width="2" fill="none"/><circle cx="10" cy="5" r="2" fill="#C4A14C" opacity="0.7"/></svg>',
+      // 6 Laser
+      '<svg viewBox="0 0 20 20"><line x1="2" y1="10" x2="18" y2="10" stroke="#C4A14C" stroke-width="1.5"/><circle cx="17" cy="10" r="2" fill="#C4A14C"/></svg>',
+      // 7 ELF
+      '<svg viewBox="0 0 20 20"><polyline points="4,5 8,10 12,5 16,15" stroke="#C4A14C" stroke-width="1.5" fill="none"/></svg>',
+      // 8 Repair
+      '<svg viewBox="0 0 20 20"><line x1="10" y1="3" x2="10" y2="17" stroke="#C4A14C" stroke-width="2.5"/><line x1="3" y1="10" x2="17" y2="10" stroke="#C4A14C" stroke-width="2.5"/></svg>'
+    ];
+
+    var lastWpn=-1;
+    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
+      // Health bar
+      var hf=document.getElementById('hp-fill');
+      if(hf){
+        hf.style.width=hp+'%';
+        hf.className='hud-bar-fill'+(hp<10?' critical':hp<25?' danger':hp<50?' amber':'');
+        var hc=hp<25?'#C0392B':hp<50?'#D4A030':'#2ECC71';
+        if(hp>=25)hf.style.background=hc;
+      }
+      // Energy bar
+      var ef=document.getElementById('en-fill');if(ef)ef.style.width=en+'%';
+      // Ammo
+      var ac=document.getElementById('ammo-cur'),am=document.getElementById('ammo-max');
+      if(ac)ac.textContent=ammo;if(am)am.textContent=maxAmmo;
+      var amEl=document.getElementById('hud-ammo');
+      if(amEl){var r=maxAmmo>0?ammo/maxAmmo:1;amEl.style.color=r>0.5?'#D4A030':r>0.25?'#E07020':'#C0392B';}
+      // Weapon icon
+      if(wpn!==lastWpn){lastWpn=wpn;var wi=document.getElementById('hud-wpn-icon');if(wi&&WPN_ICONS[wpn])wi.innerHTML=WPN_ICONS[wpn];}
+      // Dynamic crosshair spread
+      var speed=speed10/10;
+      var spread=Math.min(speed/60*10+4,22)+(skiing?6:0);
+      var s=Math.round(spread);
+      var xt=document.getElementById('xh-t'),xb=document.getElementById('xh-b');
+      var xl=document.getElementById('xh-l'),xr=document.getElementById('xh-r');
+      if(xt){xt.setAttribute('y1',-s);xt.setAttribute('y2',-s-10);xb.setAttribute('y1',s);xb.setAttribute('y2',s+10);xl.setAttribute('x1',-s);xl.setAttribute('x2',-s-10);xr.setAttribute('x1',s);xr.setAttribute('x2',s+10);}
+      // Score
+      var sr=document.getElementById('hs-red'),sb=document.getElementById('hs-blue');
+      if(sr)sr.textContent=rs;if(sb)sb.textContent=bs;
+      // Flag carry indicator
+      var fc=document.getElementById('hud-flag-carry');
+      if(fc){if(carrying>=0)fc.classList.add('active');else fc.classList.remove('active');}
+      // Compass
+      updateCompass(px,pz,yaw1000/1000);
+    };
+
+    var FLAG_POS=[ [-221.8,-21.8], [-379.1,-640.8] ]; // world x,z for Red, Blue flags
+    function updateCompass(px,pz,yaw){
+      var track=document.getElementById('compass-track');if(!track)return;
+      var W=380,H=28,half=W/2;
+      // Range: ±90° (π/2 rad) maps to ±half px
+      var html='';
+      // Cardinal directions
+      var cardinals=[['N',0],['E',Math.PI/2],['S',Math.PI],['W',-Math.PI/2],['NE',Math.PI/4],['SE',3*Math.PI/4],['SW',-3*Math.PI/4],['NW',-Math.PI/4]];
+      cardinals.forEach(function(c){
+        var relBrg=normalizeAngle(c[1]-yaw);
+        if(Math.abs(relBrg)<Math.PI/2+0.1){
+          var x=half+relBrg/(Math.PI/2)*half;
+          var isMajor=c[0].length===1;
+          html+='<div class="cmp-label" style="left:'+x+'px;color:'+(isMajor?'#D4A030':'#5A4A3A')+'">'+c[0]+'</div>';
+          if(isMajor)html+='<div class="cmp-tick" style="left:'+x+'px;top:60%"></div>';
+        }
+      });
+      // Flag markers
+      FLAG_POS.forEach(function(fp,fi){
+        var dx=fp[0]-px,dz=fp[1]-pz;
+        var bearing=Math.atan2(dx,-dz); // angle from north, positive=east
+        var relBrg=normalizeAngle(bearing-yaw);
+        if(Math.abs(relBrg)<Math.PI/2+0.1){
+          var x=Math.max(5,Math.min(W-5,half+relBrg/(Math.PI/2)*half));
+          var col=fi===0?'#C8302C':'#2C5AC8';
+          html+='<div class="cmp-marker" style="left:'+x+'px;background:'+col+';box-shadow:0 0 4px '+col+'"></div>';
+        }else{
+          // Off-edge arrow
+          var edgeX=relBrg<0?8:W-8;
+          var col=fi===0?'#C8302C':'#2C5AC8';
+          html+='<div style="position:absolute;left:'+edgeX+'px;top:50%;transform:translate(-50%,-50%);color:'+col+';font-size:10px">'+(relBrg<0?'◀':'▶')+'</div>';
+        }
+      });
+      track.innerHTML=html;
+    }
+    function normalizeAngle(a){while(a>Math.PI)a-=2*Math.PI;while(a<-Math.PI)a+=2*Math.PI;return a;}
+
     function startGame(){
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
+      document.getElementById('hud').classList.add('active');
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit);
       canvas.requestPointerLock();
     }
@@ -413,10 +626,17 @@
     });
     function addKillMsg(msg){
       var feed=document.getElementById('killfeed'),div=document.createElement('div');
-      div.className='kill-msg';div.innerHTML=msg;feed.appendChild(div);
-      setTimeout(function(){div.classList.add('fade');},4000);
-      setTimeout(function(){div.remove();},5000);
-      while(feed.children.length>5)feed.removeChild(feed.firstChild);
+      div.className='kill-msg';
+      var parts=msg.split('~');
+      if(parts.length===3){
+        var killer=parts[0],wpn=parseInt(parts[1]),victim=parts[2];
+        var icon=WPN_ICONS[wpn]||WPN_ICONS[0];
+        div.innerHTML='<span class="km-killer">'+killer+'</span> <span class="km-wpn">'+icon+'</span> <span class="km-victim">'+victim+'</span>';
+      }else{div.innerHTML=msg;}
+      feed.appendChild(div);
+      setTimeout(function(){div.classList.add('fade');},4500);
+      setTimeout(function(){div.remove();},5500);
+      while(feed.children.length>4)feed.removeChild(feed.firstChild);
     }
     var stSel={armor:0,wpn:2,pack:0};
     function stSelect(cat,val){
