@@ -2,8 +2,8 @@
 
 **Model:** Sonnet 4.6
 **Round type:** P0 EMERGENCY HOTFIX — block all other work until this lands
-**Estimated scope:** 30–90 min of focused work; 2 surgical patches
-**Acceptance threshold:** 5/5 hard criteria (this is a P0; everything must pass)
+**Estimated scope:** 60–120 min; 3 surgical patches (shaders, renderer-init, vendor Three.js)
+**Acceptance threshold:** 6/6 hard criteria (this is a P0; everything must pass)
 
 ---
 
@@ -95,7 +95,7 @@ The **fix** is to:
 
 ---
 
-## What to build (5 tasks)
+## What to build (6 tasks)
 
 ### Task 1 — Shader precision audit (CRITICAL)
 
@@ -159,7 +159,40 @@ console.log('[R29] First Three.js frame submitted');
 
 This makes any future regression instantly diagnosable. Keep the logs in (they fire once at boot, no perf impact).
 
-### Task 5 — Smoke-test before push
+### Task 5 — Vendor Three.js locally (NEW — added by Manus on user request)
+
+The game currently loads Three.js from `https://unpkg.com/three@0.170.0/...` via the importmap at `index.html` line 502–509. This is fragile: any unpkg blip (rate limit, 503, MIME mis-serve, slow DNS) silently kills the renderer with the exact same symptom as our current bug — black canvas, no Three.js init logs. We need to rule that out structurally and gain better load times + offline capability.
+
+**Steps:**
+
+1. Create `vendor/three/r170/` at the repo root.
+2. Download the following files into it (pin to `0.170.0` exactly):
+   - `three.module.js` (from `https://unpkg.com/three@0.170.0/build/three.module.js`)
+   - `addons/objects/Sky.js`
+   - `addons/postprocessing/EffectComposer.js`
+   - `addons/postprocessing/RenderPass.js`
+   - `addons/postprocessing/UnrealBloomPass.js`
+   - `addons/postprocessing/ShaderPass.js`
+   - `addons/postprocessing/OutputPass.js`
+   - Any other addon currently imported anywhere in `renderer.js` or its sub-modules — grep for `three/addons/` to find them all.
+3. Update `index.html`'s importmap to:
+   ```html
+   <script type="importmap">
+   {
+     "imports": {
+       "three": "./vendor/three/r170/three.module.js",
+       "three/addons/": "./vendor/three/r170/addons/"
+     }
+   }
+   </script>
+   ```
+4. Add `vendor/three/r170/LICENSE` (copy from Three.js repo, MIT) to be a good citizen.
+5. Add a one-line README at `vendor/three/README.md`: "Three.js r170 vendored locally to eliminate CDN dependency. Update procedure: download new version into `r<version>/`, update importmap in `index.html`."
+6. Verify with `curl -I` or `ls -la` that all the downloaded files are valid JS (not HTML 404 pages) and total size is reasonable (~2.5MB compressed, ~4MB raw).
+
+**Why now:** R29 is fixing a black-canvas bug whose symptom matches CDN-load failure exactly. We must rule out the CDN as the contributor before declaring the shader/selection fix sufficient. Vendoring also removes one external dependency from the production runtime, makes the GitHub Pages deploy fully self-contained, and lets the game work in offline / corp-firewalled environments. Net win.
+
+### Task 6 — Smoke-test before push
 
 Build, then open the live page in Chrome (or test against `python -m http.server` locally if convenient). Expected console output (in order):
 
@@ -189,13 +222,14 @@ Build, then open the live page in Chrome (or test against `python -m http.server
 
 ---
 
-## Acceptance criteria (5/5 required — this is P0)
+## Acceptance criteria (6/6 required — this is P0)
 
 1. **Zero shader link/compile errors** in console on fresh load with default URL (`/tribes/`).
 2. **Zero `useProgram: program not valid` warnings** in console during a 30-second play session.
 3. **3D terrain + sky visible** in real Chrome on Mac on first frame after main menu → PLAY.
 4. **Three.js path actually executes** — at least the 5 `[R29]` log lines from Task 4 appear in order.
 5. **Legacy fallback also works** — opening `/tribes/?renderer=legacy` shows terrain (proves Task 1 shader fix is correct).
+6. **Three.js loads from local vendor path** — DevTools Network tab shows `vendor/three/r170/three.module.js` (HTTP 200, served by GitHub Pages), not unpkg.com. Game works with the network throttled to Offline mode after initial load.
 
 ---
 
