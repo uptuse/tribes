@@ -26,6 +26,13 @@ import { TICK_HZ, SNAPSHOT_HZ, DELTA_HZ, MATCH_END, MATCH_END_REMATCH_HOLD_SEC }
 import { computeRatingDeltas, isRatedMatch, defaultSkillRow, SKILL_INITIAL, type SkillRow } from './skill.ts';
 import { tierForRating, RANKED_MIN_MATCHES_PLAYED } from './tiers.ts';
 import { validateUsername, containsRestricted } from './moderation.ts';
+import { readR2Config, r2Put, r2Get } from './r2.ts';
+
+// R28: R2 storage gate. When env vars are set, replay sharing persists to R2;
+// otherwise the R26 in-memory fallback handles it (rotated 7d).
+const R2_CONFIG = readR2Config();
+if (R2_CONFIG) console.log(`[R2] persistence enabled (bucket=${R2_CONFIG.bucket})`);
+else console.log('[R2] env vars not set — using in-memory replay store');
 
 // ============================================================
 // R27 — Public-playtest hardening: events, reports, audit, GDPR
@@ -75,6 +82,101 @@ const SURVEY_MAX = 500;
 // GDPR pending deletes: uuid → {scheduledAt, expiresAt}
 const gdprPending = new Map<string, { scheduledAt: number; expiresAt: number }>();
 const GDPR_GRACE_MS = 7 * 24 * 60 * 60 * 1000;
+
+// R28: per-match shadow IDs (replaces the R27 UUID broadcast). Each lobby
+// has its own map; rotating per match prevents cross-match UUID correlation.
+const shadowMaps = new Map<string, Map<string, string>>();   // lobbyId → (uuid → shadowId)
+const SHADOW_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';   // 32 chars, no I/O/0/1
+function generateShadowId(existing: Set<string>): string {
+  for (let attempt = 0; attempt < 3; attempt++) {
+    let s = '';
+    for (let i = 0; i < 6; i++) s += SHADOW_ALPHABET.charAt(Math.floor(Math.random() * SHADOW_ALPHABET.length));
+    if (!existing.has(s)) return s;
+  }
+  // 4th attempt: append a random suffix to break the tie
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
+function getOrAssignShadow(lobbyId: string, uuid: string): string {
+  if (!uuid) return '';
+  let m = shadowMaps.get(lobbyId);
+  if (!m) { m = new Map(); shadowMaps.set(lobbyId, m); }
+  let s = m.get(uuid);
+  if (s) return s;
+  s = generateShadowId(new Set(m.values()));
+  m.set(uuid, s);
+  return s;
+}
+function resolveShadow(lobbyId: string, shadowId: string): string | null {
+  const m = shadowMaps.get(lobbyId);
+  if (!m) return null;
+  for (const [uuid, sid] of m) if (sid === shadowId) return uuid;
+  return null;
+}
+function clearShadowMap(lobbyId: string) {
+  shadowMaps.delete(lobbyId);
+}
+
+// R28: server-authoritative mute store (replaces R27's client-localStorage
+// scheme as the source of truth). Keyed by muter UUID → Set of muted UUIDs.
+const muteStore = new Map<string, Set<string>>();
+function setMute(muterUuid: string, mutedUuid: string, muted: boolean) {
+  if (!muterUuid || !mutedUuid || muterUuid === mutedUuid) return;
+  let s = muteStore.get(muterUuid);
+  if (!s) { s = new Set(); muteStore.set(muterUuid, s); }
+  if (muted) s.add(mutedUuid); else s.delete(mutedUuid);
+}
+function getMutedShadowIdsForLobby(muterUuid: string, lobbyId: string): string[] {
+  const muted = muteStore.get(muterUuid);
+  const sm = shadowMaps.get(lobbyId);
+  if (!muted || !sm) return [];
+  const out: string[] = [];
+  for (const [uuid, sid] of sm) if (muted.has(uuid)) out.push(sid);
+  return out;
+}
+
+// R28: chat rate limit + soft-mute tracking
+interface ChatRateEntry { sent: number[]; rateHits: number[]; softMuteUntil: number; lastChannel: 'all' | 'team'; lastSent: string; }
+const chatRate = new Map<string, ChatRateEntry>();   // uuid → entry
+function chatRateState(uuid: string): ChatRateEntry {
+  let e = chatRate.get(uuid);
+  if (!e) { e = { sent: [], rateHits: [], softMuteUntil: 0, lastChannel: 'all', lastSent: '' }; chatRate.set(uuid, e); }
+  return e;
+}
+
+// R28: dynamic wordlist additions/removals via /admin/wordlist. The bundled
+// list in moderation.ts is the floor; admin can add (further restrict) or
+// remove (un-restrict). Capped at 5000 entries total per brief 2.6.
+const dynamicWordlistAdd = new Set<string>();
+const dynamicWordlistRemove = new Set<string>();
+const ADMIN_WORDLIST_MAX = 5000;
+const ADMIN_TOKEN = Bun.env.ADMIN_TOKEN || '';     // set in production; permissive when empty in dev
+function isAdmin(req: Request): boolean {
+  if (!ADMIN_TOKEN) return true;        // dev: open
+  const tok = (new URL(req.url)).searchParams.get('token') || req.headers.get('x-admin-token') || '';
+  return tok === ADMIN_TOKEN;
+}
+function moderationContains(text: string): boolean {
+  // Apply dynamic add (further restrict) and remove (un-restrict) on top of the baked list
+  const base = containsRestricted(text);
+  // If text triggered a baked-list term that is in the remove set, un-restrict it.
+  if (base) {
+    for (const t of dynamicWordlistRemove) {
+      if (text.toLowerCase().includes(t.toLowerCase())) return false;
+    }
+  }
+  // Then check dynamic-add list
+  for (const t of dynamicWordlistAdd) {
+    if (text.toLowerCase().includes(t.toLowerCase())) return true;
+  }
+  return base;
+}
+
+// R28: emoji whitelist — 8 fixed reactions per brief 2.2
+const EMOJI_WHITELIST = new Set(['👍', '👎', '🎉', '😂', '😢', '❤️', '🔥', '💀']);
+
+// R28: slash command list (server-side validation; unknown commands are
+// silently dropped per brief 6.0).
+const SLASH_COMMANDS = new Set(['/me', '/help', '/r', '/team', '/all', '/mute', '/report']);
 
 // One-time tokens for /account/{export,delete}
 const accountTokens = new Map<string, { uuid: string; expiresAt: number }>();
@@ -435,13 +537,27 @@ function startMatch(lobby: LobbyState) {
       id: p.id, name: p.name, team: p.team, armor: p.armor,
       // R26: include rating so client can render tier badges on scoreboard + nameplate
       rating: p.uuid ? (skillStore.get(p.uuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL,
-      // R27: include uuid so client can wire mute + report per-player. Trade-off:
-      // exposes UUIDs to all in-lobby players. R28 can replace with a per-match
-      // shadow ID if a privacy concern surfaces.
-      uuid: p.uuid || '',
+      // R28: per-match shadow ID — replaces R27's stable-UUID broadcast.
+      // UUID is no longer broadcast; shadowId rotates per match so two players
+      // can't correlate identities across matches.
+      shadowId: p.uuid ? getOrAssignShadow(lobby.id, p.uuid) : '',
     })),
     serverTime: Date.now(),
   });
+
+  // R28: per-recipient mute hint — for each connected player, send the list
+  // of shadowIds in this match that they have previously muted (server is
+  // source of truth; client localStorage from R27 is now redundant).
+  for (const pid of lobby.members) {
+    const conn = connections.get(pid);
+    if (!conn) continue;
+    const u = (conn.ws as any).data?.uuid as string;
+    if (!u) continue;
+    const muted = getMutedShadowIdsForLobby(u, lobby.id);
+    if (muted.length > 0) {
+      try { conn.ws.send(JSON.stringify({ type: 'mutesInMatch', mutedShadowIds: muted })); } catch {}
+    }
+  }
 
   // Start tick loops
   lobby.tickInterval = setInterval(() => {
@@ -730,7 +846,10 @@ function checkPlayAgainVote(lobby: LobbyState) {
       if (!lobby.match) return;
       try { broadcastBinary(lobby, lobby.match.serializeDelta()); } catch {}
     }, 1000 / DELTA_HZ);
-    broadcastJSON(lobby, { type: 'matchStart', lobbyId: lobby.id, mapId: lobby.mapId, mapName: lobby.mapName, players: [...lobby.match.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, armor: p.armor })), serverTime: Date.now(), rematch: true });
+    // R28: rotate shadow IDs for the rematch (new IDs prevent correlation
+    // across the match boundary even within the same lobby).
+    clearShadowMap(lobby.id);
+    broadcastJSON(lobby, { type: 'matchStart', lobbyId: lobby.id, mapId: lobby.mapId, mapName: lobby.mapName, players: [...lobby.match.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, armor: p.armor, rating: p.uuid ? (skillStore.get(p.uuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL, shadowId: p.uuid ? getOrAssignShadow(lobby.id, p.uuid) : '' })), serverTime: Date.now(), rematch: true });
   }
 }
 
@@ -774,7 +893,7 @@ setInterval(cleanupInactiveLobbies, 5_000);
 
 const server = Bun.serve({
   port: PORT,
-  fetch(req, srv) {
+  async fetch(req, srv) {
     const url = new URL(req.url);
     if (url.pathname === '/' || url.pathname === '/ws') {
       // R20: pass lobbyId + uuid (for reconnect) through to ws data
@@ -1025,6 +1144,29 @@ const server = Bun.serve({
         headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
       });
     }
+    // R28: admin wordlist updates (token-gated; 5000 entry cap)
+    if (url.pathname === '/admin/wordlist' && req.method === 'POST') {
+      if (!isAdmin(req)) return new Response('forbidden', { status: 403 });
+      return req.json().then(body => {
+        const add    = Array.isArray(body?.add)    ? body.add.slice(0, 5000).map(String)    : [];
+        const remove = Array.isArray(body?.remove) ? body.remove.slice(0, 5000).map(String) : [];
+        for (const t of add) {
+          if (dynamicWordlistAdd.size >= ADMIN_WORDLIST_MAX) break;
+          dynamicWordlistAdd.add(t.toLowerCase());
+        }
+        for (const t of remove) dynamicWordlistRemove.add(t.toLowerCase());
+        emitEvent('admin.wordlist-updated', { added: add.length, removed: remove.length, totalAdds: dynamicWordlistAdd.size, totalRemoves: dynamicWordlistRemove.size });
+        return new Response(JSON.stringify({ ok: true, totalAdds: dynamicWordlistAdd.size, totalRemoves: dynamicWordlistRemove.size }), {
+          headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+        });
+      }).catch(() => new Response('bad json', { status: 400 }));
+    }
+    if (url.pathname === '/admin/wordlist' && req.method === 'GET') {
+      if (!isAdmin(req)) return new Response('forbidden', { status: 403 });
+      return new Response(JSON.stringify({ adds: [...dynamicWordlistAdd], removes: [...dynamicWordlistRemove] }), {
+        headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
+      });
+    }
     // R27: structured event log query — token-gated like /dashboard
     if (url.pathname === '/events') {
       const since = Number(url.searchParams.get('since') || 0);
@@ -1038,10 +1180,18 @@ const server = Bun.serve({
       });
     }
     // R27: report submission (rate-limited 10/uuid/24h)
+    // R28: also accept {byUuid, reportedShadowId, lobbyId} — server resolves
+    //      the shadow → uuid so privacy holds (UUID never crosses the wire).
     if (url.pathname === '/report' && req.method === 'POST') {
       return req.json().then(body => {
         const byUuid = String(body?.byUuid || '');
-        const reportedUuid = String(body?.reportedUuid || '');
+        let reportedUuid = String(body?.reportedUuid || '');
+        const reportedShadowId = String(body?.reportedShadowId || '');
+        const reportedLobbyId = String(body?.lobbyId || '');
+        if (!reportedUuid && reportedShadowId && reportedLobbyId) {
+          const resolved = resolveShadow(reportedLobbyId, reportedShadowId);
+          if (resolved) reportedUuid = resolved;
+        }
         const category = String(body?.category || '');
         const desc = String(body?.desc || '').slice(0, 200);
         if (!byUuid || !reportedUuid || byUuid === reportedUuid) {
@@ -1127,13 +1277,21 @@ const server = Bun.serve({
       emitEvent('account.delete-scheduled', { uuid: uuid.slice(0,8), expiresAt: Date.now() + GDPR_GRACE_MS });
       return new Response(JSON.stringify({ ok: true, expiresAt: Date.now() + GDPR_GRACE_MS }), { headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } });
     }
-    // R26: shared replay download by hash (paste-link flow)
+    // R26 + R28: shared replay download by hash (paste-link flow)
     if (url.pathname === '/replay-shared') {
       const hash = url.searchParams.get('h') || '';
       pruneSharedReplays();
-      const entry = sharedReplayStore.get(hash);
-      if (!entry) return new Response('not found or expired', { status: 404, headers: { 'access-control-allow-origin': '*' } });
-      return new Response(entry.bytes, {
+      // R28: try R2 first when configured, fall back to in-memory
+      let bytes: Uint8Array | null = null;
+      if (R2_CONFIG) {
+        bytes = await r2Get(R2_CONFIG, `replays/${hash}.tribes-replay`);
+      }
+      if (!bytes) {
+        const entry = sharedReplayStore.get(hash);
+        bytes = entry?.bytes ?? null;
+      }
+      if (!bytes) return new Response('not found or expired', { status: 404, headers: { 'access-control-allow-origin': '*' } });
+      return new Response(bytes, {
         headers: {
           'content-type': 'application/octet-stream',
           'access-control-allow-origin': '*',
@@ -1141,9 +1299,9 @@ const server = Bun.serve({
         },
       });
     }
-    // R26: shared replay upload — accepts a binary blob and returns {shareUrl}
+    // R26 + R28: shared replay upload — accepts a binary blob and returns {shareUrl}
     if (url.pathname === '/replay-upload' && req.method === 'POST') {
-      return req.arrayBuffer().then(buf => {
+      return req.arrayBuffer().then(async buf => {
         const bytes = new Uint8Array(buf);
         // Light validation — must start with 'TRBR' magic
         if (bytes.length < 8 || bytes[0] !== 0x54 || bytes[1] !== 0x52 || bytes[2] !== 0x42 || bytes[3] !== 0x52) {
@@ -1154,11 +1312,19 @@ const server = Bun.serve({
         }
         pruneSharedReplays();
         const hash = shareHash();
-        sharedReplayStore.set(hash, { bytes, expiresAt: Date.now() + SHARED_REPLAY_TTL_MS });
-        const origin = url.origin;     // server origin; client builds full URL
+        const expiresAt = Date.now() + SHARED_REPLAY_TTL_MS;
+        let storedToR2 = false;
+        if (R2_CONFIG) {
+          try { storedToR2 = await r2Put(R2_CONFIG, `replays/${hash}.tribes-replay`, bytes, { ttlExpiresAt: String(expiresAt) }); }
+          catch (e) { console.warn('[R2] put failed, falling back to memory:', e); }
+        }
+        if (!storedToR2) {
+          sharedReplayStore.set(hash, { bytes, expiresAt });
+        }
+        const origin = url.origin;
         const shareUrl = `${origin}/replay-shared?h=${hash}`;
-        console.log(`[REPLAY-SHARE] uploaded ${hash} (${(bytes.length / 1024).toFixed(1)} KB)`);
-        return new Response(JSON.stringify({ shareUrl, hash, expiresAt: Date.now() + SHARED_REPLAY_TTL_MS }), {
+        console.log(`[REPLAY-SHARE] uploaded ${hash} (${(bytes.length / 1024).toFixed(1)} KB, ${storedToR2 ? 'R2' : 'memory'})`);
+        return new Response(JSON.stringify({ shareUrl, hash, expiresAt, storage: storedToR2 ? 'r2' : 'memory' }), {
           headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' },
         });
       }).catch(e => new Response(JSON.stringify({ error: 'upload failed: ' + (e as Error).message }), { status: 500, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } }));
@@ -1320,11 +1486,99 @@ const server = Bun.serve({
         case 'ping':
           ws.send(JSON.stringify({ type: 'pong', clientTs: msg.clientTs, serverTs: Date.now() }));
           break;
-        case 'chat':
-          if (typeof msg.text === 'string' && msg.text.length <= 200) {
-            broadcastJSON(lobby, { type: 'chat', from: conn.name, text: msg.text.slice(0, 200), ts: Date.now() });
+        case 'chat': {
+          // R28: text chat with channels, sanitisation, rate limit, soft-mute
+          if (typeof msg.text !== 'string' || msg.text.length === 0) break;
+          const channel: 'all' | 'team' = (msg.channel === 'team') ? 'team' : 'all';
+          const isEmote = msg.emote === true;       // /me action
+          const senderUuid = (ws as any).data?.uuid as string;
+          const rate = chatRateState(senderUuid || conn.playerId);
+          const now = Date.now();
+          // Soft-mute window
+          if (rate.softMuteUntil > now) {
+            try { ws.send(JSON.stringify({ type: 'chatRejected', reason: 'soft-muted', untilMs: rate.softMuteUntil })); } catch {}
+            emitEvent('chat.rate-limited', { uuid: (senderUuid || '').slice(0, 8), softMute: true });
+            break;
+          }
+          // Slide rate window (5 messages / 10s)
+          rate.sent = rate.sent.filter(t => t > now - 10_000);
+          if (rate.sent.length >= 5) {
+            rate.rateHits = rate.rateHits.filter(t => t > now - 60_000);
+            rate.rateHits.push(now);
+            if (rate.rateHits.length >= 3) {
+              rate.softMuteUntil = now + 30_000;
+              try { ws.send(JSON.stringify({ type: 'chatRejected', reason: 'rate-limit-soft-mute', untilMs: rate.softMuteUntil })); } catch {}
+            } else {
+              try { ws.send(JSON.stringify({ type: 'chatRejected', reason: 'rate-limit' })); } catch {}
+            }
+            emitEvent('chat.rate-limited', { uuid: (senderUuid || '').slice(0, 8), hits: rate.rateHits.length });
+            break;
+          }
+          // Sanitise — server defense-in-depth (R27 client also sanitises)
+          // R28: also applies admin add/remove overrides via moderationContains
+          if (moderationContains(msg.text)) {
+            try { ws.send(JSON.stringify({ type: 'chatRejected', reason: 'profanity' })); } catch {}
+            emitEvent('chat.blocked', { uuid: (senderUuid || '').slice(0, 8), channel, len: msg.text.length });
+            break;
+          }
+          rate.sent.push(now);
+          rate.lastChannel = channel;
+          rate.lastSent = msg.text;
+          // Build the broadcast payload
+          const senderShadow = senderUuid ? getOrAssignShadow(lobby.id, senderUuid) : '';
+          const senderRating = senderUuid ? (skillStore.get(senderUuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL;
+          const out = {
+            type: 'chat',
+            channel,
+            emote: isEmote,
+            from: conn.name,
+            shadowId: senderShadow,
+            team: conn.team,
+            rating: senderRating,
+            text: msg.text.slice(0, 280),
+            ts: now,
+          };
+          // Team channel — only members of the same team see it
+          if (channel === 'team') {
+            for (const pid of lobby.members) {
+              const c = connections.get(pid);
+              if (!c || c.team !== conn.team) continue;
+              try { c.ws.send(JSON.stringify(out)); } catch {}
+            }
+          } else {
+            broadcastJSON(lobby, out);
           }
           break;
+        }
+        case 'emoji': {
+          // R28: validated emoji reaction floats above the player
+          const e = String(msg.emoji || '');
+          if (!EMOJI_WHITELIST.has(e)) break;
+          const senderUuid = (ws as any).data?.uuid as string;
+          const senderShadow = senderUuid ? getOrAssignShadow(lobby.id, senderUuid) : '';
+          broadcastJSON(lobby, {
+            type: 'emoji', emoji: e, from: conn.name, shadowId: senderShadow,
+            playerId: conn.numericId, ts: Date.now(),
+          });
+          break;
+        }
+        case 'mute': {
+          // R28: server-mediated mute; client sends shadowId, server resolves
+          // to uuid + persists. Replies privately so the muter can update UI.
+          const sid = String(msg.shadowId || '');
+          const muted = !!msg.muted;
+          const muterUuid = (ws as any).data?.uuid as string;
+          if (!muterUuid || !sid) break;
+          const targetUuid = resolveShadow(lobby.id, sid);
+          if (!targetUuid) {
+            try { ws.send(JSON.stringify({ type: 'muteAck', shadowId: sid, ok: false, reason: 'shadow-not-found' })); } catch {}
+            emitEvent('chat.shadow-not-found', { lobbyId: lobby.id, shadowId: sid, action: 'mute' });
+            break;
+          }
+          setMute(muterUuid, targetUuid, muted);
+          try { ws.send(JSON.stringify({ type: 'muteAck', shadowId: sid, ok: true, muted })); } catch {}
+          break;
+        }
         case 'ready':
           // For early-start: any 'ready' message bumps grace to 0 immediately
           if (!lobby.match) maybeStartMatchIfReady(lobby);

@@ -56,6 +56,58 @@ wrangler dev
 # Test: open ws://localhost:8787/ws?lobbyId=TEST in a WebSocket client
 ```
 
+## R2 storage for shared replays (R28)
+
+Shared replays (the "Share Replay" button on match-end) persist to a
+Cloudflare R2 bucket when the following env vars / secrets are set;
+otherwise the server falls back to a 7-day in-memory store (data is
+lost on restart).
+
+### One-time setup
+```bash
+# 1. Create the R2 bucket
+wrangler r2 bucket create tribes-replays
+
+# 2. Create an R2 API token in the CF dashboard:
+#    https://dash.cloudflare.com → R2 → Manage R2 API Tokens → Create API token
+#    Permissions: Object Read & Write, scoped to tribes-replays bucket.
+#    Copy the access key + secret access key — you only see the secret once.
+
+# 3. Push the credentials as Worker secrets (production)
+wrangler secret put R2_ACCOUNT_ID         # CF dashboard → right sidebar
+wrangler secret put R2_BUCKET             # tribes-replays
+wrangler secret put R2_ACCESS_KEY_ID
+wrangler secret put R2_SECRET_ACCESS_KEY
+```
+
+### Local dev
+```bash
+# Bun reads the same names from the process environment
+export R2_ACCOUNT_ID=…
+export R2_BUCKET=tribes-replays
+export R2_ACCESS_KEY_ID=…
+export R2_SECRET_ACCESS_KEY=…
+bun run server/lobby.ts
+```
+
+The server logs `[R2] persistence enabled` on startup when all four are
+set, or `[R2] env vars not set — using in-memory replay store` otherwise.
+
+### Implementation note
+
+`server/r2.ts` ships a hand-rolled SigV4-over-fetch implementation
+because `@aws-sdk/client-s3` has had recurring compatibility issues
+with the Workers fetch implementation. R2 is S3-compatible at the wire
+level, so the same SigV4 signing works against the R2 endpoint.
+
+### Daily TTL sweep
+
+The current implementation sets `x-amz-meta-ttlExpiresAt` on each
+upload (7-day window). A scheduled Worker is the natural home for the
+sweep; left as TODO until it becomes operationally necessary. Until
+then expired keys remain in R2 (cheap — full bucket fits in free tier
+for 1000+ replays).
+
 ## Custom domain mapping
 
 Once deployed, in the CF dashboard:

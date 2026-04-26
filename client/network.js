@@ -18,6 +18,9 @@ window.__voiceIsPeerMuted = voice.isPeerMuted;
 window.__voiceSetMuteAll = voice.setMuteAll;
 window.__voiceGetMuteAll = voice.getMuteAll;
 window.__voiceMuteUuid = voice.muteUuidDirectly;
+// R28: direct numericId-keyed mute (server is source of truth)
+window.__voiceSetPeerMutedDirect = voice.setPeerNumericMuted;
+window.__voiceClearPeerMutes = voice.clearPeerNumericMutes;
 
 let socket = null;
 let connectedAt = 0;

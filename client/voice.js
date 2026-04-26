@@ -222,6 +222,23 @@ export function muteUuidDirectly(uuid) {
     _persistMuted();
     _applyAllGains();
 }
+// R28: direct numericId-keyed mute bypassing the UUID store. Used when the
+// server is the mute source of truth (per-match shadowId model — clients
+// no longer see UUIDs of other players).
+const _numericIdMutes = new Set();
+export function setPeerNumericMuted(numericId, muted) {
+    if (muted) _numericIdMutes.add(numericId);
+    else       _numericIdMutes.delete(numericId);
+    const peer = peers.get(numericId);
+    if (peer && peer.gain) peer.gain.gain.value = (muted || _muteAll) ? 0 : 1;
+}
+export function isPeerNumericMuted(numericId) {
+    return _muteAll || _numericIdMutes.has(numericId);
+}
+export function clearPeerNumericMutes() {
+    _numericIdMutes.clear();
+    _applyAllGains();
+}
 
 /** Called per-frame from renderer with peer world positions (from snapshot). */
 export function updatePeerPosition(otherId, x, y, z) {
@@ -241,13 +258,13 @@ export function updatePeerPosition(otherId, x, y, z) {
 function onKeyDown(e) {
     // Tab/scoreboard already binds to keyCode 9; voice push-to-talk is V (86)
     // BUT V is also taken by Three.js debug toggle in C++... we use keyCode 84 (T) instead
-    if (e.code === 'KeyT' && !pttPressed) {
+    if (e.code === 'KeyB' && !pttPressed) {
         pttPressed = true;
         ensureMicCapture().then(() => { if (localTrack) localTrack.enabled = true; });
     }
 }
 function onKeyUp(e) {
-    if (e.code === 'KeyT' && pttPressed) {
+    if (e.code === 'KeyB' && pttPressed) {
         pttPressed = false;
         if (localTrack && (window.ST?.voiceMode || 'pushToTalk') === 'pushToTalk') {
             localTrack.enabled = false;

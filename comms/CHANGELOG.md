@@ -1,4 +1,5 @@
 # Changelog
+2026-04-26 04:30 | (pending) | feat(R28): text chat (channels + sanitize + rate limit) + emoji + R2 SigV4 + per-match shadow IDs + slash commands + admin wordlist
 2026-04-26 04:00 | 63ae35d | feat(R27): velocity anti-cheat + moderation + voice mute + reports + events + survey + GDPR + HELP
 2026-04-26 03:30 | 5923a43 | feat(R26): setMapBuildings C++ + ranked tiers + replay sharing + profile + dashboard + open-issues fixes + SEO
 2026-04-26 03:00 | 641e5f7 | feat(R25): JSON map format + 3 launch maps + map picker + replay capture + replay playback + basic map editor + map vote
