@@ -1114,6 +1114,7 @@ async function initBaseAccents() {
                 const ry = -(s.rotation?.[2] ?? 0);
                 pad.rotation.y = ry;
                 pad.traverse(c => { c.frustumCulled = false; });
+                pad.userData = { kind: 'vehiclepad', team: teamIdx, baseY: w.y };
                 baseAccentsGroup.add(pad);
                 placed++;
             });
@@ -1122,8 +1123,9 @@ async function initBaseAccents() {
                 if (it.datablock !== 'RepairPack') return;
                 const rp = makeRepairPack();
                 const w = toWorld(it.position);
-                rp.position.set(w.x, w.y, w.z);
+                rp.position.set(w.x, w.y + 0.6, w.z); // float slightly above ground for visibility
                 rp.traverse(c => { c.frustumCulled = false; });
+                rp.userData = { kind: 'repairpack', team: teamIdx, baseY: w.y + 0.6, phase: Math.random() * Math.PI * 2 };
                 baseAccentsGroup.add(rp);
                 placed++;
             });
@@ -1140,6 +1142,9 @@ async function initBaseAccents() {
                 const ry = -(t.flag.rotation?.[2] ?? 0);
                 stand.rotation.y = ry;
                 stand.traverse(c => { c.frustumCulled = false; });
+                // Capture references to disc + dots for pulse animation in syncBaseAccents
+                const disc = stand.children[1]; // index matches order: plate, disc, dots*4
+                stand.userData = { kind: 'flagstand', team: teamIdx, disc: disc, baseY: w.y - 0.10 };
                 baseAccentsGroup.add(stand);
                 placed++;
             }
@@ -2067,16 +2072,50 @@ function syncCamera() {
     sunLight.target.updateMatrixWorld();
 }
 
-function syncTurretBarrels() {
-    // Aim turret barrel toward nearest visible enemy player (cosmetic; doesn't affect simulation)
-    // For R18, just keep the barrel rotating slowly so it visibly moves
-    const t = performance.now() * 0.0005;
+// ============================================================
+// R32.4 — canonical building animation (replaces R18 syncTurretBarrels which
+// was a no-op since R32.3 buildings carry C++ type=0, not type=3). Now keyed
+// off mesh.userData.canon.datablock so we drive plasma turret coil glow,
+// rocket turret hub yaw, and pulse sensor dish rotation. Repair packs bob &
+// pulse, flag stands respond to their team's flag-state via syncFlags hook.
+// ============================================================
+function syncCanonicalAnims(t) {
+    // Buildings (turrets, sensors)
     for (const b of buildingMeshes) {
-        if (b.type === 3 && b.mesh.userData && b.mesh.userData.barrel) {
-            b.mesh.rotation.y = Math.sin(t + b.mesh.position.x * 0.1) * 0.5;
+        const canon = b.mesh.userData && b.mesh.userData.canon;
+        if (!canon) continue;
+        if (canon.datablock === 'plasmaTurret' && b.mesh.userData.barrel) {
+            // Slow horizontal sweep + idle barrel sway so it reads as scanning
+            b.mesh.rotation.y = Math.sin(t * 0.5 + b.mesh.position.x * 0.1) * 0.5;
+        } else if (canon.datablock === 'rocketTurret') {
+            // Rocket turret swings opposite phase from plasma so a side-by-side pair
+            // looks coordinated rather than identical
+            b.mesh.rotation.y = Math.cos(t * 0.4 + b.mesh.position.z * 0.07) * 0.4;
+        } else if (canon.datablock === 'PulseSensor' && b.mesh.userData.dish) {
+            // Continuous dish rotation around its support pole
+            b.mesh.userData.dish.rotation.y = t * 0.9;
+        }
+    }
+    // Base accents (RepairPack bob, flag stand pulse)
+    if (baseAccentsGroup) {
+        for (const obj of baseAccentsGroup.children) {
+            const ud = obj.userData || {};
+            if (ud.kind === 'repairpack') {
+                const phase = ud.phase || 0;
+                obj.position.y = ud.baseY + Math.sin(t * 1.6 + phase) * 0.10;
+                obj.rotation.y = t * 0.6 + phase;
+            } else if (ud.kind === 'flagstand' && ud.disc) {
+                // Subtle emissive pulse — 0.20 baseline, +/- 0.20 over time. If
+                // we ever wire flag-state in, swap intensity to ~1.0 when flag is
+                // away from home (signaling alert).
+                const homeIntensity = 0.20 + 0.10 * (0.5 + 0.5 * Math.sin(t * 1.4 + ud.team * Math.PI));
+                if (ud.disc.material) ud.disc.material.emissiveIntensity = homeIntensity;
+            }
         }
     }
 }
+// Backward-compat alias for any caller still using the R18 name
+const syncTurretBarrels = syncCanonicalAnims;
 
 // ============================================================
 // Quality apply (called from settings menu when graphics tier changes)
@@ -2113,7 +2152,7 @@ function loop() {
     syncProjectiles();
     syncFlags(t);
     syncParticles();
-    syncTurretBarrels();
+    syncTurretBarrels(t);
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
 
