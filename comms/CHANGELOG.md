@@ -1,5 +1,5 @@
 # Changelog
-2026-04-26 04:00 | (pending) | feat(R27): velocity anti-cheat + moderation + voice mute + reports + events + survey + GDPR + HELP
+2026-04-26 04:00 | 63ae35d | feat(R27): velocity anti-cheat + moderation + voice mute + reports + events + survey + GDPR + HELP
 2026-04-26 03:30 | 5923a43 | feat(R26): setMapBuildings C++ + ranked tiers + replay sharing + profile + dashboard + open-issues fixes + SEO
 2026-04-26 03:00 | 641e5f7 | feat(R25): JSON map format + 3 launch maps + map picker + replay capture + replay playback + basic map editor + map vote
 2026-04-26 02:30 | 3f5be6a | feat(R24): ELO-lite matchmaking + balance telemetry CSV + in-match settings + party + friends + reconnect backoff
