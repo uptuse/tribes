@@ -601,6 +601,7 @@ static bool generatorAlive[2]={true,true};
 // ============================================================
 // Fog color: #B8C4C8 = (0.72, 0.77, 0.78) — hazy grey-blue per spec §2/§8
 static const char*tVS=R"(#version 300 es
+precision highp float;precision highp int;
 layout(location=0)in vec3 aP;layout(location=1)in vec3 aN;layout(location=2)in vec3 aC;
 out vec3 vC,vN,vW;out float vF;uniform mat4 uVP;uniform vec3 uCamPos;
 void main(){
@@ -610,7 +611,7 @@ void main(){
     vF=clamp((dist-600.0)/900.0,0.0,0.92);
 })";
 static const char*tFS=R"(#version 300 es
-precision mediump float;in vec3 vC,vN,vW;in float vF;out vec4 F;uniform vec3 uSun;
+precision highp float;precision highp int;in vec3 vC,vN,vW;in float vF;out vec4 F;uniform vec3 uSun;
 void main(){
     float d=max(dot(vN,uSun),0.0)*0.65+0.35;
     vec3 c=vC*d;
@@ -618,19 +619,22 @@ void main(){
     F=vec4(c,1);
 })";
 static const char*oVS=R"(#version 300 es
+precision highp float;precision highp int;
 layout(location=0)in vec3 aP;layout(location=1)in vec3 aC;out vec3 vC;out float vF;uniform mat4 uVP;
 void main(){gl_Position=uVP*vec4(aP,1);vC=aC;vF=clamp(gl_Position.z/900.0,0.0,0.92);})";
 static const char*oFS=R"(#version 300 es
-precision mediump float;in vec3 vC;in float vF;out vec4 F;uniform float uA;
+precision highp float;precision highp int;in vec3 vC;in float vF;out vec4 F;uniform float uA;
 void main(){vec3 c=mix(vC,vec3(0.722,0.769,0.784),vF);F=vec4(c,uA);})";
 static const char*hVS=R"(#version 300 es
+precision highp float;precision highp int;
 layout(location=0)in vec2 aP;layout(location=1)in vec3 aC;out vec3 vC;
 void main(){gl_Position=vec4(aP,0,1);vC=aC;})";
 static const char*hFS=R"(#version 300 es
-precision mediump float;in vec3 vC;out vec4 F;void main(){F=vec4(vC,0.85);})";
+precision highp float;precision highp int;in vec3 vC;out vec4 F;void main(){F=vec4(vC,0.85);})";
 
 // DTS model shader: zone-based team coloring, correct specular, metallic look
 static const char*dtsVS=R"(#version 300 es
+precision highp float;precision highp int;
 layout(location=0)in vec3 aP;layout(location=1)in vec3 aN;
 out vec3 vN;out vec3 vWorldPos;out float vF;out float vZone;
 uniform mat4 uVP;uniform mat4 uModel;uniform vec3 uCamPos;
@@ -644,7 +648,7 @@ void main(){
     vZone=aP.y; // model-space Y: upper body positive, lower negative
 })";
 static const char*dtsFS=R"(#version 300 es
-precision mediump float;
+precision highp float;precision highp int;
 in vec3 vN;in vec3 vWorldPos;in float vF;in float vZone;
 out vec4 F;
 uniform vec3 uSun;uniform vec3 uTint;uniform vec3 uTint2;

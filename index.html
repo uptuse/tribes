@@ -499,11 +499,11 @@
     // window.__TRIBES_SERVER_URL = 'wss://tribes-server.workers.dev/ws';
   </script>
   <!-- R15: Three.js renderer (default in R17). R18 adds three/addons for Sky + post-processing. -->
-  <script type="importmap">
+ <script type="importmap">
   {
     "imports": {
-      "three": "https://unpkg.com/three@0.170.0/build/three.module.js",
-      "three/addons/": "https://unpkg.com/three@0.170.0/examples/jsm/"
+      "three": "./vendor/three/r170/three.module.js",
+      "three/addons/": "./vendor/three/r170/addons/"
     }
   }
   </script>
@@ -824,7 +824,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.3</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R29 hotfix</div>
     </div>
   </div>
 
@@ -1545,13 +1545,8 @@
       // R21: show tutorial overlay on first match (skips if user has seen it)
       showTutorial();
       if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
-      // R15: if Three.js mode requested, swap renderers now (one-shot)
-      if(window.__tribesUseThree && !window.__tribesThreeStarted){
-        window.__tribesThreeStarted = true;
-        if(Module._setRenderMode)Module._setRenderMode(1);
-        import('./renderer.js').then(function(m){m.start();})
-          .catch(function(err){console.error('[R15] renderer.js import failed:', err);});
-      }
+      // R29: Three.js init moved to onRuntimeInitialized (below) so it starts
+      // before any frame paints, not on PLAY click. Nothing to do here.
       canvas.requestPointerLock();
     }
     function restartGame(){
@@ -3327,6 +3322,26 @@
         if(useThree){
           console.log('[R17] Three.js renderer (default). Use ?renderer=legacy to fall back.');
           window.__tribesUseThree = true;
+          // R29: set render mode + load Three.js BEFORE first frame paints.
+          // Previously in startGame() which only fired on PLAY click, causing
+          // legacy shaders to spam link errors from page load → PLAY.
+          if(Module._setRenderMode){
+            console.log('[R29] _setRenderMode is exported, switching to mode 1 (Three.js)');
+            Module._setRenderMode(1);
+          } else {
+            console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
+          }
+          import('./renderer.js').then(function(m){
+            console.log('[R29] renderer.js module loaded, calling start()');
+            if(typeof m.start === 'function'){
+              m.start();
+              console.log('[R29] renderer.js start() returned');
+            } else {
+              console.error('[R29] renderer.js has no start() export');
+            }
+          }).catch(function(err){
+            console.error('[R29] renderer.js import FAILED:', err);
+          });
         }else{
           console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
         }

@@ -89,9 +89,11 @@ function readQualityFromSettings() {
 // Entry point
 // ============================================================
 export async function start() {
+    console.log('[R29] renderer.js start() entered');
     console.log('[R18] Three.js renderer starting (quality=' + currentQuality + ', THREE.REVISION=' + THREE.REVISION + ')');
 
     initRenderer();
+    console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
     initScene();
     initLights();
     initSky();
@@ -104,6 +106,7 @@ export async function start() {
     initWeaponViewmodel();
     initPostProcessing();
     initStateViews();
+    console.log('[R29] Scene populated, ready to render');
 
     // Listen for settings changes (graphics quality dropdown)
     window.addEventListener('resize', onResize);
@@ -1172,6 +1175,8 @@ function loop() {
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
+    // R29: log first frame submission once for diagnostic confirmation
+    if (_frameCount === 0) console.log('[R29] First Three.js frame submitted');
     _frameCount++;
     const now = performance.now();
     if (now - _lastDiagTime > 5000) {
