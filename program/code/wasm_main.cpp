@@ -1005,6 +1005,9 @@ static float gameTime=0;
 static double lastTime=0;
 static int frameCount=0;
 static bool thirdPerson=false;
+// R31.7 C1: 3P aim convergence — JS sets this each frame via setLocalAimPoint3P()
+static Vec3 aimPoint3P={0,0,0};
+static bool hasAimPoint3P=false;
 static const float ENERGY_RECHARGE=8.0f; // per second
 
 static void fireWeapon(int pi){
@@ -1016,6 +1019,14 @@ static void fireWeapon(int pi){
 
     Vec3 fwd={sinf(p.yaw)*cosf(p.pitch),sinf(p.pitch),-cosf(p.yaw)*cosf(p.pitch)};
     Vec3 firePos=p.pos+Vec3(0,2,0)+fwd*2;
+    // R31.7 C1: 3P aim convergence — override fwd to point firePos→crosshair world point.
+    // Without this, the +0.7m (R31.5) or centered (R31.7) camera offset makes shots land
+    // 1-2 m off where the crosshair points at medium range.
+    if(thirdPerson&&pi==localPlayer&&hasAimPoint3P){
+        Vec3 toAim=aimPoint3P-firePos;
+        float l=toAim.len();
+        if(l>1.0f) fwd=toAim*(1.0f/l);
+    }
 
     if(w.muzzleVel>0&&p.curWeapon!=WPN_LASER){
         for(int i=0;i<MAX_PROJ;i++)if(!projs[i].active){
@@ -1737,6 +1748,10 @@ extern "C" {
 
     // R31.4: 3P state getter — syncs Three.js camera and mesh visibility to C++ flag
     int    getThirdPerson()    { return thirdPerson ? 1 : 0; }
+    // R31.7 C1: aim-convergence point fed from JS ray-march each frame in 3P
+    void   setLocalAimPoint3P(float x, float y, float z) {
+        aimPoint3P={x,y,z}; hasAimPoint3P=true;
+    }
 
     // D1: Ski HUD exports — queried every frame by index.html ski HUD widget
     int    getPlayerSkiing()   { return players[localPlayer].skiing ? 1 : 0; }

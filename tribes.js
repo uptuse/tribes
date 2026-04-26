@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpi_cppo94.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsmjud3wc.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -206,21 +206,21 @@ Module['FS_createPath']("/assets/tribes", "hdri", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpi_cppo94.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0olg1tre.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpsmjud3wc.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmptk_egyl3.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp0olg1tre.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpyxrr_ppb.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmptk_egyl3.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvqh4t6i3.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpyxrr_ppb.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpvqh4t6i3.js
 
 
 var arguments_ = [];
@@ -6486,6 +6486,7 @@ var _getCameraFov = Module['_getCameraFov'] = makeInvalidEarlyAccess('_getCamera
 var _getMatchState = Module['_getMatchState'] = makeInvalidEarlyAccess('_getMatchState');
 var _isReady = Module['_isReady'] = makeInvalidEarlyAccess('_isReady');
 var _getThirdPerson = Module['_getThirdPerson'] = makeInvalidEarlyAccess('_getThirdPerson');
+var _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = makeInvalidEarlyAccess('_setLocalAimPoint3P');
 var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
 var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
 var _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = makeInvalidEarlyAccess('_getPlayerSlopeDeg');
@@ -6539,6 +6540,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['getMatchState'] != 'undefined', 'missing Wasm export: getMatchState');
   assert(typeof wasmExports['isReady'] != 'undefined', 'missing Wasm export: isReady');
   assert(typeof wasmExports['getThirdPerson'] != 'undefined', 'missing Wasm export: getThirdPerson');
+  assert(typeof wasmExports['setLocalAimPoint3P'] != 'undefined', 'missing Wasm export: setLocalAimPoint3P');
   assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
   assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
   assert(typeof wasmExports['getPlayerSlopeDeg'] != 'undefined', 'missing Wasm export: getPlayerSlopeDeg');
@@ -6588,6 +6590,7 @@ function assignWasmExports(wasmExports) {
   _getMatchState = Module['_getMatchState'] = createExportWrapper('getMatchState', 0);
   _isReady = Module['_isReady'] = createExportWrapper('isReady', 0);
   _getThirdPerson = Module['_getThirdPerson'] = createExportWrapper('getThirdPerson', 0);
+  _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = createExportWrapper('setLocalAimPoint3P', 3);
   _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
   _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);
   _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = createExportWrapper('getPlayerSlopeDeg', 0);
