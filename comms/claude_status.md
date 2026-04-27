@@ -1,26 +1,30 @@
-# Claude Status — R32.42
+# Claude Status — R32.44
 
 ## Latest Build
-**R32.42** — Texture Array Architecture
+**R32.44** — Dead Code Removal + Perf Quick Wins
 
-### What Changed
-- Converted 15 individual `sampler2D` terrain textures → 3 `sampler2DArray` (color, normal, AO)
-- Each array texture has 5 layers: grass1, grass2, rock, dirt, sand
-- Fragment shader texture units: **15 → 3** custom + Three.js internals ≈ **5-6 total** (was ~17-19)
-- **Massive headroom** under the `MAX_TEXTURE_IMAGE_UNITS(16)` limit
-- **Roughness restored** — luminance-derived roughness (bright=smoother, dark=rougher)
-- Texture arrays built from 1024×1024 downsampled layers (originals are 2048²)
-- Removed R32.41 diagnostic code
+### What Changed (R32.43 → R32.44)
 
-### Root Cause (confirmed)
-The terrain shader was using 15 custom `sampler2D` uniforms (5 color + 5 normal + 5 AO) plus Three.js internals (envMap, shadowMap, normalMap fallback). On the user's macOS Apple Silicon with ANGLE-Metal, `MAX_TEXTURE_IMAGE_UNITS = 16`. The shader was right at the limit; any perturbation (even replacing `roughness` with `0.5`) changed the GLSL optimizer's dead-code elimination and pushed active samplers above 16, causing a link failure.
+#### R32.43: Perf Quick Wins — Zero Per-Frame Allocs
+- Replaced `new THREE.Vector3(0,0,-1)` with reused `_tmpVec.set(0,0,-1)` in render loop
+- Persistent `_aimPoint3P` object (mutate fields, not `new`)
+- Hoisted `_flagStateByTeam` to module scope with in-place reset
+- Reused `t` instead of second `performance.now()` call
+- Extracted ~90-line diagnostic dump into `_runFirstFrameDiagnostic()`
+- FPS console.log gated behind `window.DEBUG_LOGS`
+- Replaced `Date.now()` cache-busters on 5 satellite scripts with `__cacheVer` from version chip
+
+#### R32.44: Dead Code Removal (~1700 LOC)
+- **Deleted `renderer_polish.js`** (1146 lines) — zero imports/references anywhere
+- **Deleted `generateTerrainTextures()` + 3 helpers** (~270 lines) — `_makeNoiseTexture()`, `_makeNormalFromNoise()`, `_generateSplatMap()` — superseded by R32.42 texture array architecture
+- **Deleted `initScene_camera_init()`** — empty placeholder, no callers
+- **Deleted old grass system** — `initGrass()`, `_makeGrassBladeTexture()`, `updateGrassWind()`, `initDetailProps()`, `_grassMesh`/`_grassMat`/`_propsMeshes` (~226 lines) — replaced by new grass ring system
+- **Removed duplicate `import('./renderer_command_map.js')`** — script tag in index.html already loads the IIFE
 
 ### Technical Details
-- Uses `THREE.DataArrayTexture` (WebGL2 `sampler2DArray`)
-- `stochasticSampleArray()` function samples with `texture(tex, vec3(uv, layer))`
-- `initTerrain()` is now `async` — loads images via `Image()`, draws to canvas, extracts pixel data
-- Dummy 1×1 normalMap kept on material to trigger `USE_NORMALMAP_TANGENTSPACE` / TBN computation
-- `map` property removed from material (no longer needed — frees 1 dead sampler)
+- `renderer.js`: 4150 lines (down from ~4720 before R32.44 work, ~5870 before R32.43)
+- `_splatData`, `initTerrain()`, grass ring system (`initGrassRing`, `updateGrassRing`, `_grassRingMesh`) all LIVE
+- `makeSoftCircleTexture()` confirmed LIVE (called from `initParticles()`)
 
 ### Status
-✅ Committed and pushed. Ready for testing at https://uptuse.github.io/tribes/
+✅ Both committed. Ready to push.
