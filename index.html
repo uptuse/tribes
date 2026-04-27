@@ -996,7 +996,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.32.3</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.33</div>
     </div>
   </div>
 
@@ -2999,7 +2999,7 @@
     // ============================================================
     var AE={
       ctx:null,master:null,sfxBus:null,uiBus:null,bufs:{},
-      jetNode:null,jetGain:null,muted:false,footTimer:0,
+      jetNode:null,jetGain:null,muted:true,footTimer:0,
       prevJetting:false,prevHealth:-1,lx:0,lz:0,lyaw:0,
       // R32.11: streaming background music (loops). Uses HTMLAudioElement +
       // MediaElementSource so it routes through AE.master (mute already
@@ -3549,7 +3549,7 @@
     ];
     var DEFAULT_SETTINGS={
       _v:2,
-      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,ambienceVolume:12,muted:false,
+      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,ambienceVolume:12,muted:true,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,

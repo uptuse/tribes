@@ -137,7 +137,16 @@ export async function start() {
     // R32.32.1-manus: camera-local thin-blade grass ring. See initGrassRing
     // for the full architecture writeup. Wrapped in try/catch so any failure
     // can't black-screen the game (lesson from R32.25). Escape hatch: ?ring=off.
-    try { initGrassRing(); } catch (e) { console.warn('[R32.32.1] initGrassRing failed:', e); }
+    // R32.33-manus: grass ring DISABLED by default. After R32.32.3 user feedback
+    // ("sticks in the ground", uneven wind, recycle bunching at feet) we pivoted
+    // to the "Living Terrain" architecture: instead of placing literal blade
+    // primitives, we modulate the existing terrain shader so the ground itself
+    // breathes, responds to your gaze, and reacts to your movement. The ring
+    // code is kept in place but only loads if you opt-in with ?ring=on so we
+    // can A/B against the new approach. Otherwise grass-ring is dormant.
+    if (typeof location !== 'undefined' && /[?&]ring=on\b/.test(location.search)) {
+        try { initGrassRing(); } catch (e) { console.warn('[R32.33] initGrassRing failed:', e); }
+    }
     // R32.27.2-manus: re-enable Ghibli-style grass on top of the painterly terrain.
     // initGrass + initDetailProps were dropped from the start() sequence in R32.9
     // because the OLD muddy-olive cross-quad sin-sway grass fought the watercolor
@@ -1031,10 +1040,19 @@ function initTerrain() {
                  // the terrain Y-span; safe approximation since heightmap is
                  // [6.65,76.9]m, mid ~42m). Cool valleys, warm ridges — painterly.
                  float hN = clamp((vWorldY - 6.65) / 70.25, 0.0, 1.0);
+                 // R32.33-manus: wash chroma boosted ~30% per user request to
+                 // "elevate the existing colors and textures." Channel deltas
+                 // widened (R 0.10—0.16, G 0.06—0.10, B 0.04—0.07) so the
+                 // painterly wash actually shifts hue, not just brightness.
+                 // Ridge→valley warm→cool spread doubled (R 0.06—0.12,
+                 // G 0.02—0.05, B -0.05—-0.09) for visible warm ridges + cool
+                 // valleys. Plus a chroma-pump that pushes color away from grey:
+                 // (color - mean) *= 1.30. Done after wash composition so the
+                 // wash modulates already-saturated splat samples.
                  vec3 wash = vec3(1.0);
-                 wash.r += (washCombo - 0.5) * 0.10 + (hN - 0.4) * 0.06;
-                 wash.g += (washCombo - 0.5) * 0.06 + (hN - 0.4) * 0.02;
-                 wash.b += (washCombo - 0.5) * 0.04 - (hN - 0.4) * 0.05;
+                 wash.r += (washCombo - 0.5) * 0.16 + (hN - 0.4) * 0.12;
+                 wash.g += (washCombo - 0.5) * 0.10 + (hN - 0.4) * 0.05;
+                 wash.b += (washCombo - 0.5) * 0.07 - (hN - 0.4) * 0.09;
                  // R32.10.3: per-pixel AO from world-Y screen-space derivatives.
                  // dFdx/dFdy of vWorldY gives the slope of the surface in screen
                  // pixels. Steeper terrain = bigger derivatives = darker shading.
@@ -1046,6 +1064,14 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
+                 // R32.33-manus: chroma-pump. Pushes each channel away from the
+                 // mean (luminance) by 30%, which boosts saturation without
+                 // changing brightness. Painterly stays painterly; the colors
+                 // just have more presence.
+                 {
+                     float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+                     sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.30;
+                 }
                  // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
                  // user feedback was "It looks like noise static texture". Static
                  // 2D fragment patterns can't sell as 3D grass blades because
