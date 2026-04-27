@@ -1,30 +1,50 @@
-# Claude Status — R32.44
+# Claude Status — R32.45
 
 ## Latest Build
-**R32.44** — Dead Code Removal + Perf Quick Wins
+**R32.45** — Visual Polish Pass (Zero Performance Cost)
 
-### What Changed (R32.43 → R32.44)
+### What Changed (R32.44 → R32.45)
 
-#### R32.43: Perf Quick Wins — Zero Per-Frame Allocs
-- Replaced `new THREE.Vector3(0,0,-1)` with reused `_tmpVec.set(0,0,-1)` in render loop
-- Persistent `_aimPoint3P` object (mutate fields, not `new`)
-- Hoisted `_flagStateByTeam` to module scope with in-place reset
-- Reused `t` instead of second `performance.now()` call
-- Extracted ~90-line diagnostic dump into `_runFirstFrameDiagnostic()`
-- FPS console.log gated behind `window.DEBUG_LOGS`
-- Replaced `Date.now()` cache-busters on 5 satellite scripts with `__cacheVer` from version chip
+#### 1. Anisotropic Filtering on Terrain Texture Arrays
+- Set `maxAnisotropy` on all 3 `DataArrayTexture` objects (color, normal, AO)
+- Terrain is now razor-sharp at oblique viewing angles instead of blurry at distance
+- GPU handles this in hardware — zero CPU cost
 
-#### R32.44: Dead Code Removal (~1700 LOC)
-- **Deleted `renderer_polish.js`** (1146 lines) — zero imports/references anywhere
-- **Deleted `generateTerrainTextures()` + 3 helpers** (~270 lines) — `_makeNoiseTexture()`, `_makeNormalFromNoise()`, `_generateSplatMap()` — superseded by R32.42 texture array architecture
-- **Deleted `initScene_camera_init()`** — empty placeholder, no callers
-- **Deleted old grass system** — `initGrass()`, `_makeGrassBladeTexture()`, `updateGrassWind()`, `initDetailProps()`, `_grassMesh`/`_grassMat`/`_propsMeshes` (~226 lines) — replaced by new grass ring system
-- **Removed duplicate `import('./renderer_command_map.js')`** — script tag in index.html already loads the IIFE
+#### 2. Soft PCF Shadow Penumbra
+- Added `shadow.radius = 3` to DirectionalLight (was unset = hard edges)
+- Works with existing `PCFSoftShadowMap` for soft, natural shadow edges
+- Bias (-0.0005) and normalBias (0.02) already correct from prior work
+
+#### 3. Interior Shape Material Differentiation
+- Replaced single `baseMat` for all 32 interior shapes with 6 category-specific materials:
+  - **Buildings** (esmall2, bunker4): concrete grey, roughness 0.82, metalness 0.10
+  - **Towers** (BETower2, iobservation, mis_ob*): darker steel grey, roughness 0.65, metalness 0.30, high envMap
+  - **Bridge** (expbridge): warm industrial, roughness 0.70, metalness 0.25
+  - **Rocks** (lrock*): dark earth brown #5A5248, roughness 0.95, metalness 0.02 — natural matte
+  - **Pads** (swsfloatingpad2, DSSfloatingPad): gunmetal #4A4A50, metalness 0.55 — metallic landing surfaces
+  - **Cubes**: original concrete grey
+- Shapes now read visually distinct instead of uniform grey blobs
+
+#### 4. Building Material EnvMapIntensity
+- `baseMat` (building bodies): envMapIntensity 0.35 (was default 1.0 / unset)
+- `armMat` (turret arms, station hardware): envMapIntensity 0.50
+- Metallic parts now subtly reflect the sky/PMREM environment
+
+#### 5. Camera FOV Punch on Nearby Explosions
+- When a type-3 (explosion) particle spawns within 30m of camera, adds +2.5° FOV
+- Decays exponentially back to base FOV over ~200ms (`*= 1 - dt*5`)
+- Integrates with existing ZoomFX and C++ FOV pipeline
+- Pure math on existing camera — zero render cost
+
+#### 6. Exponential² Fog
+- Replaced `THREE.Fog(linear, near=200, far=450)` with `THREE.FogExp2(0.0022)`
+- ~50% opacity at 300m, near-full at 500m — softer, more natural Tribes 1 haze
+- Day/night cycle only touches `fog.color` — compatible with FogExp2
 
 ### Technical Details
-- `renderer.js`: 4150 lines (down from ~4720 before R32.44 work, ~5870 before R32.43)
-- `_splatData`, `initTerrain()`, grass ring system (`initGrassRing`, `updateGrassRing`, `_grassRingMesh`) all LIVE
-- `makeSoftCircleTexture()` confirmed LIVE (called from `initParticles()`)
+- `renderer.js`: ~4185 lines (added ~35 LOC for materials + FOV punch)
+- No new draw calls, no new render passes, no new textures
+- All changes are property assignments or trivial math in existing hot paths
 
 ### Status
-✅ Both committed. Ready to push.
+✅ Committed and pushed.

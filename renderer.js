@@ -38,6 +38,7 @@ let bloomPass, gradePass;
 let sunLight, hemiLight, sky;
 let polish = null; // R32.7 polish module handle
 let _lastTickTime = 0; // R32.7 dt source for polish.tick
+let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
@@ -268,7 +269,7 @@ function initRenderer() {
 function initScene() {
     scene = new THREE.Scene();
     // R32.0: Raindance.MIS canonical fog — haze 200m, visible 450m, pale overcast
-    scene.fog = new THREE.Fog(0xC0C8D0, 200, 450);
+    scene.fog = new THREE.FogExp2(0xC0C8D0, 0.0022); // R32.45: exponential² fog — softer haze than linear
     scene.background = new THREE.Color(0xC0C8D0);
     // R32.25.4-DIAG: expose for diagnostic overlay
     try { window.scene = scene; window.camera = camera; window.renderer = renderer; } catch(e) {}
@@ -558,6 +559,7 @@ function initLights() {
         sunLight.shadow.camera.bottom = -s;
         sunLight.shadow.bias = -0.0005;
         sunLight.shadow.normalBias = 0.02;
+        sunLight.shadow.radius = 3; // R32.45: soft PCF penumbra
     }
     scene.add(sunLight);
     scene.add(sunLight.target);
@@ -843,7 +845,12 @@ async function initTerrain() {
         buildArrayTexture(normalPaths, false),
         buildArrayTexture(aoPaths, false),
     ]);
-    console.log('[R32.42] Texture arrays built — 3 sampler2DArray (was 15 sampler2D)');
+    // R32.45: anisotropic filtering — sharpen terrain at oblique viewing angles (zero cost on modern GPUs)
+    const maxAniso = renderer.capabilities.getMaxAnisotropy();
+    terrainColorArr.anisotropy = maxAniso;
+    terrainNormalArr.anisotropy = maxAniso;
+    terrainAOArr.anisotropy = maxAniso;
+    console.log('[R32.42] Texture arrays built — 3 sampler2DArray (was 15 sampler2D), anisotropy=' + maxAniso);
 
     // Dummy 1x1 normal map so Three.js defines USE_NORMALMAP_TANGENTSPACE
     // and computes the TBN matrix in normal_fragment_begin. We never sample
@@ -1227,8 +1234,8 @@ function _teamAccent(teamIdx) {
 // are used so silhouettes match the original game proportions.
 function createCanonicalMesh(datablock, teamIdx) {
     const acc = _teamAccent(teamIdx);
-    const baseMat = new THREE.MeshStandardMaterial({ color: 0x6a6862, roughness: 0.78, metalness: 0.18 });
-    const armMat  = new THREE.MeshStandardMaterial({ color: 0x484540, roughness: 0.55, metalness: 0.55 });
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0x6a6862, roughness: 0.78, metalness: 0.18, envMapIntensity: 0.35 });
+    const armMat  = new THREE.MeshStandardMaterial({ color: 0x484540, roughness: 0.55, metalness: 0.55, envMapIntensity: 0.50 });
     const accentMat = new THREE.MeshStandardMaterial({
         color: acc.tint, emissive: acc.emissive, emissiveIntensity: 0.55,
         roughness: 0.50, metalness: 0.30,
@@ -1486,15 +1493,39 @@ async function initInteriorShapes() {
         }
         console.log('[R32.1] Loaded', meshes.size, 'unique interior-shape meshes');
 
-        // R32.1.1: lighter, double-sided material so meshes are visible even if a
-        // few backface-winding outliers slip through the index flip. Concrete-grey
-        // tint with subtle warmth — matches the Raindance lush-base palette.
-        const baseMat = new THREE.MeshStandardMaterial({
-            color: 0xA89D90, roughness: 0.78, metalness: 0.08,
-            flatShading: true,
-            side: THREE.DoubleSide,
-            emissive: 0x1a1814, emissiveIntensity: 0.35,
-        });
+        // R32.45: per-category material differentiation — buildings, towers,
+        // bridge, rocks, pads, cubes each get distinct PBR properties.
+        const _matProps = { side: THREE.DoubleSide, flatShading: true };
+        const matBuilding = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0xA89D90, roughness: 0.82, metalness: 0.10, envMapIntensity: 0.35,
+            emissive: 0x1a1814, emissiveIntensity: 0.35 });
+        const matTower = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0x8A8580, roughness: 0.65, metalness: 0.30, envMapIntensity: 0.50,
+            emissive: 0x141210, emissiveIntensity: 0.25 });
+        const matBridge = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0x9A9080, roughness: 0.70, metalness: 0.25, envMapIntensity: 0.40,
+            emissive: 0x181510, emissiveIntensity: 0.30 });
+        const matRock = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0x5A5248, roughness: 0.95, metalness: 0.02, envMapIntensity: 0.15,
+            emissive: 0x0A0908, emissiveIntensity: 0.15 });
+        const matPad = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0x4A4A50, roughness: 0.50, metalness: 0.55, envMapIntensity: 0.60,
+            emissive: 0x101012, emissiveIntensity: 0.20 });
+        const matCube = new THREE.MeshStandardMaterial({ ..._matProps,
+            color: 0xA89D90, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.30,
+            emissive: 0x1a1814, emissiveIntensity: 0.35 });
+
+        // Map fileName prefix → material
+        function _pickInteriorMat(fileName) {
+            const n = fileName.toLowerCase();
+            if (n.startsWith('esmall2') || n.startsWith('bunker4')) return matBuilding;
+            if (n.startsWith('betower2') || n.startsWith('iobservation') ||
+                n.startsWith('mis_ob'))                              return matTower;
+            if (n.startsWith('expbridge'))                           return matBridge;
+            if (n.startsWith('lrock'))                               return matRock;
+            if (n.startsWith('swsfloatingpad') || n.startsWith('dssfloatingpad')) return matPad;
+            return matCube; // cube.*.dis + anything unrecognized
+        }
 
         // Create a parent group for easy hide/show + selective culling
         interiorShapesGroup = new THREE.Group();
@@ -1538,7 +1569,7 @@ async function initInteriorShapes() {
         for (const item of items) {
             const geom = getGeom(item.fileName);
             if (!geom) { missed++; continue; }
-            const mesh = new THREE.Mesh(geom, baseMat);
+            const mesh = new THREE.Mesh(geom, _pickInteriorMat(item.fileName));
             // Inner: rotate -90deg around X to map Tribes local-z-up to Three y-up
             mesh.rotation.x = -Math.PI / 2;
             mesh.castShadow = true;
@@ -2948,6 +2979,9 @@ function syncParticles() {
                 try {
                     const px = particleView[o], py = particleView[o + 1], pz = particleView[o + 2];
                     Polish.spawnShockwave(scene, new THREE.Vector3(px, py, pz), 1.0);
+                    // R32.45: FOV punch when explosion is within 30m of camera
+                    const dx = px - camera.position.x, dy = py - camera.position.y, dz = pz - camera.position.z;
+                    if (dx * dx + dy * dy + dz * dz < 900) _fovPunchExtra = 2.5;
                 } catch (e) {}
             }
         }
@@ -3187,7 +3221,15 @@ function syncCamera() {
         fov = fov * window.ZoomFX.getFovMultiplier();
         zoomActive = window.ZoomFX.isActive();
     }
-    const fovThreshold = zoomActive ? 0.05 : 0.5;
+    // R32.45: apply FOV punch from nearby explosions, then decay back
+    fov += _fovPunchExtra;
+    if (_fovPunchExtra > 0.01) {
+        const dt = _lastTickTime > 0 ? Math.min(0.1, performance.now() * 0.001 - _lastTickTime) : 1/60;
+        _fovPunchExtra *= Math.max(0, 1 - dt * 5); // ~200ms decay
+    } else {
+        _fovPunchExtra = 0;
+    }
+    const fovThreshold = zoomActive || _fovPunchExtra > 0.01 ? 0.05 : 0.5;
     if (Math.abs(camera.fov - fov) > fovThreshold) {
         camera.fov = fov;
         camera.updateProjectionMatrix();
