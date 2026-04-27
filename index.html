@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.3</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.4</div>
     </div>
   </div>
 
@@ -1135,7 +1135,7 @@
         <div class="s-row"><div class="s-label">Master Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-master" oninput="sSave('masterVolume',+this.value);sVal('s-master-v',this.value);applyAudio()"></div><div class="s-val" id="s-master-v">80</div></div>
         <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
         <div class="s-row"><div class="s-label">UI Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ui" oninput="sSave('uiVolume',+this.value);sVal('s-ui-v',this.value);applyAudio()"></div><div class="s-val" id="s-ui-v">80</div></div>
-        <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value)"></div><div class="s-val" id="s-music-v">60</div><span class="s-note">&nbsp;(future)</span></div>
+        <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value);applyAudio()"></div><div class="s-val" id="s-music-v">50</div></div>
       </div>
 
       <!-- CONTROLS TAB -->
@@ -2836,8 +2836,8 @@
       prevJetting:false,prevHealth:-1,lx:0,lz:0,lyaw:0,
       // R32.11: streaming background music (loops). Uses HTMLAudioElement +
       // MediaElementSource so it routes through AE.master (mute already
-      // applies). Volume default 0.35 of master — atmospheric, behind SFX.
-      musicEl:null,musicNode:null,musicGain:null,musicVol:0.35,
+      // applies). Volume default 0.50 of master — R32.11.4 user feedback, was 0.35.
+      musicEl:null,musicNode:null,musicGain:null,musicVol:0.50,
 
       init:function(){
         if(this.ctx)return;
@@ -3098,7 +3098,7 @@
     ];
     var DEFAULT_SETTINGS={
       _v:2,
-      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:60,muted:false,
+      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,muted:false,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
@@ -3154,6 +3154,9 @@
       if(AE.master)AE.master.gain.value=ST.muted?0:(ST.masterVolume/100)*0.55;
       if(AE.sfxBus)AE.sfxBus.gain.value=ST.sfxVolume/100;
       if(AE.uiBus)AE.uiBus.gain.value=ST.uiVolume/100;
+      // R32.11.4: actually wire the Music Volume slider (was "(future)").
+      // Slider is 0–100, AE expects 0–1. Also respect mute.
+      if(AE.setMusicVolume)AE.setMusicVolume(ST.muted?0:(ST.musicVolume/100));
     }
     function applyToCpp(){
       if(!Module._setSettings)return;
