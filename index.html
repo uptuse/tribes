@@ -912,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.5</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.6</div>
     </div>
   </div>
 
@@ -2927,8 +2927,29 @@
         // chaingun: noise burst
         b=mb(0.04);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*4)*0.7;}
         this.bufs[1]=b;
-        // plasma: rising sine
-        b=mb(0.22);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,e=(t<0.02?t/0.02:Math.exp(-(t-0.02)*8));da[i]=Math.sin(2*Math.PI*(800+500*t)*t)*e*0.6;}
+        // R32.13.6: plasma — was a rising-sine chirp (800→1300Hz) which IS the
+        // "ping" the user kept hearing on every weapon fire (C++ tribes.js:6453
+        // passes weapon-fire ID dynamically, and apparently passed 2 frequently).
+        // Replaced with a Tribes-plasma-flavored sound: short noise puff + sub
+        // thump + brief LP-filtered crackle. No rising tone, no pitched ring,
+        // no content above ~1.5 kHz that could read as a ping.
+        b=mb(0.22);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var atk=Math.exp(-t*60);                          // sharp transient
+          var bod=Math.exp(-t*9)*(1-Math.exp(-t*180));      // body envelope
+          var sub=Math.sin(2*Math.PI*(60*Math.exp(-t*8)+45)*t)*0.55*bod;  // sub thump 95→45Hz
+          var noise=(Math.random()*2-1);
+          // Crude one-pole LP on noise to keep it sub-1kHz (pseudo via running avg surrogate)
+          var crackle=noise*0.40*atk;
+          // Mid hum — single 180Hz sine (well below ping range), brief
+          var hum=Math.sin(2*Math.PI*180*t)*0.12*Math.exp(-t*22);
+          da[i]=(sub+crackle+hum)*0.65;
+        }
+        // Apply a simple lowpass smoothing pass over slot 2 to crush any
+        // residual high-frequency content from the noise term.
+        var lp=new Float32Array(da.length); var acc=0; var k=0.18;
+        for(i=0;i<da.length;i++){acc+=k*(da[i]-acc); lp[i]=acc;}
+        for(i=0;i<da.length;i++){da[i]=lp[i];}
         this.bufs[2]=b;
         // grenade: hollow pop
         b=mb(0.25);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,f2=(100*Math.exp(-t*4)+40),e=Math.exp(-t*12);da[i]=(Math.sin(2*Math.PI*f2*t)*0.7+(Math.random()*2-1)*0.2)*e*0.9;}
@@ -3129,7 +3150,7 @@
       // Toggle slot mute from console: AE.muteSlot(13) / AE.unmuteSlot(13)
       // Toggle full firing log: AE.logSounds = true|false
       _slotMutes:{},
-      logSounds:true,  // R32.13.5: ON by default while we hunt the ping
+      logSounds:false, // R32.13.6: ping found (slot 2 plasma chirp); logging off by default again
       muteSlot:function(id){this._slotMutes[id]=true;console.log('[AE] slot '+id+' MUTED');},
       unmuteSlot:function(id){this._slotMutes[id]=false;console.log('[AE] slot '+id+' UNMUTED');},
       _logFire:function(id,kind,extra){
