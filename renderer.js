@@ -147,6 +147,8 @@ export async function start() {
     if (typeof location !== 'undefined' && /[?&]ring=on\b/.test(location.search)) {
         try { initGrassRing(); } catch (e) { console.warn('[R32.33] initGrassRing failed:', e); }
     }
+    // R32.35-manus: spawn the above-ground dust particle layer.
+    try { initDustLayer(); } catch (e) { console.warn('[R32.35] initDustLayer failed:', e); }
     // R32.27.2-manus: re-enable Ghibli-style grass on top of the painterly terrain.
     // initGrass + initDetailProps were dropped from the start() sequence in R32.9
     // because the OLD muddy-olive cross-quad sin-sway grass fought the watercolor
@@ -1073,39 +1075,16 @@ function initTerrain() {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
                      sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.10;
                  }
-                 // R32.34.2-manus: LIVING TERRAIN — AMBIENT BREATH OVERSHOOT MODE.
-                 // User said R32.34's amplitudes were imperceptible and asked
-                 // explicitly to "make the stuff extreme - overshoot - so I can
-                 // tell." So we crank everything 4-6× over R32.34, neutralize
-                 // the warm bias (was washing the whole frame yellowish), and
-                 // calibrate from here. Goal: user can clearly see each
-                 // component, then we dial back to the visual sweet spot.
-                 {
-                     // (1) WIND DRIFT ON SPLAT — ±25% (was ±4%). Painterly
-                     // wash visibly slides across the terrain in uWindDir.
-                     // Speed bumped 0.30 -> 0.6 m/s for unmistakable motion.
-                     // Bias NEUTRALIZED to white (was warm 1.0/0.85/0.65,
-                     // which was tinting the whole map yellowish over time).
-                     vec2 driftXZ = vWorldXZ - uWindDir * (uTime * 0.60);
-                     float dN1 = vnoise(driftXZ * 0.045 + vec2(31.7, 19.3));
-                     float dN2 = vnoise(driftXZ * 0.18  + vec2(7.4,  53.1));
-                     float driftAmt = (dN1 - 0.5) * 0.30 + (dN2 - 0.5) * 0.20;
-                     sampledDiffuseColor.rgb *= (1.0 + driftAmt);
-                     // (2) MICRO-SHIMMER — ±10% (was ±1.5%). Visible
-                     // texture-level rustle.
-                     float shimmerPhase = vWorldXZ.x * 4.0 + vWorldXZ.y * 4.0 + uTime * 1.7;
-                     float shimmer = sin(shimmerPhase) * 0.10;
-                     sampledDiffuseColor.rgb *= (1.0 + shimmer);
-                     // (3) SUN-SPOT DRIFT — ±35% (was ±6%). Bright-and-dark
-                     // cloud shadows sweeping across the map at 5 m/s. THIS
-                     // should be the most obvious: standing still and looking
-                     // at the wide green ridge in the user's screenshot, you
-                     // should see slow brightness waves passing through it.
-                     vec2 cloudUV = vWorldXZ * 0.003 - uWindDir * (uTime * 5.0) * 0.003;
-                     float cloudN = vnoise(cloudUV);
-                     float cloudShade = mix(0.65, 1.35, cloudN); // ±35%
-                     sampledDiffuseColor.rgb *= cloudShade;
-                 }
+                 // R32.35-manus: LIVING TERRAIN BREATH REMOVED. User correctly
+                 // diagnosed the R32.34/.34.2 shader-driven motion as feeling
+                 // "under the ground - like a texture being moved" — because
+                 // that's exactly what it was (uv translation of a fixed
+                 // surface noise lookup). No parallax cue, brain reads it as
+                 // texture-behind-glass not 3D motion. Pivoting to ABOVE-GROUND
+                 // PARTICLE DUST instead (see initDustLayer/updateDustLayer).
+                 // The terrain shader now does its painterly job and stops
+                 // pretending to be alive. uTime / uWindDir uniforms remain
+                 // in case the dust layer needs a unified clock/wind reference.
                  // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
                  // user feedback was "It looks like noise static texture". Static
                  // 2D fragment patterns can't sell as 3D grass blades because
@@ -3441,6 +3420,10 @@ function loop() {
     // motion of every grass element stays in lock-step (Principle 2).
     try { updateGrassRing(t); } catch (e) { /* swallowed; ring is cosmetic */ }
 
+    // R32.35-manus: tick the dust layer (vertex shader does motion; CPU does
+    // amortized recycle when camera moves).
+    try { updateDustLayer(t); } catch (e) { /* swallowed; dust is cosmetic */ }
+
     // R32.34-manus: tick the LIVING TERRAIN ambient-breath uniforms.
     // The terrain shader's uTime drives all 3 breath components (wind drift,
     // micro-shimmer, sun-spot drift). Pre-R32.34 this uniform was declared
@@ -4195,4 +4178,256 @@ function updateGrassWind(t) {
     if (_grassMat && _grassMat.userData.shader) {
         _grassMat.userData.shader.uniforms.uTime.value = t;
     }
+}
+
+
+// ============================================================
+// R32.35-manus: ABOVE-GROUND PARTICLE DUST LAYER
+// ----------------------------------------------------------
+// User correctly diagnosed the R32.34/.34.2 shader breath as feeling
+// "under the ground - like a texture being moved." Pivot: ditch the
+// shader-driven motion and instead spawn millions of tiny particles
+// that ACTUALLY EXIST IN 3D SPACE, floating 5-30 cm above the terrain.
+// Their parallax-correct motion against the ground gives the brain a
+// real "things are floating here" cue that the shader trick lacked.
+//
+// Architecture:
+//   - Single THREE.Points draw call, N camera-anchored particles in a
+//     RING_RADIUS-radius circle around the camera.
+//   - Per-particle base position stored in a Float32Array attribute (xyz).
+//     Position is the SAMPLED TERRAIN HEIGHT + a small random hover
+//     offset (5-30 cm), with optional micro-orbit driven by the vertex
+//     shader so each particle bobs slightly without CPU work.
+//   - Per-particle COLOR sampled from terrain splat at base position
+//     (warm-white biased: dust over grass = pale yellow-green, dust
+//     over rock = warm grey, etc.). Stored in a Color attribute.
+//   - Per-particle SIZE jittered ±30% so the dust doesn't look like a
+//     uniform grid.
+//   - VERTEX SHADER does all per-frame motion: gentle drift in uWindDir,
+//     micro-bob from a sin keyed to particle hash, fade-out at ring edge.
+//     Zero CPU work per particle once the ring is initialized.
+//   - CPU work amortized: a small RECYCLE_PER_FRAME budget repositions
+//     particles that the camera has moved away from (same trick as the
+//     grass ring, just smaller budget since the dust ring is larger).
+//
+// Visibility-first calibration per user's standing instruction
+// ("overshoot first so I can see it, then dial back"):
+//   - mid: 1,500,000 particles
+//   - high: 3,000,000
+//   - ultra: 6,000,000
+//   - particle screen size: 6 px (large enough to read at distance)
+//   - opacity: 0.55 (high enough to dominate ambient register)
+// Once user confirms visibility we'll dial these to taste.
+//
+// Escape: ?dust=off skips the entire system.
+// ============================================================
+
+let _dustPoints = null;
+let _dustState = null;   // { N, RING_RADIUS, recycleCursor, basePosAttr, sizeAttr, colorAttr }
+
+function initDustLayer() {
+    if (typeof location !== 'undefined' && /[?&]dust=off\b/.test(location.search)) {
+        console.log('[R32.35] Dust layer disabled via ?dust=off');
+        return;
+    }
+    if (!_splatData || !_splatData.splatAttr || !_splatData.size) {
+        console.warn('[R32.35] initDustLayer aborted: _splatData not ready', _splatData);
+        return;
+    }
+    const tier = (window.__qualityTier || 'mid');
+    const N = (tier === 'ultra') ? 6000000 : (tier === 'high') ? 3000000 : (tier === 'mid') ? 1500000 : (tier === 'low') ? 0 : 1500000;
+    if (N === 0) {
+        console.log('[R32.35] Dust layer skipped on low tier');
+        return;
+    }
+    const RING_RADIUS = 80.0;   // metres around camera (smaller than grass ring; dust is denser per area)
+
+    const positions = new Float32Array(N * 3);
+    const colors    = new Float32Array(N * 3);
+    const sizes     = new Float32Array(N);
+    const phases    = new Float32Array(N); // per-particle phase for bob/drift
+
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+    const splat = _splatData.splatAttr;
+    const splatN = _splatData.size;
+
+    for (let i = 0; i < N; i++) {
+        // Camera-biased radial distribution: r = R * rand^2 packs more
+        // particles close to the camera (from R32.32.3 lesson).
+        const angle = Math.random() * Math.PI * 2;
+        const u01 = Math.random();
+        const r = (u01 * u01) * RING_RADIUS;
+        const wx = Math.cos(angle) * r;
+        const wz = Math.sin(angle) * r;
+        const groundY = sampleTerrainH(wx, wz);
+        // Hover offset: 5-30 cm above ground
+        const hover = 0.05 + Math.random() * 0.25;
+        const wy = groundY + hover;
+        positions[i * 3 + 0] = wx;
+        positions[i * 3 + 1] = wy;
+        positions[i * 3 + 2] = wz;
+
+        // Sample splat for color tint
+        const u = (wx + half) / (span > 0 ? span : 1);
+        const v = (wz + half) / (span > 0 ? span : 1);
+        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
+        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
+        const si = (sy * splatN + sx) * 4;
+        const wG = splat[si + 0] || 0;
+        const wR = splat[si + 1] || 0;
+        const wD = splat[si + 2] || 0;
+        const wS = splat[si + 3] || 0;
+        // Warm-white base (dust catches sun) tinted by terrain weights:
+        //   grass -> pale yellow-green
+        //   rock  -> warm grey
+        //   dirt  -> warm tan
+        //   sand  -> pale gold
+        const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
+        const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
+        const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
+        // Per-particle brightness jitter ±20%
+        const jitter = 0.80 + Math.random() * 0.40;
+        colors[i * 3 + 0] = Math.min(1.0, r_ * jitter);
+        colors[i * 3 + 1] = Math.min(1.0, g_ * jitter);
+        colors[i * 3 + 2] = Math.min(1.0, b_ * jitter);
+
+        // Size: 4-9 px (in screen pixels; multiplied by sizeAttenuation by Three)
+        sizes[i] = 4.0 + Math.random() * 5.0;
+
+        // Phase: 0..2π for per-particle bob
+        phases[i] = Math.random() * 6.2831853;
+    }
+
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('aColor',   new THREE.BufferAttribute(colors, 3));
+    geom.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
+    geom.setAttribute('aPhase',   new THREE.BufferAttribute(phases, 1));
+    // Bound a generous bounding sphere so frustum culling doesn't kill the cloud
+    geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 50, 0), 200);
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            uTime:     { value: 0.0 },
+            uWindDir:  { value: new THREE.Vector2(0.8, 0.6) },
+            uOpacity:  { value: 0.55 },
+            uPxScale:  { value: window.innerHeight * 0.5 }, // for sizeAttenuation-style sizing
+        },
+        vertexShader: `
+            attribute vec3 aColor;
+            attribute float aSize;
+            attribute float aPhase;
+            uniform float uTime;
+            uniform vec2  uWindDir;
+            uniform float uPxScale;
+            varying vec3  vColor;
+            void main() {
+                // Per-particle slow bob: ±5 cm vertical, ±3 cm horizontal in wind dir
+                vec3 p = position;
+                float t = uTime + aPhase;
+                p.y += sin(t * 0.9) * 0.05;
+                p.x += uWindDir.x * sin(t * 0.6) * 0.03;
+                p.z += uWindDir.y * sin(t * 0.6 + 1.7) * 0.03;
+                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                gl_Position = projectionMatrix * mv;
+                // Distance-attenuated size (closer = larger)
+                gl_PointSize = aSize * (uPxScale / max(1.0, -mv.z));
+                vColor = aColor;
+            }
+        `,
+        fragmentShader: `
+            precision mediump float;
+            uniform float uOpacity;
+            varying vec3 vColor;
+            void main() {
+                // Round soft particle shape
+                vec2 uv = gl_PointCoord - 0.5;
+                float d = dot(uv, uv);
+                if (d > 0.25) discard;
+                float a = smoothstep(0.25, 0.05, d);
+                gl_FragColor = vec4(vColor, a * uOpacity);
+            }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.NormalBlending,
+    });
+
+    _dustPoints = new THREE.Points(geom, mat);
+    _dustPoints.frustumCulled = false;
+    _dustState = { N: N, RING_RADIUS: RING_RADIUS, recycleCursor: 0 };
+    scene.add(_dustPoints);
+    console.log('[R32.35] Dust layer placed:', N, 'particles in', RING_RADIUS, 'm camera-local ring');
+}
+
+function updateDustLayer(t) {
+    if (!_dustPoints || !_dustState) return;
+    if (_dustPoints.material && _dustPoints.material.uniforms) {
+        _dustPoints.material.uniforms.uTime.value = t;
+    }
+    if (!camera) return;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const N = _dustState.N;
+    const RING_RADIUS = _dustState.RING_RADIUS;
+    const RING_R2 = RING_RADIUS * RING_RADIUS;
+    // Recycle budget: ~1% of pool per frame for very large pools
+    const RECYCLE_PER_FRAME = Math.min(20000, Math.max(2000, Math.floor(N * 0.012)));
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+    const splat = _splatData.splatAttr;
+    const splatN = _splatData.size;
+
+    const posAttr = _dustPoints.geometry.attributes.position;
+    const colAttr = _dustPoints.geometry.attributes.aColor;
+    const positions = posAttr.array;
+    const colors    = colAttr.array;
+
+    let cursor = _dustState.recycleCursor;
+    let touched = 0;
+    let updatedColors = false;
+    for (let k = 0; k < RECYCLE_PER_FRAME; k++) {
+        const i = (cursor + k) % N;
+        const px = positions[i * 3 + 0];
+        const pz = positions[i * 3 + 2];
+        const dx = px - camX, dz = pz - camZ;
+        if (dx * dx + dz * dz <= RING_R2) continue; // still in range
+        // Recycle: re-place inside the ring around the new camera
+        const angle = Math.random() * Math.PI * 2;
+        const u01 = Math.random();
+        const r = (u01 * u01) * RING_RADIUS;
+        const wx = camX + Math.cos(angle) * r;
+        const wz = camZ + Math.sin(angle) * r;
+        const groundY = sampleTerrainH(wx, wz);
+        const hover = 0.05 + Math.random() * 0.25;
+        const wy = groundY + hover;
+        positions[i * 3 + 0] = wx;
+        positions[i * 3 + 1] = wy;
+        positions[i * 3 + 2] = wz;
+        // Re-tint by new splat
+        const u = (wx + half) / (span > 0 ? span : 1);
+        const v = (wz + half) / (span > 0 ? span : 1);
+        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
+        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
+        const si = (sy * splatN + sx) * 4;
+        const wG = splat[si + 0] || 0;
+        const wR = splat[si + 1] || 0;
+        const wD = splat[si + 2] || 0;
+        const wS = splat[si + 3] || 0;
+        const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
+        const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
+        const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
+        const jitter = 0.80 + Math.random() * 0.40;
+        colors[i * 3 + 0] = Math.min(1.0, r_ * jitter);
+        colors[i * 3 + 1] = Math.min(1.0, g_ * jitter);
+        colors[i * 3 + 2] = Math.min(1.0, b_ * jitter);
+        touched++;
+        updatedColors = true;
+    }
+    if (touched > 0) {
+        posAttr.needsUpdate = true;
+        if (updatedColors) colAttr.needsUpdate = true;
+    }
+    _dustState.recycleCursor = (cursor + RECYCLE_PER_FRAME) % N;
 }
