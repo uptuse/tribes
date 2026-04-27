@@ -3721,8 +3721,19 @@ function initGrass() {
 
     // Sample positions across terrain weighted by splat.r (grass weight).
     // Rejection sampling: pick random world point, look up splat, accept if random<grass.
-    const splat = _splatData.splatRGBA;
-    const splatN = _splatData.splatSize;
+    // R32.27.3-manus: field names changed in R32.9 painterly terrain rewrite from
+    // {splatRGBA, splatSize} -> {splatAttr, size}. initGrass kept reading the old
+    // names (it was dead code from R32.9 to R32.27.2 so nobody hit the bug). The
+    // splatAttr layout is identical to splatRGBA (RGBA per vertex, square grid of
+    // side `size`), so the rejection-sampler math is unchanged — just rename the
+    // reads. Defensive guards for missing fields below so a future rename can't
+    // silently take grass down again.
+    const splat = _splatData.splatAttr || _splatData.splatRGBA;
+    const splatN = _splatData.size || _splatData.splatSize;
+    if (!splat || !splatN) {
+        console.warn('[R32.27.3] initGrass aborted: _splatData missing splatAttr/size', _splatData);
+        return;
+    }
     const dummy = new THREE.Object3D();
     let placed = 0;
     let attempts = 0;
@@ -3733,7 +3744,9 @@ function initGrass() {
         const u = (wx + half) / span, v = (wz + half) / span;
         const sx = Math.min(splatN - 1, Math.max(0, Math.floor(u * (splatN - 1))));
         const sy = Math.min(splatN - 1, Math.max(0, Math.floor(v * (splatN - 1))));
-        const grassW = splat[(sy * splatN + sx) * 4] / 255;
+        // R32.27.3-manus: splatAttr stores normalized weights (0..1 Float32),
+        // not 0..255 bytes — do NOT divide by 255 (legacy splatRGBA was bytes).
+        const grassW = splat[(sy * splatN + sx) * 4];
         if (Math.random() > grassW * 1.1) continue;
         const wy = sampleTerrainH(wx, wz);
         if (!Number.isFinite(wy)) continue;
