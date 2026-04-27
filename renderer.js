@@ -1098,18 +1098,14 @@ function initTerrain() {
                      float aD_ = texture2D(uTileDirtA,  tUv).r;
                      float aS_ = texture2D(uTileSandA,  tUv).r;
                      float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     // R32.38.6-manus: HIGH-CONTRAST AO MAPPING.
-                     // The pow(2.5)/pow(4.0) approach failed: pow darkens ALL AO
-                     // values uniformly, which either washed out the effect (2.5)
-                     // or killed the terrain entirely (4.0 made grass go black).
-                     // New approach: only the bottom 40% of AO darkness counts as
-                     // a 'real crevice'; the top 60% becomes a no-op (full bright).
-                     // This means broad textured areas stay normal but real crevices
-                     // get a deep, crisp 0.15-strength shadow. ON/OFF should be
-                     // immediately obvious in cracks/seams, invisible elsewhere.
-                     float aoCrev = smoothstep(0.20, 0.60, aoT);  // 0=deep crevice, 1=open
-                     aoT = mix(0.15, 1.0, aoCrev);                // crevices to 15%, open stays 100%
-                     aoT = clamp(aoT, 0.15, 1.0);                 // safety floor
+                     // R32.38.7-manus: SAFETY-FLOORED AO. R32.38.6 went black on user
+                     // (chip showed 38.6) which means my contrast remap took aoT below
+                     // expected. Hard-floor multiplier at 0.65 so terrain CANNOT go below
+                     // 65% brightness even with broken math. Range now 0.65..1.0 so
+                     // crevices darken by max 35%, broad areas stay bright. Less dramatic
+                     // but provably safe.
+                     aoT = clamp(aoT, 0.0, 1.0);                  // raw bound first
+                     aoT = mix(0.65, 1.0, aoT);                   // 0->0.65, 1->1.0
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
