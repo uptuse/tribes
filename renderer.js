@@ -304,6 +304,157 @@ function initSky() {
     u.sunPosition.value.copy(sunPos);
 }
 
+// ============================================================
+// R32.40-manus: Day/Night cycle. 30-min real-time loop = 24h game time
+// (so 15 min day, 15 min night, with continuous dawn/dusk transitions).
+// All mutations are scene-level (sunLight, hemiLight, fog, exposure,
+// background/environment intensity) — no terrain shader is touched, so
+// this is independent of the PBR-chunk fragility we hit in R32.38.x.
+//
+// Time mapping: t01 in [0,1) over the 30-min cycle, mapped to in-game
+// hours [0..24). Sun elevation = sin( (h-6)/24 * 2pi ) so noon is +1
+// (sun overhead) and midnight is -1 (sun directly below). Azimuth slowly
+// rotates so the sun also moves east -> west across the sky over the day.
+//
+// URL params:
+//   ?daynight=off      -> freeze at noon (legacy behavior)
+//   ?daynight=fast     -> 5-min cycle (testing)
+//   ?daynight=slow     -> 60-min cycle (cinematic)
+//   ?daynight=h=NN     -> start at game hour NN (0..24), normal speed
+// ============================================================
+const DayNight = (() => {
+    const params = (() => {
+        try { return new URLSearchParams(window.location.search); }
+        catch(e) { return new URLSearchParams(''); }
+    })();
+    const mode = (params.get('daynight') || '').toLowerCase();
+    const startHourMatch = mode.match(/^h=(\d+(?:\.\d+)?)$/);
+    const startHour = startHourMatch ? Math.max(0, Math.min(24, parseFloat(startHourMatch[1]))) : 8.0;
+    const cycleSeconds = mode === 'off' ? Infinity
+                       : mode === 'fast' ? 300
+                       : mode === 'slow' ? 3600
+                       : 1800; // default 30 minutes
+    // start the cycle so first frame is `startHour` AM
+    const startWallClock = performance.now() * 0.001;
+    const startOffset01 = startHour / 24.0;
+
+    // Color palette (Color.lerp targets). Matches typical sky tones.
+    const palette = {
+        nightSun:   new THREE.Color(0x0a0e1a),  // sun "off"
+        dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
+        noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
+        duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
+        nightHemi:  new THREE.Color(0x1a2235),  // deep cool blue fill
+        dawnHemi:   new THREE.Color(0xb88a78),  // warm peach fill
+        noonHemi:   new THREE.Color(0xc0c8d0),  // pale overcast (current)
+        duskHemi:   new THREE.Color(0x9a6a5a),  // warm dusk fill
+        hemiGround: new THREE.Color(0x4d473b),  // unchanged
+        nightFog:   new THREE.Color(0x0a1024),  // deep night blue
+        dawnFog:    new THREE.Color(0xc89880),  // pink-orange haze
+        noonFog:    new THREE.Color(0xc0c8d0),  // current overcast
+        duskFog:    new THREE.Color(0xa86048),  // warm dusty horizon
+    };
+    const _tmpA = new THREE.Color();
+    const _tmpB = new THREE.Color();
+    function lerpColors(c0, c1, c2, c3, t) {
+        // 4-stop lerp: t in [0..1] maps midnight -> dawn -> noon -> dusk -> midnight
+        // t in [0,0.25): c0->c1; [0.25,0.5): c1->c2; [0.5,0.75): c2->c3; [0.75,1): c3->c0
+        let seg, k, a, b;
+        if (t < 0.25)      { seg = 0; k = t * 4;          a = c0; b = c1; }
+        else if (t < 0.50) { seg = 1; k = (t - 0.25) * 4; a = c1; b = c2; }
+        else if (t < 0.75) { seg = 2; k = (t - 0.50) * 4; a = c2; b = c3; }
+        else               { seg = 3; k = (t - 0.75) * 4; a = c3; b = c0; }
+        _tmpA.copy(a).lerp(b, k);
+        return _tmpA;
+    }
+
+    let lastHour = -1;
+    let _frozen01 = null; // when 'off', freeze at noon
+
+    function update() {
+        if (cycleSeconds === Infinity) {
+            // Frozen mode — once-only set to noon palette and bail.
+            if (_frozen01 === null) {
+                _frozen01 = 0.5; // noon
+                _apply(_frozen01);
+            }
+            return;
+        }
+        const wall = performance.now() * 0.001 - startWallClock;
+        const t01 = ((wall / cycleSeconds) + startOffset01) % 1.0;
+        _apply(t01);
+    }
+
+    function _apply(t01) {
+        // Sun elevation: sin curve, peak at t01=0.5 (noon), trough at t01=0.0 (midnight).
+        // We offset so t01=0 = midnight. Equivalent to: e = sin( (t01 - 0.25) * 2pi )
+        const elevRad = Math.sin((t01 - 0.25) * Math.PI * 2);  // [-1, +1]
+        // Azimuth slowly rotates east->west across the day; at noon it's overhead;
+        // for ?(simple) we just rotate full 360 over 24h:
+        const azimRad = (t01 + 0.25) * Math.PI * 2;  // 0 at dawn (east), pi at dusk (west)
+        // Build sphere coords. Three.js `sunPos` is a unit vector with up = Y.
+        // elevation 1.0 -> +Y; elevation -1.0 -> -Y. azimuth rotates around Y.
+        const r = Math.sqrt(Math.max(0.0, 1 - elevRad * elevRad));
+        sunPos.set(Math.cos(azimRad) * r, elevRad, Math.sin(azimRad) * r);
+
+        // Brightness curve: full at noon, zero at horizon and below.
+        // Smooth night transition over 30deg below horizon so dusk fades gracefully.
+        const dayMix = Math.max(0, Math.min(1, (elevRad + 0.05) / 0.40));   // 0 below -3deg, 1 above +20deg
+        const dawnDuskMix = Math.max(0, 1 - Math.abs(elevRad) / 0.30);     // 1 near horizon, 0 high
+
+        // Lerp sun color across a 4-stop palette tied to t01.
+        const sunCol = lerpColors(palette.nightSun, palette.dawnSun, palette.noonSun, palette.duskSun, t01);
+        if (typeof sunLight !== 'undefined' && sunLight) {
+            sunLight.color.copy(sunCol);
+            // Sun intensity: 1.8 at noon, 0.0 below horizon
+            sunLight.intensity = 1.8 * dayMix;
+            sunLight.castShadow = sunLight.intensity > 0.05;
+        }
+
+        // Hemisphere fill — softer cool blue at night, warm at dawn/dusk, neutral at noon.
+        const hemiCol = lerpColors(palette.nightHemi, palette.dawnHemi, palette.noonHemi, palette.duskHemi, t01);
+        if (typeof hemiLight !== 'undefined' && hemiLight) {
+            hemiLight.color.copy(hemiCol);
+            hemiLight.groundColor.copy(palette.hemiGround);
+            // Hemi at noon = 1.5 (current); nightfall = 0.35 (still readable)
+            hemiLight.intensity = 0.35 + 1.15 * dayMix;
+        }
+
+        // Fog — match horizon color so distant terrain blends into sky.
+        const fogCol = lerpColors(palette.nightFog, palette.dawnFog, palette.noonFog, palette.duskFog, t01);
+        if (typeof scene !== 'undefined' && scene.fog) {
+            scene.fog.color.copy(fogCol);
+        }
+        // Sky background tint multiplier — lower at night so HDRI doesn't dominate.
+        if (typeof scene !== 'undefined') {
+            const wantBg = 0.10 + 0.45 * dayMix;
+            if (scene.backgroundIntensity !== undefined) scene.backgroundIntensity = wantBg;
+            const wantEnv = 0.30 + 1.15 * dayMix;
+            if (scene.environmentIntensity !== undefined) scene.environmentIntensity = wantEnv;
+        }
+        // Tone-mapping exposure — slightly down at night so contrast holds.
+        if (typeof renderer !== 'undefined' && renderer) {
+            renderer.toneMappingExposure = 0.55 + 0.60 * dayMix;
+        }
+
+        // Update HUD clock chip (created in index.html).
+        const h = Math.floor(t01 * 24);
+        const m = Math.floor(((t01 * 24) - h) * 60);
+        if (h !== lastHour) {
+            lastHour = h;
+        }
+        if (typeof window !== 'undefined' && window.__tribesSetGameClock) {
+            const ampm = (h % 24) < 12 ? 'AM' : 'PM';
+            const hh = ((h % 12) === 0) ? 12 : (h % 12);
+            const mm = (m < 10 ? '0' : '') + m;
+            window.__tribesSetGameClock(`${hh}:${mm} ${ampm}`);
+        }
+    }
+
+    return { update, _apply };
+})();
+try { window.DayNight = DayNight; } catch(e) {}
+
 // R30.2: build a PMREM environment from the Sky shader so PBR materials
 // (MeshStandardMaterial used for buildings, soldiers, weapons, terrain)
 // receive proper image-based ambient lighting instead of looking flat or
@@ -3403,6 +3554,9 @@ function loop() {
     }
     const t = performance.now() * 0.001;
     Module._tick();
+    // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
+    // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
+    try { DayNight.update(); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
     syncProjectiles();
     syncFlags(t);
