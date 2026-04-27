@@ -4222,86 +4222,122 @@ function updateGrassWind(t) {
 // Escape: ?dust=off skips the entire system.
 // ============================================================
 
+// R32.36-manus: COMPLETE REWRITE — the camera-ring dust cloud is gone, replaced
+// with sparse, map-wide RAINBOW FAIRIES that scurry above the ground. User
+// feedback after R32.35.2 was decisive: pink-everything still read as a static
+// cloud, with patchy bare zones beyond the ring; what they actually wanted was
+// "like fairies above the ground that are scurrying" — i.e. SPARSE,
+// INDIVIDUAL, IN MOTION, MAP-WIDE.
+//
+// Architecture:
+//   - Total fairies: 8k mid / 16k high / 32k ultra. SPARSE on purpose so each
+//     reads as an individual moving point, not a cloud.
+//   - SPAWNED ACROSS THE ENTIRE PLAYABLE MAP at init (not camera-anchored).
+//     Each fairy gets a HOME position somewhere on the map; it scurries within
+//     a ~6m radius of home, then occasionally re-anchors to a new home if the
+//     camera moves far away (so we always have fairies near the player).
+//   - Each fairy carries a HUE in [0,1] for full rainbow distribution.
+//   - SCURRY behavior: each fairy holds a current target position (within home
+//     radius) and lerps toward it; when it reaches the target it picks a new
+//     one. Speeds vary 0.4-1.5 m/s. The lerp is per-frame on CPU — cheap with
+//     8k fairies, ~0.2 ms.
+//   - Rendered as bright additive points with a soft halo so each fairy reads
+//     as a glowing dot in space, not a flat speck.
+//
+// Escape: ?dust=off skips the entire system.
 let _dustPoints = null;
-let _dustState = null;   // { N, RING_RADIUS, recycleCursor, basePosAttr, sizeAttr, colorAttr }
+let _dustState = null;
 
 function initDustLayer() {
     if (typeof location !== 'undefined' && /[?&]dust=off\b/.test(location.search)) {
-        console.log('[R32.35] Dust layer disabled via ?dust=off');
+        console.log('[R32.36] Fairy layer disabled via ?dust=off');
         return;
     }
-    if (!_splatData || !_splatData.splatAttr || !_splatData.size) {
-        console.warn('[R32.35] initDustLayer aborted: _splatData not ready', _splatData);
+    if (_htSize < 2) {
+        console.warn('[R32.36] initDustLayer aborted: heightmap not ready');
         return;
     }
-    // R32.35.2-manus: per user feedback ("when I fly I can see areas of the
-    // map that don't have dust") the 80m ring was too small — flying outpaced
-    // the recycle and looking down from altitude exposed bare ground beyond
-    // the ring. Expanded to 200m. Density bumped to keep coverage
-    // proportionate (mid 250k -> 600k); recycle budget back to 20k/frame so
-    // jet-speed travel doesn't outrun the ring.
     const tier = (window.__qualityTier || 'mid');
-    const N = (tier === 'ultra') ? 2400000 : (tier === 'high') ? 1200000 : (tier === 'mid') ? 600000 : (tier === 'low') ? 0 : 600000;
+    const N = (tier === 'ultra') ? 32000 : (tier === 'high') ? 16000 : (tier === 'mid') ? 8000 : (tier === 'low') ? 0 : 8000;
     if (N === 0) {
-        console.log('[R32.35] Dust layer skipped on low tier');
+        console.log('[R32.36] Fairy layer skipped on low tier');
         return;
     }
-    // R32.35.2-manus: 80 -> 200 m so flying / looking-down doesn't expose bare ground.
-    const RING_RADIUS = 200.0;
 
-    const positions = new Float32Array(N * 3);
-    const colors    = new Float32Array(N * 3);
-    const sizes     = new Float32Array(N);
-    const phases    = new Float32Array(N); // per-particle phase for bob/drift
-
+    // Map extents — spawn fairies across the whole playable area.
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
-    const splat = _splatData.splatAttr;
-    const splatN = _splatData.size;
+
+    // GPU attributes
+    const positions = new Float32Array(N * 3);  // current world position (CPU updates per-frame)
+    const colors    = new Float32Array(N * 3);  // rainbow rgb per fairy
+    const sizes     = new Float32Array(N);      // base pixel size per fairy
+    const phases    = new Float32Array(N);      // 0..2π used for shimmer in shader
+
+    // CPU-side per-fairy state (parallel arrays, plain Float32Array for cache)
+    const homeX     = new Float32Array(N);
+    const homeZ     = new Float32Array(N);
+    const targetX   = new Float32Array(N);
+    const targetZ   = new Float32Array(N);
+    const speed     = new Float32Array(N);  // m/s scurry speed
+    const hoverY    = new Float32Array(N);  // sustained hover height above ground
+    const homeRadius = new Float32Array(N); // radius around home it scurries within
+
+    // HSL -> RGB helper (h in [0,1], s,l in [0,1])
+    function hsl2rgb(h, s, l) {
+        const c = (1 - Math.abs(2 * l - 1)) * s;
+        const x = c * (1 - Math.abs(((h * 6) % 2) - 1));
+        const m = l - c / 2;
+        let r1 = 0, g1 = 0, b1 = 0;
+        if (h < 1/6)      { r1 = c; g1 = x; b1 = 0; }
+        else if (h < 2/6) { r1 = x; g1 = c; b1 = 0; }
+        else if (h < 3/6) { r1 = 0; g1 = c; b1 = x; }
+        else if (h < 4/6) { r1 = 0; g1 = x; b1 = c; }
+        else if (h < 5/6) { r1 = x; g1 = 0; b1 = c; }
+        else              { r1 = c; g1 = 0; b1 = x; }
+        return [r1 + m, g1 + m, b1 + m];
+    }
 
     for (let i = 0; i < N; i++) {
-        // Camera-biased radial distribution: r = R * rand^2 packs more
-        // particles close to the camera (from R32.32.3 lesson).
-        const angle = Math.random() * Math.PI * 2;
-        const u01 = Math.random();
-        const r = (u01 * u01) * RING_RADIUS;
-        const wx = Math.cos(angle) * r;
-        const wz = Math.sin(angle) * r;
+        // Home anywhere across the map (uniform). Inset by 8% so fairies never
+        // spawn right at the edge.
+        const inset = 0.08;
+        const wx = (Math.random() * (1 - 2 * inset) + inset - 0.5) * span;
+        const wz = (Math.random() * (1 - 2 * inset) + inset - 0.5) * span;
+        homeX[i] = wx;
+        homeZ[i] = wz;
+
+        // Each fairy hovers 0.4 - 1.8 m above ground (so they're visible from
+        // above when flying — not glued to the surface where they'd be hidden).
+        hoverY[i] = 0.4 + Math.random() * 1.4;
+
+        // Scurry within 4 - 9 m of home
+        homeRadius[i] = 4.0 + Math.random() * 5.0;
+
+        // Speed 0.4 - 1.5 m/s
+        speed[i] = 0.4 + Math.random() * 1.1;
+
+        // First target: a point inside the home circle
+        const a0 = Math.random() * Math.PI * 2;
+        const r0 = Math.sqrt(Math.random()) * homeRadius[i];
+        targetX[i] = homeX[i] + Math.cos(a0) * r0;
+        targetZ[i] = homeZ[i] + Math.sin(a0) * r0;
+
+        // Initial position: at the home, then snap up to terrain + hover
         const groundY = sampleTerrainH(wx, wz);
-        // Hover offset: 5-30 cm above ground
-        const hover = 0.05 + Math.random() * 0.25;
-        const wy = groundY + hover;
         positions[i * 3 + 0] = wx;
-        positions[i * 3 + 1] = wy;
+        positions[i * 3 + 1] = groundY + hoverY[i];
         positions[i * 3 + 2] = wz;
 
-        // R32.35.2-manus: PINK DIAGNOSTIC MODE per user request "make the
-        // particles pink so I can see them". Splat-tinted color logic kept
-        // intact below (commented) so we can flip back trivially once the
-        // calibration round is done. Hot pink with ±15% per-particle
-        // brightness jitter so the field still has visual variation.
-        const jitter = 0.85 + Math.random() * 0.30;
-        colors[i * 3 + 0] = Math.min(1.0, 1.00 * jitter); // R: full
-        colors[i * 3 + 1] = Math.min(1.0, 0.30 * jitter); // G: low
-        colors[i * 3 + 2] = Math.min(1.0, 0.65 * jitter); // B: medium
-        // // R32.35 splat-tinted color (paused for diagnostic):
-        // const u = (wx + half) / (span > 0 ? span : 1);
-        // const v = (wz + half) / (span > 0 ? span : 1);
-        // const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
-        // const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
-        // const si = (sy * splatN + sx) * 4;
-        // const wG = splat[si + 0] || 0;
-        // const wR = splat[si + 1] || 0;
-        // const wD = splat[si + 2] || 0;
-        // const wS = splat[si + 3] || 0;
-        // const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
-        // const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
-        // const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
+        // Rainbow hue, fully saturated, bright enough to glow
+        const hue = i / N + Math.random() * 0.05; // spread across full spectrum + jitter
+        const rgb = hsl2rgb(hue % 1.0, 1.0, 0.62);
+        colors[i * 3 + 0] = rgb[0];
+        colors[i * 3 + 1] = rgb[1];
+        colors[i * 3 + 2] = rgb[2];
 
-        // R32.35.1-manus: size 4-9 px -> 2-5 px (smaller specks, less overdraw)
-        sizes[i] = 2.0 + Math.random() * 3.0;
-
-        // Phase: 0..2π for per-particle bob
+        // Base size 8-14 px so each fairy reads as a clearly visible glowing dot
+        sizes[i] = 8.0 + Math.random() * 6.0;
         phases[i] = Math.random() * 6.2831853;
     }
 
@@ -4310,35 +4346,32 @@ function initDustLayer() {
     geom.setAttribute('aColor',   new THREE.BufferAttribute(colors, 3));
     geom.setAttribute('aSize',    new THREE.BufferAttribute(sizes, 1));
     geom.setAttribute('aPhase',   new THREE.BufferAttribute(phases, 1));
-    // Bound a generous bounding sphere so frustum culling doesn't kill the cloud
-    geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 50, 0), 200);
+    // Bound across entire map so culling never drops fairies behind us when we look up.
+    geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), span);
 
     const mat = new THREE.ShaderMaterial({
         uniforms: {
             uTime:     { value: 0.0 },
-            uWindDir:  { value: new THREE.Vector2(0.8, 0.6) },
-            uOpacity:  { value: 0.30 }, // R32.35.1: 0.55 -> 0.30 to read as specks not cloud
-            uPxScale:  { value: window.innerHeight * 0.5 }, // for sizeAttenuation-style sizing
+            uOpacity:  { value: 0.95 },
+            uPxScale:  { value: window.innerHeight * 0.5 },
         },
         vertexShader: `
             attribute vec3 aColor;
             attribute float aSize;
             attribute float aPhase;
             uniform float uTime;
-            uniform vec2  uWindDir;
             uniform float uPxScale;
             varying vec3  vColor;
+            varying float vBrightness;
             void main() {
-                // Per-particle slow bob: ±5 cm vertical, ±3 cm horizontal in wind dir
-                vec3 p = position;
-                float t = uTime + aPhase;
-                p.y += sin(t * 0.9) * 0.05;
-                p.x += uWindDir.x * sin(t * 0.6) * 0.03;
-                p.z += uWindDir.y * sin(t * 0.6 + 1.7) * 0.03;
-                vec4 mv = modelViewMatrix * vec4(p, 1.0);
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mv;
-                // Distance-attenuated size (closer = larger)
-                gl_PointSize = aSize * (uPxScale / max(1.0, -mv.z));
+                // Distance-attenuated size, but capped so distant fairies stay
+                // visible as small bright dots (don't shrink to 0).
+                float dist = max(1.0, -mv.z);
+                gl_PointSize = max(2.0, aSize * (uPxScale / dist));
+                // Per-fairy twinkle 0.65..1.0 brightness
+                vBrightness = 0.825 + 0.175 * sin(uTime * 2.5 + aPhase);
                 vColor = aColor;
             }
         `,
@@ -4346,84 +4379,119 @@ function initDustLayer() {
             precision mediump float;
             uniform float uOpacity;
             varying vec3 vColor;
+            varying float vBrightness;
             void main() {
-                // Round soft particle shape
+                // Glowing fairy: bright core + soft halo
                 vec2 uv = gl_PointCoord - 0.5;
-                float d = dot(uv, uv);
-                if (d > 0.25) discard;
-                float a = smoothstep(0.25, 0.05, d);
-                gl_FragColor = vec4(vColor, a * uOpacity);
+                float d2 = dot(uv, uv);
+                if (d2 > 0.25) discard;
+                float core = smoothstep(0.05, 0.0, d2);  // bright center
+                float halo = smoothstep(0.25, 0.0, d2);  // soft outer
+                vec3 col = vColor * vBrightness * (0.6 + core * 0.8);
+                gl_FragColor = vec4(col, halo * uOpacity);
             }
         `,
         transparent: true,
         depthWrite: false,
-        blending: THREE.NormalBlending,
+        blending: THREE.AdditiveBlending,
     });
 
     _dustPoints = new THREE.Points(geom, mat);
     _dustPoints.frustumCulled = false;
-    _dustState = { N: N, RING_RADIUS: RING_RADIUS, recycleCursor: 0 };
+    _dustState = {
+        N, span, half,
+        homeX, homeZ, targetX, targetZ, speed, hoverY, homeRadius,
+        // R32.36: track camera so we can lazily "re-home" fairies that are very
+        // far from the player (keeps the close-field populated as you traverse).
+        rehomeRadius: 600.0, // metres from camera before a fairy gets re-anchored nearby
+        rehomeBudget: 200,   // fairies re-homed per frame, max
+        rehomeCursor: 0,
+        lastT: -1,
+    };
     scene.add(_dustPoints);
-    console.log('[R32.35] Dust layer placed:', N, 'particles in', RING_RADIUS, 'm camera-local ring');
+    console.log('[R32.36] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
 }
 
 function updateDustLayer(t) {
     if (!_dustPoints || !_dustState) return;
-    if (_dustPoints.material && _dustPoints.material.uniforms) {
-        _dustPoints.material.uniforms.uTime.value = t;
+    const mat = _dustPoints.material;
+    if (mat && mat.uniforms && mat.uniforms.uTime) {
+        mat.uniforms.uTime.value = t;
     }
     if (!camera) return;
+
+    const st = _dustState;
+    const N = st.N;
+    const dt = (st.lastT < 0) ? 0.016 : Math.max(0.001, Math.min(0.1, t - st.lastT));
+    st.lastT = t;
+
     const camX = camera.position.x;
     const camZ = camera.position.z;
-    const N = _dustState.N;
-    const RING_RADIUS = _dustState.RING_RADIUS;
-    const RING_R2 = RING_RADIUS * RING_RADIUS;
-    // R32.35.2-manus: recycle bumped back 5k -> 20k/frame so jet-speed flight
-    // doesn't outrun the ring (user reported bare-ground gaps when flying).
-    // At mid (600k) this is ~3.3% of pool/frame, full recycle in ~30 frames.
-    const RECYCLE_PER_FRAME = Math.min(20000, Math.max(2000, Math.floor(N * 0.033)));
-    const span = (_htSize - 1) * _htScale;
-    const half = span * 0.5;
-    const splat = _splatData.splatAttr;
-    const splatN = _splatData.size;
 
     const posAttr = _dustPoints.geometry.attributes.position;
-    const colAttr = _dustPoints.geometry.attributes.aColor;
     const positions = posAttr.array;
-    const colors    = colAttr.array;
 
-    let cursor = _dustState.recycleCursor;
-    let touched = 0;
-    let updatedColors = false;
-    for (let k = 0; k < RECYCLE_PER_FRAME; k++) {
-        const i = (cursor + k) % N;
+    // Per-frame scurry: lerp each fairy toward its target; if close, pick a
+    // new target inside its home circle. Y stays at terrainHeight + hoverY.
+    for (let i = 0; i < N; i++) {
         const px = positions[i * 3 + 0];
         const pz = positions[i * 3 + 2];
-        const dx = px - camX, dz = pz - camZ;
-        if (dx * dx + dz * dz <= RING_R2) continue; // still in range
-        // Recycle: re-place inside the ring around the new camera
-        const angle = Math.random() * Math.PI * 2;
-        const u01 = Math.random();
-        const r = (u01 * u01) * RING_RADIUS;
-        const wx = camX + Math.cos(angle) * r;
-        const wz = camZ + Math.sin(angle) * r;
-        const groundY = sampleTerrainH(wx, wz);
-        const hover = 0.05 + Math.random() * 0.25;
-        const wy = groundY + hover;
-        positions[i * 3 + 0] = wx;
-        positions[i * 3 + 1] = wy;
-        positions[i * 3 + 2] = wz;
-        // R32.35.2-manus: pink diagnostic color (matches init path).
-        const jitter = 0.85 + Math.random() * 0.30;
-        colors[i * 3 + 0] = Math.min(1.0, 1.00 * jitter);
-        colors[i * 3 + 1] = Math.min(1.0, 0.30 * jitter);
-        colors[i * 3 + 2] = Math.min(1.0, 0.65 * jitter);
-        touched++;
-        updatedColors = true;
+        const tx = st.targetX[i];
+        const tz = st.targetZ[i];
+        const dx = tx - px;
+        const dz = tz - pz;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        const step = st.speed[i] * dt;
+        let nx, nz;
+        if (dist <= step + 0.01) {
+            // Reached target — snap and pick a new one inside the home circle.
+            nx = tx; nz = tz;
+            const ang = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * st.homeRadius[i];
+            st.targetX[i] = st.homeX[i] + Math.cos(ang) * r;
+            st.targetZ[i] = st.homeZ[i] + Math.sin(ang) * r;
+        } else {
+            const inv = 1.0 / dist;
+            nx = px + dx * inv * step;
+            nz = pz + dz * inv * step;
+        }
+        positions[i * 3 + 0] = nx;
+        positions[i * 3 + 2] = nz;
+        positions[i * 3 + 1] = sampleTerrainH(nx, nz) + st.hoverY[i];
     }
-    if (touched > 0) {
-        posAttr.needsUpdate = true;
-        if (updatedColors) colAttr.needsUpdate = true;
+
+    // Re-home far fairies into a band around the player so the close field
+    // never empties. Amortized: a few hundred per frame, cycling through.
+    const RR = st.rehomeRadius;
+    const RR2 = RR * RR;
+    const REH = st.rehomeBudget;
+    let cur = st.rehomeCursor;
+    for (let k = 0; k < REH; k++) {
+        const i = (cur + k) % N;
+        const dxh = st.homeX[i] - camX;
+        const dzh = st.homeZ[i] - camZ;
+        if (dxh * dxh + dzh * dzh <= RR2) continue;
+        // Re-anchor home into a 80-450 m band around the camera (so fairies
+        // appear at varied middle distances, not crammed at feet).
+        const ang = Math.random() * Math.PI * 2;
+        const r = 80.0 + Math.random() * 370.0;
+        const nhx = camX + Math.cos(ang) * r;
+        const nhz = camZ + Math.sin(ang) * r;
+        // Clamp inside map bounds
+        const lim = st.half * 0.92;
+        st.homeX[i] = Math.max(-lim, Math.min(lim, nhx));
+        st.homeZ[i] = Math.max(-lim, Math.min(lim, nhz));
+        // Snap fairy and target to new home immediately so we don't see it
+        // teleport across the map.
+        const ang2 = Math.random() * Math.PI * 2;
+        const r2 = Math.sqrt(Math.random()) * st.homeRadius[i];
+        st.targetX[i] = st.homeX[i] + Math.cos(ang2) * r2;
+        st.targetZ[i] = st.homeZ[i] + Math.sin(ang2) * r2;
+        positions[i * 3 + 0] = st.homeX[i];
+        positions[i * 3 + 2] = st.homeZ[i];
+        positions[i * 3 + 1] = sampleTerrainH(st.homeX[i], st.homeZ[i]) + st.hoverY[i];
     }
-    _dustState.recycleCursor = (cursor + RECYCLE_PER_FRAME) % N;
+    st.rehomeCursor = (cur + REH) % N;
+
+    posAttr.needsUpdate = true;
 }

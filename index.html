@@ -678,7 +678,35 @@
   <!-- R32.34.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.35.2</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.36</div>
+  <!-- R32.36-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
+  <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
+  <script>
+    // Simple, lightweight FPS counter. Samples last ~30 frames at any time and
+    // updates the chip 4 times per second so the number doesn't strobe.
+    (function() {
+      var times = [];
+      var chip = document.getElementById('fps-chip');
+      function tick(now) {
+        times.push(now);
+        // Keep last second of timestamps
+        while (times.length > 0 && times[0] < now - 1000) times.shift();
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      setInterval(function() {
+        if (!chip) return;
+        var n = times.length;
+        if (n < 2) { chip.textContent = '-- fps'; return; }
+        var span = (times[n - 1] - times[0]) / 1000;
+        var fps = span > 0 ? Math.round((n - 1) / span) : 0;
+        chip.textContent = fps + ' fps';
+        // Color-code: green >=50, amber 30-49, red <30
+        chip.style.color = (fps >= 50) ? '#9DEAA0' : (fps >= 30) ? '#FFD479' : '#FF8A8A';
+        chip.style.borderColor = (fps >= 50) ? 'rgba(157,234,160,0.35)' : (fps >= 30) ? 'rgba(255,212,121,0.35)' : 'rgba(255,138,138,0.35)';
+      }, 250);
+    })();
+  </script>
 
   <!-- In-Game HUD -->
   <div id="hud">
