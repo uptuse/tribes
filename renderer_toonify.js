@@ -66,6 +66,23 @@
         // Skip non-target materials.
         if (!mat || mat.isMeshToonMaterial) return mat;
         if (!mat.isMeshStandardMaterial) return mat;
+        // R32.27.1-manus: SKIP materials that own a custom onBeforeCompile shader
+        // injection. Cloning to MeshToonMaterial drops onBeforeCompile, all custom
+        // uniforms, and all custom vertex/fragment shader rewrites — which silently
+        // demotes specialized materials (e.g. terrain's stochastic 5-tile splat
+        // blend, grass's wind sway) to a flat single-texture render. Symptom: the
+        // entire terrain became a uniform billiard-table green tile from R32.26
+        // onward because the splat shader was lost. Detection: presence of a real
+        // onBeforeCompile function (not the default no-op), OR userData.tiles which
+        // every shader-injected material carries by convention. Skipped materials
+        // stay PBR; this gives a Ghibli-movie aesthetic (painted backgrounds,
+        // toon-banded characters) which is exactly what we want for mood (A).
+        const hasShaderInjection = (
+            (typeof mat.onBeforeCompile === 'function' && mat.onBeforeCompile.length > 0) ||
+            (mat.userData && mat.userData.tiles) ||
+            (mat.userData && mat.userData.shader)
+        );
+        if (hasShaderInjection) return mat;
 
         // Build the toon equivalent.
         const toon = new THREE.MeshToonMaterial({
