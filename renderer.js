@@ -1398,7 +1398,31 @@ async function initBuildings() {
     // R32.3: load canonical classifier. If it fails (e.g. offline), we fall
     // back to the legacy createBuildingMesh path so the map still renders.
     const classifier = await _loadCanonicalClassifier();
-    let canonicalCount = 0, fallbackCount = 0;
+
+    // R32.51: Load interior shape positions so we can skip procedural boxes
+    // that overlap with real .dig geometry (prevents z-fighting flicker).
+    const _interiorPositions = [];
+    try {
+        const cRes = await fetch('assets/maps/raindance/canonical.json');
+        if (cRes.ok) {
+            const cData = await cRes.json();
+            const toW = (mp) => ({ x: mp[0], y: mp[2], z: -mp[1] });
+            for (const s of (cData.neutral_interior_shapes || [])) {
+                const w = toW(s.position);
+                _interiorPositions.push(w);
+            }
+        }
+    } catch (_) {}
+    function _overlapsInteriorShape(px, py, pz) {
+        const r2 = 6.0 * 6.0; // 6m match radius — generous for float drift
+        for (const ip of _interiorPositions) {
+            const dx = ip.x - px, dy = ip.y - py, dz = ip.z - pz;
+            if (dx * dx + dy * dy + dz * dz < r2) return true;
+        }
+        return false;
+    }
+
+    let canonicalCount = 0, fallbackCount = 0, skippedInterior = 0;
 
     for (let b = 0; b < count; b++) {
         const o = b * stride;
@@ -1407,6 +1431,12 @@ async function initBuildings() {
         const type = view[o + 6];
         const isRock = (type === 5);
         if (isRock) continue;
+
+        // R32.51: Skip WASM buildings that overlap with real interior shapes.
+        // The .dig meshes from initInteriorShapes() are the real geometry;
+        // procedural boxes here would z-fight with them.
+        if (_overlapsInteriorShape(px, py, pz)) { skippedInterior++; continue; }
+
         const cr = view[o + 10], cg = view[o + 11], cb = view[o + 12];
 
         // Try canonical classification first. Match radius 4m is generous
@@ -1435,7 +1465,7 @@ async function initBuildings() {
         buildingMeshes.push({ mesh, type });
     }
     console.log('[R32.3] Buildings classified:', canonicalCount, 'canonical /',
-        fallbackCount, 'legacy fallback (total ' + buildingMeshes.length + ')');
+        fallbackCount, 'legacy fallback /', skippedInterior, 'skipped (interior shape overlap) — total', buildingMeshes.length);
 }
 
 // ============================================================
