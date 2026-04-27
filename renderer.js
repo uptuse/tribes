@@ -257,7 +257,7 @@ function initRenderer() {
     renderer.setPixelRatio(tier.pixelRatio);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 0.8;  // R31.1: 1.0→0.8 (set again in initScene)
+    renderer.toneMappingExposure = 1.0;  // R32.37.5: 0.8 -> 1.0 brightness bump (also set in initScene)
     renderer.shadowMap.enabled = tier.shadowMap > 0;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     canvas.style.visibility = 'visible';
@@ -339,9 +339,9 @@ function loadHDRISky() {
             // Environment intensity bumped 1.0→1.25 to lift PBR fill on the
             // armor + props without over-brightening the sky dome.
             scene.backgroundIntensity = 0.55;       // was 0.45 — slightly less dim
-            scene.environmentIntensity = 1.25;      // was 1.0 — lift PBR fill
-            if (renderer) renderer.toneMappingExposure = 0.95;  // was 0.6
-            console.log('[R32.11.2] HDRI sky loaded — exposure 0.95, bg 0.55, env 1.25');
+            scene.environmentIntensity = 1.45;      // R32.37.5: 1.25 -> 1.45 lift PBR fill more
+            if (renderer) renderer.toneMappingExposure = 1.15;  // R32.37.5: 0.95 -> 1.15 brighter
+            console.log('[R32.37.5] HDRI sky loaded — exposure 1.15, bg 0.55, env 1.45');
         },
         undefined,  // progress not needed
         (err) => {
@@ -379,16 +379,20 @@ function initLights() {
 
     if (renderer) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.toneMappingExposure = 0.8;
+        // R32.37.5-manus: exposure 0.8 -> 1.0 to brighten the scene per user.
+        renderer.toneMappingExposure = 1.0;
         renderer.outputColorSpace = THREE.SRGBColorSpace;
     }
 
-    // R32.0: Raindance.MIS canonical lighting — ambient 0.4 gray + warm ground
-    hemiLight = new THREE.HemisphereLight(0xC0C8D0, 0x4D473B, 1.0);
+    // R32.37.5-manus: scene brightness bump per user ("its too dark").
+    // Hemisphere fill 1.0 -> 1.5 (lifts shadowed undersides without crushing color).
+    // Sun directional 1.4 -> 1.8 (brighter primary key light).
+    // Tone-mapping exposure 0.8 -> 1.0 below (toneMapping is set in initRenderer).
+    hemiLight = new THREE.HemisphereLight(0xC0C8D0, 0x4D473B, 1.5);
     scene.add(hemiLight);
 
-    // R32.0: Sun — azimuth -90°, incidence 54°, intensity 0.6 per .MIS
-    sunLight = new THREE.DirectionalLight(0x999999, 1.4); // 0.6*1.4 ≈ 0.84 effective
+    // R32.0: Sun — azimuth -90°, incidence 54°. R32.37.5: intensity 1.4 -> 1.8.
+    sunLight = new THREE.DirectionalLight(0x999999, 1.8);
     sunLight.castShadow = tier.shadowMap > 0;
     if (tier.shadowMap > 0) {
         sunLight.shadow.mapSize.set(tier.shadowMap, tier.shadowMap);
