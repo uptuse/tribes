@@ -4257,8 +4257,11 @@ function initDustLayer() {
         console.warn('[R32.36] initDustLayer aborted: heightmap not ready');
         return;
     }
+    // R32.36.1-manus: dots are 90% smaller per user feedback ("too big ...
+    // need to be scaled down 90% ... probably need more"). 4× the count to
+    // compensate so the world stays populated.
     const tier = (window.__qualityTier || 'mid');
-    const N = (tier === 'ultra') ? 32000 : (tier === 'high') ? 16000 : (tier === 'mid') ? 8000 : (tier === 'low') ? 0 : 8000;
+    const N = (tier === 'ultra') ? 128000 : (tier === 'high') ? 64000 : (tier === 'mid') ? 32000 : (tier === 'low') ? 0 : 32000;
     if (N === 0) {
         console.log('[R32.36] Fairy layer skipped on low tier');
         return;
@@ -4336,8 +4339,10 @@ function initDustLayer() {
         colors[i * 3 + 1] = rgb[1];
         colors[i * 3 + 2] = rgb[2];
 
-        // Base size 8-14 px so each fairy reads as a clearly visible glowing dot
-        sizes[i] = 8.0 + Math.random() * 6.0;
+        // R32.36.1-manus: 8-14 px -> 1-3 px (90% smaller). Each fairy now
+        // reads as a tiny scurrying dot, not a blooming glow that merges
+        // with neighbours into a haze.
+        sizes[i] = 1.0 + Math.random() * 2.0;
         phases[i] = Math.random() * 6.2831853;
     }
 
@@ -4349,10 +4354,14 @@ function initDustLayer() {
     // Bound across entire map so culling never drops fairies behind us when we look up.
     geom.boundingSphere = new THREE.Sphere(new THREE.Vector3(0, 0, 0), span);
 
+    // R32.36.1-manus: switch from AdditiveBlending -> NormalBlending so dense
+    // far-distance clusters don't blow out into a pastel rainbow haze on the
+    // horizon. Tighter halo so each dot stays distinct. Distance fade so
+    // very far fairies fade gracefully instead of stacking into a smear.
     const mat = new THREE.ShaderMaterial({
         uniforms: {
             uTime:     { value: 0.0 },
-            uOpacity:  { value: 0.95 },
+            uOpacity:  { value: 1.0 },
             uPxScale:  { value: window.innerHeight * 0.5 },
         },
         vertexShader: `
@@ -4363,15 +4372,18 @@ function initDustLayer() {
             uniform float uPxScale;
             varying vec3  vColor;
             varying float vBrightness;
+            varying float vFade;
             void main() {
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mv;
-                // Distance-attenuated size, but capped so distant fairies stay
-                // visible as small bright dots (don't shrink to 0).
                 float dist = max(1.0, -mv.z);
-                gl_PointSize = max(2.0, aSize * (uPxScale / dist));
-                // Per-fairy twinkle 0.65..1.0 brightness
-                vBrightness = 0.825 + 0.175 * sin(uTime * 2.5 + aPhase);
+                // Distance-attenuated size; min 1 px so dots stay visible far away
+                gl_PointSize = max(1.0, aSize * (uPxScale / dist));
+                // R32.36.1: distance opacity fade. Beyond ~250m, fairies fade
+                // out so far-horizon clusters don't pile into a haze band.
+                vFade = 1.0 - smoothstep(120.0, 350.0, dist);
+                // Per-fairy twinkle 0.7..1.0 brightness
+                vBrightness = 0.85 + 0.15 * sin(uTime * 2.5 + aPhase);
                 vColor = aColor;
             }
         `,
@@ -4380,20 +4392,20 @@ function initDustLayer() {
             uniform float uOpacity;
             varying vec3 vColor;
             varying float vBrightness;
+            varying float vFade;
             void main() {
-                // Glowing fairy: bright core + soft halo
                 vec2 uv = gl_PointCoord - 0.5;
                 float d2 = dot(uv, uv);
-                if (d2 > 0.25) discard;
-                float core = smoothstep(0.05, 0.0, d2);  // bright center
-                float halo = smoothstep(0.25, 0.0, d2);  // soft outer
-                vec3 col = vColor * vBrightness * (0.6 + core * 0.8);
-                gl_FragColor = vec4(col, halo * uOpacity);
+                if (d2 > 0.16) discard;       // tighter circular footprint
+                float core = smoothstep(0.04, 0.0, d2);
+                float halo = smoothstep(0.16, 0.0, d2);
+                vec3 col = vColor * vBrightness * (0.7 + core * 0.6);
+                gl_FragColor = vec4(col, halo * uOpacity * vFade);
             }
         `,
         transparent: true,
         depthWrite: false,
-        blending: THREE.AdditiveBlending,
+        blending: THREE.NormalBlending,
     });
 
     _dustPoints = new THREE.Points(geom, mat);
@@ -4409,7 +4421,7 @@ function initDustLayer() {
         lastT: -1,
     };
     scene.add(_dustPoints);
-    console.log('[R32.36] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
+    console.log('[R32.36.1] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
 }
 
 function updateDustLayer(t) {
