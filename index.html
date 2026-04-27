@@ -912,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.6</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.7</div>
     </div>
   </div>
 
@@ -3042,6 +3042,49 @@
         // R22: match_end_horn — same but ascending crescendo→decrescendo
         b=mb(1.50);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220+t*60;var e=t<0.6?(t/0.6):(Math.exp(-(t-0.6)*2.5));var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5)*e*0.35;}
         this.bufs[16]=b;
+
+        // R32.13.7: GLOBAL ANTI-PING PASS. Three previous fixes (R32.13.3, .4,
+        // .6) targeted specific slots and the user STILL hears "ping ping
+        // ping." Stop playing whack-a-mole. Apply a strong one-pole lowpass
+        // to EVERY procedural buffer at construction time — cutoff ~600 Hz,
+        // run twice for ~12 dB/oct rolloff. After this, no procedural slot
+        // can possibly contain a pitched mid/treble component. Match-horns
+        // and bell-chord arpeggio are intentionally excluded since they're
+        // supposed to be musical event stings, not gameplay sounds.
+        var skip={7:1,15:1,16:1};  // flag-capture bell, match-start, match-end
+        for(var s=0;s<this.bufs.length;s++){
+          if(skip[s]||!this.bufs[s])continue;
+          var data=this.bufs[s].getChannelData(0);
+          // Two-pass one-pole LP. k=0.10 -> cutoff ~700 Hz at SR=44100.
+          var acc=0,kk=0.10;
+          for(var ii=0;ii<data.length;ii++){acc+=kk*(data[ii]-acc);data[ii]=acc;}
+          acc=0;
+          for(ii=0;ii<data.length;ii++){acc+=kk*(data[ii]-acc);data[ii]=acc;}
+          // Re-normalize so we don't lose volume from the LP.
+          var peak=0;
+          for(ii=0;ii<data.length;ii++){var av=Math.abs(data[ii]);if(av>peak)peak=av;}
+          if(peak>0.001){var g=0.85/peak;for(ii=0;ii<data.length;ii++)data[ii]*=g;}
+        }
+        console.log('[R32.13.7] global anti-ping LP applied to all procedural slots');
+      },
+
+      // R32.13.7: applies the same anti-ping LP to async-loaded sample slots
+      // (disc_fire, chaingun, disc_impact, ski, lightning_crack, hard_landing,
+      // shazbot). Some of those samples were already designed sub-only, but
+      // we run it anyway to be belt-and-braces.
+      _antiPingLP:function(audioBuf){
+        try{
+          for(var ch=0;ch<audioBuf.numberOfChannels;ch++){
+            var data=audioBuf.getChannelData(ch);
+            var acc=0,kk=0.10;
+            for(var i=0;i<data.length;i++){acc+=kk*(data[i]-acc);data[i]=acc;}
+            acc=0;
+            for(i=0;i<data.length;i++){acc+=kk*(data[i]-acc);data[i]=acc;}
+            var peak=0;
+            for(i=0;i<data.length;i++){var av=Math.abs(data[i]);if(av>peak)peak=av;}
+            if(peak>0.001){var g=0.85/peak;for(i=0;i<data.length;i++)data[i]*=g;}
+          }
+        }catch(e){console.warn('[R32.13.7] _antiPingLP failed:',e);}
       },
 
       // R32.12: load a real audio sample (WAV or MP3) into bufs[slot],
@@ -3054,6 +3097,9 @@
         fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();})
           .then(function(buf){return self.ctx.decodeAudioData(buf);})
           .then(function(audioBuf){
+            // R32.13.7: nuke any high-freq content from sample-loaded slots
+            // EXCEPT slot 19 (shazbot voice) which needs intelligibility.
+            if(slot!==19) self._antiPingLP(audioBuf);
             self.bufs[slot]=audioBuf;
             console.log('[R32.12] loaded sample slot '+slot+' from '+url+' ('+audioBuf.duration.toFixed(2)+'s)');
             if(onDone)onDone();

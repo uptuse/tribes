@@ -922,9 +922,12 @@ function _flashScreen(rgba, durMs) {
 }
 
 function _playFlagSting(eventType) {
-    // R32.13.5: diagnostic logging + runtime kill switch.
-    // Disable from console: window._flagStingMuted = true;
-    try { console.log('%c[FLAG-STING] '+eventType+' (renderer_polish triangle osc — 880/1320/1760Hz)', 'color:#ff9e9e;font-weight:bold'); } catch(_e){}
+    // R32.13.7: PERMANENTLY DISABLED. These were 880/1320/1760 Hz triangle
+    // oscillators — textbook pings. AE has its own flag pickup/capture sounds
+    // (slots 6 & 7) that handle this event. The renderer_polish duplicate was
+    // a leftover from R32.7.
+    return;
+    // (legacy code below; kept for diagnostic toggle if ever needed)
     if (typeof window !== 'undefined' && window._flagStingMuted) return;
     if (!_audioCtx) {
         try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
