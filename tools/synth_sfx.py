@@ -193,3 +193,66 @@ if __name__ == "__main__":
     make_disc_fire()
     make_hard_landing()
     print("Done.")
+
+
+# ---------------------------------------------------------------
+# 5. DISC IMPACT — meaty explosion thump on hit (slot 4)
+# ---------------------------------------------------------------
+# The original procedural slot 4 was 0.15s of pure white-noise — sounded
+# like static when you hit something. Real disc impacts in Tribes are a
+# big subby BOOM with a noise crunch on top.
+def make_disc_impact():
+    dur = 0.65
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    # Sub thump: 60Hz → 30Hz exponential drop, fast attack
+    f0 = 30.0; f_extra = 70.0; tau = 0.05
+    phase = 2 * np.pi * (f0 * t - tau * f_extra * np.exp(-t / tau) + tau * f_extra)
+    sub_env = np.exp(-t * 4.5) * (1 - np.exp(-t * 250.0))
+    sub = np.sin(phase) * sub_env * 0.85
+    # Mid crunch: bandpassed noise (debris/shrapnel)
+    crunch = np.random.normal(0, 1, n)
+    crunch_lp = np.convolve(crunch, np.ones(8)/8, mode='same')
+    crunch_hp = crunch - np.convolve(crunch, np.ones(60)/60, mode='same')
+    crunch_bp = (crunch_lp * 0.4 + crunch_hp * 0.6)
+    crunch_env = np.exp(-t * 7.0) * (1 - np.exp(-t * 300.0))
+    crunch_sig = crunch_bp * crunch_env * 0.55
+    # High sizzle tail (smoke/embers)
+    sizzle = np.random.normal(0, 1, n)
+    sizzle = sizzle - np.convolve(sizzle, np.ones(20)/20, mode='same')
+    sizzle_env = np.exp(-t * 2.5) * (1 - np.exp(-t * 150.0))
+    sizzle_sig = sizzle * sizzle_env * 0.20
+    sig = sub + crunch_sig + sizzle_sig
+    fade_n = int(0.05 * SR)
+    sig[-fade_n:] *= np.linspace(1, 0, fade_n)
+    sig = sig / np.max(np.abs(sig)) * 0.95
+    write_wav(f"{OUT_DIR}/disc_impact.wav", sig)
+
+
+# ---------------------------------------------------------------
+# 6. CHAINGUN — punchy tac-pop (slot 1)
+# ---------------------------------------------------------------
+# Original was 0.04s of decayed white noise (no body). Real chaingun
+# rounds need a sharp pop with bass body so they read at any distance.
+def make_chaingun():
+    dur = 0.10
+    n = int(dur * SR)
+    t = np.arange(n) / SR
+    # Crack: high-passed noise burst
+    crack = np.random.normal(0, 1, n)
+    crack = crack - np.convolve(crack, np.ones(15)/15, mode='same')
+    crack_env = np.exp(-t * 50.0) * (1 - np.exp(-t * 1000.0))
+    crack_sig = crack * crack_env * 0.7
+    # Body: short sub-blip ~80Hz
+    body = np.sin(2 * np.pi * 90 * t) * np.exp(-t * 35) * 0.5
+    sig = crack_sig + body
+    sig = sig / np.max(np.abs(sig)) * 0.92
+    write_wav(f"{OUT_DIR}/chaingun.wav", sig)
+
+
+# Re-run all if invoked directly with --add flag
+if __name__ == "__main__" and len(__import__('sys').argv) > 1 and __import__('sys').argv[1] == '--add':
+    print("Adding R32.12.3 SFX...")
+    make_disc_impact()
+    make_chaingun()
+    print("Done.")

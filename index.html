@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.2</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.3</div>
     </div>
   </div>
 
@@ -2943,21 +2943,30 @@
       loadRealSamples:function(){
         if(this._samplesLoaded)return;
         this._samplesLoaded=true;
-        // Slot 0: disc fire — replace 0.20s procedural whomp
-        this._loadSample(0,'assets/audio/sfx/disc_fire.wav');
-        // Slot 8: lightning crack — replace muffled thunder rumble (rumble
-        // tail still played by renderer_polish._playThunder via its own WebAudio path)
-        this._loadSample(8,'assets/audio/sfx/lightning_crack.wav');
-        // Slot 11: ski rush — replace procedural ski_loop (sounded too much like jet)
-        // After load, restart the ski sound if it's currently playing so it picks up the new buffer.
+        // R32.12.3 SLOT MAP FIX. R32.12 incorrectly clobbered slots 8/12/13
+        // which were already used (generator-explosion / mortar-boom /
+        // hit-confirm-tink). Now uses safe slots 17+ for new samples and
+        // only overwrites slot 0 (disc fire — that one was always
+        // weapon-fire and needed a real sample), slot 1 (chaingun), slot 4
+        // (disc impact — was 0.15s of pure white noise, sounded broken),
+        // slot 11 (ski — procedural sounded like jetpack).
         var self=this;
+        // Slot 0: disc-launcher MUZZLE fire (real bass sweep + plasma + ping)
+        this._loadSample(0,'assets/audio/sfx/disc_fire.wav');
+        // Slot 1: chaingun tac-pop (was 0.04s decayed white noise — too thin)
+        this._loadSample(1,'assets/audio/sfx/chaingun.wav');
+        // Slot 4: disc/projectile IMPACT (was just 0.15s of pure white noise!)
+        this._loadSample(4,'assets/audio/sfx/disc_impact.wav');
+        // Slot 11: ski rush — wide-band air rush (was procedural, too jet-like)
         this._loadSample(11,'assets/audio/sfx/ski_rush.wav',function(){
           if(self.skiNode){self.stopSki();setTimeout(function(){if(self.prevSkiing)self.startSki();},200);}
         });
-        // Slot 12: hard-landing thud (new)
-        this._loadSample(12,'assets/audio/sfx/hard_landing.wav');
-        // Slot 13: "Shazbot!" voice line (new)
-        this._loadSample(13,'assets/audio/voice/shazbot.wav');
+        // Slot 17 (NEW): lightning crack — fired from polish-module after each flash
+        this._loadSample(17,'assets/audio/sfx/lightning_crack.wav');
+        // Slot 18 (NEW): hard-landing thud
+        this._loadSample(18,'assets/audio/sfx/hard_landing.wav');
+        // Slot 19 (NEW): "SHAZBOT!" yelled voice line
+        this._loadSample(19,'assets/audio/voice/shazbot.wav');
       },
       // R32.12: distant-battle ambience layer. Separate <audio> from music.
       startAmbience:function(){
@@ -2992,18 +3001,24 @@
         if(this.ambienceEl)this.ambienceEl.volume=v;
       },
 
-      // R32.12: "Shazbot!" callout. `loud` true = local player triggered (death/big event,
-      // full volume). `loud` false = ambient distant-teammate flavor (low vol, random pan).
+      // R32.12.3: "Shazbot!" callout. `loud` true = local player triggered
+      // (death/hard landing/etc, full volume centered). `loud` false = ambient
+      // distant-teammate flavor (low vol, random pan). Slot 19 holds the
+      // post-processed yelled battle-cry version (R32.12.3 was slot 13).
       playShazbot:function(loud){
-        if(!this.ctx||this.muted||!this.bufs[13])return;
-        var src=this.ctx.createBufferSource();src.buffer=this.bufs[13];
+        if(!this.ctx||this.muted||!this.bufs[19]){
+          console.log('[R32.12.3] shazbot skipped: ctx='+!!this.ctx+' muted='+this.muted+' loaded='+!!this.bufs[19]);
+          return;
+        }
+        var src=this.ctx.createBufferSource();src.buffer=this.bufs[19];
         var g=this.ctx.createGain();
         var p=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
-        if(loud){g.gain.value=0.85;}
-        else{g.gain.value=0.18+Math.random()*0.12;}
+        if(loud){g.gain.value=0.95;}
+        else{g.gain.value=0.30+Math.random()*0.18;}
         if(p){p.pan.value=loud?0:(Math.random()*1.6-0.8);src.connect(g).connect(p).connect(this.uiBus);}
         else{src.connect(g).connect(this.uiBus);}
         src.start();
+        console.log('[R32.12.3] shazbot fired ('+(loud?'loud':'ambient')+', vol='+g.gain.value.toFixed(2)+')');
       },
 
       playAt:function(id,x,y,z){
@@ -3078,28 +3093,26 @@
           this.footTimer-=0.0167;
           if(this.footTimer<=0){this.playUI(9);this.footTimer=interval;}
         }
-        // R32.12: hard-landing thud on air→ground transition with high speed.
-        // We don't have direct vertical velocity exposed from C++, but a sharp
-        // jump in 3D speed combined with a fresh ground-touch is a good proxy:
-        // if the player was airborne, is now on ground, and current speed > 18,
-        // play the hard-landing thud (slot 12) and a slight camera punch via
-        // existing damage-flash absent (don't fire UI hit). Threshold tuned to
-        // skip soft jet-landings while catching genuine impact falls.
+        // R32.12.3: hard-landing thud on air→ground transition with high speed.
+        // Slot 18 (was slot 12, restored to mortar_boom). Also fires shazbot
+        // ~30% of the time on hard landings so the user actually hears it.
         if(this._prevOnGround===false && onGround===true && speed>16){
-          this.playUI(12);
+          this.playUI(18);
+          if(Math.random()<0.30) this.playShazbot(true);
         }
         this._prevOnGround=onGround;
         this._prevSpeed=speed;
-        // R32.12: "Shazbot!" on local-player death (health drops to 0 from positive).
+        // R32.12.3: "Shazbot!" on local-player death.
         if(this.prevHealth>0 && health<=0){
           this.playShazbot(true);
         }
-        // R32.12: ambient "distant-teammate" Shazbot every 60-180s at low volume.
+        // R32.12.3: ambient "distant-teammate" Shazbot every 25-60s at moderate
+        // volume (was 60-180s in R32.12 — user reported never hearing one).
         var nowMs=performance.now();
-        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+60000+Math.random()*120000;
+        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+15000+Math.random()*15000; // first one in 15-30s
         if(nowMs>=this._shazbotNextAt){
           this.playShazbot(false);
-          this._shazbotNextAt=nowMs+60000+Math.random()*120000;
+          this._shazbotNextAt=nowMs+25000+Math.random()*35000; // every 25-60s after
         }
         // Damage received
         if(this.prevHealth>=0&&health<this.prevHealth-0.01){this.playUI(5);}
@@ -3200,6 +3213,9 @@
     // Global bridges called from C++ via EM_ASM
     window.playSoundAt=function(id,x,y,z){AE.playAt(id,x,y,z);};
     window.playSoundUI=function(id){AE.playUI(id);};
+    // R32.12.3 debug: manual shazbot trigger from console. Type `shaz()` to test.
+    window.shaz=function(loud){AE.playShazbot(loud!==false);};
+    window.AE=AE; // also expose AE for live tweaking
     // D2 R31.6: 5th param skiing
     window.updateAudio=function(jetting,onGround,speed10,health1000,skiing){
       if(!AE.ctx)return;
