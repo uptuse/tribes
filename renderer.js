@@ -2691,7 +2691,78 @@ function syncPlayers(t) {
         if (i === localIdx && polish) {
             polish.onJetBoost(jettingNow);
         }
+        // R32.15 — viewmodel sway state for local player (drives weaponHand pose).
+        if (i === localIdx) {
+            _viewmodelSway.jetting = jettingNow;
+            _viewmodelSway.skiing  = playerView[o + 15] > 0.5;
+            _viewmodelSway.speed   = Math.hypot(playerView[o + 6], playerView[o + 8]);
+        }
     }
+}
+
+// R32.15 — Viewmodel sway: weapon dips and jitters during jet boost; leans
+// forward + idle-bobs during ski. State accumulator is updated by syncPlayers
+// (which already reads jetting/skiing/speed) and applied each frame in the
+// main render loop after camera position is set.
+const _viewmodelSway = {
+    jetting: false, skiing: false, speed: 0,
+    // Animation state
+    jetDip: 0,         // current downward push (rad on X), eased
+    jetDipTarget: 0,
+    skiLean: 0,        // current forward lean (rad on X), eased
+    skiLeanTarget: 0,
+    bobPhase: 0,       // continuous phase for ski bob + idle sway
+    jetJitterPhase: 0, // independent phase for jet jitter
+    // Cached base pose (captured once after weaponHand is created)
+    base: null,
+};
+
+function _updateViewmodelSway(dt) {
+    if (!weaponHand) return;
+    if (!_viewmodelSway.base) {
+        _viewmodelSway.base = {
+            px: weaponHand.position.x, py: weaponHand.position.y, pz: weaponHand.position.z,
+            rx: weaponHand.rotation.x, ry: weaponHand.rotation.y, rz: weaponHand.rotation.z,
+        };
+    }
+    const b = _viewmodelSway.base;
+    const s = _viewmodelSway;
+
+    // Targets
+    s.jetDipTarget = s.jetting ? 0.18 : 0;          // rad: dip muzzle ~10° down
+    s.skiLeanTarget = s.skiing  ? -0.12 : 0;        // rad: lean fwd ~7° (negative tilts barrel up which reads as "chest forward")
+
+    // Eased follow (~120ms time-constant)
+    const k = Math.min(1, dt * 9);
+    s.jetDip  += (s.jetDipTarget  - s.jetDip)  * k;
+    s.skiLean += (s.skiLeanTarget - s.skiLean) * k;
+
+    // Phase advance
+    s.jetJitterPhase += dt * 38;                    // fast jitter
+    s.bobPhase       += dt * (s.skiing ? 5.5 : 1.4);// ski bob faster than idle sway
+
+    // Jet jitter: small high-freq shake on Y/X position, scaled by jetting amount
+    const jetAmt = s.jetDip / 0.18;                 // 0..1 "how-jetting"
+    const jitterY = Math.sin(s.jetJitterPhase) * 0.012 * jetAmt;
+    const jitterX = Math.cos(s.jetJitterPhase * 1.3) * 0.008 * jetAmt;
+
+    // Ski bob: gentle vertical oscillation while skiing or moving fast
+    const skiAmt = s.skiing ? 1 : Math.min(1, s.speed / 30);
+    const bobY = Math.sin(s.bobPhase) * 0.014 * skiAmt;
+    const bobR = Math.sin(s.bobPhase * 0.5) * 0.022 * skiAmt; // gentle roll
+
+    // Idle sway: slow figure-8 drift when stationary and not jetting
+    const idleAmt = (1 - jetAmt) * (1 - skiAmt);
+    const idleX = Math.sin(s.bobPhase * 0.8) * 0.006 * idleAmt;
+    const idleY = Math.cos(s.bobPhase * 0.6) * 0.005 * idleAmt;
+
+    // Apply
+    weaponHand.position.x = b.px + jitterX + idleX;
+    weaponHand.position.y = b.py + jitterY + bobY  + idleY - s.jetDip * 0.05;
+    weaponHand.position.z = b.pz;
+    weaponHand.rotation.x = b.rx + s.jetDip + s.skiLean;
+    weaponHand.rotation.y = b.ry;
+    weaponHand.rotation.z = b.rz + bobR;
 }
 
 function syncProjectiles() {
@@ -3058,6 +3129,8 @@ function loop() {
         polish.tick(dt, t);
         // R32.13-manus: combat FX tick (muzzle flash decay, tracer fade)
         if (window.CombatFX && window.CombatFX.update) window.CombatFX.update(dt);
+        // R32.15-manus: viewmodel sway (jet dip+jitter, ski lean+bob, idle drift)
+        _updateViewmodelSway(dt);
     }
 
     if (composer) composer.render();
