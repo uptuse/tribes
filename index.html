@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.1</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.2</div>
     </div>
   </div>
 
@@ -1136,7 +1136,7 @@
         <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
         <div class="s-row"><div class="s-label">UI Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ui" oninput="sSave('uiVolume',+this.value);sVal('s-ui-v',this.value);applyAudio()"></div><div class="s-val" id="s-ui-v">80</div></div>
         <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value);applyAudio()"></div><div class="s-val" id="s-music-v">50</div></div>
-        <div class="s-row"><div class="s-label">Ambience Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ambience" oninput="sSave('ambienceVolume',+this.value);sVal('s-ambience-v',this.value);applyAudio()"></div><div class="s-val" id="s-ambience-v">12</div></div>
+<!-- R32.12.2: Ambience Volume slider hidden — ambience layer disabled (piano contamination in generated track). -->
       </div>
 
       <!-- CONTROLS TAB -->
@@ -1593,7 +1593,11 @@
       applySettings(); // apply all settings including audio now that AE is up
       AE.startMusic(); // R32.11: kick off moody background track (loops, routes through master)
       AE.loadRealSamples(); // R32.12: async-load real disc-fire/ski/lightning/landing/shazbot samples
-      AE.startAmbience(); // R32.12: distant-battle ambience layer (loops)
+      // R32.12.2: ambience layer DISABLED — user feedback "remove the piano music."
+      // The generated battle_ambience.mp3 came back with musical/piano content
+      // and was competing with the synthwave music. Killed entirely; battlefield
+      // feel now comes purely from event SFX (lightning, thunder, gunfire, shazbot, rain).
+      // AE.startAmbience(); // disabled—see R32.12.2
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
