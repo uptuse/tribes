@@ -13,6 +13,8 @@
 (function() {
     'use strict';
 
+    console.log('[CommandMap] module loading…');
+
     // -------------------------------------------------------------------------
     // Module state
     // -------------------------------------------------------------------------
@@ -35,19 +37,11 @@
     };
 
     // -------------------------------------------------------------------------
-    // Public API: call this once after renderer init has data views ready.
-    // hooks = {
-    //   getHeightmap: () => ({data: Float32Array, size: int, scale: float}),
-    //   getPlayerView: () => ({view: Float32Array, stride: int, count: int}),
-    //   getLocalIdx: () => int,
-    //   getFlagView:   () => ({view: Float32Array, stride: int}),
-    //   getBuildings:  () => Array<{mesh, type}>,
-    // }
+    // EARLY: bind the C key + create a stub canvas at IIFE time so the toggle
+    // works even if init() never runs (e.g. if a hook getter throws).
     // -------------------------------------------------------------------------
-    function init(hooks) {
-        STATE.hooks = hooks;
-
-        // Create overlay canvas
+    function _earlyBootstrap() {
+        if (STATE.canvas) return;
         const c = document.createElement('canvas');
         c.id = 'cmd-map-canvas';
         c.style.cssText = [
@@ -64,12 +58,31 @@
         STATE.canvas = c;
         STATE.ctx = c.getContext('2d');
 
-        // Bind keys
         window.addEventListener('keydown', _onKeyDown, true);
         window.addEventListener('resize', _onResize);
         _onResize();
+        console.log('[CommandMap] early bootstrap complete — C key bound');
+    }
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', _earlyBootstrap);
+    } else {
+        _earlyBootstrap();
+    }
 
-        console.log('[R32.17] Command Map initialized — press C to toggle');
+    // -------------------------------------------------------------------------
+    // Public API: call this once after renderer init has data views ready.
+    // hooks = {
+    //   getHeightmap: () => ({data: Float32Array, size: int, scale: float}),
+    //   getPlayerView: () => ({view: Float32Array, stride: int, count: int}),
+    //   getLocalIdx: () => int,
+    //   getFlagView:   () => ({view: Float32Array, stride: int}),
+    //   getBuildings:  () => Array<{mesh, type}>,
+    // }
+    // -------------------------------------------------------------------------
+    function init(hooks) {
+        STATE.hooks = hooks;
+        _earlyBootstrap(); // idempotent
+        console.log('[R32.17] Command Map hooks wired — press C to toggle');
     }
 
     function _onResize() {
@@ -89,9 +102,11 @@
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         if (e.ctrlKey || e.metaKey || e.altKey) return;
 
-        if (e.key === 'c' || e.key === 'C') {
+        const isC = (e.key === 'c' || e.key === 'C' || e.code === 'KeyC');
+        if (isC) {
             e.preventDefault();
             e.stopPropagation();
+            console.log('[CommandMap] C pressed — toggling (was ' + (STATE.active ? 'open' : 'closed') + ')');
             toggle();
         } else if (e.key === 'Escape' && STATE.active) {
             e.preventDefault();
@@ -239,8 +254,20 @@
     // Per-frame draw — called from renderer.js loop
     // -------------------------------------------------------------------------
     function update() {
-        if (!STATE.active || !STATE.canvas || !STATE.hooks) return;
+        if (!STATE.active || !STATE.canvas) return;
         STATE.tick++;
+        // If hooks haven't been wired yet, draw a placeholder so user knows the
+        // overlay opened (instead of silently rendering nothing).
+        if (!STATE.hooks) {
+            const ctx = STATE.ctx;
+            ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+            ctx.fillStyle = '#FFC850';
+            ctx.font = 'bold 24px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('COMMAND MAP — waiting for renderer hooks…',
+                         window.innerWidth / 2, window.innerHeight / 2);
+            return;
+        }
 
         const ctx = STATE.ctx;
         const w = window.innerWidth;
