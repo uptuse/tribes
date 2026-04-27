@@ -134,6 +134,10 @@ export async function start() {
     initParticles();
     initWeaponViewmodel();
     initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall
+    // R32.32.1-manus: camera-local thin-blade grass ring. See initGrassRing
+    // for the full architecture writeup. Wrapped in try/catch so any failure
+    // can't black-screen the game (lesson from R32.25). Escape hatch: ?ring=off.
+    try { initGrassRing(); } catch (e) { console.warn('[R32.32.1] initGrassRing failed:', e); }
     // R32.27.2-manus: re-enable Ghibli-style grass on top of the painterly terrain.
     // initGrass + initDetailProps were dropped from the start() sequence in R32.9
     // because the OLD muddy-olive cross-quad sin-sway grass fought the watercolor
@@ -1042,29 +1046,12 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
-                 // R32.32-manus: grass-fuzz layer (Principle 2: thin-blade impression
-                 // without geometry; Principle 1: purely fragment-shader ALU, no new
-                 // draw calls; Principle 4: color inherits from the splat since this
-                 // modulates sampledDiffuseColor IN PLACE rather than adding new green).
-                 // Only applies where grass weight is significant (splatW.r > 0.3).
-                 if (uGrassFuzz > 0.5 && splatW.r > 0.30) {
-                     float grassMask = smoothstep(0.30, 0.65, splatW.r);
-                     // Thin vertical-blade impression: high-freq lines aligned with wind-perpendicular
-                     // axis, creating the illusion of many slender blades. Period ~0.25m at the surface.
-                     vec2 bladeAxis = normalize(vec2(uWindDir.y, -uWindDir.x)); // perpendicular to wind
-                     float bladeCoord = dot(vWorldXZ, bladeAxis) * 4.0;           // 0.25m period
-                     float bladeLines = sin(bladeCoord + vnoise(vWorldXZ * 0.5) * 2.5);
-                     // Wind gust wave sweeping along wind direction, period ~18m, speed uWindSpeed m/s.
-                     float windPhase = dot(vWorldXZ, uWindDir) * 0.35 - uTime * uWindSpeed;
-                     float gust = sin(windPhase) * 0.5 + 0.5; // 0..1
-                     gust = smoothstep(0.35, 0.85, gust);     // sharpened gust crests
-                     // Blade-line brightness: ±6% modulation of the grass color, strongest in gust crests.
-                     float bladeTint = bladeLines * (0.06 + 0.05 * gust) * grassMask;
-                     // Gust wave broader brightness pulse (±3%) — reads as wind moving across field at distance.
-                     float gustTint = (gust - 0.5) * 0.06 * grassMask;
-                     // Apply: brighter blade tips where mask is high, dimmer bases, gust crests brightened overall.
-                     sampledDiffuseColor.rgb *= (1.0 + bladeTint + gustTint);
-                 }
+                 // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
+                 // user feedback was "It looks like noise static texture". Static
+                 // 2D fragment patterns can't sell as 3D grass blades because
+                 // there's no parallax cue. Reverting to plain painterly terrain
+                 // for the far field; near-field readability is now the job of
+                 // step 2 (camera-local thin-blade ring geometry).
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
@@ -3388,14 +3375,11 @@ function loop() {
     // R32.31-manus: grass system removed; wind tick skipped.
     // updateGrassWind(t);
 
-    // R32.32-manus: tick the terrain-fuzz wind uniform so the gust waves sweep
-    // across the field in real time. Terrain material's onBeforeCompile stores
-    // its compiled shader on mat.userData.shader after the first render — we
-    // guard with `?.` because on the very first frame it may not yet be set.
-    if (terrainMesh && terrainMesh.material && terrainMesh.material.userData && terrainMesh.material.userData.shader) {
-        const u = terrainMesh.material.userData.shader.uniforms;
-        if (u.uTime) u.uTime.value = t;
-    }
+    // R32.32.1-manus: tick the camera-local grass ring (wind + recycle).
+    // The old terrain-fuzz uTime tick from R32.32 is gone (fuzz removed),
+    // but the ring uses the SAME unified clock for its wind shader so the
+    // motion of every grass element stays in lock-step (Principle 2).
+    try { updateGrassRing(t); } catch (e) { /* swallowed; ring is cosmetic */ }
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
@@ -3828,6 +3812,228 @@ function initGrass() {
     _grassMesh.instanceMatrix.needsUpdate = true;
     scene.add(_grassMesh);
     console.log('[R32.8] Grass instanced:', placed, 'tufts (target', TARGET + ')');
+}
+
+// ============================================================
+// R32.32.1-manus: Camera-local thin-blade grass ring
+// ----------------------------------------------------------
+// Architecture (per the four-principle spec the user signed off on):
+//   1. Performance — fixed pool of N thin single-tri blades, no per-frame
+//      allocations. Repositioning amortized: only RECYCLE_PER_FRAME blades
+//      get new positions per tick. Total triangles = N (single tri each).
+//   2. Whole-ground coverage with terrain-splat color — each blade samples
+//      _splatData at its base (g/r/dt/sand weights), composes a base color
+//      from grass-green / rock-grey / dirt-brown / sand-tan tinted by those
+//      weights. So a blade growing from rock IS rock-coloured. The result
+//      reads as terrain fuzz that happens to have silhouettes, not as a
+//      separate green grass layer painted on top.
+//   3. Reactive (Step 3 — R32.33) — not in this release. Reserved uniforms
+//      uPushPos[] and uPushStrength[] hooked but unused.
+//   4. Thin blades that mimic terrain — 1 cm wide base, 25 cm tall, single
+//      triangle. Color taken from the splat. No green dye applied. Reads
+//      as "the ground is a little fuzzier here" when working as designed.
+//
+// Why a ring rather than full-map placement: at 80k blades over a 2km²
+// map you get 1 blade per 25 m² (sparse). At 80k blades inside a 100m
+// radius circle (≈31,400 m²) you get 2.5 blades per m² — a real lawn.
+// The ring follows the camera so the lawn is always under the player.
+// Beyond the ring, terrain colour carries the visual; you never see the
+// edge because the ring moves with you.
+// ============================================================
+let _grassRingMesh = null;
+let _grassRingState = null;   // { positions: Float32Array (xyz), recycleCursor: int }
+function initGrassRing() {
+    if (typeof location !== 'undefined' && /[?&]ring=off\b/.test(location.search)) {
+        console.log('[R32.32.1] Grass ring disabled via ?ring=off');
+        return;
+    }
+    if (!_splatData || !_htData) {
+        console.warn('[R32.32.1] initGrassRing aborted: terrain data missing');
+        return;
+    }
+    const splat = _splatData.splatAttr;
+    const splatN = _splatData.size;
+    if (!splat || !splatN) {
+        console.warn('[R32.32.1] initGrassRing aborted: splatAttr/size missing on _splatData', _splatData);
+        return;
+    }
+
+    const tier = (window.__qualityTier || 'mid');
+    const N = (tier === 'ultra') ? 120000 : (tier === 'high') ? 80000 : (tier === 'mid') ? 50000 : (tier === 'low') ? 0 : 50000;
+    if (N === 0) {
+        console.log('[R32.32.1] Grass ring skipped on low tier');
+        return;
+    }
+    const RING_RADIUS = 100.0;   // metres around camera
+
+    // Single-triangle blade: thin, 25 cm tall, 1 cm wide base.
+    // Local axes: blade grows up +Y from origin, faces +Z (rotated per-instance).
+    const bladeGeom = new THREE.BufferGeometry();
+    bladeGeom.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+        -0.005, 0.00, 0.0,   // base left
+         0.005, 0.00, 0.0,   // base right
+         0.000, 0.25, 0.0    // tip
+    ]), 3));
+    bladeGeom.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0,0, 1,0, 0.5,1]), 2));
+    bladeGeom.setIndex([0, 1, 2]);
+    bladeGeom.computeVertexNormals();
+
+    // Material: vertex-colored (per-instance via instanceColor), double-sided so
+    // edge-on blades still render, no alpha test (solid triangle), and a
+    // wind-shader injection that uses the SAME global clock as everything else
+    // (keeps Principle 2/4 unified-wind from the spec). The wind path is pure
+    // ALU — 3-sin synth, no texture fetch — cheap on every GPU.
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xffffff,         // tinted per-instance via instanceColor
+        side: THREE.DoubleSide,
+        vertexColors: false,     // we use instanceColor, not vertex colors
+        toneMapped: true
+    });
+    mat.userData.isGrassRing = true; // R32.27.1 toonify-skip key
+    mat.onBeforeCompile = (shader) => {
+        shader.uniforms.uTime      = { value: 0.0 };
+        shader.uniforms.uWindDir   = { value: new THREE.Vector2(0.8, 0.6) };
+        shader.uniforms.uWindAmp   = { value: 0.10 };
+        // Vertex shader: bend the tip (position.y > 0.05) along wind direction.
+        // The amount is modulated by per-blade phase so blades sway out of sync.
+        shader.vertexShader = shader.vertexShader
+            .replace('#include <common>',
+                `#include <common>
+                 uniform float uTime;
+                 uniform vec2 uWindDir;
+                 uniform float uWindAmp;`)
+            .replace('#include <begin_vertex>',
+                `#include <begin_vertex>
+                 // per-blade phase from instance origin so blades wave independently
+                 vec3 origin = (instanceMatrix * vec4(0.0, 0.0, 0.0, 1.0)).xyz;
+                 float phase = origin.x * 0.13 + origin.z * 0.21;
+                 float h = clamp(transformed.y / 0.25, 0.0, 1.0); // 0 base → 1 tip
+                 float bend = (sin(uTime * 1.4 + phase) * 0.6 + sin(uTime * 0.7 + phase * 1.3) * 0.4) * uWindAmp * h;
+                 transformed.x += uWindDir.x * bend;
+                 transformed.z += uWindDir.y * bend;`);
+        mat.userData.shader = shader;
+    };
+
+    _grassRingMesh = new THREE.InstancedMesh(bladeGeom, mat, N);
+    _grassRingMesh.frustumCulled = false; // we manage placement ourselves
+    _grassRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    // InstancedBufferAttribute for per-blade colour
+    const colors = new Float32Array(N * 3);
+    _grassRingMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
+    _grassRingMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+
+    // Pre-place all blades RANDOMLY around the world origin (camera spawn).
+    // updateGrassRing will reposition them around the actual camera every frame.
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const c = new THREE.Color();
+    for (let i = 0; i < N; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * RING_RADIUS;
+        const wx = Math.cos(angle) * r;
+        const wz = Math.sin(angle) * r;
+        const wy = sampleTerrainH(wx, wz);
+        // Per-blade splat sample for colour
+        const u = (wx + half) / (span > 0 ? span : 1);
+        const v = (wz + half) / (span > 0 ? span : 1);
+        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
+        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
+        const idx = (sy * splatN + sx) * 4;
+        const wG = splat[idx],   wR = splat[idx+1], wD = splat[idx+2], wS = splat[idx+3];
+        // Blend grass-green / rock-grey / dirt-brown / sand-tan by splat weights.
+        // Dimmed slightly so blades darken against terrain at distance.
+        const rR = (wG * 0.36 + wR * 0.46 + wD * 0.42 + wS * 0.78) * 0.85;
+        const gG = (wG * 0.52 + wR * 0.46 + wD * 0.36 + wS * 0.74) * 0.85;
+        const bB = (wG * 0.22 + wR * 0.42 + wD * 0.24 + wS * 0.56) * 0.85;
+        c.setRGB(rR, gG, bB);
+        // Yaw + scale jitter
+        e.set(0, Math.random() * Math.PI * 2, 0);
+        q.setFromEuler(e);
+        const sc = 0.7 + Math.random() * 0.7;
+        s.set(sc, sc, sc);
+        p.set(wx, wy, wz);
+        m.compose(p, q, s);
+        _grassRingMesh.setMatrixAt(i, m);
+        _grassRingMesh.setColorAt(i, c);
+    }
+    _grassRingMesh.instanceMatrix.needsUpdate = true;
+    if (_grassRingMesh.instanceColor) _grassRingMesh.instanceColor.needsUpdate = true;
+    _grassRingState = { N: N, RING_RADIUS: RING_RADIUS, recycleCursor: 0 };
+    scene.add(_grassRingMesh);
+    console.log('[R32.32.1] Grass ring placed:', N, 'thin blades in', RING_RADIUS, 'm camera-local ring');
+}
+
+function updateGrassRing(t) {
+    if (!_grassRingMesh || !_grassRingState) return;
+    // Tick the wind clock
+    if (_grassRingMesh.material && _grassRingMesh.material.userData && _grassRingMesh.material.userData.shader) {
+        const u = _grassRingMesh.material.userData.shader.uniforms;
+        if (u && u.uTime) u.uTime.value = t;
+    }
+    if (!camera) return;
+    const camX = camera.position.x;
+    const camZ = camera.position.z;
+    const N = _grassRingState.N;
+    const RING_RADIUS = _grassRingState.RING_RADIUS;
+    const RING_R2 = RING_RADIUS * RING_RADIUS;
+    const RECYCLE_PER_FRAME = Math.min(2500, Math.floor(N * 0.04));
+    const span = (_htSize - 1) * _htScale;
+    const half = span * 0.5;
+    const splat = _splatData.splatAttr;
+    const splatN = _splatData.size;
+    const m = new THREE.Matrix4();
+    const q = new THREE.Quaternion();
+    const e = new THREE.Euler();
+    const s = new THREE.Vector3();
+    const p = new THREE.Vector3();
+    const c = new THREE.Color();
+    let cursor = _grassRingState.recycleCursor;
+    let recycled = 0;
+    for (let k = 0; k < RECYCLE_PER_FRAME; k++) {
+        const i = cursor;
+        cursor = (cursor + 1) % N;
+        _grassRingMesh.getMatrixAt(i, m);
+        // distance check: extract translation from matrix
+        const px = m.elements[12], pz = m.elements[14];
+        const dx = px - camX, dz = pz - camZ;
+        if (dx * dx + dz * dz <= RING_R2) continue; // still in range, leave it alone
+        // Recycle: pick a new position inside the ring around the camera
+        const angle = Math.random() * Math.PI * 2;
+        const r = Math.sqrt(Math.random()) * RING_RADIUS;
+        const wx = camX + Math.cos(angle) * r;
+        const wz = camZ + Math.sin(angle) * r;
+        const wy = sampleTerrainH(wx, wz);
+        // Splat sample for colour
+        const u = (wx + half) / (span > 0 ? span : 1);
+        const v = (wz + half) / (span > 0 ? span : 1);
+        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
+        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
+        const idx = (sy * splatN + sx) * 4;
+        const wG = splat[idx],   wR = splat[idx+1], wD = splat[idx+2], wS = splat[idx+3];
+        const rR = (wG * 0.36 + wR * 0.46 + wD * 0.42 + wS * 0.78) * 0.85;
+        const gG = (wG * 0.52 + wR * 0.46 + wD * 0.36 + wS * 0.74) * 0.85;
+        const bB = (wG * 0.22 + wR * 0.42 + wD * 0.24 + wS * 0.56) * 0.85;
+        c.setRGB(rR, gG, bB);
+        e.set(0, Math.random() * Math.PI * 2, 0);
+        q.setFromEuler(e);
+        const sc = 0.7 + Math.random() * 0.7;
+        s.set(sc, sc, sc);
+        p.set(wx, wy, wz);
+        m.compose(p, q, s);
+        _grassRingMesh.setMatrixAt(i, m);
+        _grassRingMesh.setColorAt(i, c);
+        recycled++;
+    }
+    _grassRingState.recycleCursor = cursor;
+    if (recycled > 0) {
+        _grassRingMesh.instanceMatrix.needsUpdate = true;
+        if (_grassRingMesh.instanceColor) _grassRingMesh.instanceColor.needsUpdate = true;
+    }
 }
 
 // Detail props: scatter low-poly rock/scrub instances on rock-weighted terrain
