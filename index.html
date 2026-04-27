@@ -912,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.4</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.5</div>
     </div>
   </div>
 
@@ -3125,8 +3125,31 @@
         console.log('[R32.12.3] shazbot fired ('+(loud?'loud':'ambient')+', vol='+g.gain.value.toFixed(2)+')');
       },
 
+      // R32.13.5: per-slot kill switch + diagnostic logger.
+      // Toggle slot mute from console: AE.muteSlot(13) / AE.unmuteSlot(13)
+      // Toggle full firing log: AE.logSounds = true|false
+      _slotMutes:{},
+      logSounds:true,  // R32.13.5: ON by default while we hunt the ping
+      muteSlot:function(id){this._slotMutes[id]=true;console.log('[AE] slot '+id+' MUTED');},
+      unmuteSlot:function(id){this._slotMutes[id]=false;console.log('[AE] slot '+id+' UNMUTED');},
+      _logFire:function(id,kind,extra){
+        if(!this.logSounds)return;
+        var name=this._slotName(id);
+        console.log('%c[SND] '+kind+' slot='+id+' ('+name+')'+(extra||''),'color:#c4a14c;font-weight:bold');
+      },
+      _slotName:function(id){
+        var names={0:'disc_fire',1:'chaingun',2:'plasma',3:'grenade',4:'disc_impact',
+          5:'player_hit_TANG',6:'flag_pickup_arp',7:'flag_capture_bell',8:'gen_destroy_explode',
+          9:'footstep',10:'jet_loop',11:'ski_loop',12:'mortar_boom',13:'hit_confirm_TINK',
+          14:'respawn_hum',15:'match_start_horn',16:'match_end_horn',17:'lightning_crack',
+          18:'hard_landing',19:'shazbot'};
+        return names[id]||'slot'+id;
+      },
+
       playAt:function(id,x,y,z){
         if(!this.ctx||this.muted||!this.bufs[id])return;
+        if(this._slotMutes[id]){this._logFire(id,'playAt(MUTED)',' @'+x.toFixed(1)+','+y.toFixed(1)+','+z.toFixed(1));return;}
+        this._logFire(id,'playAt',' @'+x.toFixed(1)+','+y.toFixed(1)+','+z.toFixed(1));
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
         var pan=this.ctx.createPanner();
         pan.panningModel='HRTF';pan.distanceModel='inverse';
@@ -3138,6 +3161,8 @@
 
       playUI:function(id){
         if(!this.ctx||this.muted||!this.bufs[id])return;
+        if(this._slotMutes[id]){this._logFire(id,'playUI(MUTED)');return;}
+        this._logFire(id,'playUI');
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
         src.connect(this.uiBus);src.start();
       },

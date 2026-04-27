@@ -922,6 +922,10 @@ function _flashScreen(rgba, durMs) {
 }
 
 function _playFlagSting(eventType) {
+    // R32.13.5: diagnostic logging + runtime kill switch.
+    // Disable from console: window._flagStingMuted = true;
+    try { console.log('%c[FLAG-STING] '+eventType+' (renderer_polish triangle osc — 880/1320/1760Hz)', 'color:#ff9e9e;font-weight:bold'); } catch(_e){}
+    if (typeof window !== 'undefined' && window._flagStingMuted) return;
     if (!_audioCtx) {
         try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
         catch (e) { return; }
