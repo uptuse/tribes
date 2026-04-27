@@ -17,8 +17,14 @@
     'use strict';
     if (typeof window === 'undefined') return;
 
+    // R32.25.2 HOTFIX: toonify default flipped from on to off. Original default
+    // (?style=pbr to disable) caused full black render on user's machine. Most
+    // likely cause: THREE.RedFormat single-channel DataTexture for the gradient
+    // ramp not supported on user's GPU/driver, leaving every converted material
+    // with a broken gradientMap sampler -> entire scene renders black. Now
+    // OPT-IN via ?style=toon. Default = unchanged PBR materials = known-working.
     const PARAMS = new URLSearchParams(window.location.search);
-    const ENABLED = PARAMS.get('style') !== 'pbr';
+    const ENABLED = PARAMS.get('style') === 'toon';
 
     function _log() { if (window.DEBUG_LOGS) console.log.apply(console, arguments); }
 
@@ -29,8 +35,17 @@
         // 4 luminance steps: shadow / midtone / light / highlight.
         // Values picked for a slightly flattened gamma so it reads "stylized"
         // not "broken".
-        const data = new Uint8Array([60, 130, 200, 250]);
-        const tex = new THREE.DataTexture(data, data.length, 1, THREE.RedFormat);
+        // R32.25.2: switched RedFormat -> RGBAFormat for driver portability. Some
+        // older / Mac GPUs don't support single-channel red textures, which
+        // produced black renders. RGBA is universally supported. Cost: 4 bytes
+        // instead of 1 for a 4-pixel texture = 16 bytes total. Negligible.
+        const data = new Uint8Array([
+            60, 60, 60, 255,
+            130, 130, 130, 255,
+            200, 200, 200, 255,
+            250, 250, 250, 255,
+        ]);
+        const tex = new THREE.DataTexture(data, 4, 1, THREE.RGBAFormat);
         tex.minFilter = THREE.NearestFilter;
         tex.magFilter = THREE.NearestFilter;
         tex.generateMipmaps = false;
