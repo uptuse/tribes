@@ -3063,8 +3063,17 @@ function syncCamera() {
         Module._setLocalAimPoint3P(p.x, p.y, p.z);
     }
 
-    const fov = Module._getCameraFov();
-    if (Math.abs(camera.fov - fov) > 0.5) {
+    let fov = Module._getCameraFov();
+    // R32.18-manus: apply ZoomFX multiplier (RMB hold + Z stepped zoom).
+    // FOV multiplier is 1/effectiveZoom, so 2x zoom → 0.5x FOV. While zoom is
+    // active or transitioning, use a tight threshold so smoothing reads.
+    let zoomActive = false;
+    if (window.ZoomFX) {
+        fov = fov * window.ZoomFX.getFovMultiplier();
+        zoomActive = window.ZoomFX.isActive();
+    }
+    const fovThreshold = zoomActive ? 0.05 : 0.5;
+    if (Math.abs(camera.fov - fov) > fovThreshold) {
         camera.fov = fov;
         camera.updateProjectionMatrix();
     }
