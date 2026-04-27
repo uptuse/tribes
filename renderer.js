@@ -1267,7 +1267,37 @@ function initTerrain() {
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
                  vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
                  mapN.xy *= normalScale;
-                 normal = normalize( tbn * mapN );`);
+                 normal = normalize( tbn * mapN );`)
+            // R32.41: diagnostic — does chunk-replace itself break ANGLE-Metal?
+            // Hardcoded constant. Zero custom variable refs. If terrain goes invisible,
+            // the bug is in the replace mechanism or ANGLE-Metal's MSL translator, not scope.
+            .replace('#include <roughnessmap_fragment>',
+                'float roughnessFactor = 0.5;');
+
+        // R32.41: shader compile/link error capture for Apple Silicon diagnosis
+        console.log('[R32.41] Roughness diagnostic active: roughnessFactor = 0.5 (hardcoded, no custom vars)');
+        const _checkTerrainShader = (attempt) => {
+            attempt = attempt || 0;
+            if (attempt > 10) { console.warn('[R32.41] Gave up waiting for terrain shader program'); return; }
+            const gl = renderer.getContext();
+            const props = renderer.properties.get(mat);
+            const prog = props && props.currentProgram;
+            if (!prog) { setTimeout(() => _checkTerrainShader(attempt + 1), 500); return; }
+            const p = prog.program;
+            if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
+                console.error('[R32.41] TERRAIN SHADER LINK FAILED:', gl.getProgramInfoLog(p));
+                const shaders = gl.getAttachedShaders(p);
+                if (shaders) shaders.forEach(s => {
+                    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+                        console.error('[R32.41] SHADER COMPILE ERROR:', gl.getShaderInfoLog(s));
+                    }
+                });
+            } else {
+                console.log('[R32.41] Terrain shader compiled + linked OK on this GPU');
+            }
+        };
+        setTimeout(() => _checkTerrainShader(0), 1000);
+
         mat.userData.shader = shader;
     };
 
