@@ -168,5 +168,40 @@ def main():
         print(f"  removed {IN_PATH}")
 
 
-if __name__ == "__main__":
+if __name__ == "__main__" and (len(__import__('sys').argv) <= 1 or __import__('sys').argv[1] != 'distance'):
     main()
+
+
+# ===========================================================================
+# R32.13.1 — Distance pass: turn the close yelled shazbot into a DISTANT yell
+# ===========================================================================
+# Heavy LP filter (~1800Hz cutoff) — distance kills high frequencies first
+# Bigger/longer reverb tail — open-air canyon space, not radio-comm
+# Lower output gain — already a distant teammate, doesn't need to dominate
+def distance_pass():
+    src = "/home/ubuntu/tribes/assets/audio/voice/shazbot.wav"
+    out = "/home/ubuntu/tribes/assets/audio/voice/shazbot.wav"
+    x, sr = read_wav(src)
+    if sr != SR_TARGET:
+        x = resample_linear(x, sr, SR_TARGET)
+    # 1. HP at 200Hz (still trim sub-rumble)
+    x = one_pole_hp(x, 200, SR_TARGET)
+    # 2. Heavy LP at 1800Hz — this is the "distance" filter; cuts crispness
+    x = one_pole_lp(x, 1800, SR_TARGET)
+    # apply twice for steeper rolloff (~12dB/oct equivalent)
+    x = one_pole_lp(x, 1800, SR_TARGET)
+    # 3. BIG reverb — open canyon, not bunker
+    x = add_reverb(x, SR_TARGET, decay_s=0.85, mix=0.32)
+    # 4. Light compress
+    x = compress(x, threshold=0.35, ratio=3.0)
+    # 5. Output level — peak normalize then attenuate for "distant" feel
+    peak = np.max(np.abs(x))
+    if peak > 1e-6:
+        x = x / peak * 0.65   # was 0.95 in close version; 0.65 = naturally quieter
+    write_wav(out, x, SR_TARGET)
+
+
+if __name__ == "__main__" and len(__import__('sys').argv) > 1 and __import__('sys').argv[1] == 'distance':
+    print("R32.13.1 — applying distance pass to shazbot...")
+    distance_pass()
+    print("Done.")

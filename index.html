@@ -912,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.1</div>
     </div>
   </div>
 
@@ -3066,8 +3066,10 @@
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[19];
         var g=this.ctx.createGain();
         var p=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
-        if(loud){g.gain.value=0.95;}
-        else{g.gain.value=0.30+Math.random()*0.18;}
+        // R32.13.1: ambient much quieter — sample is now distance-processed (heavy LP, big reverb)
+        // and was annoying at 0.30-0.48. Drop to 0.10-0.18 — felt-not-heard.
+        if(loud){g.gain.value=0.85;} // was 0.95 too
+        else{g.gain.value=0.10+Math.random()*0.08;}
         if(p){p.pan.value=loud?0:(Math.random()*1.6-0.8);src.connect(g).connect(p).connect(this.uiBus);}
         else{src.connect(g).connect(this.uiBus);}
         src.start();
@@ -3151,7 +3153,8 @@
         // ~30% of the time on hard landings so the user actually hears it.
         if(this._prevOnGround===false && onGround===true && speed>16){
           this.playUI(18);
-          if(Math.random()<0.30) this.playShazbot(true);
+          // R32.13.1: dropped 30%→10% AND switched to ambient (distant) vol so it's not blasting in your face on every fall
+          if(Math.random()<0.10) this.playShazbot(false);
         }
         this._prevOnGround=onGround;
         this._prevSpeed=speed;
@@ -3163,10 +3166,11 @@
         // (user request — was 25-60s randomized in R32.12.3). First one fires
         // 60s after the first AE.update() call so there's a brief grace period.
         var nowMs=performance.now();
-        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+60000;
+        // R32.13.1: interval bumped 60s → 90s (less frequent = less annoying)
+        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+90000;
         if(nowMs>=this._shazbotNextAt){
           this.playShazbot(false);
-          this._shazbotNextAt=nowMs+60000;
+          this._shazbotNextAt=nowMs+90000;
         }
         // Damage received
         if(this.prevHealth>=0&&health<this.prevHealth-0.01){this.playUI(5);}
