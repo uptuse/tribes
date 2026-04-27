@@ -559,7 +559,7 @@ function initLights() {
         sunLight.shadow.camera.bottom = -s;
         sunLight.shadow.bias = -0.0005;
         sunLight.shadow.normalBias = 0.02;
-        sunLight.shadow.radius = 3; // R32.45: soft PCF penumbra
+        sunLight.shadow.radius = 2; // R32.45→R32.47.1: soft PCF (was 3, caused edge flash)
     }
     scene.add(sunLight);
     scene.add(sunLight.target);
