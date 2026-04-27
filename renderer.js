@@ -2490,13 +2490,80 @@ function initPostProcessing() {
     composer.addPass(new OutputPass());
 }
 
+// R32.22: build a procedural cinematic 3D LUT (32^3) packed into a 1024x32
+// horizontal strip texture. Cool-shadow / warm-highlight "modern war film"
+// grade. Generated once at startup and bound as `tLUT` in the grade shader.
+function _buildCinematicLUT(THREE) {
+    const SIZE = 32;
+    const W = SIZE * SIZE;     // 1024
+    const H = SIZE;            // 32
+    const data = new Uint8Array(W * H * 4);
+    for (let bIdx = 0; bIdx < SIZE; bIdx++) {
+        for (let gIdx = 0; gIdx < SIZE; gIdx++) {
+            for (let rIdx = 0; rIdx < SIZE; rIdx++) {
+                // Input color in [0,1].
+                let r = rIdx / (SIZE - 1);
+                let g = gIdx / (SIZE - 1);
+                let b = bIdx / (SIZE - 1);
+                const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                // Cool shadows: lift blue in dark regions.
+                const shadow = 1.0 - Math.min(1, luma * 2.5);
+                b += 0.045 * shadow;
+                r -= 0.012 * shadow;
+                // Warm highlights: push red+green where bright.
+                const highlight = Math.max(0, (luma - 0.6) / 0.4);
+                r += 0.055 * highlight;
+                g += 0.030 * highlight;
+                b -= 0.020 * highlight;
+                // Mild S-curve contrast (smoothstep-style).
+                r = r * r * (3 - 2 * r);
+                g = g * g * (3 - 2 * g);
+                b = b * b * (3 - 2 * b);
+                r = r * 0.92 + 0.04;
+                g = g * 0.92 + 0.04;
+                b = b * 0.92 + 0.04;
+                // Light global desaturation toward cinematic neutral.
+                const finalLuma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                const desat = 0.08;
+                r = r * (1 - desat) + finalLuma * desat;
+                g = g * (1 - desat) + finalLuma * desat;
+                b = b * (1 - desat) + finalLuma * desat;
+                // Pack: x = rIdx + bIdx*SIZE, y = gIdx.
+                const x = rIdx + bIdx * SIZE;
+                const y = gIdx;
+                const i = (y * W + x) * 4;
+                data[i + 0] = Math.max(0, Math.min(255, Math.round(r * 255)));
+                data[i + 1] = Math.max(0, Math.min(255, Math.round(g * 255)));
+                data[i + 2] = Math.max(0, Math.min(255, Math.round(b * 255)));
+                data[i + 3] = 255;
+            }
+        }
+    }
+    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.generateMipmaps = false;
+    tex.needsUpdate = true;
+    return tex;
+}
+
 function makeVignetteAndGradeShader() {
+    // Build the cinematic LUT once and stash it on the shader closure so
+    // each ShaderPass instance reuses the same baked texture.
+    const lutTex = _buildCinematicLUT(THREE);
     return {
         uniforms: {
             tDiffuse: { value: null },
+            tLUT: { value: lutTex },
+            lutSize: { value: 32.0 },
+            lutStrength: { value: 1.0 },          // R32.22: 0..1 mix toward LUT
             vignetteIntensity: { value: 0.18 },
             warmth: { value: 0.06 },
             desaturation: { value: 0.10 },
+            grain: { value: 0.012 },              // R32.25 placeholder (#2.12 cinematic grain)
+            time: { value: 0.0 },
         },
         vertexShader: /* glsl */`
             varying vec2 vUv;
@@ -2504,24 +2571,60 @@ function makeVignetteAndGradeShader() {
         `,
         fragmentShader: /* glsl */`
             uniform sampler2D tDiffuse;
+            uniform sampler2D tLUT;
+            uniform float lutSize;
+            uniform float lutStrength;
             uniform float vignetteIntensity;
             uniform float warmth;
             uniform float desaturation;
+            uniform float grain;
+            uniform float time;
             varying vec2 vUv;
+
+            // R32.22: sample a 32^3 LUT packed as a 1024x32 horizontal strip.
+            vec3 sampleLUT(vec3 c) {
+                c = clamp(c, 0.0, 1.0);
+                float bSlice = c.b * (lutSize - 1.0);
+                float bLow = floor(bSlice);
+                float bHigh = min(bLow + 1.0, lutSize - 1.0);
+                float bMix = bSlice - bLow;
+                float xCellW = 1.0 / lutSize;
+                vec2 uvLow  = vec2((bLow  + c.r) * xCellW, c.g);
+                vec2 uvHigh = vec2((bHigh + c.r) * xCellW, c.g);
+                vec3 cLow  = texture2D(tLUT, uvLow ).rgb;
+                vec3 cHigh = texture2D(tLUT, uvHigh).rgb;
+                return mix(cLow, cHigh, bMix);
+            }
+
+            // Cheap deterministic noise for film grain.
+            float hash(vec2 p) {
+                return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
+            }
+
             void main(){
                 vec4 c = texture2D(tDiffuse, vUv);
-                // Slight desaturation
+
+                // Original mild desat + warm-shadows pre-grade.
                 float gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
                 c.rgb = mix(c.rgb, vec3(gray), desaturation);
-                // Warm shift in shadows
                 float lum = (c.r + c.g + c.b) / 3.0;
                 float shadowMask = 1.0 - smoothstep(0.0, 0.5, lum);
                 c.r += warmth * shadowMask;
                 c.b -= warmth * shadowMask;
-                // Vignette
+
+                // R32.22: 3D LUT as the dominant color grader.
+                vec3 graded = sampleLUT(c.rgb);
+                c.rgb = mix(c.rgb, graded, lutStrength);
+
+                // Vignette (#2.12 cinematic baseline).
                 vec2 uv = vUv - 0.5;
                 float v = 1.0 - dot(uv, uv) * vignetteIntensity * 4.0;
                 c.rgb *= v;
+
+                // Film grain (#2.12). Animate via time so it doesn't look static.
+                float n = hash(vUv * vec2(1920.0, 1080.0) + vec2(time, time * 1.7));
+                c.rgb += (n - 0.5) * grain;
+
                 gl_FragColor = c;
             }
         `,
@@ -3223,6 +3326,11 @@ function loop() {
         _updateViewmodelSway(dt);
         // R32.17-manus: command map full-screen tactical overlay (toggled with C)
         if (window.CommandMap && window.CommandMap.update) window.CommandMap.update();
+    }
+
+    // R32.22: tick gradePass time uniform so the cinematic film grain animates.
+    if (gradePass && gradePass.material && gradePass.material.uniforms && gradePass.material.uniforms.time) {
+        gradePass.material.uniforms.time.value = (gradePass.material.uniforms.time.value + 0.05) % 10000.0;
     }
 
     if (composer) composer.render();
