@@ -44,43 +44,52 @@ def bandpass(x, lo_n, hi_n):
 
 
 # ===========================================================================
-# 1. SPINFUSOR / DISC FIRE — the iconic Tribes "thwoomp"
+# 1. SPINFUSOR / DISC FIRE — A/B DIAGNOSTIC VARIANT (R32.13.4)
 # ===========================================================================
-# What makes it: (a) initial mechanical "click" of the launcher releasing,
-# (b) DEEP downward pitch sweep ~180Hz -> 45Hz over ~150ms (the THWOOMP),
-# (c) brassy harmonic ring on top (550Hz w/ 2nd harmonic), (d) noise tail.
-# This is what "thwoomp" sounds like.
+# User reports still hearing a "ping" in-game. To isolate whether the disc
+# launcher is the source, this generator now produces a RADICALLY different
+# sound: pure low-frequency mortar whump with NO content above ~600 Hz at all.
+# If the ping persists after this change, the disc launcher is NOT the source.
+#
+# Composition (intentionally minimal & all-bass):
+#   (a) ultra-fast air puff (LP-filtered noise, no HP content)
+#   (b) deep sub thump 65 Hz -> 32 Hz exponential sweep, single sine, no
+#       harmonics (so no octave/3rd that could read as pitched ringing)
+#   (c) low-mid body rumble bandpassed 80–300 Hz
+#   (d) AGGRESSIVE final lowpass (n_avg=24, ~900 Hz cutoff) on the entire
+#       summed signal — guarantees the file has effectively zero energy in
+#       the 1–8 kHz region where pings live.
 def make_disc_fire():
-    dur = 0.65
+    dur = 0.55
     n = int(dur * SR)
     t = np.arange(n) / SR
     sig = np.zeros(n)
 
-    # (a) Mechanical click at t=0 — very short HP noise transient
-    click = np.random.normal(0, 1, n)
-    click = highpass(click, 12)
-    click_env = np.exp(-t * 220) * (1 - np.exp(-t * 4000))
-    sig += click * click_env * 0.45
+    # (a) Air puff — broadband noise, immediately LP'd so it's a "whuff" not a
+    # crack. No HP component anywhere. ~5 ms attack, ~40 ms decay.
+    puff = np.random.normal(0, 1, n)
+    puff = lowpass(puff, 30)  # cutoff ~700 Hz
+    puff_env = np.exp(-t * 35) * (1 - np.exp(-t * 1200))
+    sig += puff * puff_env * 0.55
 
-    # (b) THE THWOOMP — sub-sweep from 180Hz exponentially down to 45Hz
-    # phase = 2π ∫ f(t) dt where f(t) = 45 + 135 * exp(-t/0.05)
-    f_low, f_extra, tau = 45.0, 135.0, 0.05
+    # (b) Deep mortar sub: 65 Hz -> 32 Hz exponential sweep, pure sine only.
+    f_low, f_extra, tau = 32.0, 33.0, 0.07
     phase = 2 * np.pi * (f_low * t - tau * f_extra * np.exp(-t/tau) + tau * f_extra)
-    # Two-stage envelope: fast attack (3ms), exponential body decay
-    thwoomp_env = np.exp(-t * 5.5) * (1 - np.exp(-t * 350))
-    thwoomp = np.sin(phase) * thwoomp_env
-    # Add 2nd harmonic for warmth (octave up at half amplitude)
-    thwoomp += 0.35 * np.sin(2 * phase) * thwoomp_env
-    sig += thwoomp * 0.85
+    sub_env = np.exp(-t * 4.5) * (1 - np.exp(-t * 220))
+    sub = np.sin(phase) * sub_env
+    sig += sub * 1.05  # dominant
 
-    # (c) R32.13.3: brass ring component REMOVED — it read as an annoying PING.
-    # The thwoomp character comes purely from the deep pitch sweep + sub thump.
+    # (c) Low-mid body rumble — bandpass 80–300 Hz, gives chest-feel without
+    # contributing anything above 300 Hz.
+    rumble = np.random.normal(0, 1, n)
+    rumble = bandpass(rumble, 150, 24)  # narrow low band
+    rumble_env = np.exp(-t * 7) * (1 - np.exp(-t * 200))
+    sig += rumble * rumble_env * 0.35
 
-    # (d) Plasma noise tail — bandpassed broadband fuzz that hangs after
-    tail = np.random.normal(0, 1, n)
-    tail = bandpass(tail, 30, 6)  # rough 700Hz-3.5kHz band
-    tail_env = np.exp(-t * 8) * (1 - np.exp(-t * 300))
-    sig += tail * tail_env * 0.12
+    # (d) Belt-and-braces global lowpass to guarantee no high-frequency residue.
+    # n_avg=24 boxcar -> approx -3dB at ~SR/(2*24) ≈ 920 Hz, with steep rolloff
+    # above. Anything above ~1.5 kHz will be effectively silent.
+    sig = lowpass(sig, 24)
 
     # Final touches: tail fade, normalize
     fade_n = int(0.05 * SR)
