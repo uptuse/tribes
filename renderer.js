@@ -1927,7 +1927,7 @@ async function initInteriorShapes() {
             // Inner: rotate -90deg around X to map Tribes local-z-up to Three y-up
             mesh.rotation.x = -Math.PI / 2;
             mesh.castShadow = false;  // R32.49: interior self-shadowing with DoubleSide causes black rectangle flicker
-            mesh.receiveShadow = true;
+            mesh.receiveShadow = false; // R32.50: interiors are enclosed; sun shadows inside cause flicker
             mesh.frustumCulled = false; // mirror existing buildings policy
             // Outer group: positions in world, applies yaw around world Y
             const outer = new THREE.Group();
@@ -3595,6 +3595,20 @@ function syncCamera() {
     sunLight.position.set(px + sunPos.x * 800, py + sunPos.y * 800, pz + sunPos.z * 800);
     sunLight.target.position.set(px, py, pz);
     sunLight.target.updateMatrixWorld();
+
+    // R32.50: Snap shadow camera to texel boundaries to prevent shadow swimming.
+    // Without this, sub-texel shifts as the camera moves cause shadow edges to
+    // flicker on every surface. We snap the light+target in world XZ to the
+    // nearest shadow texel size.
+    if (sunLight.shadow && sunLight.shadow.mapSize) {
+        const shadowFrustumSize = 400; // s * 2, from shadow camera setup
+        const texelSize = shadowFrustumSize / sunLight.shadow.mapSize.x;
+        sunLight.position.x = Math.round(sunLight.position.x / texelSize) * texelSize;
+        sunLight.position.z = Math.round(sunLight.position.z / texelSize) * texelSize;
+        sunLight.target.position.x = Math.round(sunLight.target.position.x / texelSize) * texelSize;
+        sunLight.target.position.z = Math.round(sunLight.target.position.z / texelSize) * texelSize;
+        sunLight.target.updateMatrixWorld();
+    }
 }
 
 // ============================================================
