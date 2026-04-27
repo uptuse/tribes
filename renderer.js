@@ -962,6 +962,12 @@ function initTerrain() {
         shader.uniforms.uTileDirtN   = { value: dirtN };
         shader.uniforms.uTileSandC   = { value: sandC };
         shader.uniforms.uTileSandN   = { value: sandN };
+        // R32.38-manus: AO sampler uniforms (per-slot ambient occlusion).
+        shader.uniforms.uTileGrassA  = { value: grassA };
+        shader.uniforms.uTileGrassA2 = { value: grassA2 };
+        shader.uniforms.uTileRockA   = { value: rockA };
+        shader.uniforms.uTileDirtA   = { value: dirtA };
+        shader.uniforms.uTileSandA   = { value: sandA };
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };
         // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
@@ -977,8 +983,10 @@ function initTerrain() {
         // Keeping the uniforms allocated so window.__tribesSetTerrainPBR doesn't
         // throw when the HUD chips are clicked; they're cosmetic until the next
         // attempt at PBR wiring (see CHANGELOG R32.37.4 for plan).
+        // R32.38-manus: AO is now wired (default ON). Roughness + POM stay 0.0
+        // until R32.38.1 / R32.38.2 wire those features back in.
         shader.uniforms.uUseRoughness = { value: 0.0 };
-        shader.uniforms.uUseAO        = { value: 0.0 };
+        shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO', true) };
         shader.uniforms.uUsePOM       = { value: 0.0 };
 
         shader.vertexShader = shader.vertexShader
@@ -1009,6 +1017,10 @@ function initTerrain() {
                  uniform sampler2D uTileRockC;   uniform sampler2D uTileRockN;
                  uniform sampler2D uTileDirtC;   uniform sampler2D uTileDirtN;
                  uniform sampler2D uTileSandC;   uniform sampler2D uTileSandN;
+                 // R32.38-manus: AO samplers + uUseAO toggle (1.0 = AO blended into diffuse, 0.0 = no AO).
+                 uniform sampler2D uTileGrassA;  uniform sampler2D uTileGrassA2;
+                 uniform sampler2D uTileRockA;   uniform sampler2D uTileDirtA;   uniform sampler2D uTileSandA;
+                 uniform float uUseAO;
                  uniform float uTileMeters;
                  uniform float uTerrainSize;
                  varying vec4 vSplat;
@@ -1074,6 +1086,21 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
+                 // R32.38-manus: per-slot AO blend. Sample 5 AO textures at the same
+                 // tUv as color, splat-weighted blend, multiply into diffuse. Softened
+                 // via mix(1.0, ao, 0.85) so crevices darken without crushing midtones.
+                 // Toggle via the 'AO: ON/OFF' HUD chip (uUseAO uniform).
+                 if (uUseAO > 0.5) {
+                     float aG1 = texture2D(uTileGrassA,  tUv).r;
+                     float aG2 = texture2D(uTileGrassA2, tUv * 0.83 + vec2(13.7, 7.1)).r;
+                     float aG_ = mix(aG1, aG2, gMix);
+                     float aR_ = texture2D(uTileRockA,  tUv).r;
+                     float aD_ = texture2D(uTileDirtA,  tUv).r;
+                     float aS_ = texture2D(uTileSandA,  tUv).r;
+                     float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
+                     aoT = mix(1.0, aoT, 0.85);
+                     sampledDiffuseColor.rgb *= aoT;
+                 }
                  {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
                      sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.10;
