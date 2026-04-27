@@ -3613,12 +3613,17 @@ function initGrass() {
     //   high/ultra: 80k -> 140k blades  (single-tri => 140k tris vs old 960k)
     //   mid:        30k ->  55k blades  (single-tri =>  55k tris vs old 360k)
     //   classic mode keeps old counts and old cross-quad geometry.
-    // R32.28-manus: density bump. User reported R32.27.3 as "a bald man".
-    // Covering the bald spots needs ~2.5x more blades. Single-tri still keeps
-    // total tris (350k) under R32.8's cross-quad cost of 960k.
+    // R32.29-manus: user wants "100% map coverage" — R32.28's 140k on mid
+    // gave 1 blade per 28 m² (a blade every 5.3m on center), unmistakably
+    // sparse. Bumping ~4x to 600k mid / 1.5M high gets us to ~7 m² and ~3 m²
+    // per blade respectively — reads as an actual meadow at eye level. Single-
+    // tri geometry keeps total tris at 1.5M on high (still 1.5x the R32.8
+    // cross-quad budget of 960k, but R32.8 was visibly patchy so the old
+    // budget was too low). Frame rate will be watched — if this drops below
+    // 45fps on mid we switch to Path B (camera-local density ring).
     const TARGET = _classicMode
         ? ((tier === 'high' || tier === 'ultra') ? 80000 : 30000)
-        : ((tier === 'high' || tier === 'ultra') ? 350000 : 140000);
+        : ((tier === 'high' || tier === 'ultra') ? 1500000 : 600000);
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
 
