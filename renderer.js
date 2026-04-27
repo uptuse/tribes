@@ -1439,6 +1439,158 @@ async function initBuildings() {
 }
 
 // ============================================================
+// R32.46: Geometry Enhancement Helpers
+// Crease-aware smooth normals + midpoint subdivision for rocks
+// ============================================================
+
+/**
+ * Compute crease-aware smooth normals for an indexed BufferGeometry.
+ * Faces sharing a vertex average their normals ONLY when the dihedral angle
+ * between them is less than creaseAngleDeg. Returns a NEW non-indexed
+ * BufferGeometry with per-vertex normals that preserve hard edges on
+ * architectural seams while smoothing curved surfaces.
+ */
+function computeCreaseNormals(geometry, creaseAngleDeg = 40) {
+    const posAttr = geometry.getAttribute('position');
+    const index = geometry.getIndex();
+    if (!index) return geometry; // already non-indexed, bail
+    const positions = posAttr.array;
+    const indices = index.array;
+    const cosCrease = Math.cos(creaseAngleDeg * Math.PI / 180);
+
+    const numTris = indices.length / 3;
+    // Step 1: compute face normals
+    const faceNormals = new Float32Array(numTris * 3);
+    const _v0 = new THREE.Vector3(), _v1 = new THREE.Vector3(), _v2 = new THREE.Vector3();
+    const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _fn = new THREE.Vector3();
+
+    for (let t = 0; t < numTris; t++) {
+        const i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
+        _v0.fromBufferAttribute(posAttr, i0);
+        _v1.fromBufferAttribute(posAttr, i1);
+        _v2.fromBufferAttribute(posAttr, i2);
+        _e1.subVectors(_v1, _v0);
+        _e2.subVectors(_v2, _v0);
+        _fn.crossVectors(_e1, _e2).normalize();
+        faceNormals[t * 3]     = _fn.x;
+        faceNormals[t * 3 + 1] = _fn.y;
+        faceNormals[t * 3 + 2] = _fn.z;
+    }
+
+    // Step 2: Build vertex→face adjacency map keyed by quantized position
+    // (handles vertices at same position with different indices)
+    const posToFaces = new Map();
+    const _posKey = (idx) => {
+        const x = positions[idx * 3], y = positions[idx * 3 + 1], z = positions[idx * 3 + 2];
+        // Quantize to 4 decimal places to merge coincident vertices
+        return ((x * 10000) | 0) + ',' + ((y * 10000) | 0) + ',' + ((z * 10000) | 0);
+    };
+
+    for (let t = 0; t < numTris; t++) {
+        for (let j = 0; j < 3; j++) {
+            const key = _posKey(indices[t * 3 + j]);
+            let list = posToFaces.get(key);
+            if (!list) { list = []; posToFaces.set(key, list); }
+            list.push(t);
+        }
+    }
+
+    // Step 3: Build non-indexed geometry with crease-aware normals
+    const newPositions = new Float32Array(numTris * 9);
+    const newNormals = new Float32Array(numTris * 9);
+    const _acc = new THREE.Vector3();
+    const _fN = new THREE.Vector3();
+    const _oN = new THREE.Vector3();
+
+    for (let t = 0; t < numTris; t++) {
+        _fN.set(faceNormals[t * 3], faceNormals[t * 3 + 1], faceNormals[t * 3 + 2]);
+
+        for (let j = 0; j < 3; j++) {
+            const vi = indices[t * 3 + j];
+            const outBase = t * 9 + j * 3;
+            // Copy position
+            newPositions[outBase]     = positions[vi * 3];
+            newPositions[outBase + 1] = positions[vi * 3 + 1];
+            newPositions[outBase + 2] = positions[vi * 3 + 2];
+
+            // Average normals of adjacent faces within crease threshold
+            const key = _posKey(vi);
+            const adjFaces = posToFaces.get(key);
+            _acc.set(0, 0, 0);
+            for (let a = 0; a < adjFaces.length; a++) {
+                const af = adjFaces[a];
+                _oN.set(faceNormals[af * 3], faceNormals[af * 3 + 1], faceNormals[af * 3 + 2]);
+                if (_fN.dot(_oN) >= cosCrease) {
+                    _acc.add(_oN);
+                }
+            }
+            if (_acc.lengthSq() > 0.0001) {
+                _acc.normalize();
+            } else {
+                _acc.copy(_fN);
+            }
+            newNormals[outBase]     = _acc.x;
+            newNormals[outBase + 1] = _acc.y;
+            newNormals[outBase + 2] = _acc.z;
+        }
+    }
+
+    const newGeom = new THREE.BufferGeometry();
+    newGeom.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
+    newGeom.setAttribute('normal', new THREE.BufferAttribute(newNormals, 3));
+    newGeom.computeBoundingBox();
+    newGeom.computeBoundingSphere();
+    return newGeom;
+}
+
+/**
+ * Midpoint subdivision: each triangle becomes 4 by inserting edge midpoints.
+ * No vertex smoothing — just adds resolution for crease normals to work with.
+ * Input: raw position array (flat float[]) and index array (flat uint[]).
+ * Returns { positions: Float32Array, indices: Uint32Array }.
+ */
+function midpointSubdivide(positions, indices) {
+    const edgeMap = new Map();
+    // Copy original positions into a growable array
+    const newPos = [];
+    for (let i = 0; i < positions.length; i++) newPos.push(positions[i]);
+    const newIdx = [];
+
+    const edgeKey = (a, b) => a < b ? (a * 100000 + b) : (b * 100000 + a);
+
+    const getMidpoint = (a, b) => {
+        const key = edgeKey(a, b);
+        let mid = edgeMap.get(key);
+        if (mid !== undefined) return mid;
+        mid = newPos.length / 3;
+        newPos.push(
+            (positions[a * 3]     + positions[b * 3])     * 0.5,
+            (positions[a * 3 + 1] + positions[b * 3 + 1]) * 0.5,
+            (positions[a * 3 + 2] + positions[b * 3 + 2]) * 0.5,
+        );
+        edgeMap.set(key, mid);
+        return mid;
+    };
+
+    for (let t = 0; t < indices.length; t += 3) {
+        const i0 = indices[t], i1 = indices[t + 1], i2 = indices[t + 2];
+        const m01 = getMidpoint(i0, i1);
+        const m12 = getMidpoint(i1, i2);
+        const m20 = getMidpoint(i2, i0);
+        // 4 sub-triangles, preserving winding
+        newIdx.push(i0, m01, m20);
+        newIdx.push(m01, i1, m12);
+        newIdx.push(m20, m12, i2);
+        newIdx.push(m01, m12, m20);
+    }
+
+    return {
+        positions: new Float32Array(newPos),
+        indices: new Uint32Array(newIdx),
+    };
+}
+
+// ============================================================
 // R32.1: Interior Shapes — real Tribes 1 .dis-extracted meshes
 // Loads raindance_meshes.bin (binary blob of 32 unique shapes) and
 // raindance_meshes.json (sidecar with bounds), then places instances
@@ -1495,7 +1647,8 @@ async function initInteriorShapes() {
 
         // R32.45: per-category material differentiation — buildings, towers,
         // bridge, rocks, pads, cubes each get distinct PBR properties.
-        const _matProps = { side: THREE.DoubleSide, flatShading: true };
+        // R32.46: flatShading: false — crease-aware smooth normals handle edge detection
+        const _matProps = { side: THREE.DoubleSide, flatShading: false };
         const matBuilding = new THREE.MeshStandardMaterial({ ..._matProps,
             color: 0xA89D90, roughness: 0.82, metalness: 0.10, envMapIntensity: 0.35,
             emissive: 0x1a1814, emissiveIntensity: 0.35 });
@@ -1538,27 +1691,49 @@ async function initInteriorShapes() {
         // Build BufferGeometry once per unique fileName, reuse across instances.
         // Tribes 1 used DirectX-style left-handed coords with CW winding; Three.js
         // is right-handed with CCW winding. We flip the index winding (i,j,k)->(i,k,j)
-        // so face normals computed by computeVertexNormals point outward.
+        // so face normals computed by computeCreaseNormals point outward.
+        // R32.46: crease-aware smooth normals + midpoint subdivision for rocks
         const geomCache = new Map();
+        const _t0 = performance.now();
+        let _enhancedCount = 0;
         const getGeom = (fileName) => {
             if (geomCache.has(fileName)) return geomCache.get(fileName);
             const m = meshes.get(fileName);
             if (!m) return null;
-            const g = new THREE.BufferGeometry();
-            g.setAttribute('position', new THREE.BufferAttribute(m.positions, 3));
-            // Flip winding
+
+            // Flip winding from CW (DirectX) to CCW (Three.js)
             const flipped = new Uint32Array(m.indices.length);
             for (let t = 0; t < m.indices.length; t += 3) {
                 flipped[t]   = m.indices[t];
                 flipped[t+1] = m.indices[t+2];
                 flipped[t+2] = m.indices[t+1];
             }
-            g.setIndex(new THREE.BufferAttribute(flipped, 1));
-            g.computeVertexNormals();
-            g.computeBoundingBox();
-            g.computeBoundingSphere();
-            geomCache.set(fileName, g);
-            return g;
+
+            let finalPositions = m.positions;
+            let finalIndices = flipped;
+
+            // R32.46: Midpoint subdivision for rocks — adds resolution so
+            // crease normals have more geometry to smooth with
+            const isRock = fileName.toLowerCase().startsWith('lrock');
+            if (isRock) {
+                const sub = midpointSubdivide(finalPositions, finalIndices);
+                finalPositions = sub.positions;
+                finalIndices = sub.indices;
+            }
+
+            // Build indexed geometry first (needed for crease normal computation)
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(finalPositions, 3));
+            g.setIndex(new THREE.BufferAttribute(finalIndices, 1));
+
+            // R32.46: Crease-aware smooth normals — 40° for architectural meshes,
+            // 55° for rocks (rounder surfaces benefit from wider averaging)
+            const creaseAngle = isRock ? 55 : 40;
+            const enhanced = computeCreaseNormals(g, creaseAngle);
+            _enhancedCount++;
+
+            geomCache.set(fileName, enhanced);
+            return enhanced;
         };
 
         // Place every neutral_interior_shapes instance.
@@ -1587,6 +1762,8 @@ async function initInteriorShapes() {
             placed++;
         }
         console.log('[R32.1] Interior shapes placed:', placed, '(missed', missed, ')');
+        console.log('[R32.46] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
+            _enhancedCount, 'unique meshes (crease normals + rock subdivision)');
 
         // R32.1 O1 (corrected R32.1.1): push world-space AABBs to C++ for collision.
         // Manus R32.1.1 changed rotation architecture: inner mesh Rx(-PI/2), outer Group Ry(rotZ).
