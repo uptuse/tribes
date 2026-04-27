@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.1</div>
     </div>
   </div>
 
@@ -1136,6 +1136,7 @@
         <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
         <div class="s-row"><div class="s-label">UI Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ui" oninput="sSave('uiVolume',+this.value);sVal('s-ui-v',this.value);applyAudio()"></div><div class="s-val" id="s-ui-v">80</div></div>
         <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value);applyAudio()"></div><div class="s-val" id="s-music-v">50</div></div>
+        <div class="s-row"><div class="s-label">Ambience Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ambience" oninput="sSave('ambienceVolume',+this.value);sVal('s-ambience-v',this.value);applyAudio()"></div><div class="s-val" id="s-ambience-v">12</div></div>
       </div>
 
       <!-- CONTROLS TAB -->
@@ -2843,8 +2844,9 @@
 
       // R32.12: distant-battle ambience layer (separate <audio>, loops).
       // Distant gunfire, far-off explosions, faint shouts, low rumble bed.
-      // Sits below music in the mix — makes solo play feel less empty.
-      ambienceEl:null,ambienceVol:0.40,
+      // R32.12.1: 0.40→0.12 — was competing with music, now sits firmly
+      // underneath as background texture only.
+      ambienceEl:null,ambienceVol:0.12,
       // R32.12: random shazbot timer + landing tracker.
       _shazbotNextAt:0,         // performance.now() ms when next ambient shazbot fires
       _prevSpeedY:0,            // tracked vertical-speed proxy (not yet exposed by C++ — fallback to gross-fall heuristic via `onGround` transition)
@@ -3221,7 +3223,7 @@
     ];
     var DEFAULT_SETTINGS={
       _v:2,
-      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,muted:false,
+      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,ambienceVolume:12,muted:false,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
@@ -3280,6 +3282,8 @@
       // R32.11.4: actually wire the Music Volume slider (was "(future)").
       // Slider is 0–100, AE expects 0–1. Also respect mute.
       if(AE.setMusicVolume)AE.setMusicVolume(ST.muted?0:(ST.musicVolume/100));
+      // R32.12.1: ambience slider (default 12% so it sits under music).
+      if(AE.setAmbienceVolume)AE.setAmbienceVolume(ST.muted?0:((ST.ambienceVolume==null?12:ST.ambienceVolume)/100));
     }
     function applyToCpp(){
       if(!Module._setSettings)return;
@@ -3356,6 +3360,8 @@
       sv('s-sfx',ST.sfxVolume);sVal('s-sfx-v',ST.sfxVolume);
       sv('s-ui',ST.uiVolume);sVal('s-ui-v',ST.uiVolume);
       sv('s-music',ST.musicVolume);sVal('s-music-v',ST.musicVolume);
+      var ambVal=(ST.ambienceVolume==null?12:ST.ambienceVolume);
+      sv('s-ambience',ambVal);sVal('s-ambience-v',ambVal);
       sc('s-muted',ST.muted);
       // Controls
       sv('s-sens',Math.round(ST.sensitivity*10));sVal('s-sens-v',ST.sensitivity.toFixed(1)+'×');
