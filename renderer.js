@@ -1926,7 +1926,7 @@ async function initInteriorShapes() {
             const mesh = new THREE.Mesh(geom, matArray.length > 1 ? matArray : (matArray[0] || fallback));
             // Inner: rotate -90deg around X to map Tribes local-z-up to Three y-up
             mesh.rotation.x = -Math.PI / 2;
-            mesh.castShadow = true;
+            mesh.castShadow = false;  // R32.49: interior self-shadowing with DoubleSide causes black rectangle flicker
             mesh.receiveShadow = true;
             mesh.frustumCulled = false; // mirror existing buildings policy
             // Outer group: positions in world, applies yaw around world Y
