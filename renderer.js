@@ -2090,48 +2090,213 @@ function initFlags() {
 }
 
 function initWeaponViewmodel() {
-    // R31.2: composite FPS weapon so it reads as a firearm, not a paddle.
-    // Five-part group: stock, body, grip, barrel, sight.
-    // Material is shared — single StandardMaterial with metallic finish.
-    const mat = new THREE.MeshStandardMaterial({ color: 0x6a6a72, roughness: 0.45, metalness: 0.55 });
+    // R32.13: proper sci-fi rifle viewmodel + first-person arms.
+    // Tribes-flavored energy carbine: angular polymer chassis, exposed energy cell,
+    // holographic sight, muzzle brake, vented barrel shroud, ergonomic foregrip.
+    // All procedural Three.js primitives — no GLB load needed.
+    const matFrame = new THREE.MeshStandardMaterial({ color: 0x2c2e34, roughness: 0.55, metalness: 0.4 });
+    const matMetal = new THREE.MeshStandardMaterial({ color: 0x9aa2ad, roughness: 0.30, metalness: 0.85 });
+    const matDark  = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.65, metalness: 0.20 });
+    const matAccent = new THREE.MeshStandardMaterial({ color: 0xc8a050, roughness: 0.35, metalness: 0.85 }); // brass-tan
+    const matGlow = new THREE.MeshStandardMaterial({
+        color: 0x44ccff, emissive: 0x44ccff, emissiveIntensity: 1.4,
+        roughness: 0.30, metalness: 0.0,
+    });
+    const matLens = new THREE.MeshStandardMaterial({
+        color: 0xff4422, emissive: 0xff4422, emissiveIntensity: 0.9,
+        roughness: 0.20, metalness: 0.10,
+    });
+    const matSkin = new THREE.MeshStandardMaterial({ color: 0x9b6b4a, roughness: 0.85, metalness: 0.0 });
+    const matGlove = new THREE.MeshStandardMaterial({ color: 0x1a1c20, roughness: 0.75, metalness: 0.15 });
+
     const group = new THREE.Group();
 
-    // Stock — butt-end of the weapon (rear)
-    const stock = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.06, 0.10), mat);
-    stock.position.set(0, -0.02, 0.06);
-    group.add(stock);
+    // ===== Receiver / main chassis =====
+    // Slightly bevel by stacking two boxes (top deck + lower body)
+    const lower = new THREE.Mesh(new THREE.BoxGeometry(0.055, 0.060, 0.220), matFrame);
+    lower.position.set(0, -0.005, -0.060);
+    group.add(lower);
+    const upper = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.030, 0.180), matFrame);
+    upper.position.set(0, 0.038, -0.060);
+    group.add(upper);
 
-    // Body — receiver/chassis (main volume, taller than wide)
-    const body = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.08, 0.18), mat);
-    body.position.set(0, 0.00, -0.05);
-    group.add(body);
+    // Pic-rail-style top with three cosmetic ridges
+    for (let i = 0; i < 3; i++) {
+        const rail = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.005, 0.020), matMetal);
+        rail.position.set(0, 0.057, -0.020 - i * 0.04);
+        group.add(rail);
+    }
 
-    // Grip — pistol grip below body
-    const grip = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.05, 0.04), mat);
-    grip.position.set(0, -0.06, -0.02);
+    // ===== Stock (rear) =====
+    const stockBack = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.075, 0.060), matFrame);
+    stockBack.position.set(0, -0.005, 0.075);
+    group.add(stockBack);
+    const stockTop = new THREE.Mesh(new THREE.BoxGeometry(0.024, 0.020, 0.040), matFrame);
+    stockTop.position.set(0, 0.038, 0.064);
+    group.add(stockTop);
+    // Cheekrest
+    const cheek = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.012, 0.050), matDark);
+    cheek.position.set(0, 0.054, 0.060);
+    group.add(cheek);
+
+    // ===== Pistol grip =====
+    const gripGeo = new THREE.BoxGeometry(0.026, 0.060, 0.038);
+    const grip = new THREE.Mesh(gripGeo, matFrame);
+    grip.position.set(0, -0.060, -0.005);
+    grip.rotation.x = -0.18;  // ergonomic angle
     group.add(grip);
+    // Grip texture stripes
+    for (let i = 0; i < 4; i++) {
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.028, 0.003, 0.040), matDark);
+        stripe.position.set(0, -0.044 - i * 0.014, -0.005 + i * 0.0025);
+        stripe.rotation.x = -0.18;
+        group.add(stripe);
+    }
 
-    // Barrel — forward-pointing cylinder
+    // ===== Magazine / energy cell (forward of grip, exposed glow) =====
+    const mag = new THREE.Mesh(new THREE.BoxGeometry(0.038, 0.075, 0.040), matFrame);
+    mag.position.set(0, -0.054, -0.080);
+    mag.rotation.x = -0.05;
+    group.add(mag);
+    // Glowing energy strip on side of mag (the Tribes "plasma cell" hint)
+    const cellGlow = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.045, 0.008), matGlow);
+    cellGlow.position.set(0.020, -0.054, -0.080);
+    cellGlow.rotation.x = -0.05;
+    group.add(cellGlow);
+    const cellGlow2 = cellGlow.clone();
+    cellGlow2.position.x = -0.020;
+    group.add(cellGlow2);
+
+    // ===== Trigger guard =====
+    const trigGuard = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 6, 14, Math.PI), matMetal);
+    trigGuard.rotation.set(0, Math.PI / 2, Math.PI);
+    trigGuard.position.set(0, -0.030, -0.018);
+    group.add(trigGuard);
+
+    // ===== Foregrip / handguard (where left hand grips) =====
+    const handguard = new THREE.Mesh(new THREE.BoxGeometry(0.044, 0.044, 0.090), matFrame);
+    handguard.position.set(0, 0.005, -0.205);
+    group.add(handguard);
+    // Vent slats on handguard sides
+    for (let i = 0; i < 4; i++) {
+        const vent = new THREE.Mesh(new THREE.BoxGeometry(0.046, 0.004, 0.014), matDark);
+        vent.position.set(0, 0.024 - i * 0.012, -0.205);
+        group.add(vent);
+    }
+
+    // ===== Barrel + muzzle brake =====
     const barrel = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.012, 0.012, 0.20, 8),
-        mat
+        new THREE.CylinderGeometry(0.011, 0.011, 0.130, 12),
+        matMetal
     );
     barrel.rotation.x = Math.PI / 2;
-    barrel.position.set(0, 0.02, -0.20);
+    barrel.position.set(0, 0.005, -0.310);
     group.add(barrel);
+    // Muzzle brake (slotted barrel tip)
+    const muzzle = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.018, 0.018, 0.040, 12),
+        matMetal
+    );
+    muzzle.rotation.x = Math.PI / 2;
+    muzzle.position.set(0, 0.005, -0.395);
+    group.add(muzzle);
+    // Muzzle brake slots (two horizontal cuts)
+    for (let i = 0; i < 2; i++) {
+        const slot = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.004, 0.030), matDark);
+        slot.position.set(0, 0.013 - i * 0.016, -0.395);
+        group.add(slot);
+    }
 
-    // Sight — rear-sight bump for silhouette
-    const sight = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.025, 0.025), mat);
-    sight.position.set(0, 0.07, -0.08);
-    group.add(sight);
+    // ===== Holographic sight (top of receiver) =====
+    const sightBody = new THREE.Mesh(new THREE.BoxGeometry(0.034, 0.024, 0.044), matDark);
+    sightBody.position.set(0, 0.075, -0.080);
+    group.add(sightBody);
+    // Front lens (red dot)
+    const lensFront = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.011, 0.011, 0.005, 12),
+        matLens
+    );
+    lensFront.rotation.x = Math.PI / 2;
+    lensFront.position.set(0, 0.075, -0.103);
+    group.add(lensFront);
+    // Back lens (where the eye looks through)
+    const lensBack = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.011, 0.011, 0.005, 12),
+        matDark
+    );
+    lensBack.rotation.x = Math.PI / 2;
+    lensBack.position.set(0, 0.075, -0.057);
+    group.add(lensBack);
+    // Sight rails (mount)
+    const sightMount = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.012, 0.040), matMetal);
+    sightMount.position.set(0, 0.060, -0.080);
+    group.add(sightMount);
+
+    // ===== Charging handle (cosmetic, side of receiver) =====
+    const charge = new THREE.Mesh(new THREE.BoxGeometry(0.008, 0.012, 0.045), matAccent);
+    charge.position.set(0.030, 0.020, -0.020);
+    group.add(charge);
+
+    // ===== Muzzle anchor point (named for CombatFX hookup) =====
+    const muzzleAnchor = new THREE.Object3D();
+    muzzleAnchor.position.set(0, 0.005, -0.420);   // tip of muzzle brake, just outside the model
+    muzzleAnchor.name = 'muzzle';
+    group.add(muzzleAnchor);
+
+    // ===== First-person arms =====
+    // Right hand grips the pistol grip; left hand grips the foregrip.
+    // Forearms enter from screen-bottom-corners, gloved hands wrap the rifle.
+
+    // RIGHT forearm (pistol-grip side) — comes in from bottom-right
+    const rForearm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.028, 0.18, 10),
+        matSkin
+    );
+    rForearm.rotation.set(0.55, 0, -0.20);
+    rForearm.position.set(0.045, -0.130, 0.060);
+    group.add(rForearm);
+    // Right glove
+    const rGlove = new THREE.Mesh(new THREE.BoxGeometry(0.040, 0.060, 0.060), matGlove);
+    rGlove.position.set(0.018, -0.075, -0.005);
+    rGlove.rotation.set(0.2, 0, -0.15);
+    group.add(rGlove);
+    // Sleeve cuff (color accent at wrist)
+    const rCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.020, 10), matAccent);
+    rCuff.rotation.set(0.55, 0, -0.20);
+    rCuff.position.set(0.030, -0.110, 0.020);
+    group.add(rCuff);
+
+    // LEFT forearm (foregrip side) — comes in from bottom-left
+    const lForearm = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.022, 0.028, 0.20, 10),
+        matSkin
+    );
+    lForearm.rotation.set(0.85, 0, 0.42);
+    lForearm.position.set(-0.075, -0.140, -0.140);
+    group.add(lForearm);
+    // Left glove (wraps foregrip from below)
+    const lGlove = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.045, 0.075), matGlove);
+    lGlove.position.set(-0.022, -0.060, -0.205);
+    lGlove.rotation.set(0.1, 0, 0.30);
+    group.add(lGlove);
+    // Left cuff
+    const lCuff = new THREE.Mesh(new THREE.CylinderGeometry(0.030, 0.030, 0.020, 10), matAccent);
+    lCuff.rotation.set(0.85, 0, 0.42);
+    lCuff.position.set(-0.045, -0.115, -0.090);
+    group.add(lCuff);
 
     // Mount in lower-right of camera local space; slight upward tilt so barrel
-    // angles toward center-screen, stock toward bottom-right corner.
-    group.position.set(0.18, -0.16, -0.32);
-    group.rotation.set(-0.05, 0.08, 0.0);
-    group.traverse(child => { child.frustumCulled = false; });
+    // angles toward center-screen.
+    group.position.set(0.16, -0.16, -0.30);
+    group.rotation.set(-0.05, 0.06, 0.0);
+    group.traverse(child => {
+        child.frustumCulled = false;
+        if (child.isMesh) child.castShadow = false;  // viewmodel shouldn't cast shadows
+    });
 
     weaponHand = group;
+    // Expose muzzle anchor globally for CombatFX
+    window._weaponMuzzleAnchor = muzzleAnchor;
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
 }
 
@@ -2383,6 +2548,15 @@ function initStateViews() {
     camera.lookAt(-300, 30, -300);   // look toward the map basin center
     scene.add(camera);
     camera.add(weaponHand);
+
+    // R32.13-manus: combat FX module (muzzle flash, tracer, hit indicator).
+    // Lazy-load and init on first frame so renderer.js doesn't take a hard
+    // dep on the module — if the file's missing, FX silently no-op.
+    import('./renderer_combat_fx.js').then(() => {
+        if (window.CombatFX) {
+            window.CombatFX.init(scene, camera, weaponHand, THREE);
+        }
+    }).catch(e => console.warn('[R32.13] CombatFX load failed:', e));
 
     // R30.2: position the sun BEFORE the player spawns. Previously the sun
     // was only positioned inside syncCamera, so until the player got a real
@@ -2882,6 +3056,8 @@ function loop() {
         const dt = _lastTickTime > 0 ? Math.min(0.1, now - _lastTickTime) : 1/60;
         _lastTickTime = now;
         polish.tick(dt, t);
+        // R32.13-manus: combat FX tick (muzzle flash decay, tracer fade)
+        if (window.CombatFX && window.CombatFX.update) window.CombatFX.update(dt);
     }
 
     if (composer) composer.render();

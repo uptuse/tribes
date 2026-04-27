@@ -236,12 +236,65 @@
     #ski-slope-label { font-size:0.65em; color:#888; font-family:monospace; }
     #ski-speed { font-family:monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
     #ski-speed-unit { font-size:0.7em; color:#5A8090; }
-    /* D2: hit-confirm tick */
+    /* D2: hit-confirm tick (extended R32.13 with brass chevrons + kill flash) */
     #hit-tick { display:none; position:absolute; top:50%; left:50%;
       transform:translate(-50%,-50%); color:#fff; font-size:1.6em; font-weight:bold;
       pointer-events:none; z-index:20; opacity:0; transition:opacity 0.2s; }
     #hit-tick.show { display:block; opacity:1; }
     #hit-tick.hide { opacity:0; }
+    /* R32.13: replace the bare "+" with 4 expanding chevrons drawn via CSS */
+    #hit-tick.r3213-hit, #hit-tick.r3213-kill {
+      color: transparent; width: 36px; height: 36px; font-size: 0;
+      background: transparent;
+    }
+    #hit-tick.r3213-hit::before, #hit-tick.r3213-hit::after,
+    #hit-tick.r3213-kill::before, #hit-tick.r3213-kill::after {
+      content: ""; position: absolute; top: 50%; left: 50%;
+      transform-origin: center;
+      pointer-events: none;
+    }
+    /* Two crossed brass chevrons that expand outward + fade */
+    #hit-tick.r3213-hit::before {
+      width: 18px; height: 3px; background: #f0c060;
+      box-shadow: 0 0 6px #f0c060, 0 0 12px #f08020;
+      animation: r3213-hit-h 0.30s ease-out forwards;
+    }
+    #hit-tick.r3213-hit::after {
+      width: 3px; height: 18px; background: #f0c060;
+      box-shadow: 0 0 6px #f0c060, 0 0 12px #f08020;
+      animation: r3213-hit-v 0.30s ease-out forwards;
+    }
+    /* Kill (strong) variant: red, larger, longer */
+    #hit-tick.r3213-kill::before {
+      width: 26px; height: 4px; background: #ff5040;
+      box-shadow: 0 0 8px #ff5040, 0 0 16px #ff2010;
+      animation: r3213-kill-h 0.48s ease-out forwards;
+    }
+    #hit-tick.r3213-kill::after {
+      width: 4px; height: 26px; background: #ff5040;
+      box-shadow: 0 0 8px #ff5040, 0 0 16px #ff2010;
+      animation: r3213-kill-v 0.48s ease-out forwards;
+    }
+    @keyframes r3213-hit-h {
+      0%   { transform: translate(-50%,-50%) scaleX(0.3); opacity: 0; }
+      30%  { transform: translate(-50%,-50%) scaleX(1.0); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scaleX(1.4); opacity: 0; }
+    }
+    @keyframes r3213-hit-v {
+      0%   { transform: translate(-50%,-50%) scaleY(0.3); opacity: 0; }
+      30%  { transform: translate(-50%,-50%) scaleY(1.0); opacity: 1; }
+      100% { transform: translate(-50%,-50%) scaleY(1.4); opacity: 0; }
+    }
+    @keyframes r3213-kill-h {
+      0%   { transform: translate(-50%,-50%) rotate(45deg) scaleX(0.3); opacity: 0; }
+      25%  { transform: translate(-50%,-50%) rotate(45deg) scaleX(1.0); opacity: 1; }
+      100% { transform: translate(-50%,-50%) rotate(45deg) scaleX(1.6); opacity: 0; }
+    }
+    @keyframes r3213-kill-v {
+      0%   { transform: translate(-50%,-50%) rotate(45deg) scaleY(0.3); opacity: 0; }
+      25%  { transform: translate(-50%,-50%) rotate(45deg) scaleY(1.0); opacity: 1; }
+      100% { transform: translate(-50%,-50%) rotate(45deg) scaleY(1.6); opacity: 0; }
+    }
 
     #hud-compass { position:absolute; top:10px; left:50%; transform:translateX(-50%);
       width:380px; height:28px; overflow:hidden; pointer-events:none; }
@@ -859,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.4</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13</div>
     </div>
   </div>
 
@@ -3636,7 +3689,14 @@
     window.onHitConfirm=function(dmg){
       var t=document.getElementById('hit-tick');
       if(!t) return;
-      t.classList.remove('hide'); t.classList.add('show');
+      // R32.13: use upgraded CSS hit-flash (chevrons + brass/red glow).
+      // dmg >= 50 = strong/kill flash; otherwise normal hit.
+      if (window.CombatFX && window.CombatFX.flashHit) {
+        window.CombatFX.flashHit(dmg >= 50);
+      } else {
+        // Fallback to legacy "+" tick if CombatFX hasn't loaded yet
+        t.classList.remove('hide'); t.classList.add('show');
+      }
       if(window.playSoundUI) window.playSoundUI(15); // UI slot (R11 audio has 16 bufs)
       clearTimeout(_hitTickTimer);
       _hitTickTimer=setTimeout(function(){
@@ -3644,6 +3704,23 @@
         setTimeout(function(){t.classList.remove('hide');t.style.display='none';t.style.display='';},200);
       }, 200);
     };
+
+    // R32.13 (manus): global mousedown fire trigger for muzzle flash + tracer.
+    // Only fires while pointer-locked (i.e. actively playing, not in menus).
+    // Rate-limited to 250 ms (4 shots/sec) to match the disc launcher cadence;
+    // C++ already enforces its own weapon cooldown, so this is just to keep the
+    // visual + tracer from spamming if someone holds the button.
+    var _r3213LastFire = 0;
+    document.addEventListener('mousedown', function(e){
+      if (e.button !== 0) return;
+      if (!document.pointerLockElement) return;
+      var now = performance.now();
+      if (now - _r3213LastFire < 250) return;
+      _r3213LastFire = now;
+      if (window.CombatFX && window.CombatFX.fire) {
+        try { window.CombatFX.fire(); } catch(_e){}
+      }
+    }, { capture: true, passive: true });
 
     loadSettings(); // load immediately before anything else
 
