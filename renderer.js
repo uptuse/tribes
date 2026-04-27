@@ -1784,6 +1784,7 @@ async function initInteriorShapes() {
                     metalness: entry.metalness,
                     envMapIntensity: 0.35,
                 });
+                mat.userData.isInterior = true; // R32.53: skip toonification — toon step-lighting makes back-faces pure black
                 if (entry.emissive) {
                     mat.emissive = new THREE.Color(entry.emissive[0], entry.emissive[1], entry.emissive[2]);
                     mat.emissiveIntensity = 0.65;
@@ -1804,6 +1805,7 @@ async function initInteriorShapes() {
                 emissive: new THREE.Color(0x1a1814),
                 emissiveIntensity: 0.30,
             });
+            fallback.userData.isInterior = true; // R32.53: skip toonification
             matArrayCache.set(fileName, { mats, fallback });
             return { mats, fallback };
         }

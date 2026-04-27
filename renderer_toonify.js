@@ -80,7 +80,9 @@
         const hasShaderInjection = (
             (typeof mat.onBeforeCompile === 'function' && mat.onBeforeCompile.length > 0) ||
             (mat.userData && mat.userData.tiles) ||
-            (mat.userData && mat.userData.shader)
+            (mat.userData && mat.userData.shader) ||
+            (mat.userData && mat.userData.isInterior) ||
+            (mat.userData && mat.userData.isGrassRing)
         );
         if (hasShaderInjection) return mat;
 
