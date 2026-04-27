@@ -996,7 +996,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.27</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.27.1</div>
     </div>
   </div>
 
@@ -4126,15 +4126,6 @@
           __toonScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.20] renderer_toonify.js loaded via script tag'); };
           __toonScr.onerror = function(e){ console.error('[R32.20] renderer_toonify.js FAILED to load', e); };
           document.head.appendChild(__toonScr);
-
-          // R32.27-manus: load LivingColor module — mood (D): cold world, living color.
-          // Runs AFTER Toonify in renderer.js start(), but the script load order here
-          // doesn't matter for that — both must be defined by start() time.
-          var __lcScr = document.createElement('script');
-          __lcScr.src = './renderer_living_color.js?v=' + Date.now();
-          __lcScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.27] renderer_living_color.js loaded'); };
-          __lcScr.onerror = function(e){ console.error('[R32.27] renderer_living_color.js FAILED to load', e); };
-          document.head.appendChild(__lcScr);
 
           import('./renderer.js').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
