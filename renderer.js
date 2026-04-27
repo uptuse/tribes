@@ -4358,11 +4358,19 @@ function initDustLayer() {
     // far-distance clusters don't blow out into a pastel rainbow haze on the
     // horizon. Tighter halo so each dot stays distinct. Distance fade so
     // very far fairies fade gracefully instead of stacking into a smear.
+    // R32.36.2-manus: HOTFIX for the bloom-wash bug visible in user screenshot.
+    // gl_PointSize was exploding to 1000+ px for fairies whose viewspace -z
+    // was clamped to 1.0 by max(1.0, -mv.z). uPxScale was also way too big
+    // (innerHeight*0.5 ~= 540), turning size=1 + dist=1 into 540 px sprites.
+    // FIX: (a) compute true 3D viewspace distance with a higher floor of 4m;
+    // (b) reduce uPxScale to innerHeight * 0.06; (c) hard-cap final
+    // gl_PointSize to 6 px so no single fairy can ever fill the screen.
     const mat = new THREE.ShaderMaterial({
         uniforms: {
             uTime:     { value: 0.0 },
             uOpacity:  { value: 1.0 },
-            uPxScale:  { value: window.innerHeight * 0.5 },
+            uPxScale:  { value: window.innerHeight * 0.06 },
+            uMaxPx:    { value: 6.0 },
         },
         vertexShader: `
             attribute vec3 aColor;
@@ -4370,19 +4378,20 @@ function initDustLayer() {
             attribute float aPhase;
             uniform float uTime;
             uniform float uPxScale;
+            uniform float uMaxPx;
             varying vec3  vColor;
             varying float vBrightness;
             varying float vFade;
             void main() {
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mv;
-                float dist = max(1.0, -mv.z);
-                // Distance-attenuated size; min 1 px so dots stay visible far away
-                gl_PointSize = max(1.0, aSize * (uPxScale / dist));
-                // R32.36.1: distance opacity fade. Beyond ~250m, fairies fade
-                // out so far-horizon clusters don't pile into a haze band.
+                // True 3D distance with a 4 m floor so close fairies don't blow up
+                float dist = max(4.0, length(mv.xyz));
+                // Distance-attenuated, then HARD-CAPPED so no sprite can
+                // exceed uMaxPx (6 px). 1 px floor so far dots stay visible.
+                gl_PointSize = clamp(aSize * (uPxScale / dist), 1.0, uMaxPx);
+                // Distance opacity fade: fade between 120-350 m
                 vFade = 1.0 - smoothstep(120.0, 350.0, dist);
-                // Per-fairy twinkle 0.7..1.0 brightness
                 vBrightness = 0.85 + 0.15 * sin(uTime * 2.5 + aPhase);
                 vColor = aColor;
             }
@@ -4421,7 +4430,7 @@ function initDustLayer() {
         lastT: -1,
     };
     scene.add(_dustPoints);
-    console.log('[R32.36.1] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
+    console.log('[R32.36.2] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
 }
 
 function updateDustLayer(t) {
