@@ -1,41 +1,26 @@
-# Claude Status — R32.41 (Diagnostic: roughnessmap_fragment replace isolation test)
+# Claude Status — R32.42
 
-**Round:** 32.41
-**Date:** 2026-04-29
-**Brief target:** Isolate whether ANGLE-Metal terrain invisibility is caused by variable scope or the chunk-replace mechanism itself
-**Self-assessment:** Diagnostic push only — waiting for user to test on Apple Silicon hardware
+## Latest Build
+**R32.42** — Texture Array Architecture
 
----
+### What Changed
+- Converted 15 individual `sampler2D` terrain textures → 3 `sampler2DArray` (color, normal, AO)
+- Each array texture has 5 layers: grass1, grass2, rock, dirt, sand
+- Fragment shader texture units: **15 → 3** custom + Three.js internals ≈ **5-6 total** (was ~17-19)
+- **Massive headroom** under the `MAX_TEXTURE_IMAGE_UNITS(16)` limit
+- **Roughness restored** — luminance-derived roughness (bright=smoother, dark=rougher)
+- Texture arrays built from 1024×1024 downsampled layers (originals are 2048²)
+- Removed R32.41 diagnostic code
 
-## What this build does
+### Root Cause (confirmed)
+The terrain shader was using 15 custom `sampler2D` uniforms (5 color + 5 normal + 5 AO) plus Three.js internals (envMap, shadowMap, normalMap fallback). On the user's macOS Apple Silicon with ANGLE-Metal, `MAX_TEXTURE_IMAGE_UNITS = 16`. The shader was right at the limit; any perturbation (even replacing `roughness` with `0.5`) changed the GLSL optimizer's dead-code elimination and pushed active samplers above 16, causing a link failure.
 
-**Single change:** adds `.replace('#include <roughnessmap_fragment>', 'float roughnessFactor = 0.5;')` to the terrain shader's `onBeforeCompile` chain.
+### Technical Details
+- Uses `THREE.DataArrayTexture` (WebGL2 `sampler2DArray`)
+- `stochasticSampleArray()` function samples with `texture(tex, vec3(uv, layer))`
+- `initTerrain()` is now `async` — loads images via `Image()`, draws to canvas, extracts pixel data
+- Dummy 1×1 normalMap kept on material to trigger `USE_NORMALMAP_TANGENTSPACE` / TBN computation
+- `map` property removed from material (no longer needed — frees 1 dead sampler)
 
-This is the **minimal possible** roughnessmap_fragment override:
-- Hardcoded float constant `0.5`
-- Zero references to custom variables (`sampledDiffuseColor`, `splatW`, etc.)
-- Zero new uniforms
-- Zero new texture samplers
-- Zero conditionals
-
-Additionally adds shader compile/link error logging via `renderer.properties.get(mat).currentProgram` GL introspection. Console will show one of:
-- `[R32.41] Terrain shader compiled + linked OK on this GPU` → shader is fine, bug is elsewhere
-- `[R32.41] TERRAIN SHADER LINK FAILED:` + `SHADER COMPILE ERROR:` → exact GLSL error on this hardware
-
-## Expected outcomes
-
-| Result | Diagnosis |
-|---|---|
-| Terrain visible + "compiled OK" | Bug was variable scope (H1/H3 from SHADER_DIAGNOSTIC_2). Safe to add roughness back using only in-scope globals. |
-| Terrain invisible + compile error logged | GLSL error in chunk replacement — read the logged error for exact cause |
-| Terrain invisible + "compiled OK" | The replacement works at GLSL level but something in Three.js's material pipeline breaks when this chunk is overridden (H4 — chunk ordering or Three.js internal state) |
-| Terrain invisible + no log at all | Material never compiled — `onBeforeCompile` or Three.js internals rejected the material earlier |
-
-## Files changed
-- `renderer.js`: +1 chained `.replace()` for roughnessmap_fragment, +shader compile logger
-- `index.html`: version chip R32.40.1 → R32.41
-
-## Not changed
-- No uniform additions, no preamble changes, no new samplers
-- AO pipeline untouched (still working)
-- Day/night cycle untouched
+### Status
+✅ Committed and pushed. Ready for testing at https://uptuse.github.io/tribes/
