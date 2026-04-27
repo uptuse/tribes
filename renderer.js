@@ -4234,13 +4234,20 @@ function initDustLayer() {
         console.warn('[R32.35] initDustLayer aborted: _splatData not ready', _splatData);
         return;
     }
+    // R32.35.2-manus: per user feedback ("when I fly I can see areas of the
+    // map that don't have dust") the 80m ring was too small — flying outpaced
+    // the recycle and looking down from altitude exposed bare ground beyond
+    // the ring. Expanded to 200m. Density bumped to keep coverage
+    // proportionate (mid 250k -> 600k); recycle budget back to 20k/frame so
+    // jet-speed travel doesn't outrun the ring.
     const tier = (window.__qualityTier || 'mid');
-    const N = (tier === 'ultra') ? 6000000 : (tier === 'high') ? 3000000 : (tier === 'mid') ? 1500000 : (tier === 'low') ? 0 : 1500000;
+    const N = (tier === 'ultra') ? 2400000 : (tier === 'high') ? 1200000 : (tier === 'mid') ? 600000 : (tier === 'low') ? 0 : 600000;
     if (N === 0) {
         console.log('[R32.35] Dust layer skipped on low tier');
         return;
     }
-    const RING_RADIUS = 80.0;   // metres around camera (smaller than grass ring; dust is denser per area)
+    // R32.35.2-manus: 80 -> 200 m so flying / looking-down doesn't expose bare ground.
+    const RING_RADIUS = 200.0;
 
     const positions = new Float32Array(N * 3);
     const colors    = new Float32Array(N * 3);
@@ -4268,32 +4275,31 @@ function initDustLayer() {
         positions[i * 3 + 1] = wy;
         positions[i * 3 + 2] = wz;
 
-        // Sample splat for color tint
-        const u = (wx + half) / (span > 0 ? span : 1);
-        const v = (wz + half) / (span > 0 ? span : 1);
-        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
-        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
-        const si = (sy * splatN + sx) * 4;
-        const wG = splat[si + 0] || 0;
-        const wR = splat[si + 1] || 0;
-        const wD = splat[si + 2] || 0;
-        const wS = splat[si + 3] || 0;
-        // Warm-white base (dust catches sun) tinted by terrain weights:
-        //   grass -> pale yellow-green
-        //   rock  -> warm grey
-        //   dirt  -> warm tan
-        //   sand  -> pale gold
-        const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
-        const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
-        const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
-        // Per-particle brightness jitter ±20%
-        const jitter = 0.80 + Math.random() * 0.40;
-        colors[i * 3 + 0] = Math.min(1.0, r_ * jitter);
-        colors[i * 3 + 1] = Math.min(1.0, g_ * jitter);
-        colors[i * 3 + 2] = Math.min(1.0, b_ * jitter);
+        // R32.35.2-manus: PINK DIAGNOSTIC MODE per user request "make the
+        // particles pink so I can see them". Splat-tinted color logic kept
+        // intact below (commented) so we can flip back trivially once the
+        // calibration round is done. Hot pink with ±15% per-particle
+        // brightness jitter so the field still has visual variation.
+        const jitter = 0.85 + Math.random() * 0.30;
+        colors[i * 3 + 0] = Math.min(1.0, 1.00 * jitter); // R: full
+        colors[i * 3 + 1] = Math.min(1.0, 0.30 * jitter); // G: low
+        colors[i * 3 + 2] = Math.min(1.0, 0.65 * jitter); // B: medium
+        // // R32.35 splat-tinted color (paused for diagnostic):
+        // const u = (wx + half) / (span > 0 ? span : 1);
+        // const v = (wz + half) / (span > 0 ? span : 1);
+        // const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
+        // const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
+        // const si = (sy * splatN + sx) * 4;
+        // const wG = splat[si + 0] || 0;
+        // const wR = splat[si + 1] || 0;
+        // const wD = splat[si + 2] || 0;
+        // const wS = splat[si + 3] || 0;
+        // const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
+        // const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
+        // const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
 
-        // Size: 4-9 px (in screen pixels; multiplied by sizeAttenuation by Three)
-        sizes[i] = 4.0 + Math.random() * 5.0;
+        // R32.35.1-manus: size 4-9 px -> 2-5 px (smaller specks, less overdraw)
+        sizes[i] = 2.0 + Math.random() * 3.0;
 
         // Phase: 0..2π for per-particle bob
         phases[i] = Math.random() * 6.2831853;
@@ -4311,7 +4317,7 @@ function initDustLayer() {
         uniforms: {
             uTime:     { value: 0.0 },
             uWindDir:  { value: new THREE.Vector2(0.8, 0.6) },
-            uOpacity:  { value: 0.55 },
+            uOpacity:  { value: 0.30 }, // R32.35.1: 0.55 -> 0.30 to read as specks not cloud
             uPxScale:  { value: window.innerHeight * 0.5 }, // for sizeAttenuation-style sizing
         },
         vertexShader: `
@@ -4372,8 +4378,10 @@ function updateDustLayer(t) {
     const N = _dustState.N;
     const RING_RADIUS = _dustState.RING_RADIUS;
     const RING_R2 = RING_RADIUS * RING_RADIUS;
-    // Recycle budget: ~1% of pool per frame for very large pools
-    const RECYCLE_PER_FRAME = Math.min(20000, Math.max(2000, Math.floor(N * 0.012)));
+    // R32.35.2-manus: recycle bumped back 5k -> 20k/frame so jet-speed flight
+    // doesn't outrun the ring (user reported bare-ground gaps when flying).
+    // At mid (600k) this is ~3.3% of pool/frame, full recycle in ~30 frames.
+    const RECYCLE_PER_FRAME = Math.min(20000, Math.max(2000, Math.floor(N * 0.033)));
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
     const splat = _splatData.splatAttr;
@@ -4405,23 +4413,11 @@ function updateDustLayer(t) {
         positions[i * 3 + 0] = wx;
         positions[i * 3 + 1] = wy;
         positions[i * 3 + 2] = wz;
-        // Re-tint by new splat
-        const u = (wx + half) / (span > 0 ? span : 1);
-        const v = (wz + half) / (span > 0 ? span : 1);
-        const sx = Math.max(0, Math.min(splatN - 1, Math.floor(u * (splatN - 1))));
-        const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
-        const si = (sy * splatN + sx) * 4;
-        const wG = splat[si + 0] || 0;
-        const wR = splat[si + 1] || 0;
-        const wD = splat[si + 2] || 0;
-        const wS = splat[si + 3] || 0;
-        const r_ = 0.95 * wG + 0.85 * wR + 0.85 * wD + 1.00 * wS;
-        const g_ = 1.00 * wG + 0.82 * wR + 0.78 * wD + 0.95 * wS;
-        const b_ = 0.75 * wG + 0.78 * wR + 0.62 * wD + 0.78 * wS;
-        const jitter = 0.80 + Math.random() * 0.40;
-        colors[i * 3 + 0] = Math.min(1.0, r_ * jitter);
-        colors[i * 3 + 1] = Math.min(1.0, g_ * jitter);
-        colors[i * 3 + 2] = Math.min(1.0, b_ * jitter);
+        // R32.35.2-manus: pink diagnostic color (matches init path).
+        const jitter = 0.85 + Math.random() * 0.30;
+        colors[i * 3 + 0] = Math.min(1.0, 1.00 * jitter);
+        colors[i * 3 + 1] = Math.min(1.0, 0.30 * jitter);
+        colors[i * 3 + 2] = Math.min(1.0, 0.65 * jitter);
         touched++;
         updatedColors = true;
     }
