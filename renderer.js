@@ -958,51 +958,25 @@ function initTerrain() {
         shader.uniforms.uTileDirtN   = { value: dirtN };
         shader.uniforms.uTileSandC   = { value: sandC };
         shader.uniforms.uTileSandN   = { value: sandN };
-        // R32.37.1-manus: full PBR map uniforms.
-        shader.uniforms.uTileGrassR  = { value: grassR };
-        shader.uniforms.uTileGrassA  = { value: grassA };
-        shader.uniforms.uTileGrassD  = { value: grassD };
-        shader.uniforms.uTileGrassR2 = { value: grassR2 };
-        shader.uniforms.uTileGrassA2 = { value: grassA2 };
-        shader.uniforms.uTileGrassD2 = { value: grassD2 };
-        shader.uniforms.uTileRockR   = { value: rockR };
-        shader.uniforms.uTileRockA   = { value: rockA };
-        shader.uniforms.uTileRockD   = { value: rockD };
-        shader.uniforms.uTileDirtR   = { value: dirtR };
-        shader.uniforms.uTileDirtA   = { value: dirtA };
-        shader.uniforms.uTileDirtD   = { value: dirtD };
-        shader.uniforms.uTileSandR   = { value: sandR };
-        shader.uniforms.uTileSandA   = { value: sandA };
-        shader.uniforms.uTileSandD   = { value: sandD };
-        // R32.37.1-manus: PBR feature toggles (default ON; user can A/B in Settings).
-        // R32.37.3-manus: POM defaults to OFF after R32.37.1's white-fog regression.
-        // The original POM walked UV using a derivative-based proxy view dir that
-        // exploded at distance, sending sample coords into garbage and producing a
-        // uniform haze. Rough/AO default ON because their isolated impact is small.
-        shader.uniforms.uUseRoughness = { value: _pbrInit('pbrRoughness', true)  };
-        shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO',        true)  };
-        shader.uniforms.uUsePOM       = { value: _pbrInit('pbrPOM',       false) };
-        shader.uniforms.uPOMSteps     = { value: 8.0  };  // raymarch step count (8–16 typical)
-        shader.uniforms.uPOMScale     = { value: 0.025 }; // tile-uv units; ~2.3cm at 9m tiles — small + safe
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };
         // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
-        // uTime advances per-frame in the main loop via _terrainShader.uniforms.uTime.value.
-        // Driven by the same clock as any future blade geometry, so fuzz waves and
-        // blade sway stay in lock-step (Principle 2: unified global wind).
         shader.uniforms.uTime        = { value: 0.0 };
-        shader.uniforms.uWindDir     = { value: new THREE.Vector2(0.8, 0.6) }; // unit vec approx
+        shader.uniforms.uWindDir     = { value: new THREE.Vector2(0.8, 0.6) };
         shader.uniforms.uWindSpeed   = { value: 0.85 };
-        // R32.32-manus: ?fuzz=off escape hatch so we can A/B against bare painterly terrain.
         const _fuzzOff = (typeof location !== 'undefined') && /[?&]fuzz=off\b/.test(location.search);
         shader.uniforms.uGrassFuzz   = { value: _fuzzOff ? 0.0 : 1.0 };
+        // R32.37.4-manus: PBR uniforms (toggles + samplers) registered but UNUSED in
+        // the shader body. R32.37.1-3 attempts to wire roughness/AO/POM into the
+        // fragment shader caused a compile failure (terrain rendered as uniform
+        // grey/white fog). Reverted shader body to known-good R32.36.3 baseline.
+        // Keeping the uniforms allocated so window.__tribesSetTerrainPBR doesn't
+        // throw when the HUD chips are clicked; they're cosmetic until the next
+        // attempt at PBR wiring (see CHANGELOG R32.37.4 for plan).
+        shader.uniforms.uUseRoughness = { value: 0.0 };
+        shader.uniforms.uUseAO        = { value: 0.0 };
+        shader.uniforms.uUsePOM       = { value: 0.0 };
 
-        // R32.10.3 + R32.11.1: aWash/aAO vertex attrs are gone (replaced by
-        // per-pixel fragment noise). aSplat stays per-vertex (smooth across
-        // world XZ, re-normalized in fragment). NEW in R32.11.1: aSmoothNormal
-        // attribute carries a smooth heightmap-derived normal at each vertex,
-        // and we override `objectNormal` in `<beginnormal_vertex>` so PBR
-        // lighting uses smooth normals — no more triangle-edge brightness jumps.
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>',
                 `#include <common>
@@ -1012,10 +986,6 @@ function initTerrain() {
                  varying vec2 vWorldXZ;
                  varying float vWorldY;`)
             .replace('#include <beginnormal_vertex>',
-                // Override the default `objectNormal` (which would be the flat
-                // face normal computed by computeVertexNormals on the
-                // non-indexed geometry) with our smooth per-vertex normal.
-                // Result: lighting is smooth-shaded; geometry stays faceted.
                 `vec3 objectNormal = aSmoothNormal;
                  #ifdef USE_TANGENT
                    vec3 objectTangent = vec3( tangent.xyz );
@@ -1026,7 +996,7 @@ function initTerrain() {
                  vWorldXZ = position.xz;
                  vWorldY = position.y;`);
 
-        // Fragment shader: stochastic anti-tiling sampling + grass A/B blend + wash + AO
+        // Fragment shader: R32.36.3 baseline (known-good, no PBR maps wired).
         shader.fragmentShader = shader.fragmentShader
             .replace('uniform vec3 diffuse;',
                 `uniform vec3 diffuse;
@@ -1035,30 +1005,16 @@ function initTerrain() {
                  uniform sampler2D uTileRockC;   uniform sampler2D uTileRockN;
                  uniform sampler2D uTileDirtC;   uniform sampler2D uTileDirtN;
                  uniform sampler2D uTileSandC;   uniform sampler2D uTileSandN;
-                 // R32.37.1-manus: PBR rough/AO/disp samplers + toggles
-                 uniform sampler2D uTileGrassR;  uniform sampler2D uTileGrassA;  uniform sampler2D uTileGrassD;
-                 uniform sampler2D uTileGrassR2; uniform sampler2D uTileGrassA2; uniform sampler2D uTileGrassD2;
-                 uniform sampler2D uTileRockR;   uniform sampler2D uTileRockA;   uniform sampler2D uTileRockD;
-                 uniform sampler2D uTileDirtR;   uniform sampler2D uTileDirtA;   uniform sampler2D uTileDirtD;
-                 uniform sampler2D uTileSandR;   uniform sampler2D uTileSandA;   uniform sampler2D uTileSandD;
-                 uniform float uUseRoughness;
-                 uniform float uUseAO;
-                 uniform float uUsePOM;
-                 uniform float uPOMSteps;
-                 uniform float uPOMScale;
                  uniform float uTileMeters;
                  uniform float uTerrainSize;
                  varying vec4 vSplat;
                  varying vec2 vWorldXZ;
                  varying float vWorldY;
-                 // R32.32-manus: unified wind uniforms for grass-fuzz far-field layer
                  uniform float uTime;
                  uniform vec2 uWindDir;
                  uniform float uWindSpeed;
                  uniform float uGrassFuzz;
-                 // 2D hash → angle in [0..2π)
                  float th_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
-                 // R32.10.1: smooth value noise for grass species blend (per-pixel, kills triangle-edge seams)
                  float vh(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
                  float vnoise(vec2 p) {
                      vec2 i = floor(p), f = fract(p);
@@ -1066,12 +1022,9 @@ function initTerrain() {
                      return mix(mix(vh(i), vh(i+vec2(1,0)), u.x),
                                 mix(vh(i+vec2(0,1)), vh(i+vec2(1,1)), u.x), u.y);
                  }
-                 // Stochastic 3-rotation sampling: take 3 differently-rotated samples of
-                 // the same texture and blend by hashed weights, breaking the visible loop.
                  vec4 stochasticSample(sampler2D tex, vec2 uv) {
                      vec2 cellId = floor(uv);
                      vec2 f = fract(uv);
-                     // Three offset rotated samples + 3 weights from 3 cell-hashes
                      float h0 = th_hash(cellId);
                      float h1 = th_hash(cellId + vec2(1.0, 0.0));
                      float h2 = th_hash(cellId + vec2(0.0, 1.0));
@@ -1084,7 +1037,6 @@ function initTerrain() {
                      vec4 s0 = texture2D(tex, R0 * uv + vec2(h0, h1));
                      vec4 s1 = texture2D(tex, R1 * uv + vec2(h1, h2));
                      vec4 s2 = texture2D(tex, R2 * uv + vec2(h2, h0));
-                     // Weights from triangular blend across the cell
                      float w0 = (1.0 - f.x) * (1.0 - f.y);
                      float w1 = f.x * (1.0 - f.y);
                      float w2 = f.y;
@@ -1092,59 +1044,9 @@ function initTerrain() {
                      return (s0 * w0 + s1 * w1 + s2 * w2) / wSum;
                  }`)
             .replace('#include <map_fragment>',
-                `// Re-normalize splat (vertex interp may break unity)
-                 float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
+                `float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
-                 // R32.37.3-manus: PARALLAX OCCLUSION MAPPING (rewritten).
-                 // Previous version (R32.37.1) used dFdx/dFdy(vWorldY) as a
-                 // proxy view direction. That blew up at distance — derivatives
-                 // explode when terrain compresses to a thin band of pixels at
-                 // the horizon, sending UV walk into garbage and wrecking the
-                 // far field. THIS version uses the canonical tangent-space
-                 // approach: vViewPosition is the camera-to-fragment vector in
-                 // view space; transpose(tbn) takes it to tangent space; the
-                 // .xy of that, normalized, IS the per-pixel parallax direction.
-                 // Plus three guards: (a) hard clamp on per-step offset, (b)
-                 // distance fade so POM is zero past ~60 m, (c) skip POM near
-                 // grazing angles where it would produce extreme offsets.
-                 if (uUsePOM > 0.5) {
-                     // Distance fade [0..1]: full POM under 25m, off past 60m.
-                     float distM = length(vViewPosition);
-                     float pomFade = 1.0 - smoothstep(25.0, 60.0, distM);
-                     if (pomFade > 0.01) {
-                         // Tangent-space view direction (camera → fragment, then to TS).
-                         vec3 V_view = normalize( vViewPosition );
-                         vec3 V_ts   = normalize( transpose(tbn) * V_view );
-                         // Skip near-grazing angles — V_ts.z near zero blows up.
-                         float zCos = max(0.20, abs(V_ts.z));
-                         vec2 maxOffset = (V_ts.xy / zCos) * (uPOMScale * pomFade);
-                         // Hard cap magnitude: never walk more than uPOMScale UV units total.
-                         float mlen = length(maxOffset);
-                         if (mlen > uPOMScale) maxOffset *= (uPOMScale / mlen);
-                         float steps = max(2.0, uPOMSteps);
-                         float stepDepth = 1.0 / steps;
-                         vec2  stepUV    = maxOffset / steps;
-                         vec2  curUV     = tUv;
-                         float curDepth  = 0.0;
-                         float h = 0.0;
-                         for (float i = 0.0; i < 16.0; i += 1.0) {
-                             if (i >= steps) break;
-                             float dG1 = texture2D(uTileGrassD,  curUV).r;
-                             float dG2 = texture2D(uTileGrassD2, curUV * 0.83 + vec2(13.7, 7.1)).r;
-                             float dG_ = mix(dG1, dG2, smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125)));
-                             float dR_ = texture2D(uTileRockD,  curUV).r;
-                             float dD_ = texture2D(uTileDirtD,  curUV).r;
-                             float dS_ = texture2D(uTileSandD,  curUV).r;
-                             h = dG_*splatW.r + dR_*splatW.g + dD_*splatW.b + dS_*splatW.a;
-                             if (curDepth >= 1.0 - h) break;
-                             curUV    += stepUV;
-                             curDepth += stepDepth;
-                         }
-                         tUv = curUV;
-                     }
-                 }
-                 // R32.10.1: grass species blend per-pixel (period ~80m).
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
                  vec4 cG1 = stochasticSample(uTileGrassC,  tUv);
                  vec4 cG2 = stochasticSample(uTileGrassC2, tUv * 0.83 + vec2(13.7, 7.1));
@@ -1153,87 +1055,28 @@ function initTerrain() {
                  vec4 cD  = stochasticSample(uTileDirtC,  tUv);
                  vec4 cS  = stochasticSample(uTileSandC,  tUv);
                  vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
-                 // R32.10.3: per-pixel watercolor wash (replaces vWash vertex attribute).
-                 // Three-octave smooth noise gives painterly color drift with NO seams.
                  float n1 = vnoise(vWorldXZ * 0.012);
                  float n2 = vnoise(vWorldXZ * 0.045 + vec2(31.7, 19.3));
                  float n3 = vnoise(vWorldXZ * 0.18 + vec2(7.4, 53.1));
                  float washCombo = n1 * 0.55 + n2 * 0.30 + n3 * 0.15;
-                 // Ridge warmth from world height (proxy: vWorldY relative to half
-                 // the terrain Y-span; safe approximation since heightmap is
-                 // [6.65,76.9]m, mid ~42m). Cool valleys, warm ridges — painterly.
                  float hN = clamp((vWorldY - 6.65) / 70.25, 0.0, 1.0);
-                 // R32.33-manus: wash chroma boosted ~30% per user request to
-                 // "elevate the existing colors and textures." Channel deltas
-                 // widened (R 0.10—0.16, G 0.06—0.10, B 0.04—0.07) so the
-                 // painterly wash actually shifts hue, not just brightness.
-                 // Ridge→valley warm→cool spread doubled (R 0.06—0.12,
-                 // G 0.02—0.05, B -0.05—-0.09) for visible warm ridges + cool
-                 // valleys. Plus a chroma-pump that pushes color away from grey:
-                 // (color - mean) *= 1.30. Done after wash composition so the
-                 // wash modulates already-saturated splat samples.
                  vec3 wash = vec3(1.0);
                  wash.r += (washCombo - 0.5) * 0.16 + (hN - 0.4) * 0.12;
                  wash.g += (washCombo - 0.5) * 0.10 + (hN - 0.4) * 0.05;
                  wash.b += (washCombo - 0.5) * 0.07 - (hN - 0.4) * 0.09;
-                 // R32.10.3: per-pixel AO from world-Y screen-space derivatives.
-                 // dFdx/dFdy of vWorldY gives the slope of the surface in screen
-                 // pixels. Steeper terrain = bigger derivatives = darker shading.
-                 // Doesn't depend on vNormal (which is gone in FLAT_SHADED mode).
-                 // Add macro height shading too: low areas slightly darker.
                  float dy = abs(dFdx(vWorldY)) + abs(dFdy(vWorldY));
                  float slopeShade = 1.0 - smoothstep(0.05, 0.40, dy) * 0.35;
                  float heightShade = 0.78 + 0.22 * hN;
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
-                 // R32.37.1-manus: PER-SLOT AMBIENT OCCLUSION from PBR maps.
-                 // Blend the 5 AO textures by the same splat weights, then
-                 // multiply into diffuse. uUseAO toggles the contribution
-                 // (1.0 = full AO, 0.0 = white/no-AO) for A/B comparison.
-                 if (uUseAO > 0.5) {
-                     float aG1 = texture2D(uTileGrassA,  tUv).r;
-                     float aG2 = texture2D(uTileGrassA2, tUv * 0.83 + vec2(13.7, 7.1)).r;
-                     float aG_ = mix(aG1, aG2, gMix);
-                     float aR_ = texture2D(uTileRockA,  tUv).r;
-                     float aD_ = texture2D(uTileDirtA,  tUv).r;
-                     float aS_ = texture2D(uTileSandA,  tUv).r;
-                     float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     // Soften AO so it darkens crevices but doesn't crush midtones.
-                     aoT = mix(1.0, aoT, 0.85);
-                     sampledDiffuseColor.rgb *= aoT;
-                 }
-                 // R32.34.2-manus: chroma-pump dialed 1.30 -> 1.10 because user
-                 // reported flat/banded near-ground after R32.33. The 1.30
-                 // pushed already-saturated grass/sand textures past their
-                 // natural variation budget into uniform color blocks. 1.10
-                 // still adds visible chroma without flattening highlights.
                  {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
                      sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.10;
                  }
-                 // R32.35-manus: LIVING TERRAIN BREATH REMOVED. User correctly
-                 // diagnosed the R32.34/.34.2 shader-driven motion as feeling
-                 // "under the ground - like a texture being moved" — because
-                 // that's exactly what it was (uv translation of a fixed
-                 // surface noise lookup). No parallax cue, brain reads it as
-                 // texture-behind-glass not 3D motion. Pivoting to ABOVE-GROUND
-                 // PARTICLE DUST instead (see initDustLayer/updateDustLayer).
-                 // The terrain shader now does its painterly job and stops
-                 // pretending to be alive. uTime / uWindDir uniforms remain
-                 // in case the dust layer needs a unified clock/wind reference.
-                 // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
-                 // user feedback was "It looks like noise static texture". Static
-                 // 2D fragment patterns can't sell as 3D grass blades because
-                 // there's no parallax cue. Reverting to plain painterly terrain
-                 // for the far field; near-field readability is now the job of
-                 // step 2 (camera-local thin-blade ring geometry).
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
-                // R32.37.1-manus: normals now sample at the POM-shifted tUv
-                // (instead of plain vWorldXZ/uTileMeters) so bumps + lighting
-                // stay in lock-step with the parallax-shifted color.
-                `vec2 nUv = tUv;
+                `vec2 nUv = vWorldXZ / uTileMeters;
                  vec3 nG1 = stochasticSample(uTileGrassN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nG2 = stochasticSample(uTileGrassN2, nUv * 0.83 + vec2(13.7, 7.1)).xyz * 2.0 - 1.0;
                  vec3 nG  = mix(nG1, nG2, gMix);
@@ -1242,30 +1085,7 @@ function initTerrain() {
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
                  vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
                  mapN.xy *= normalScale;
-                 normal = normalize( tbn * mapN );`)
-            // R32.37.1-manus: PER-SLOT ROUGHNESS MAPS.
-            // MeshStandardMaterial uses a fixed `roughness` uniform (0.93 set
-            // above) plus an optional roughnessMap. We don't bind a map slot;
-            // instead we override the <roughnessmap_fragment> chunk to write
-            // `roughnessFactor` directly from a splat-weighted blend of our
-            // 5 per-slot roughness textures. uUseRoughness toggles the
-            // override on/off; when off we keep the constant 0.93 for A/B.
-            .replace('#include <roughnessmap_fragment>',
-                `float roughnessFactor = roughness;
-                 if (uUseRoughness > 0.5) {
-                     // R32.37.3-manus: read .r (canonical roughness channel; AmbientCG
-                     // roughness JPGs are grayscale so all channels match anyway).
-                     // Tighter band biased rougher (0.65–1.00) so the terrain stays
-                     // matte/painterly and never gets glossy enough to mirror the sky.
-                     float rG1 = texture2D(uTileGrassR,  tUv).r;
-                     float rG2 = texture2D(uTileGrassR2, tUv * 0.83 + vec2(13.7, 7.1)).r;
-                     float rG_ = mix(rG1, rG2, gMix);
-                     float rR_ = texture2D(uTileRockR,  tUv).r;
-                     float rD_ = texture2D(uTileDirtR,  tUv).r;
-                     float rS_ = texture2D(uTileSandR,  tUv).r;
-                     float rT  = rG_*splatW.r + rR_*splatW.g + rD_*splatW.b + rS_*splatW.a;
-                     roughnessFactor = clamp(0.65 + 0.35 * rT, 0.50, 1.00);
-                 }`);
+                 normal = normalize( tbn * mapN );`);
         mat.userData.shader = shader;
     };
 
