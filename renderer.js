@@ -2558,6 +2558,22 @@ function initStateViews() {
         }
     }).catch(e => console.warn('[R32.13] CombatFX load failed:', e));
 
+    // R32.17-manus: Tribes-style Command Map (press C to toggle)
+    import('./renderer_command_map.js').then(() => {
+        if (window.CommandMap) {
+            window.CommandMap.init({
+                getHeightmap: () => ({ data: _htData, size: _htSize, scale: _htScale }),
+                getPlayerView: () => ({
+                    view: playerView, stride: playerStride,
+                    count: playerView ? Math.floor(playerView.length / playerStride) : 0,
+                }),
+                getLocalIdx: () => Module._getLocalPlayerIdx(),
+                getFlagView: () => ({ view: flagView, stride: flagStride }),
+                getBuildings: () => buildingMeshes,
+            });
+        }
+    }).catch(e => console.warn('[R32.17] CommandMap load failed:', e));
+
     // R30.2: position the sun BEFORE the player spawns. Previously the sun
     // was only positioned inside syncCamera, so until the player got a real
     // position the sun sat at (0,0,0) with target (0,0,0) — zero contribution
@@ -3187,6 +3203,8 @@ function loop() {
         if (window.CombatFX && window.CombatFX.update) window.CombatFX.update(dt);
         // R32.15-manus: viewmodel sway (jet dip+jitter, ski lean+bob, idle drift)
         _updateViewmodelSway(dt);
+        // R32.17-manus: command map full-screen tactical overlay (toggled with C)
+        if (window.CommandMap && window.CommandMap.update) window.CommandMap.update();
     }
 
     if (composer) composer.render();
