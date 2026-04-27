@@ -986,7 +986,7 @@ function initTerrain() {
         // R32.38-manus: AO is now wired (default ON). Roughness + POM stay 0.0
         // until R32.38.1 / R32.38.2 wire those features back in.
         shader.uniforms.uUseRoughness = { value: 0.0 };
-        shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO', true) };
+        shader.uniforms.uUseAO        = { value: 0.0 };  // R32.38.8: temporarily disabled
         shader.uniforms.uUsePOM       = { value: 0.0 };
 
         shader.vertexShader = shader.vertexShader
