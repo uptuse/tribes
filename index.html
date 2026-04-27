@@ -678,7 +678,7 @@
   <!-- R32.34.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.37.1</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.37.2</div>
   <!-- R32.36-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <script>
@@ -705,6 +705,72 @@
         chip.style.color = (fps >= 50) ? '#9DEAA0' : (fps >= 30) ? '#FFD479' : '#FF8A8A';
         chip.style.borderColor = (fps >= 50) ? 'rgba(157,234,160,0.35)' : (fps >= 30) ? 'rgba(255,212,121,0.35)' : 'rgba(255,138,138,0.35)';
       }, 250);
+    })();
+  </script>
+
+  <!-- R32.37.2-manus: PBR toggle chips on the main game HUD per user request
+       ("I want the tabs on the game itself - not settings"). Three clickable
+       chips stacked under the FPS chip: Roughness / Ambient Occlusion /
+       Parallax (POM). Click to toggle; green border = ON, red border = OFF.
+       State persists in localStorage via the same ST.pbr* keys as the
+       Settings menu, so opening Settings shows the same state. -->
+  <div id="pbr-chips" style="position:fixed;top:64px;right:10px;z-index:10000;display:flex;flex-direction:column;gap:4px;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;">
+    <div class="pbr-chip" id="pbr-chip-rough" data-key="roughness" data-st="pbrRoughness" title="Per-tile shininess from PBR roughness map" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">R: ON</div>
+    <div class="pbr-chip" id="pbr-chip-ao"    data-key="ao"        data-st="pbrAO"        title="Baked micro-shadow in crevices"               style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">AO: ON</div>
+    <div class="pbr-chip" id="pbr-chip-pom"   data-key="pom"       data-st="pbrPOM"       title="Parallax Occlusion Mapping (3D depth from height map; ~5-10% FPS)" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">POM: ON</div>
+  </div>
+  <script>
+    // R32.37.2-manus: PBR chip wiring. Reads/writes ST.pbr* via the same
+    // saveSettings() pipeline as the Settings menu, and pushes the toggle
+    // through window.__tribesSetTerrainPBR(key, on) to flip the shader
+    // uniform live (no recompile). Mirrors any open Settings checkbox by id.
+    (function(){
+      var LABELS = { roughness: 'R', ao: 'AO', pom: 'POM' };
+      function paint(chip, on) {
+        var key  = chip.dataset.key;
+        chip.textContent = LABELS[key] + ': ' + (on ? 'ON' : 'OFF');
+        chip.style.color       = on ? '#9DEAA0' : '#FF8A8A';
+        chip.style.borderColor = on ? 'rgba(157,234,160,0.55)' : 'rgba(255,138,138,0.55)';
+        chip.style.opacity     = on ? '1.0' : '0.78';
+      }
+      function readST(stKey) {
+        // Default ON if unset; respect explicit false
+        try { return (window.ST && window.ST[stKey] !== false); } catch(e) { return true; }
+      }
+      function syncOne(chip) {
+        paint(chip, readST(chip.dataset.st));
+      }
+      function syncAll() {
+        document.querySelectorAll('#pbr-chips .pbr-chip').forEach(syncOne);
+      }
+      // Click handler
+      document.querySelectorAll('#pbr-chips .pbr-chip').forEach(function(chip){
+        chip.addEventListener('click', function(){
+          var stKey = chip.dataset.st, key = chip.dataset.key;
+          var cur = readST(stKey);
+          var next = !cur;
+          // 1) update ST + persist
+          if (window.ST) {
+            window.ST[stKey] = next;
+            if (typeof saveSettings === 'function') saveSettings();
+          }
+          // 2) push to shader uniform
+          if (window.__tribesSetTerrainPBR) window.__tribesSetTerrainPBR(key, next);
+          // 3) repaint our chip
+          paint(chip, next);
+          // 4) keep the (possibly already-built) Settings checkbox in sync
+          var idMap = { roughness: 's-pbr-rough', ao: 's-pbr-ao', pom: 's-pbr-pom' };
+          var cb = document.getElementById(idMap[key]);
+          if (cb) cb.checked = next;
+        });
+      });
+      // Sync once ST is loaded; the loadSettings() call happens later in
+      // index.html, so wait one tick.
+      setTimeout(syncAll, 0);
+      // Re-sync after settings load to honour any saved ST values.
+      window.addEventListener('load', function(){ setTimeout(syncAll, 50); });
+      // Expose so other code (e.g. Settings checkbox onchange) can re-sync chips.
+      window.__tribesSyncPBRChips = syncAll;
     })();
   </script>
 
@@ -1353,9 +1419,9 @@
         <div class="s-row"><div class="s-label">Show FPS</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-fps" onchange="sSave('showFPS',this.checked);document.getElementById('fps-counter').style.display=this.checked?'block':'none'"></div></div>
         <!-- R32.37.1-manus: Per-feature PBR toggles for A/B comparison of the new 2K texture stack -->
         <div class="s-section">Terrain PBR</div>
-        <div class="s-row"><div class="s-label">Roughness Maps</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-rough" onchange="sSave('pbrRoughness',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('roughness',this.checked)"><span class="s-note"> per-tile shininess from PBR map</span></div></div>
-        <div class="s-row"><div class="s-label">Ambient Occlusion</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-ao" onchange="sSave('pbrAO',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('ao',this.checked)"><span class="s-note"> baked micro-shadow in crevices</span></div></div>
-        <div class="s-row"><div class="s-label">Parallax Depth (POM)</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-pom" onchange="sSave('pbrPOM',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('pom',this.checked)"><span class="s-note"> fake 3D depth from displacement (~5-10% FPS)</span></div></div>
+        <div class="s-row"><div class="s-label">Roughness Maps</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-rough" onchange="sSave('pbrRoughness',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('roughness',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> per-tile shininess from PBR map</span></div></div>
+        <div class="s-row"><div class="s-label">Ambient Occlusion</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-ao" onchange="sSave('pbrAO',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('ao',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> baked micro-shadow in crevices</span></div></div>
+        <div class="s-row"><div class="s-label">Parallax Depth (POM)</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-pom" onchange="sSave('pbrPOM',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('pom',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> fake 3D depth from displacement (~5-10% FPS)</span></div></div>
       </div>
 
       <!-- GAMEPLAY TAB -->
