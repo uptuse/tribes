@@ -118,11 +118,20 @@
     }
 
     function tick(t) {
-        // t is seconds elapsed; if not provided, derive from clock.
-        if (typeof t !== 'number') {
-            t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 - _t0;
-        }
-        _applyBreathing(t);
+        // R32.25.3 HOTFIX: camera breathing disabled. The original logic
+        // tried to subtract the previous frame's rotation contribution
+        // before adding a new one, but the camera's rotation is overwritten
+        // by syncCamera() from C++ every frame. The subtract was therefore
+        // subtracting from C++'s rotation (which doesn't carry the offset),
+        // causing camera drift that eventually pointed into empty space
+        // (= black render). Mood bed is the only feature still active.
+        // Sub-perceptual breathing was low-value anyway.
+        return;
+        // (preserved for reference)
+        // if (typeof t !== 'number') {
+        //     t = (typeof performance !== 'undefined' ? performance.now() : Date.now()) / 1000 - _t0;
+        // }
+        // _applyBreathing(t);
     }
 
     window.Cohesion = { init: init, tick: tick };
