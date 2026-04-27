@@ -17,14 +17,17 @@
     'use strict';
     if (typeof window === 'undefined') return;
 
-    // R32.25.2 HOTFIX: toonify default flipped from on to off. Original default
-    // (?style=pbr to disable) caused full black render on user's machine. Most
-    // likely cause: THREE.RedFormat single-channel DataTexture for the gradient
-    // ramp not supported on user's GPU/driver, leaving every converted material
-    // with a broken gradientMap sampler -> entire scene renders black. Now
-    // OPT-IN via ?style=toon. Default = unchanged PBR materials = known-working.
+    // R32.26-manus: Toonify is now DEFAULT ON as part of the (A) Stylized
+    // War Diorama mood commit. The R32.25.2 RedFormat -> RGBAFormat fix made
+    // the gradient ramp portable across GPUs, and the actual culprit of the
+    // post-R32.25 black screen was modulepreload-before-importmap (R32.25.4),
+    // not toonify. So we can safely flip the default back on.
+    //
+    // Escape hatch preserved: ?style=pbr in the URL bypasses conversion and
+    // falls back to MeshStandardMaterial everywhere. Useful for A/B testing
+    // and for debugging any future material-related issue.
     const PARAMS = new URLSearchParams(window.location.search);
-    const ENABLED = PARAMS.get('style') === 'toon';
+    const ENABLED = PARAMS.get('style') !== 'pbr';
 
     function _log() { if (window.DEBUG_LOGS) console.log.apply(console, arguments); }
 
@@ -146,12 +149,22 @@
             _log('[Toonify] disabled via ?style=pbr — leaving materials as PBR.');
             return { converted: 0, skipped: 0, disabled: true };
         }
+        // R32.26-manus: defensive guard. If for any reason buildGradientMap
+        // throws, swallow it and fall back to PBR rather than risk a black
+        // scene. Toonify is now the default; failure here used to be a
+        // black-screen footgun, never again.
+        try {
         STATE.THREE = THREE;
         STATE.scene = scene;
         STATE.gradientMap = _buildGradientMap(THREE);
         const result = _toonifyScene(THREE, scene, STATE.gradientMap);
         _log('[Toonify] init: converted', result.converted, 'materials,', result.skipped, 'skipped.');
         return result;
+        } catch (e) {
+            console.error('[Toonify] init failed, falling back to PBR:', e);
+            STATE.gradientMap = null;
+            return { converted: 0, skipped: 0, error: String(e) };
+        }
     }
 
     function reapply() {
@@ -174,5 +187,5 @@
         get gradientMap() { return STATE.gradientMap; },
     };
 
-    _log('[Toonify] module loaded.', ENABLED ? '(enabled)' : '(disabled via ?style=pbr)');
+    _log('[Toonify] module loaded.', ENABLED ? '(enabled — default for mood A: stylized war diorama)' : '(disabled via ?style=pbr)');
 })();
