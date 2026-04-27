@@ -968,6 +968,14 @@ function initTerrain() {
         shader.uniforms.uTileRockA   = { value: rockA };
         shader.uniforms.uTileDirtA   = { value: dirtA };
         shader.uniforms.uTileSandA   = { value: sandA };
+        // R32.39-manus: Roughness sampler uniforms (per-slot surface shininess).
+        // These drive the PBR roughnessFactor on the terrain material so rock
+        // can catch sun more sharply while grass stays diffuse.
+        shader.uniforms.uTileGrassR  = { value: grassR };
+        shader.uniforms.uTileGrassR2 = { value: grassR2 };
+        shader.uniforms.uTileRockR   = { value: rockR };
+        shader.uniforms.uTileDirtR   = { value: dirtR };
+        shader.uniforms.uTileSandR   = { value: sandR };
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };
         // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
@@ -985,7 +993,7 @@ function initTerrain() {
         // attempt at PBR wiring (see CHANGELOG R32.37.4 for plan).
         // R32.38-manus: AO is now wired (default ON). Roughness + POM stay 0.0
         // until R32.38.1 / R32.38.2 wire those features back in.
-        shader.uniforms.uUseRoughness = { value: 0.0 };
+        shader.uniforms.uUseRoughness = { value: _pbrInit('pbrRoughness', true) };
         shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO', true) };
         shader.uniforms.uUsePOM       = { value: 0.0 };
 
@@ -1021,6 +1029,12 @@ function initTerrain() {
                  uniform sampler2D uTileGrassA;  uniform sampler2D uTileGrassA2;
                  uniform sampler2D uTileRockA;   uniform sampler2D uTileDirtA;   uniform sampler2D uTileSandA;
                  uniform float uUseAO;
+                 // R32.39-manus: Roughness samplers + uUseRoughness toggle. When ON,
+                 // <roughnessmap_fragment> is overridden so roughnessFactor comes from
+                 // the per-slot splat-blended roughness texture instead of the constant 0.93.
+                 uniform sampler2D uTileGrassR;  uniform sampler2D uTileGrassR2;
+                 uniform sampler2D uTileRockR;   uniform sampler2D uTileDirtR;   uniform sampler2D uTileSandR;
+                 uniform float uUseRoughness;
                  uniform float uTileMeters;
                  uniform float uTerrainSize;
                  varying vec4 vSplat;
@@ -1106,6 +1120,26 @@ function initTerrain() {
                      sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.10;
                  }
                  diffuseColor *= sampledDiffuseColor;`)
+            .replace('#include <roughnessmap_fragment>',
+                `// R32.39-manus: per-slot texture-driven roughness. When uUseRoughness
+                 // is ON, splat-blend 5 roughness textures at the same tUv as color
+                 // and use that (remapped into a plausible band) as roughnessFactor.
+                 // When OFF, fall back to the material's constant roughness (0.93).
+                 float roughnessFactor = roughness;
+                 if (uUseRoughness > 0.5) {
+                     vec2 rUv = vWorldXZ / uTileMeters;
+                     float rG1 = texture2D(uTileGrassR,  rUv).r;
+                     float rG2 = texture2D(uTileGrassR2, rUv * 0.83 + vec2(13.7, 7.1)).r;
+                     float rG_ = mix(rG1, rG2, gMix);
+                     float rR_ = texture2D(uTileRockR,  rUv).r;
+                     float rD_ = texture2D(uTileDirtR,  rUv).r;
+                     float rS_ = texture2D(uTileSandR,  rUv).r;
+                     float rT = rG_*splatW.r + rR_*splatW.g + rD_*splatW.b + rS_*splatW.a;
+                     // Remap raw roughness [0..1] into [0.55..0.98] so terrain never
+                     // goes fully mirror-glossy (would look like wet plastic) and
+                     // never goes fully matte (kills the variation we want to see).
+                     roughnessFactor = clamp(mix(0.55, 0.98, rT), 0.55, 0.98);
+                 }`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
                  vec3 nG1 = stochasticSample(uTileGrassN,  nUv).xyz * 2.0 - 1.0;
