@@ -18,6 +18,15 @@
   <link rel="preload" as="script" href="tribes.js">
   <link rel="modulepreload" href="./renderer.js">
   <link rel="modulepreload" href="./vendor/three/r170/three.module.js">
+
+  <!-- R32.25-manus: typography pair (Visual Cohesion #2.8). Existing Cinzel/Barlow
+       Condensed pair already provides Tribes-flavored sci-fi headline+body identity
+       (more thematic than playbook's generic Rajdhani recommendation). Adding only
+       Courier Prime as the intentional monospaced face for telemetry readouts that
+       currently default to ugly browser-monospace. Preconnect saves ~100ms. -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap">
   <!-- OpenGraph / Facebook / Discord -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Starsiege: Tribes — Browser Edition">
@@ -242,8 +251,8 @@
     #ski-slope-bar { width:100px; height:8px; background:#1a1a1a; border:1px solid #333;
       position:relative; overflow:hidden; }
     #ski-slope-fill { position:absolute; top:0; height:100%; width:0; transition:width 0.1s, background 0.1s; }
-    #ski-slope-label { font-size:0.65em; color:#888; font-family:monospace; }
-    #ski-speed { font-family:monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
+    #ski-slope-label { font-size:0.65em; color:#888; font-family:'Courier Prime',monospace; }
+    #ski-speed { font-family:'Courier Prime',monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
     #ski-speed-unit { font-size:0.7em; color:#5A8090; }
     /* D2: hit-confirm tick (extended R32.13 with brass chevrons + kill flash) */
     #hit-tick { display:none; position:absolute; top:50%; left:50%;
@@ -986,7 +995,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.22</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.25</div>
     </div>
   </div>
 
@@ -4094,6 +4103,13 @@
           __zoomScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
           __zoomScr.onerror = function(e){ console.error('[R32.18] renderer_zoom.js FAILED to load', e); };
           document.head.appendChild(__zoomScr);
+
+          // R32.25-manus: load Cohesion module (camera breathing + ambient mood bed)
+          var __cohScr = document.createElement('script');
+          __cohScr.src = './renderer_cohesion.js?v=' + Date.now();
+          __cohScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.25] renderer_cohesion.js loaded'); };
+          __cohScr.onerror = function(e){ console.error('[R32.25] renderer_cohesion.js FAILED to load', e); };
+          document.head.appendChild(__cohScr);
 
           // R32.21-manus: load Palette FIRST so all subsequent modules can reference window.PALETTE
           var __palScr = document.createElement('script');

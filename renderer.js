@@ -2481,7 +2481,14 @@ function initPostProcessing() {
     composer.setPixelRatio(tier.pixelRatio);
     const renderPass = new RenderPass(scene, camera);
     composer.addPass(renderPass);
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.4, 0.6, 0.85);
+    // R32.23: selective-bloom-via-threshold (Visual Cohesion #2.7). Instead of
+    // a heavy two-pass layer-masked bloom (which requires per-frame material
+    // swaps across thousands of grass blades), we lift the HDR threshold so
+    // only genuinely emissive surfaces (muzzle flash, jet flame, hit
+    // indicators, lit panels) ever exceed it. Net result: bloom looks
+    // selective without paying the perf cost of selective rendering.
+    // Was: (res, 0.4 strength, 0.6 radius, 0.85 threshold)
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.30, 0.45, 0.92);
     composer.addPass(bloomPass);
     if (tier.postProcess === 'full') {
         gradePass = new ShaderPass(makeVignetteAndGradeShader());
@@ -2561,9 +2568,17 @@ function makeVignetteAndGradeShader() {
             lutStrength: { value: 1.0 },          // R32.22: 0..1 mix toward LUT
             vignetteIntensity: { value: 0.18 },
             warmth: { value: 0.06 },
-            desaturation: { value: 0.10 },
-            grain: { value: 0.012 },              // R32.25 placeholder (#2.12 cinematic grain)
+            desaturation: { value: 0.10 },            grain: { value: 0.018 },              // R32.25: bumped 0.012 to 0.018 for visible cinematic grain (#2.12)
             time: { value: 0.0 },
+            // R32.24: tilt-shift / depth-haze (#2.5). focusBand = where the
+            // image stays sharp around vUv.y=0.5; edgeBand = where blur tops
+            // out at full strength. blurAmount scales the radius of the 4-tap
+            // gather. Setting tiltShift = 0 disables.
+            tiltShift: { value: 1.0 },
+            tiltFocus: { value: 0.18 },
+            tiltEdge:  { value: 0.55 },
+            tiltBlur:  { value: 1.6 },
+            resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
         },
         vertexShader: /* glsl */`
             varying vec2 vUv;
@@ -2579,6 +2594,11 @@ function makeVignetteAndGradeShader() {
             uniform float desaturation;
             uniform float grain;
             uniform float time;
+            uniform float tiltShift;
+            uniform float tiltFocus;
+            uniform float tiltEdge;
+            uniform float tiltBlur;
+            uniform vec2  resolution;
             varying vec2 vUv;
 
             // R32.22: sample a 32^3 LUT packed as a 1024x32 horizontal strip.
@@ -2601,8 +2621,25 @@ function makeVignetteAndGradeShader() {
                 return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
             }
 
+            // R32.24: tilt-shift gather. 4 taps in a + pattern with blur
+            // radius scaled by vertical distance from focus band.
+            vec4 sampleTilt() {
+                if (tiltShift < 0.001) return texture2D(tDiffuse, vUv);
+                float dist = abs(vUv.y - 0.5);
+                float k = smoothstep(tiltFocus, tiltEdge, dist);
+                if (k < 0.001) return texture2D(tDiffuse, vUv);
+                vec2 px = vec2(1.0) / resolution;
+                float r = tiltBlur * k;
+                vec4 s = texture2D(tDiffuse, vUv);
+                s += texture2D(tDiffuse, vUv + vec2( r, 0.0) * px);
+                s += texture2D(tDiffuse, vUv + vec2(-r, 0.0) * px);
+                s += texture2D(tDiffuse, vUv + vec2(0.0,  r) * px);
+                s += texture2D(tDiffuse, vUv + vec2(0.0, -r) * px);
+                return s * 0.2;
+            }
+
             void main(){
-                vec4 c = texture2D(tDiffuse, vUv);
+                vec4 c = sampleTilt();
 
                 // Original mild desat + warm-shadows pre-grade.
                 float gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
@@ -2660,6 +2697,11 @@ function initStateViews() {
     camera.lookAt(-300, 30, -300);   // look toward the map basin center
     scene.add(camera);
     camera.add(weaponHand);
+
+    // R32.25-manus: cohesion polish (camera breathing + mood bed)
+    if (window.Cohesion && window.Cohesion.init) {
+        try { window.Cohesion.init(THREE, camera); } catch (e) { console.warn('[R32.25] cohesion init failed', e); }
+    }
 
     // R32.13-manus: combat FX module (muzzle flash, tracer, hit indicator).
     // Lazy-load and init on first frame so renderer.js doesn't take a hard
@@ -3333,6 +3375,9 @@ function loop() {
         gradePass.material.uniforms.time.value = (gradePass.material.uniforms.time.value + 0.05) % 10000.0;
     }
 
+    // R32.25: cohesion tick (sub-perceptual camera breathing).
+    if (window.Cohesion && window.Cohesion.tick) window.Cohesion.tick();
+
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
@@ -3448,6 +3493,10 @@ function onResize() {
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
     if (composer) composer.setSize(w, h);
+    // R32.24: keep tilt-shift's pixel-stride uniform in sync with viewport.
+    if (gradePass && gradePass.material && gradePass.material.uniforms && gradePass.material.uniforms.resolution) {
+        gradePass.material.uniforms.resolution.value.set(w, h);
+    }
     if (camera) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
