@@ -1732,8 +1732,11 @@ async function initInteriorShapes() {
 
         // R32.48: Per-mesh material using geometry groups from the material palette.
         // Each unique material index gets its own PBR material (color, roughness, metalness, emissive).
-        // Vertex colors still used for per-triangle tinting within each material group.
-        const _matProps = { side: THREE.DoubleSide, flatShading: false, vertexColors: true };
+        // R32.48.1: polygonOffset prevents z-fighting on thin/coplanar surfaces with DoubleSide.
+        const _matProps = {
+            side: THREE.DoubleSide, flatShading: false, vertexColors: true,
+            polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
+        };
 
         // Cache of material arrays per mesh filename (since multiple instances share geometry)
         const matArrayCache = new Map();
@@ -1847,15 +1850,15 @@ async function initInteriorShapes() {
                 }
                 finalIndices = sortedIndices;
 
-                // Build per-tri color array from palette
+                // R32.48.1: With geometry groups, each group gets its own material
+                // whose .color already encodes the palette color. Vertex colors are
+                // multiplied with material.color, so we set them to WHITE (1,1,1)
+                // to avoid double-multiplication (palette × palette = too dark).
                 materialColors = new Float32Array(finalNTris * 3);
                 for (let t = 0; t < finalNTris; t++) {
-                    const mi = sortedMatIndices[t];
-                    const texName = mi < matNames.length ? matNames[mi] : '';
-                    const entry = texName ? lookupPalette(texName) : defaultEntry;
-                    materialColors[t * 3]     = entry.color[0];
-                    materialColors[t * 3 + 1] = entry.color[1];
-                    materialColors[t * 3 + 2] = entry.color[2];
+                    materialColors[t * 3]     = 1.0;
+                    materialColors[t * 3 + 1] = 1.0;
+                    materialColors[t * 3 + 2] = 1.0;
                 }
 
                 // Build group boundaries
