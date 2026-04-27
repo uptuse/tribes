@@ -68,6 +68,8 @@ const PROJ_COLORS = [
 
 // Reused tmp objects
 const _tmpVec = new THREE.Vector3();
+const _aimPoint3P = { x: 0, y: 0, z: 0 };    // R32.43: persistent aim-point (no per-frame alloc)
+const _flagStateByTeam = [0, 0];               // R32.43: persistent flag state (no per-frame alloc)
 
 // Diagnostic
 let _frameCount = 0;
@@ -3401,7 +3403,7 @@ function syncCamera() {
     // Camera-forward * 1000m, then ray-march against terrain to find first hit.
     // Available as window._tribesAimPoint3P for C++ aim-convergence readback.
     {
-        const cf = new THREE.Vector3(0, 0, -1).applyQuaternion(camera.quaternion);
+        const cf = _tmpVec.set(0, 0, -1).applyQuaternion(camera.quaternion);
         let hitX = camera.position.x + cf.x * 1000;
         let hitY = camera.position.y + cf.y * 1000;
         let hitZ = camera.position.z + cf.z * 1000;
@@ -3428,7 +3430,8 @@ function syncCamera() {
                 break;
             }
         }
-        window._tribesAimPoint3P = { x: hitX, y: hitY, z: hitZ };
+        _aimPoint3P.x = hitX; _aimPoint3P.y = hitY; _aimPoint3P.z = hitZ;
+        window._tribesAimPoint3P = _aimPoint3P;
     }
 
     // R31.7.1: weapon viewmodel — visible only in true 1P (camDist near 0).
@@ -3477,13 +3480,13 @@ function syncCanonicalAnims(t) {
     // R32.6: read live flag state per team so flag stands can react when the
     // flag is taken (state=1=carried, 2=dropped). flagView is the Float32 view
     // into g_rFlags; team is at offset 3, state at offset 4.
-    const flagStateByTeam = [0, 0]; // index = team
+    _flagStateByTeam[0] = 0; _flagStateByTeam[1] = 0; // R32.43: reset in-place (no alloc)
     if (flagView && flagStride) {
         for (let i = 0; i < 2; i++) {
             const fo = i * flagStride;
             const ft = flagView[fo + 3] | 0;
             const fs = flagView[fo + 4] | 0;
-            if (ft === 0 || ft === 1) flagStateByTeam[ft] = fs;
+            if (ft === 0 || ft === 1) _flagStateByTeam[ft] = fs;
         }
     }
 
@@ -3523,7 +3526,7 @@ function syncCanonicalAnims(t) {
             } else if (ud.kind === 'flagstand' && ud.disc) {
                 // R32.6: react to live flag state — calm pulse at home, intense
                 // alert pulse when flag is missing from base.
-                const fstate = flagStateByTeam[ud.team] || 0;
+                const fstate = _flagStateByTeam[ud.team] || 0;
                 let intensity;
                 if (fstate === 0) {
                     intensity = 0.20 + 0.10 * (0.5 + 0.5 * Math.sin(t * 1.4 + ud.team * Math.PI));
@@ -3567,6 +3570,70 @@ function applyQuality(newQuality) {
 }
 
 // ============================================================
+// R32.43: extracted first-frame diagnostic dump (was inline in loop())
+// ============================================================
+function _runFirstFrameDiagnostic() {
+    try {
+        console.log('[R30.0] === SCENE DIAGNOSTIC DUMP (one-shot) ===');
+        const counts = {};
+        const lights = [];
+        const orphans = [];
+        scene.traverse(function(o){
+            counts[o.type] = (counts[o.type] || 0) + 1;
+            if (o.isLight) {
+                lights.push({
+                    type: o.type,
+                    intensity: o.intensity,
+                    color: o.color ? o.color.getHexString() : 'n/a',
+                    position: o.position ? [o.position.x.toFixed(1), o.position.y.toFixed(1), o.position.z.toFixed(1)] : null,
+                    castShadow: !!o.castShadow,
+                });
+            }
+            if (!o.parent && o !== scene) orphans.push(o.type + '#' + o.uuid.slice(0,8));
+        });
+        console.log('[R30.0] scene types:', counts);
+        console.log('[R30.0] lights:', lights);
+        if (orphans.length) console.warn('[R30.0] ORPHAN nodes (no parent, not in scene):', orphans);
+
+        console.log('[R30.0] scene root has ' + scene.children.length + ' immediate children:');
+        scene.children.forEach(function(c, i){
+            const bb = c.geometry && c.geometry.boundingBox;
+            let bbStr = 'n/a';
+            if (c.geometry) {
+                if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
+                if (c.geometry.boundingBox) {
+                    const b = c.geometry.boundingBox;
+                    bbStr = '[' + b.min.x.toFixed(0) + ',' + b.min.y.toFixed(0) + ',' + b.min.z.toFixed(0) + ' \u2192 ' + b.max.x.toFixed(0) + ',' + b.max.y.toFixed(0) + ',' + b.max.z.toFixed(0) + ']';
+                }
+            }
+            let matInfo = 'no-material';
+            if (c.material) {
+                const m = Array.isArray(c.material) ? c.material[0] : c.material;
+                matInfo = m.type + ' color=' + (m.color ? '#'+m.color.getHexString() : 'n/a') + ' map=' + (m.map ? 'yes' : 'no') + ' transparent=' + !!m.transparent + ' opacity=' + (m.opacity!==undefined ? m.opacity : 'n/a') + ' visible=' + m.visible;
+            }
+            let childCount = '';
+            if (c.children && c.children.length) childCount = ' (+' + c.children.length + ' children)';
+            console.log('  [' + i + '] ' + c.type + ' name="' + (c.name||'') + '" visible=' + c.visible + ' bbox=' + bbStr + ' mat=' + matInfo + childCount);
+        });
+
+        console.log('[R30.0] camera position:', [camera.position.x.toFixed(1), camera.position.y.toFixed(1), camera.position.z.toFixed(1)],
+                    ' rotation:', [camera.rotation.x.toFixed(2), camera.rotation.y.toFixed(2), camera.rotation.z.toFixed(2)],
+                    ' near=' + camera.near + ' far=' + camera.far + ' fov=' + camera.fov);
+
+        const info = renderer.info;
+        console.log('[R30.0] renderer.info: ' + info.render.calls + ' calls, ' + info.render.triangles + ' tris, ' + info.memory.geometries + ' geom, ' + info.memory.textures + ' tex, programs=' + info.programs.length);
+
+        console.log('[R30.0] scene.background:', scene.background ? (scene.background.isColor ? '#'+scene.background.getHexString() : scene.background.type) : 'null',
+                    ' scene.fog:', scene.fog ? scene.fog.type + ' density=' + (scene.fog.density!==undefined ? scene.fog.density : 'near='+scene.fog.near+' far='+scene.fog.far) : 'null');
+
+        console.log('[R30.0] === END DIAGNOSTIC DUMP ===');
+    } catch (e) {
+        console.error('[R30.0] diagnostic dump threw:', e);
+    }
+    console.log('[R29] First Three.js frame submitted');
+}
+
+// ============================================================
 // Render loop
 // ============================================================
 function loop() {
@@ -3589,7 +3656,7 @@ function loop() {
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
-        const now = performance.now() * 0.001;
+        const now = t; // R32.43: reuse t from loop() top — same performance.now()*0.001
         const dt = _lastTickTime > 0 ? Math.min(0.1, now - _lastTickTime) : 1/60;
         _lastTickTime = now;
         polish.tick(dt, t);
@@ -3638,104 +3705,33 @@ function loop() {
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
-    // R30.0: one-shot diagnostic dump on first real frame to ground-truth what's
-    // actually in the scene vs what the boot logs claim. The user's video showed
-    // a half-empty world (terrain + black silhouettes) despite the [R18] init
-    // logs saying 39 buildings + 16 soldiers were created. We need to know:
-    //   - which meshes are actually in the scene graph
-    //   - which are visible / culled / parentless
-    //   - what materials they have
-    //   - what the scene root's bounding box covers
-    //   - what lights exist and where
-    //   - what the camera sees
-    if (!_r30Diagnosed) {
-        _r30Diagnosed = true;
-        try {
-            console.log('[R30.0] === SCENE DIAGNOSTIC DUMP (one-shot) ===');
-            const counts = {};
-            const lights = [];
-            const orphans = [];
-            scene.traverse(function(o){
-                counts[o.type] = (counts[o.type] || 0) + 1;
-                if (o.isLight) {
-                    lights.push({
-                        type: o.type,
-                        intensity: o.intensity,
-                        color: o.color ? o.color.getHexString() : 'n/a',
-                        position: o.position ? [o.position.x.toFixed(1), o.position.y.toFixed(1), o.position.z.toFixed(1)] : null,
-                        castShadow: !!o.castShadow,
-                    });
-                }
-                if (!o.parent && o !== scene) orphans.push(o.type + '#' + o.uuid.slice(0,8));
-            });
-            console.log('[R30.0] scene types:', counts);
-            console.log('[R30.0] lights:', lights);
-            if (orphans.length) console.warn('[R30.0] ORPHAN nodes (no parent, not in scene):', orphans);
-
-            // Scene root immediate children
-            console.log('[R30.0] scene root has ' + scene.children.length + ' immediate children:');
-            scene.children.forEach(function(c, i){
-                const bb = c.geometry && c.geometry.boundingBox;
-                let bbStr = 'n/a';
-                if (c.geometry) {
-                    if (!c.geometry.boundingBox) c.geometry.computeBoundingBox();
-                    if (c.geometry.boundingBox) {
-                        const b = c.geometry.boundingBox;
-                        bbStr = '[' + b.min.x.toFixed(0) + ',' + b.min.y.toFixed(0) + ',' + b.min.z.toFixed(0) + ' \u2192 ' + b.max.x.toFixed(0) + ',' + b.max.y.toFixed(0) + ',' + b.max.z.toFixed(0) + ']';
-                    }
-                }
-                let matInfo = 'no-material';
-                if (c.material) {
-                    const m = Array.isArray(c.material) ? c.material[0] : c.material;
-                    matInfo = m.type + ' color=' + (m.color ? '#'+m.color.getHexString() : 'n/a') + ' map=' + (m.map ? 'yes' : 'no') + ' transparent=' + !!m.transparent + ' opacity=' + (m.opacity!==undefined ? m.opacity : 'n/a') + ' visible=' + m.visible;
-                }
-                let childCount = '';
-                if (c.children && c.children.length) childCount = ' (+' + c.children.length + ' children)';
-                console.log('  [' + i + '] ' + c.type + ' name="' + (c.name||'') + '" visible=' + c.visible + ' bbox=' + bbStr + ' mat=' + matInfo + childCount);
-            });
-
-            // Camera state
-            console.log('[R30.0] camera position:', [camera.position.x.toFixed(1), camera.position.y.toFixed(1), camera.position.z.toFixed(1)],
-                        ' rotation:', [camera.rotation.x.toFixed(2), camera.rotation.y.toFixed(2), camera.rotation.z.toFixed(2)],
-                        ' near=' + camera.near + ' far=' + camera.far + ' fov=' + camera.fov);
-
-            // Render info
-            const info = renderer.info;
-            console.log('[R30.0] renderer.info: ' + info.render.calls + ' calls, ' + info.render.triangles + ' tris, ' + info.memory.geometries + ' geom, ' + info.memory.textures + ' tex, programs=' + info.programs.length);
-
-            // Fog + background
-            console.log('[R30.0] scene.background:', scene.background ? (scene.background.isColor ? '#'+scene.background.getHexString() : scene.background.type) : 'null',
-                        ' scene.fog:', scene.fog ? scene.fog.type + ' density=' + (scene.fog.density!==undefined ? scene.fog.density : 'near='+scene.fog.near+' far='+scene.fog.far) : 'null');
-
-            console.log('[R30.0] === END DIAGNOSTIC DUMP ===');
-        } catch (e) {
-            console.error('[R30.0] diagnostic dump threw:', e);
-        }
-        console.log('[R29] First Three.js frame submitted');
-    }
+    // R30.0 / R32.43: one-shot diagnostic dump, extracted to separate function
+    if (!_r30Diagnosed) { _r30Diagnosed = true; _runFirstFrameDiagnostic(); }
 
     _frameCount++;
     const now = performance.now();
     if (now - _lastDiagTime > 5000) {
-        const fps = Math.round(_frameCount / ((now - _lastDiagTime) / 1000));
-        const info = renderer.info.render;
-        // R30.1: include camera position + visible-soldier count + local player
-        // idx in the per-5-sec FPS report so we can correlate '1 draw call'
-        // symptoms with camera placement and player spawn state.
-        const cp = camera.position;
-        const li = (typeof Module !== 'undefined' && Module.calledRun) ? Module._getLocalPlayerIdx() : -2;
-        let visSold = 0;
-        for (let i = 0; i < playerMeshes.length; i++) if (playerMeshes[i] && playerMeshes[i].visible) visSold++;
-        // R31: renderer.info only counts the LAST composer pass when EffectComposer
-        // is active. Sum across all passes by temporarily disabling composer to
-        // get true call count, then re-enable. Or just note that calls ≤ 2 with
-        // composer active is likely an artifact — the real geometry draw calls
-        // happen in the RenderPass before bloom/output compositing.
-        const composerActive = !!composer;
-        const callsNote = composerActive ? ' (+ composer bloom passes not counted; geometry draws in RenderPass)' : '';
-        console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls' + callsNote + ', ' + info.triangles + ' tris, quality=' + currentQuality
-                    + ' | cam=(' + cp.x.toFixed(0) + ',' + cp.y.toFixed(0) + ',' + cp.z.toFixed(0) + ')'
-                    + ' localIdx=' + li + ' visSoldiers=' + visSold + '/' + playerMeshes.length);
+        if (window.DEBUG_LOGS) {
+            const fps = Math.round(_frameCount / ((now - _lastDiagTime) / 1000));
+            const info = renderer.info.render;
+            // R30.1: include camera position + visible-soldier count + local player
+            // idx in the per-5-sec FPS report so we can correlate '1 draw call'
+            // symptoms with camera placement and player spawn state.
+            const cp = camera.position;
+            const li = (typeof Module !== 'undefined' && Module.calledRun) ? Module._getLocalPlayerIdx() : -2;
+            let visSold = 0;
+            for (let i = 0; i < playerMeshes.length; i++) if (playerMeshes[i] && playerMeshes[i].visible) visSold++;
+            // R31: renderer.info only counts the LAST composer pass when EffectComposer
+            // is active. Sum across all passes by temporarily disabling composer to
+            // get true call count, then re-enable. Or just note that calls ≤ 2 with
+            // composer active is likely an artifact — the real geometry draw calls
+            // happen in the RenderPass before bloom/output compositing.
+            const composerActive = !!composer;
+            const callsNote = composerActive ? ' (+ composer bloom passes not counted; geometry draws in RenderPass)' : '';
+            console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls' + callsNote + ', ' + info.triangles + ' tris, quality=' + currentQuality
+                        + ' | cam=(' + cp.x.toFixed(0) + ',' + cp.y.toFixed(0) + ',' + cp.z.toFixed(0) + ')'
+                        + ' localIdx=' + li + ' visSoldiers=' + visSold + '/' + playerMeshes.length);
+        }
         _frameCount = 0;
         _lastDiagTime = now;
     }
