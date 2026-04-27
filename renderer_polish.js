@@ -228,7 +228,14 @@ function _tickLightning(dt, t) {
         s.nextStrike = t + _rand(6, 22);
         s.flashIntensity = 1.0;
         s.screenFlashAlpha = 0.55;
-        // Schedule thunder ~1-3s after flash
+        // R32.12: SHARP CRACK ~60-150ms after visible flash. Slot 8 was the
+        // muffled procedural rumble; AE.loadRealSamples() now overwrites it
+        // with a proper sharp lightning_crack.wav. The rolling thunder rumble
+        // (separate _playThunder WebAudio path) still fires 1-3s later for
+        // the natural "flash, near-crack, distant rumble" sequence.
+        const crackDelay = _rand(60, 150);
+        setTimeout(() => { if (window.playSoundUI) window.playSoundUI(8); }, crackDelay);
+        // Rolling thunder rumble ~1-3s after flash (unchanged from R32.7).
         const delay = _rand(0.8, 3.0) * 1000;
         setTimeout(() => _playThunder(), delay);
     }

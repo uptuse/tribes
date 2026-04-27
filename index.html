@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.4</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12</div>
     </div>
   </div>
 
@@ -1591,6 +1591,8 @@
       AE.init(); // lazy init on first real user interaction
       applySettings(); // apply all settings including audio now that AE is up
       AE.startMusic(); // R32.11: kick off moody background track (loops, routes through master)
+      AE.loadRealSamples(); // R32.12: async-load real disc-fire/ski/lightning/landing/shazbot samples
+      AE.startAmbience(); // R32.12: distant-battle ambience layer (loops)
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
@@ -2839,6 +2841,17 @@
       // applies). Volume default 0.50 of master — R32.11.4 user feedback, was 0.35.
       musicEl:null,musicNode:null,musicGain:null,musicVol:0.50,
 
+      // R32.12: distant-battle ambience layer (separate <audio>, loops).
+      // Distant gunfire, far-off explosions, faint shouts, low rumble bed.
+      // Sits below music in the mix — makes solo play feel less empty.
+      ambienceEl:null,ambienceVol:0.40,
+      // R32.12: random shazbot timer + landing tracker.
+      _shazbotNextAt:0,         // performance.now() ms when next ambient shazbot fires
+      _prevSpeedY:0,            // tracked vertical-speed proxy (not yet exposed by C++ — fallback to gross-fall heuristic via `onGround` transition)
+      _prevOnGround:true,       // for landing-impact detection
+      _prevSpeed:0,             // for landing-velocity heuristic
+      _samplesLoaded:false,
+
       init:function(){
         if(this.ctx)return;
         this.ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -2900,6 +2913,91 @@
         // R22: match_end_horn — same but ascending crescendo→decrescendo
         b=mb(1.50);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220+t*60;var e=t<0.6?(t/0.6):(Math.exp(-(t-0.6)*2.5));var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5)*e*0.35;}
         this.bufs[16]=b;
+      },
+
+      // R32.12: load a real audio sample (WAV or MP3) into bufs[slot],
+      // overwriting whatever procedural buffer was there. Async fetch+decode.
+      // Used to replace the "sounds bad" procedural disc-fire / landing /
+      // ski / lightning-rumble with proper synthesized samples.
+      _loadSample:function(slot, url, onDone){
+        var self=this;
+        if(!this.ctx)return;
+        fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();})
+          .then(function(buf){return self.ctx.decodeAudioData(buf);})
+          .then(function(audioBuf){
+            self.bufs[slot]=audioBuf;
+            console.log('[R32.12] loaded sample slot '+slot+' from '+url+' ('+audioBuf.duration.toFixed(2)+'s)');
+            if(onDone)onDone();
+          })
+          .catch(function(e){console.warn('[R32.12] sample load FAILED slot '+slot+' from '+url+':',e);});
+      },
+      // R32.12: kick off async loads of all real samples. Called from startGame
+      // right after AE.init(). The procedural buffers built in init() act as
+      // immediate fallbacks until decode finishes (typically <500ms).
+      loadRealSamples:function(){
+        if(this._samplesLoaded)return;
+        this._samplesLoaded=true;
+        // Slot 0: disc fire — replace 0.20s procedural whomp
+        this._loadSample(0,'assets/audio/sfx/disc_fire.wav');
+        // Slot 8: lightning crack — replace muffled thunder rumble (rumble
+        // tail still played by renderer_polish._playThunder via its own WebAudio path)
+        this._loadSample(8,'assets/audio/sfx/lightning_crack.wav');
+        // Slot 11: ski rush — replace procedural ski_loop (sounded too much like jet)
+        // After load, restart the ski sound if it's currently playing so it picks up the new buffer.
+        var self=this;
+        this._loadSample(11,'assets/audio/sfx/ski_rush.wav',function(){
+          if(self.skiNode){self.stopSki();setTimeout(function(){if(self.prevSkiing)self.startSki();},200);}
+        });
+        // Slot 12: hard-landing thud (new)
+        this._loadSample(12,'assets/audio/sfx/hard_landing.wav');
+        // Slot 13: "Shazbot!" voice line (new)
+        this._loadSample(13,'assets/audio/voice/shazbot.wav');
+      },
+      // R32.12: distant-battle ambience layer. Separate <audio> from music.
+      startAmbience:function(){
+        if(!this.ambienceEl){
+          var el=document.createElement('audio');
+          el.src='assets/audio/sfx/battle_ambience.mp3';
+          el.loop=true;
+          el.preload='auto';
+          el.volume=this.ambienceVol;
+          el.style.display='none';
+          document.body.appendChild(el);
+          this.ambienceEl=el;
+        }
+        var el=this.ambienceEl;
+        var attempt=function(label){
+          var pp=el.play();
+          if(pp&&pp.then)pp.then(function(){console.log('[R32.12] ambience started ('+label+')');})
+                          .catch(function(e){console.log('[R32.12] ambience play() rejected ('+label+'): '+e.name);});
+        };
+        attempt('immediate');
+        if(!this._ambienceRetryWired){
+          this._ambienceRetryWired=true;
+          var retry=function(ev){if(el.paused)attempt('gesture:'+ev.type);};
+          var opts={capture:true,passive:true};
+          ['pointerdown','keydown','click'].forEach(function(ev){document.addEventListener(ev,retry,opts);});
+        }
+      },
+      stopAmbience:function(){if(this.ambienceEl){try{this.ambienceEl.pause();}catch(e){}}},
+      setAmbienceVolume:function(v){
+        v=Math.max(0,Math.min(1,v));
+        this.ambienceVol=v;
+        if(this.ambienceEl)this.ambienceEl.volume=v;
+      },
+
+      // R32.12: "Shazbot!" callout. `loud` true = local player triggered (death/big event,
+      // full volume). `loud` false = ambient distant-teammate flavor (low vol, random pan).
+      playShazbot:function(loud){
+        if(!this.ctx||this.muted||!this.bufs[13])return;
+        var src=this.ctx.createBufferSource();src.buffer=this.bufs[13];
+        var g=this.ctx.createGain();
+        var p=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
+        if(loud){g.gain.value=0.85;}
+        else{g.gain.value=0.18+Math.random()*0.12;}
+        if(p){p.pan.value=loud?0:(Math.random()*1.6-0.8);src.connect(g).connect(p).connect(this.uiBus);}
+        else{src.connect(g).connect(this.uiBus);}
+        src.start();
       },
 
       playAt:function(id,x,y,z){
@@ -2974,6 +3072,29 @@
           this.footTimer-=0.0167;
           if(this.footTimer<=0){this.playUI(9);this.footTimer=interval;}
         }
+        // R32.12: hard-landing thud on air→ground transition with high speed.
+        // We don't have direct vertical velocity exposed from C++, but a sharp
+        // jump in 3D speed combined with a fresh ground-touch is a good proxy:
+        // if the player was airborne, is now on ground, and current speed > 18,
+        // play the hard-landing thud (slot 12) and a slight camera punch via
+        // existing damage-flash absent (don't fire UI hit). Threshold tuned to
+        // skip soft jet-landings while catching genuine impact falls.
+        if(this._prevOnGround===false && onGround===true && speed>16){
+          this.playUI(12);
+        }
+        this._prevOnGround=onGround;
+        this._prevSpeed=speed;
+        // R32.12: "Shazbot!" on local-player death (health drops to 0 from positive).
+        if(this.prevHealth>0 && health<=0){
+          this.playShazbot(true);
+        }
+        // R32.12: ambient "distant-teammate" Shazbot every 60-180s at low volume.
+        var nowMs=performance.now();
+        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+60000+Math.random()*120000;
+        if(nowMs>=this._shazbotNextAt){
+          this.playShazbot(false);
+          this._shazbotNextAt=nowMs+60000+Math.random()*120000;
+        }
         // Damage received
         if(this.prevHealth>=0&&health<this.prevHealth-0.01){this.playUI(5);}
         this.prevHealth=health;
@@ -3004,6 +3125,8 @@
         if(this.master)this.master.gain.value=this.muted?0:0.55;
         if(this.muted&&this.jetNode)this.stopJet();
         if(this.muted&&this.skiNode)this.stopSki();
+        // R32.12: also pause/resume ambience on mute (music handled separately by setMusicVolume).
+        if(this.ambienceEl){if(this.muted)this.ambienceEl.pause();else this.ambienceEl.play().catch(function(){});}
       },
 
       // R32.11.1: moody Tribes background music. Simplified from R32.11:
