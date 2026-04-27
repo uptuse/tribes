@@ -143,14 +143,16 @@ export async function start() {
     // black-screen the game. Escape hatches: ?grass=off skips entirely;
     // ?grass=classic restores R32.8 cross-quad sin-sway. initDetailProps (rocks/
     // scrub) intentionally remains dormant pending a separate decision.
-    try {
-        const _grassMode = (new URLSearchParams(window.location.search)).get('grass');
-        if (_grassMode !== 'off') {
-            initGrass();
-        } else {
-            console.log('[R32.27.2] Grass disabled via ?grass=off');
-        }
-    } catch (e) { console.warn('[R32.27.2] initGrass failed:', e && e.message ? e.message : e); }
+    // R32.31-manus: grass removed entirely. The three releases from R32.27.2
+    // through R32.29 tried to reproduce a Ghibli-style grass look on top of
+    // the painterly terrain, but each iteration (brute-force density, thinner
+    // blades, 4x counts) failed to read as "100% coverage" because distant
+    // blades go sub-pixel regardless of count. Path B (camera-local ring) was
+    // drafted but never shipped. Resetting to no grass so we can re-ask the
+    // right architectural question and pick a grass approach that actually
+    // fits a high-speed jetpack FPS with painterly terrain, instead of piling
+    // more blade tweaks on top of the wrong primitive. initGrass/updateGrass-
+    // Wind functions remain defined in the file but are no longer called.
     // R32.9 — fake grass and procedural rocks were dropped: they broke the painterly Tribes look.
     // R29.2: initStateViews() must run BEFORE initPostProcessing() because the
     // RenderPass(scene, camera) constructor captures the camera reference, and
@@ -3345,7 +3347,8 @@ function loop() {
     // was never actually called from the loop — grass uTime was stuck at 0 since
     // R32.8, so the sin sway never animated. Wiring it up now as part of the
     // Ghibli-grass upgrade so the noise-driven chaotic wind actually moves.
-    updateGrassWind(t);
+    // R32.31-manus: grass system removed; wind tick skipped.
+    // updateGrassWind(t);
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
