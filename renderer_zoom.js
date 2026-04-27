@@ -21,7 +21,7 @@
 
 (function() {
     'use strict';
-    console.log('[ZoomFX] module loading…');
+    if (window.DEBUG_LOGS) console.log('[ZoomFX] module loading…');
 
     const STATE = {
         // Right-mouse hold
@@ -145,7 +145,7 @@
             if (e.key === 'z' || e.key === 'Z' || e.code === 'KeyZ') {
                 e.preventDefault();
                 STATE.stepIdx = (STATE.stepIdx + 1) % STATE.steps.length;
-                console.log('[ZoomFX] Z step → ' + STATE.steps[STATE.stepIdx] + 'x');
+                if (window.DEBUG_LOGS) console.log('[ZoomFX] Z step → ' + STATE.steps[STATE.stepIdx] + 'x');
             }
         }, true);
     }
@@ -203,7 +203,7 @@
         }
         requestAnimationFrame(_raf);
 
-        console.log('[ZoomFX] ready — RMB hold for 2× weapon zoom, Z to cycle 1×/2×/4×');
+        if (window.DEBUG_LOGS) console.log('[ZoomFX] ready — RMB hold for 2× weapon zoom, Z to cycle 1×/2×/4×');
     }
 
     if (document.readyState === 'loading') {

@@ -13,7 +13,7 @@
 (function() {
     'use strict';
 
-    console.log('[CommandMap] module loading…');
+    if (window.DEBUG_LOGS) console.log('[CommandMap] module loading…');
 
     // -------------------------------------------------------------------------
     // Module state
@@ -61,7 +61,7 @@
         window.addEventListener('keydown', _onKeyDown, true);
         window.addEventListener('resize', _onResize);
         _onResize();
-        console.log('[CommandMap] early bootstrap complete — C key bound');
+        if (window.DEBUG_LOGS) console.log('[CommandMap] early bootstrap complete — C key bound');
     }
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', _earlyBootstrap);
@@ -82,7 +82,7 @@
     function init(hooks) {
         STATE.hooks = hooks;
         _earlyBootstrap(); // idempotent
-        console.log('[R32.17] Command Map hooks wired — press C to toggle');
+        if (window.DEBUG_LOGS) console.log('[R32.17] Command Map hooks wired — press C to toggle');
     }
 
     function _onResize() {
@@ -106,7 +106,7 @@
         if (isC) {
             e.preventDefault();
             e.stopPropagation();
-            console.log('[CommandMap] C pressed — toggling (was ' + (STATE.active ? 'open' : 'closed') + ')');
+            if (window.DEBUG_LOGS) console.log('[CommandMap] C pressed — toggling (was ' + (STATE.active ? 'open' : 'closed') + ')');
             toggle();
         } else if (e.key === 'Escape' && STATE.active) {
             e.preventDefault();
@@ -118,7 +118,7 @@
     function open()   {
         STATE.active = true;
         STATE.canvas.style.display = 'block';
-        console.log('[CommandMap] open: canvas display=' + STATE.canvas.style.display +
+        if (window.DEBUG_LOGS) console.log('[CommandMap] open: canvas display=' + STATE.canvas.style.display +
                     ', size=' + STATE.canvas.width + 'x' + STATE.canvas.height +
                     ', z=' + STATE.canvas.style.zIndex);
         _startSelfLoop();

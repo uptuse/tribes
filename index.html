@@ -9,6 +9,15 @@
   <meta name="keywords" content="Tribes, Starsiege, browser game, WebAssembly, WebGL, FPS, capture the flag, skiing, jetpack">
   <meta name="author" content="Tribes BE community port (fan project)">
   <link rel="canonical" href="https://uptuse.github.io/tribes/">
+
+  <!-- R32.19-manus: resource hints. Preload the heavy assets in parallel with HTML
+       parse so they finish ahead of when the runtime asks for them. The async
+       <script src="tribes.js"> at the bottom still controls actual execution order;
+       these just warm the cache. -->
+  <link rel="preload" as="fetch" type="application/wasm" href="tribes.wasm" crossorigin="anonymous">
+  <link rel="preload" as="script" href="tribes.js">
+  <link rel="modulepreload" href="./renderer.js">
+  <link rel="modulepreload" href="./vendor/three/r170/three.module.js">
   <!-- OpenGraph / Facebook / Discord -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Starsiege: Tribes — Browser Edition">
@@ -977,7 +986,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.18</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.19</div>
     </div>
   </div>
 
@@ -3290,7 +3299,7 @@
       _logFire:function(id,kind,extra){
         if(!this.logSounds)return;
         var name=this._slotName(id);
-        console.log('%c[SND] '+kind+' slot='+id+' ('+name+')'+(extra||''),'color:#c4a14c;font-weight:bold');
+        if(window.DEBUG_LOGS) console.log('%c[SND] '+kind+' slot='+id+' ('+name+')'+(extra||''),'color:#c4a14c;font-weight:bold');
       },
       _slotName:function(id){
         var names={0:'disc_fire',1:'chaingun',2:'plasma',3:'grenade',4:'disc_impact',
@@ -4075,14 +4084,14 @@
           // else, regardless of whether renderer.js or WASM is ready.
           var __cmdScr = document.createElement('script');
           __cmdScr.src = './renderer_command_map.js?v=' + Date.now();
-          __cmdScr.onload = function(){ console.log('[R32.17.2] renderer_command_map.js loaded via script tag'); };
+          __cmdScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.17.2] renderer_command_map.js loaded via script tag'); };
           __cmdScr.onerror = function(e){ console.error('[R32.17.2] renderer_command_map.js FAILED to load', e); };
           document.head.appendChild(__cmdScr);
 
           // R32.18-manus: load ZoomFX module same way
           var __zoomScr = document.createElement('script');
           __zoomScr.src = './renderer_zoom.js?v=' + Date.now();
-          __zoomScr.onload = function(){ console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
+          __zoomScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
           __zoomScr.onerror = function(e){ console.error('[R32.18] renderer_zoom.js FAILED to load', e); };
           document.head.appendChild(__zoomScr);
 
