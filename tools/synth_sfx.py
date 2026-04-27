@@ -73,14 +73,8 @@ def make_disc_fire():
     thwoomp += 0.35 * np.sin(2 * phase) * thwoomp_env
     sig += thwoomp * 0.85
 
-    # (c) Brassy harmonic ring — short tonal "PWANGGG" component
-    # Slight pitch drop on the ring too, gives plasma character
-    ring_f = 540 * (1 - 0.15 * (1 - np.exp(-t/0.04)))  # 540Hz dropping to ~460Hz
-    ring_phase = 2 * np.pi * np.cumsum(ring_f) / SR
-    ring_env = np.exp(-t * 14) * (1 - np.exp(-t * 800))
-    ring = (np.sin(ring_phase) + 0.4 * np.sin(2 * ring_phase) +
-            0.15 * np.sin(3 * ring_phase)) * ring_env
-    sig += ring * 0.18
+    # (c) R32.13.3: brass ring component REMOVED — it read as an annoying PING.
+    # The thwoomp character comes purely from the deep pitch sweep + sub thump.
 
     # (d) Plasma noise tail — bandpassed broadband fuzz that hangs after
     tail = np.random.normal(0, 1, n)
@@ -158,9 +152,13 @@ def make_chaingun():
     body += np.sin(2 * np.pi * 165 * t) * np.exp(-t * 60) * 0.25
     sig += body
 
-    # Brass resonance: very short 1.2kHz tonal pop (cartridge ring)
-    resonance = np.sin(2 * np.pi * 1200 * t) * np.exp(-t * 180) * 0.18
-    sig += resonance
+    # R32.13.3: 1.2kHz brass resonance REMOVED — read as a PING. The crack +
+    # sub-body now carry the full chaingun character; we add a brief mid
+    # bandpassed mechanism rattle for body without any pitched component.
+    rattle = np.random.normal(0, 1, n)
+    rattle = bandpass(rattle, 30, 12)  # ~250-1100Hz
+    rattle_env = np.exp(-t * 90) * (1 - np.exp(-t * 1500))
+    sig += rattle * rattle_env * 0.30
 
     sig = sig / np.max(np.abs(sig)) * 0.94
     write_wav(f"{OUT_DIR}/chaingun.wav", sig)
