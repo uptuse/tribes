@@ -2557,28 +2557,20 @@ function _buildCinematicLUT(THREE) {
 }
 
 function makeVignetteAndGradeShader() {
-    // Build the cinematic LUT once and stash it on the shader closure so
-    // each ShaderPass instance reuses the same baked texture.
-    const lutTex = _buildCinematicLUT(THREE);
+    // R32.25.1 HOTFIX: reverted to safe pass-through grade. Previous R32.22-25
+    // shader (LUT + tilt-shift + grain composition) caused a black framebuffer
+    // on user's machine — likely shader compile failure or a sampler bind that
+    // didn't survive ShaderPass init. This restores the pre-R32.22 R32.7 grade
+    // shader (vignette + warm-shadow + desat + film grain), which was known
+    // working. LUT + tilt-shift will return as a separate, opt-in module.
     return {
         uniforms: {
             tDiffuse: { value: null },
-            tLUT: { value: lutTex },
-            lutSize: { value: 32.0 },
-            lutStrength: { value: 1.0 },          // R32.22: 0..1 mix toward LUT
             vignetteIntensity: { value: 0.18 },
             warmth: { value: 0.06 },
-            desaturation: { value: 0.10 },            grain: { value: 0.018 },              // R32.25: bumped 0.012 to 0.018 for visible cinematic grain (#2.12)
+            desaturation: { value: 0.10 },
+            grain: { value: 0.012 },
             time: { value: 0.0 },
-            // R32.24: tilt-shift / depth-haze (#2.5). focusBand = where the
-            // image stays sharp around vUv.y=0.5; edgeBand = where blur tops
-            // out at full strength. blurAmount scales the radius of the 4-tap
-            // gather. Setting tiltShift = 0 disables.
-            tiltShift: { value: 1.0 },
-            tiltFocus: { value: 0.18 },
-            tiltEdge:  { value: 0.55 },
-            tiltBlur:  { value: 1.6 },
-            resolution: { value: new THREE.Vector2(window.innerWidth, window.innerHeight) },
         },
         vertexShader: /* glsl */`
             varying vec2 vUv;
@@ -2586,62 +2578,20 @@ function makeVignetteAndGradeShader() {
         `,
         fragmentShader: /* glsl */`
             uniform sampler2D tDiffuse;
-            uniform sampler2D tLUT;
-            uniform float lutSize;
-            uniform float lutStrength;
             uniform float vignetteIntensity;
             uniform float warmth;
             uniform float desaturation;
             uniform float grain;
             uniform float time;
-            uniform float tiltShift;
-            uniform float tiltFocus;
-            uniform float tiltEdge;
-            uniform float tiltBlur;
-            uniform vec2  resolution;
             varying vec2 vUv;
 
-            // R32.22: sample a 32^3 LUT packed as a 1024x32 horizontal strip.
-            vec3 sampleLUT(vec3 c) {
-                c = clamp(c, 0.0, 1.0);
-                float bSlice = c.b * (lutSize - 1.0);
-                float bLow = floor(bSlice);
-                float bHigh = min(bLow + 1.0, lutSize - 1.0);
-                float bMix = bSlice - bLow;
-                float xCellW = 1.0 / lutSize;
-                vec2 uvLow  = vec2((bLow  + c.r) * xCellW, c.g);
-                vec2 uvHigh = vec2((bHigh + c.r) * xCellW, c.g);
-                vec3 cLow  = texture2D(tLUT, uvLow ).rgb;
-                vec3 cHigh = texture2D(tLUT, uvHigh).rgb;
-                return mix(cLow, cHigh, bMix);
-            }
-
-            // Cheap deterministic noise for film grain.
             float hash(vec2 p) {
                 return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
             }
 
-            // R32.24: tilt-shift gather. 4 taps in a + pattern with blur
-            // radius scaled by vertical distance from focus band.
-            vec4 sampleTilt() {
-                if (tiltShift < 0.001) return texture2D(tDiffuse, vUv);
-                float dist = abs(vUv.y - 0.5);
-                float k = smoothstep(tiltFocus, tiltEdge, dist);
-                if (k < 0.001) return texture2D(tDiffuse, vUv);
-                vec2 px = vec2(1.0) / resolution;
-                float r = tiltBlur * k;
-                vec4 s = texture2D(tDiffuse, vUv);
-                s += texture2D(tDiffuse, vUv + vec2( r, 0.0) * px);
-                s += texture2D(tDiffuse, vUv + vec2(-r, 0.0) * px);
-                s += texture2D(tDiffuse, vUv + vec2(0.0,  r) * px);
-                s += texture2D(tDiffuse, vUv + vec2(0.0, -r) * px);
-                return s * 0.2;
-            }
-
             void main(){
-                vec4 c = sampleTilt();
+                vec4 c = texture2D(tDiffuse, vUv);
 
-                // Original mild desat + warm-shadows pre-grade.
                 float gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
                 c.rgb = mix(c.rgb, vec3(gray), desaturation);
                 float lum = (c.r + c.g + c.b) / 3.0;
@@ -2649,16 +2599,10 @@ function makeVignetteAndGradeShader() {
                 c.r += warmth * shadowMask;
                 c.b -= warmth * shadowMask;
 
-                // R32.22: 3D LUT as the dominant color grader.
-                vec3 graded = sampleLUT(c.rgb);
-                c.rgb = mix(c.rgb, graded, lutStrength);
-
-                // Vignette (#2.12 cinematic baseline).
                 vec2 uv = vUv - 0.5;
                 float v = 1.0 - dot(uv, uv) * vignetteIntensity * 4.0;
                 c.rgb *= v;
 
-                // Film grain (#2.12). Animate via time so it doesn't look static.
                 float n = hash(vUv * vec2(1920.0, 1080.0) + vec2(time, time * 1.7));
                 c.rgb += (n - 0.5) * grain;
 
