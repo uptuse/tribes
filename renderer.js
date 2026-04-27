@@ -133,7 +133,12 @@ export async function start() {
     initFlags();
     initParticles();
     initWeaponViewmodel();
-    initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall
+    // R32.36.3-manus: rain disabled by default per user request "Turn off rain
+    // please so I can see them". The Raindance map's signature rain streaks
+    // were competing visually with the new fairies. Opt back in via ?rain=on.
+    if (typeof location !== 'undefined' && /[?&]rain=on\b/.test(location.search)) {
+        initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall (now opt-in)
+    }
     // R32.32.1-manus: camera-local thin-blade grass ring. See initGrassRing
     // for the full architecture writeup. Wrapped in try/catch so any failure
     // can't black-screen the game (lesson from R32.25). Escape hatch: ?ring=off.
@@ -4257,11 +4262,11 @@ function initDustLayer() {
         console.warn('[R32.36] initDustLayer aborted: heightmap not ready');
         return;
     }
-    // R32.36.1-manus: dots are 90% smaller per user feedback ("too big ...
-    // need to be scaled down 90% ... probably need more"). 4× the count to
-    // compensate so the world stays populated.
+    // R32.36.3-manus: counts doubled per user request "double the amount".
+    // mid 32k -> 64k, high 64k -> 128k, ultra 128k -> 256k. CPU lerp is
+    // ~0.001 ms/fairy so 64k is ~0.6 ms/frame budget at mid — still cheap.
     const tier = (window.__qualityTier || 'mid');
-    const N = (tier === 'ultra') ? 128000 : (tier === 'high') ? 64000 : (tier === 'mid') ? 32000 : (tier === 'low') ? 0 : 32000;
+    const N = (tier === 'ultra') ? 256000 : (tier === 'high') ? 128000 : (tier === 'mid') ? 64000 : (tier === 'low') ? 0 : 64000;
     if (N === 0) {
         console.log('[R32.36] Fairy layer skipped on low tier');
         return;
@@ -4430,7 +4435,7 @@ function initDustLayer() {
         lastT: -1,
     };
     scene.add(_dustPoints);
-    console.log('[R32.36.2] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
+    console.log('[R32.36.3] Fairy layer placed:', N, 'rainbow fairies map-wide (span=' + span.toFixed(0) + 'm)');
 }
 
 function updateDustLayer(t) {
