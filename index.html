@@ -663,6 +663,35 @@
   </script>
 </head>
 <body>
+  <!-- R32.25.4-DIAG: temporary diagnostic overlay -->
+  <div id="diag-overlay" style="position:fixed;top:0;left:0;max-width:600px;max-height:50vh;overflow:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;padding:8px;z-index:999999;border:1px solid #0f0;pointer-events:auto;">DIAG: waiting...</div>
+  <script>
+    (function(){
+      var diag = document.getElementById('diag-overlay');
+      var lines = [];
+      function add(s){ lines.push(s); if(lines.length>40) lines.shift(); diag.textContent = lines.join('\n'); }
+      window.addEventListener('error', function(e){ add('[ERR] ' + (e.message||e) + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?')); }, true);
+      window.addEventListener('unhandledrejection', function(e){ add('[REJ] ' + (e.reason && (e.reason.message||e.reason))); });
+      var origErr = console.error;
+      console.error = function(){ add('[console.err] ' + Array.from(arguments).map(function(a){return typeof a==='object'?JSON.stringify(a):String(a);}).join(' ').slice(0,200)); origErr.apply(console, arguments); };
+      var origWarn = console.warn;
+      console.warn = function(){ add('[console.warn] ' + Array.from(arguments).map(function(a){return String(a);}).join(' ').slice(0,200)); origWarn.apply(console, arguments); };
+      // Periodic state dump
+      setInterval(function(){
+        try {
+          var s = window.scene, c = window.camera, r = window.renderer;
+          var info = 'state: ';
+          info += 'scene=' + (s ? 'YES kids='+s.children.length : 'NO');
+          info += ' camera=' + (c ? ('YES pos=('+c.position.x.toFixed(1)+','+c.position.y.toFixed(1)+','+c.position.z.toFixed(1)+') fov='+c.fov.toFixed(1)) : 'NO');
+          info += ' renderer=' + (r ? ('YES calls='+r.info.render.calls) : 'NO');
+          if(s && s.background) info += ' bg=' + (s.background.isColor ? '#'+s.background.getHexString() : s.background.type);
+          if(s) info += ' fog=' + (s.fog ? 'YES' : 'NO');
+          add(info);
+        } catch(e){ add('[diag-err] '+e.message); }
+      }, 1500);
+      add('DIAG online');
+    })();
+  </script>
   <!-- Loading Screen -->
   <div id="loading">
     <div class="subtitle">STARSIEGE</div>

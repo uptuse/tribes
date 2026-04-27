@@ -229,6 +229,8 @@ function initScene() {
     // R32.0: Raindance.MIS canonical fog — haze 200m, visible 450m, pale overcast
     scene.fog = new THREE.Fog(0xC0C8D0, 200, 450);
     scene.background = new THREE.Color(0xC0C8D0);
+    // R32.25.4-DIAG: expose for diagnostic overlay
+    try { window.scene = scene; window.camera = camera; window.renderer = renderer; } catch(e) {}
 }
 
 // ============================================================
