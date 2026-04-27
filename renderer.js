@@ -908,7 +908,17 @@ function initTerrain() {
         shader.uniforms.uTileSandC   = { value: sandC };
         shader.uniforms.uTileSandN   = { value: sandN };
         shader.uniforms.uTerrainSize = { value: span };
-        shader.uniforms.uTileMeters  = { value: 9.0 };  // R32.10: was 6m, bumping to 9m so each variation zone covers more ground (less obvious tile loop)
+        shader.uniforms.uTileMeters  = { value: 9.0 };
+        // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
+        // uTime advances per-frame in the main loop via _terrainShader.uniforms.uTime.value.
+        // Driven by the same clock as any future blade geometry, so fuzz waves and
+        // blade sway stay in lock-step (Principle 2: unified global wind).
+        shader.uniforms.uTime        = { value: 0.0 };
+        shader.uniforms.uWindDir     = { value: new THREE.Vector2(0.8, 0.6) }; // unit vec approx
+        shader.uniforms.uWindSpeed   = { value: 0.85 };
+        // R32.32-manus: ?fuzz=off escape hatch so we can A/B against bare painterly terrain.
+        const _fuzzOff = (typeof location !== 'undefined') && /[?&]fuzz=off\b/.test(location.search);
+        shader.uniforms.uGrassFuzz   = { value: _fuzzOff ? 0.0 : 1.0 };
 
         // R32.10.3 + R32.11.1: aWash/aAO vertex attrs are gone (replaced by
         // per-pixel fragment noise). aSplat stays per-vertex (smooth across
@@ -953,6 +963,11 @@ function initTerrain() {
                  varying vec4 vSplat;
                  varying vec2 vWorldXZ;
                  varying float vWorldY;
+                 // R32.32-manus: unified wind uniforms for grass-fuzz far-field layer
+                 uniform float uTime;
+                 uniform vec2 uWindDir;
+                 uniform float uWindSpeed;
+                 uniform float uGrassFuzz;
                  // 2D hash → angle in [0..2π)
                  float th_hash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
                  // R32.10.1: smooth value noise for grass species blend (per-pixel, kills triangle-edge seams)
@@ -1027,6 +1042,29 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
+                 // R32.32-manus: grass-fuzz layer (Principle 2: thin-blade impression
+                 // without geometry; Principle 1: purely fragment-shader ALU, no new
+                 // draw calls; Principle 4: color inherits from the splat since this
+                 // modulates sampledDiffuseColor IN PLACE rather than adding new green).
+                 // Only applies where grass weight is significant (splatW.r > 0.3).
+                 if (uGrassFuzz > 0.5 && splatW.r > 0.30) {
+                     float grassMask = smoothstep(0.30, 0.65, splatW.r);
+                     // Thin vertical-blade impression: high-freq lines aligned with wind-perpendicular
+                     // axis, creating the illusion of many slender blades. Period ~0.25m at the surface.
+                     vec2 bladeAxis = normalize(vec2(uWindDir.y, -uWindDir.x)); // perpendicular to wind
+                     float bladeCoord = dot(vWorldXZ, bladeAxis) * 4.0;           // 0.25m period
+                     float bladeLines = sin(bladeCoord + vnoise(vWorldXZ * 0.5) * 2.5);
+                     // Wind gust wave sweeping along wind direction, period ~18m, speed uWindSpeed m/s.
+                     float windPhase = dot(vWorldXZ, uWindDir) * 0.35 - uTime * uWindSpeed;
+                     float gust = sin(windPhase) * 0.5 + 0.5; // 0..1
+                     gust = smoothstep(0.35, 0.85, gust);     // sharpened gust crests
+                     // Blade-line brightness: ±6% modulation of the grass color, strongest in gust crests.
+                     float bladeTint = bladeLines * (0.06 + 0.05 * gust) * grassMask;
+                     // Gust wave broader brightness pulse (±3%) — reads as wind moving across field at distance.
+                     float gustTint = (gust - 0.5) * 0.06 * grassMask;
+                     // Apply: brighter blade tips where mask is high, dimmer bases, gust crests brightened overall.
+                     sampledDiffuseColor.rgb *= (1.0 + bladeTint + gustTint);
+                 }
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
@@ -3349,6 +3387,15 @@ function loop() {
     // Ghibli-grass upgrade so the noise-driven chaotic wind actually moves.
     // R32.31-manus: grass system removed; wind tick skipped.
     // updateGrassWind(t);
+
+    // R32.32-manus: tick the terrain-fuzz wind uniform so the gust waves sweep
+    // across the field in real time. Terrain material's onBeforeCompile stores
+    // its compiled shader on mat.userData.shader after the first render — we
+    // guard with `?.` because on the very first frame it may not yet be set.
+    if (terrainMesh && terrainMesh.material && terrainMesh.material.userData && terrainMesh.material.userData.shader) {
+        const u = terrainMesh.material.userData.shader.uniforms;
+        if (u.uTime) u.uTime.value = t;
+    }
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
