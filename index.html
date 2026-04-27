@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.1</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.11.2</div>
     </div>
   </div>
 
@@ -3021,25 +3021,41 @@
           el.loop=true;
           el.preload='auto';
           el.volume=this.musicVol;
-          this.musicEl=el;
-          // Append to DOM so devtools/Network panel sees it (debug aid).
           el.style.display='none';
           document.body.appendChild(el);
+          // R32.11.2: log lifecycle events so console shows what actually happened.
+          el.addEventListener('canplay',function(){console.log('[R32.11.2] music canplay');});
+          el.addEventListener('playing',function(){console.log('[R32.11.2] music PLAYING (vol='+el.volume+')');});
+          el.addEventListener('error',function(){console.error('[R32.11.2] music ERROR',el.error);});
+          this.musicEl=el;
         }
-        var el=this.musicEl,self=this;
-        var p=el.play();
-        if(p&&p.catch){
-          p.catch(function(e){
-            console.log('[R32.11.1] music autoplay deferred ('+e.name+'); will retry on next user gesture');
-            var retry=function(){
-              el.play().then(function(){console.log('[R32.11.1] music started on user gesture');})
-                       .catch(function(e2){console.warn('[R32.11.1] music retry failed:',e2);});
-              window.removeEventListener('pointerdown',retry);
-              window.removeEventListener('keydown',retry);
-            };
-            window.addEventListener('pointerdown',retry,{once:true});
-            window.addEventListener('keydown',retry,{once:true});
-          });
+        var el=this.musicEl;
+        // Try immediate play. If the browser blocks it (autoplay policy), wire
+        // up a comprehensive set of one-shot user-gesture listeners on BOTH
+        // document and window in CAPTURE phase — capture phase fires before
+        // the canvas pointer-lock handler swallows the event.
+        var attempt=function(label){
+          var pp=el.play();
+          if(pp&&pp.then)pp.then(function(){console.log('[R32.11.2] music started ('+label+')');})
+                          .catch(function(e){console.log('[R32.11.2] music play() rejected ('+label+'): '+e.name);});
+        };
+        attempt('immediate');
+        // Always wire up gesture retries (cheap, removed-on-first-fire). This
+        // way even if the immediate play succeeded, a single click won't stop it,
+        // and if it failed, the next click WILL start it.
+        if(!this._musicRetryWired){
+          this._musicRetryWired=true;
+          var retry=function(ev){
+            if(!el.paused)return;
+            attempt('gesture:'+ev.type);
+          };
+          var opts={capture:true,passive:true};
+          var evs=['pointerdown','mousedown','touchstart','keydown','click'];
+          var targets=[document,window,document.getElementById('canvas')].filter(Boolean);
+          targets.forEach(function(t){evs.forEach(function(ev){t.addEventListener(ev,retry,opts);});});
+          // Also when the file finishes preloading, try again — some browsers
+          // need the canplaythrough event before play() works.
+          el.addEventListener('canplaythrough',function(){attempt('canplaythrough');},{once:true});
         }
       },
       stopMusic:function(){

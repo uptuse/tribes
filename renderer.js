@@ -281,13 +281,17 @@ function loadHDRISky() {
             pmrem.dispose();
             // Hide the THREE.Sky procedural dome — it would double-draw behind HDRI
             if (sky) sky.visible = false;
-            // R32.10.1: HDRI was overpoweringly bright. Dim the visible sky dome
-            // (backgroundIntensity) but keep environmentIntensity at full so PBR
-            // fill-light from the sky stays correct on metals/armor.
-            scene.backgroundIntensity = 0.45;       // visible sky dimmed to ~45%
-            scene.environmentIntensity = 1.0;       // PBR fill stays at full
-            if (renderer) renderer.toneMappingExposure = 0.6;
-            console.log('[R32.10.1] HDRI sky loaded — bg dimmed 0.45, env 1.0');
+            // R32.11.2: re-tuned exposure. R32.10.1 set exposure=0.6 because
+            // flat-shaded faceted terrain had high local contrast that needed
+            // dimming. Now (R32.11.1+) lighting is smooth-shaded so the scene
+            // reads more uniformly — 0.6 is too dim, bumping to 0.95.
+            // Background still dimmed (sky was the originally-bright issue).
+            // Environment intensity bumped 1.0→1.25 to lift PBR fill on the
+            // armor + props without over-brightening the sky dome.
+            scene.backgroundIntensity = 0.55;       // was 0.45 — slightly less dim
+            scene.environmentIntensity = 1.25;      // was 1.0 — lift PBR fill
+            if (renderer) renderer.toneMappingExposure = 0.95;  // was 0.6
+            console.log('[R32.11.2] HDRI sky loaded — exposure 0.95, bg 0.55, env 1.25');
         },
         undefined,  // progress not needed
         (err) => {
