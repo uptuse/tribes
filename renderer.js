@@ -1136,7 +1136,8 @@ function initTerrain() {
         // attempt at PBR wiring (see CHANGELOG R32.37.4 for plan).
         // R32.38-manus: AO is now wired (default ON). Roughness + POM stay 0.0
         // until R32.38.1 / R32.38.2 wire those features back in.
-        shader.uniforms.uUseRoughness = { value: 0.0 };
+        // R32.40: roughness enabled — now derives from luminance, uses 0 new texture units
+        shader.uniforms.uUseRoughness = { value: _pbrInit('pbrRoughness', true) };
         shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO', true) };
         shader.uniforms.uUsePOM       = { value: 0.0 };
 
@@ -1172,6 +1173,8 @@ function initTerrain() {
                  uniform sampler2D uTileGrassA;  uniform sampler2D uTileGrassA2;
                  uniform sampler2D uTileRockA;   uniform sampler2D uTileDirtA;   uniform sampler2D uTileSandA;
                  uniform float uUseAO;
+                 // R32.40: uUseRoughness toggle (roughness derived from luminance, 0 extra texture units)
+                 uniform float uUseRoughness;
                  uniform float uTileMeters;
                  uniform float uTerrainSize;
                  varying vec4 vSplat;
@@ -1267,13 +1270,49 @@ function initTerrain() {
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
                  vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
                  mapN.xy *= normalScale;
-                 normal = normalize( tbn * mapN );`);
+                 normal = normalize( tbn * mapN );`)
+        // R32.40: roughness derived from already-sampled diffuse color — ZERO new texture
+        // units. Root cause of invisible terrain in R32.39: adding 5 roughness samplers
+        // pushed the total past the WebGL2 minimum of 16 texture units (enforced by
+        // software-WebGL / ANGLE-Metal). Three.js evicted a color sampler to make room,
+        // turning the evicted slot into (0,0,0,0) which propagated NaN or zero into the
+        // fragment output. Fix: compute roughnessFactor from luminance of the
+        // already-sampled diffuse (sampledDiffuseColor from <map_fragment>), using 0 extra
+        // GPU texture units. Formula: bright→glossier (0.72), dark→very matte (0.97).
+        // splatW, sampledDiffuseColor, gMix, tUv are all in scope from <map_fragment>
+        // because that chunk runs first inside the same main() function body.
+        .replace('#include <roughnessmap_fragment>',
+            `float roughnessFactor = roughness;
+             if (uUseRoughness > 0.5) {
+                 // No new texture samples needed — luminance of the colour already tells us
+                 // rock (bright, specular) vs grass (dark, matte). Range [0.72, 0.97] keeps
+                 // terrain from ever looking plastic-glossy or chalk-matte.
+                 float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
+                 roughnessFactor = mix(0.97, 0.72, clamp(lum * 1.4, 0.0, 1.0));
+                 // Blend in per-slot bias: rock slot → slightly smoother, grass → matte
+                 roughnessFactor = mix(roughnessFactor,
+                     roughnessFactor - 0.10 * splatW.g + 0.05 * splatW.r, 0.4);
+                 roughnessFactor = clamp(roughnessFactor, 0.55, 0.98);
+             }`);  // end chain
+
         mat.userData.shader = shader;
     };
 
     terrainMesh = new THREE.Mesh(flatGeom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
+
+    // R32.40: log texture unit budget so we can detect overflow early
+    if (renderer && renderer.capabilities) {
+        const maxTex = renderer.capabilities.maxTextures;
+        console.log('[R32.40] renderer.capabilities.maxTextures =', maxTex,
+            '| custom samplers = 15 | Three-internal ≈ 3 | total ≈ 18 | headroom =', maxTex - 18);
+        if (maxTex < 20) {
+            console.warn('[R32.40] LOW TEXTURE UNIT BUDGET — software WebGL or ANGLE-Metal limit.',
+                'Current design uses ~18 units; adding roughness maps would push to ~23 and BREAK terrain.');
+        }
+    }
+
     // R32.37.1-manus: live PBR toggle hook — index.html settings checkboxes
     // call this on change to flip the uniform without recompile.
     window.__tribesSetTerrainPBR = function(key, on) {
@@ -1286,7 +1325,7 @@ function initTerrain() {
         sh.uniforms[uname].value = on ? 1.0 : 0.0;
         terrainMesh.material.needsUpdate = false; // uniform-only change, no recompile
     };
-    console.log('[R32.37.1] PBR terrain: 25 maps loaded (Color+Normal+Rough+AO+Disp x5 slots), POM enabled');
+    console.log('[R32.40] Terrain PBR: roughness now derived from luminance (0 extra texture units).');
 }
 
 // ============================================================
