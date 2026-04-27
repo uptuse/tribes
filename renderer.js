@@ -1072,6 +1072,43 @@ function initTerrain() {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
                      sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.30;
                  }
+                 // R32.34-manus: LIVING TERRAIN — AMBIENT BREATH (3 components).
+                 // The world should be alive even when the player stands still.
+                 // All driven by the existing uTime (now wired to per-frame tick
+                 // in renderer loop()). uWindDir is a unit-ish vector chosen so
+                 // the wash drift goes diagonally across the map.
+                 {
+                     // (1) WIND DRIFT ON SPLAT — re-evaluate the smaller wash
+                     // octaves at slowly-translating coordinates so the
+                     // painterly color flows in the wind direction at
+                     // ~0.30 m/s. Subtle (±3% per channel) but visibly alive.
+                     vec2 driftXZ = vWorldXZ - uWindDir * (uTime * 0.30);
+                     float dN1 = vnoise(driftXZ * 0.045 + vec2(31.7, 19.3));
+                     float dN2 = vnoise(driftXZ * 0.18  + vec2(7.4,  53.1));
+                     float driftAmt = (dN1 - 0.5) * 0.045 + (dN2 - 0.5) * 0.025;
+                     sampledDiffuseColor.rgb += vec3(driftAmt * 1.0,
+                                                     driftAmt * 0.85,
+                                                     driftAmt * 0.65);
+                     // (2) MICRO-SHIMMER — high-frequency time wave at
+                     // ~25cm period; ±1.5% brightness. Gives the terrain a
+                     // constant low-amplitude alive feeling, like grass
+                     // rustling that you can't quite resolve to individual
+                     // blades. Phase varies per-position so it doesn't pulse
+                     // uniformly.
+                     float shimmerPhase = vWorldXZ.x * 4.0 + vWorldXZ.y * 4.0 + uTime * 1.7;
+                     float shimmer = sin(shimmerPhase) * 0.015;
+                     sampledDiffuseColor.rgb *= (1.0 + shimmer);
+                     // (3) SUN-SPOT DRIFT — large-scale (~300m period)
+                     // brightness modulation that drifts in the wind
+                     // direction at ~5 m/s. Reads as cloud shadows passing
+                     // overhead. ±6% brightness. Centered slightly on the
+                     // dim side so it predominantly darkens (cloud shadows,
+                     // not bright spots) which feels more natural.
+                     vec2 cloudUV = vWorldXZ * 0.003 - uWindDir * (uTime * 5.0) * 0.003;
+                     float cloudN = vnoise(cloudUV);
+                     float cloudShade = mix(0.94, 1.06, cloudN); // ±6%
+                     sampledDiffuseColor.rgb *= cloudShade;
+                 }
                  // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
                  // user feedback was "It looks like noise static texture". Static
                  // 2D fragment patterns can't sell as 3D grass blades because
@@ -3406,6 +3443,15 @@ function loop() {
     // but the ring uses the SAME unified clock for its wind shader so the
     // motion of every grass element stays in lock-step (Principle 2).
     try { updateGrassRing(t); } catch (e) { /* swallowed; ring is cosmetic */ }
+
+    // R32.34-manus: tick the LIVING TERRAIN ambient-breath uniforms.
+    // The terrain shader's uTime drives all 3 breath components (wind drift,
+    // micro-shimmer, sun-spot drift). Pre-R32.34 this uniform was declared
+    // but never updated, so the ambient layer is dormant until ticked here.
+    if (terrainMesh && terrainMesh.material && terrainMesh.material.userData && terrainMesh.material.userData.shader) {
+        const u = terrainMesh.material.userData.shader.uniforms;
+        if (u && u.uTime) u.uTime.value = t;
+    }
 
     if (composer) composer.render();
     else renderer.render(scene, camera);
