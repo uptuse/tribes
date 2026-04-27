@@ -986,7 +986,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.20</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.21</div>
     </div>
   </div>
 
@@ -4094,6 +4094,13 @@
           __zoomScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
           __zoomScr.onerror = function(e){ console.error('[R32.18] renderer_zoom.js FAILED to load', e); };
           document.head.appendChild(__zoomScr);
+
+          // R32.21-manus: load Palette FIRST so all subsequent modules can reference window.PALETTE
+          var __palScr = document.createElement('script');
+          __palScr.src = './renderer_palette.js?v=' + Date.now();
+          __palScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.21] renderer_palette.js loaded'); };
+          __palScr.onerror = function(e){ console.error('[R32.21] renderer_palette.js FAILED to load', e); };
+          document.head.appendChild(__palScr);
 
           // R32.20-manus: load Toonify module BEFORE renderer.js so window.Toonify
           // is defined by the time renderer.js's start() runs and calls Toonify.init.
