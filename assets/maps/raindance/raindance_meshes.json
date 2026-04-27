@@ -2,10 +2,37 @@
   "meshes": [
     {
       "fileName": "esmall2.0.dis",
-      "dis_path": "tools/dis_work/Esmall2.dis",
-      "dig_path": "tools/dis_work/Esmall2-01.dig",
-      "n_verts": 133,
-      "n_tris": 262,
+      "dig_name": "Esmall2-00.dig",
+      "dml_name": "Esmall2.dml",
+      "materials": [
+        "base_rock.bmp",
+        "light_warm.BMP",
+        "metal_16b.BMP",
+        "idkmetalstrip.bmp",
+        "base_warm.bmp",
+        "ext_iron.BMP",
+        "warm_wt.BMP",
+        "ext_grey.BMP",
+        "base.emblem1.bmp",
+        "special_interface.BMP",
+        "ext_iron2.BMP",
+        "cold_ft.BMP",
+        "warm_32b.BMP",
+        "ext_grey9.bmp",
+        "light_dark.BMP",
+        "ext_grey6.BMP",
+        "base.emblem2.bmp",
+        "special_metal.bmp",
+        "iltmetal.bmp",
+        "special_warm.bmp",
+        "carpet_base.BMP",
+        "ext_grey2.BMP",
+        "ext_grey3.BMP"
+      ],
+      "n_verts": 1274,
+      "n_tris": 2281,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 75,
       "bounds_min": [
         -16.0,
         -32.0,
@@ -19,10 +46,41 @@
     },
     {
       "fileName": "BETower2.0.dis",
-      "dis_path": "tools/dis_work/BETower2.dis",
-      "dig_path": "tools/dis_work/BETower2-01.dig",
-      "n_verts": 170,
-      "n_tris": 336,
+      "dig_name": "BETower2-00.dig",
+      "dml_name": "BETower2.dml",
+      "materials": [
+        "redvent.bmp",
+        "base.emblem1.BMP",
+        "redrib.bmp",
+        "droppheonix2.BMP",
+        "base_metal.bmp",
+        "light_warm.BMP",
+        "base_marble.bmp",
+        "ext_grey.BMP",
+        "base.emblem1.BMP",
+        "light_copper.BMP",
+        "droppheonix5.BMP",
+        "ivent.bmp",
+        "ext_grey2.BMP",
+        "base_gold.bmp",
+        "greyrib.BMP",
+        "ext_stone6.BMP",
+        "redylight.bmp",
+        "ext_iron3.BMP",
+        "ext_iron2.BMP",
+        "ext_iron.BMP",
+        "base.emblem2.BMP",
+        "special_shield.bmp",
+        "base_warm.bmp",
+        "base_rock.bmp",
+        "base.emblem4.BMP",
+        "itube.BMP",
+        "base.emblem2.BMP"
+      ],
+      "n_verts": 458,
+      "n_tris": 924,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -10.0,
         -10.0,
@@ -36,10 +94,19 @@
     },
     {
       "fileName": "iobservation.0.dis",
-      "dis_path": "tools/dis_work/iobservation.dis",
-      "dig_path": "tools/dis_work/iobservation-00.dig",
+      "dig_name": "iobservation-00.dig",
+      "dml_name": "iobservation.dml",
+      "materials": [
+        "base.emblem3.bmp",
+        "ext_grey2.BMP",
+        "light_dark.BMP",
+        "ext_grey.BMP",
+        "cold_64b.BMP"
+      ],
       "n_verts": 48,
       "n_tris": 108,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -2.0,
         -2.0,
@@ -53,10 +120,17 @@
     },
     {
       "fileName": "cube.0.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -70,10 +144,24 @@
     },
     {
       "fileName": "bunker4.0.dis",
-      "dis_path": "tools/dis_work/bunker4.dis",
-      "dig_path": "tools/dis_work/bunker4-01.dig",
-      "n_verts": 42,
-      "n_tris": 76,
+      "dig_name": "bunker4-00.dig",
+      "dml_name": "bunker4.dml",
+      "materials": [
+        "light_dark.BMP",
+        "base_rock.bmp",
+        "ext_stone6.BMP",
+        "base_metal.bmp",
+        "metal_64b.BMP",
+        "ext_grey2.BMP",
+        "base.emblem2.bmp",
+        "hdisplay_yellow.bmp",
+        "base_cold.bmp",
+        "ext_grey.BMP"
+      ],
+      "n_verts": 124,
+      "n_tris": 240,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -10.0,
         -10.0,
@@ -87,10 +175,24 @@
     },
     {
       "fileName": "bunker4.1.dis",
-      "dis_path": "tools/dis_work/bunker4.dis",
-      "dig_path": "tools/dis_work/bunker4-01.dig",
-      "n_verts": 42,
-      "n_tris": 76,
+      "dig_name": "bunker4-00.dig",
+      "dml_name": "bunker4.dml",
+      "materials": [
+        "light_dark.BMP",
+        "base_rock.bmp",
+        "ext_stone6.BMP",
+        "base_metal.bmp",
+        "metal_64b.BMP",
+        "ext_grey2.BMP",
+        "base.emblem2.bmp",
+        "hdisplay_yellow.bmp",
+        "base_cold.bmp",
+        "ext_grey.BMP"
+      ],
+      "n_verts": 124,
+      "n_tris": 240,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -10.0,
         -10.0,
@@ -104,10 +206,37 @@
     },
     {
       "fileName": "esmall2.1.dis",
-      "dis_path": "tools/dis_work/Esmall2.dis",
-      "dig_path": "tools/dis_work/Esmall2-01.dig",
-      "n_verts": 133,
-      "n_tris": 262,
+      "dig_name": "Esmall2-00.dig",
+      "dml_name": "Esmall2.dml",
+      "materials": [
+        "base_rock.bmp",
+        "light_warm.BMP",
+        "metal_16b.BMP",
+        "idkmetalstrip.bmp",
+        "base_warm.bmp",
+        "ext_iron.BMP",
+        "warm_wt.BMP",
+        "ext_grey.BMP",
+        "base.emblem1.bmp",
+        "special_interface.BMP",
+        "ext_iron2.BMP",
+        "cold_ft.BMP",
+        "warm_32b.BMP",
+        "ext_grey9.bmp",
+        "light_dark.BMP",
+        "ext_grey6.BMP",
+        "base.emblem2.bmp",
+        "special_metal.bmp",
+        "iltmetal.bmp",
+        "special_warm.bmp",
+        "carpet_base.BMP",
+        "ext_grey2.BMP",
+        "ext_grey3.BMP"
+      ],
+      "n_verts": 1274,
+      "n_tris": 2281,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 75,
       "bounds_min": [
         -16.0,
         -32.0,
@@ -121,10 +250,17 @@
     },
     {
       "fileName": "cube.1.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -138,10 +274,17 @@
     },
     {
       "fileName": "cube.2.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -155,10 +298,17 @@
     },
     {
       "fileName": "cube.3.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -172,10 +322,17 @@
     },
     {
       "fileName": "cube.4.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -189,10 +346,17 @@
     },
     {
       "fileName": "cube.5.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -206,10 +370,17 @@
     },
     {
       "fileName": "cube.6.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -223,10 +394,17 @@
     },
     {
       "fileName": "cube.7.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -240,10 +418,17 @@
     },
     {
       "fileName": "cube.8.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -257,10 +442,17 @@
     },
     {
       "fileName": "cube.9.dis",
-      "dis_path": "tools/dis_work/cube.dis",
-      "dig_path": "tools/dis_work/cube-00.dig",
+      "dig_name": "cube-00.dig",
+      "dml_name": "cube.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey.BMP",
+        "ext_grey3.BMP"
+      ],
       "n_verts": 18,
       "n_tris": 32,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         0.0,
         0.0,
@@ -274,10 +466,41 @@
     },
     {
       "fileName": "BETower2.1.dis",
-      "dis_path": "tools/dis_work/BETower2.dis",
-      "dig_path": "tools/dis_work/BETower2-01.dig",
-      "n_verts": 170,
-      "n_tris": 336,
+      "dig_name": "BETower2-00.dig",
+      "dml_name": "BETower2.dml",
+      "materials": [
+        "redvent.bmp",
+        "base.emblem1.BMP",
+        "redrib.bmp",
+        "droppheonix2.BMP",
+        "base_metal.bmp",
+        "light_warm.BMP",
+        "base_marble.bmp",
+        "ext_grey.BMP",
+        "base.emblem1.BMP",
+        "light_copper.BMP",
+        "droppheonix5.BMP",
+        "ivent.bmp",
+        "ext_grey2.BMP",
+        "base_gold.bmp",
+        "greyrib.BMP",
+        "ext_stone6.BMP",
+        "redylight.bmp",
+        "ext_iron3.BMP",
+        "ext_iron2.BMP",
+        "ext_iron.BMP",
+        "base.emblem2.BMP",
+        "special_shield.bmp",
+        "base_warm.bmp",
+        "base_rock.bmp",
+        "base.emblem4.BMP",
+        "itube.BMP",
+        "base.emblem2.BMP"
+      ],
+      "n_verts": 458,
+      "n_tris": 924,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -10.0,
         -10.0,
@@ -291,10 +514,24 @@
     },
     {
       "fileName": "bunker4.2.dis",
-      "dis_path": "tools/dis_work/bunker4.dis",
-      "dig_path": "tools/dis_work/bunker4-01.dig",
-      "n_verts": 42,
-      "n_tris": 76,
+      "dig_name": "bunker4-00.dig",
+      "dml_name": "bunker4.dml",
+      "materials": [
+        "light_dark.BMP",
+        "base_rock.bmp",
+        "ext_stone6.BMP",
+        "base_metal.bmp",
+        "metal_64b.BMP",
+        "ext_grey2.BMP",
+        "base.emblem2.bmp",
+        "hdisplay_yellow.bmp",
+        "base_cold.bmp",
+        "ext_grey.BMP"
+      ],
+      "n_verts": 124,
+      "n_tris": 240,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -10.0,
         -10.0,
@@ -308,14 +545,25 @@
     },
     {
       "fileName": "swsfloatingpad2.0.dis",
-      "dis_path": "tools/dis_work/swsfloatingpad2.dis",
-      "dig_path": "tools/dis_work/swsfloatingpad2-01.dig",
-      "n_verts": 8,
-      "n_tris": 12,
+      "dig_name": "swsfloatingpad2-00.dig",
+      "dml_name": "swsfloatingpad2.dml",
+      "materials": [
+        "cold_wt.BMP",
+        "cold_64b.BMP",
+        "metal_32b.BMP",
+        "metal_64b.BMP",
+        "cold_16b.BMP",
+        "metal_16b.BMP",
+        "special_metal.bmp"
+      ],
+      "n_verts": 36,
+      "n_tris": 68,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -5.0,
         -5.0,
-        14.75
+        14.25
       ],
       "bounds_max": [
         5.0,
@@ -325,10 +573,21 @@
     },
     {
       "fileName": "expbridge.0.dis",
-      "dis_path": "tools/dis_work/EXPBRIDGE.dis",
-      "dig_path": "tools/dis_work/EXPBRIDGE-01.dig",
-      "n_verts": 234,
-      "n_tris": 504,
+      "dig_name": "EXPBRIDGE-00.dig",
+      "dml_name": "EXPBRIDGE.dml",
+      "materials": [
+        "warm_wt.BMP",
+        "ext_iron.BMP",
+        "warm_32b.BMP",
+        "warm_ft.BMP",
+        "base_warm.bmp",
+        "ext_iron2.BMP",
+        "ext_grey.BMP"
+      ],
+      "n_verts": 388,
+      "n_tris": 796,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -8.0,
         -64.0,
@@ -342,10 +601,17 @@
     },
     {
       "fileName": "mis_ob1.0.dis",
-      "dis_path": "tools/dis_work/mis_ob1.dis",
-      "dig_path": "tools/dis_work/mis_ob1-01.dig",
+      "dig_name": "mis_ob1-00.dig",
+      "dml_name": "mis_ob1.dml",
+      "materials": [
+        "ext_grey3.BMP",
+        "cold_64b.BMP",
+        "ext_grey2.BMP"
+      ],
       "n_verts": 40,
       "n_tris": 88,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -2.0,
         -2.0,
@@ -359,10 +625,17 @@
     },
     {
       "fileName": "mis_ob2.0.dis",
-      "dis_path": "tools/dis_work/mis_ob2.dis",
-      "dig_path": "tools/dis_work/mis_ob2-01.dig",
-      "n_verts": 36,
-      "n_tris": 60,
+      "dig_name": "mis_ob2-00.dig",
+      "dml_name": "mis_ob2.dml",
+      "materials": [
+        "ext_grey3.BMP",
+        "ext_iron5.BMP",
+        "ext_grey9.bmp"
+      ],
+      "n_verts": 70,
+      "n_tris": 136,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -8.0,
         -8.0,
@@ -376,10 +649,17 @@
     },
     {
       "fileName": "mis_ob3.0.dis",
-      "dis_path": "tools/dis_work/mis_ob3.dis",
-      "dig_path": "tools/dis_work/mis_ob3-01.dig",
-      "n_verts": 36,
-      "n_tris": 68,
+      "dig_name": "mis_ob3-00.dig",
+      "dml_name": "mis_ob3.dml",
+      "materials": [
+        "ext_grey9.bmp",
+        "ext_grey3.BMP",
+        "base_rock.bmp"
+      ],
+      "n_verts": 38,
+      "n_tris": 72,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -5.0,
         -5.0,
@@ -393,10 +673,17 @@
     },
     {
       "fileName": "lrock3.0.dis",
-      "dis_path": "tools/dis_work/lrock3.dis",
-      "dig_path": "tools/dis_work/lrock3-01.dig",
+      "dig_name": "lrock3-00.dig",
+      "dml_name": "lrock3.dml",
+      "materials": [
+        "lRRRR2.BMP",
+        "lRRRR1.BMP",
+        "lRRRR.BMP"
+      ],
       "n_verts": 14,
       "n_tris": 24,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -5.0,
         -5.0,
@@ -405,15 +692,22 @@
       "bounds_max": [
         5.0,
         4.0,
-        6.0
+        5.934687614440918
       ]
     },
     {
       "fileName": "lrock6.0.dis",
-      "dis_path": "tools/dis_work/lrock6.dis",
-      "dig_path": "tools/dis_work/lrock6-01.dig",
-      "n_verts": 29,
-      "n_tris": 50,
+      "dig_name": "lrock6-00.dig",
+      "dml_name": "lrock6.dml",
+      "materials": [
+        "lRRRR1.BMP",
+        "lRRRR2.BMP",
+        "lRRRR.BMP"
+      ],
+      "n_verts": 51,
+      "n_tris": 94,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -2.5824999809265137,
         -1.9343750476837158,
@@ -427,10 +721,17 @@
     },
     {
       "fileName": "lrock1.0.dis",
-      "dis_path": "tools/dis_work/lrock1.dis",
-      "dig_path": "tools/dis_work/lrock1-01.dig",
-      "n_verts": 24,
-      "n_tris": 44,
+      "dig_name": "lrock1-00.dig",
+      "dml_name": "lrock1.dml",
+      "materials": [
+        "lRRRR.BMP",
+        "lRRRR2.BMP",
+        "lRRRR1.BMP"
+      ],
+      "n_verts": 67,
+      "n_tris": 126,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -2.0,
         -2.0,
@@ -439,15 +740,22 @@
       "bounds_max": [
         2.0,
         2.0,
-        2.515000104904175
+        2.489687442779541
       ]
     },
     {
       "fileName": "lrock4.0.dis",
-      "dis_path": "tools/dis_work/lrock4.dis",
-      "dig_path": "tools/dis_work/lrock4-01.dig",
-      "n_verts": 19,
-      "n_tris": 34,
+      "dig_name": "lrock4-00.dig",
+      "dml_name": "lrock4.dml",
+      "materials": [
+        "lRRRR2.BMP",
+        "lRRRR1.BMP",
+        "lRRRR.BMP"
+      ],
+      "n_verts": 36,
+      "n_tris": 66,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -4.0,
         -4.0,
@@ -461,12 +769,20 @@
     },
     {
       "fileName": "lrock5.0.dis",
-      "dis_path": "tools/dis_work/lrock5.dis",
-      "dig_path": "tools/dis_work/lrock5-01.dig",
-      "n_verts": 20,
-      "n_tris": 34,
+      "dig_name": "lrock5-00.dig",
+      "dml_name": "lrock5.dml",
+      "materials": [
+        "lRRRR1.BMP",
+        "lRRRR.BMP",
+        "lRRRR2.BMP",
+        "lCCCC.BMP"
+      ],
+      "n_verts": 58,
+      "n_tris": 106,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
-        -1.9384374618530273,
+        -2.1953125,
         -2.304374933242798,
         -0.009062499739229679
       ],
@@ -478,10 +794,17 @@
     },
     {
       "fileName": "lrock4.1.dis",
-      "dis_path": "tools/dis_work/lrock4.dis",
-      "dig_path": "tools/dis_work/lrock4-01.dig",
-      "n_verts": 19,
-      "n_tris": 34,
+      "dig_name": "lrock4-00.dig",
+      "dml_name": "lrock4.dml",
+      "materials": [
+        "lRRRR2.BMP",
+        "lRRRR1.BMP",
+        "lRRRR.BMP"
+      ],
+      "n_verts": 36,
+      "n_tris": 66,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -4.0,
         -4.0,
@@ -495,10 +818,17 @@
     },
     {
       "fileName": "lrock4.2.dis",
-      "dis_path": "tools/dis_work/lrock4.dis",
-      "dig_path": "tools/dis_work/lrock4-01.dig",
-      "n_verts": 19,
-      "n_tris": 34,
+      "dig_name": "lrock4-00.dig",
+      "dml_name": "lrock4.dml",
+      "materials": [
+        "lRRRR2.BMP",
+        "lRRRR1.BMP",
+        "lRRRR.BMP"
+      ],
+      "n_verts": 36,
+      "n_tris": 66,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
         -4.0,
         -4.0,
@@ -512,35 +842,59 @@
     },
     {
       "fileName": "DSSfloatingPad.0.dis",
-      "dis_path": "tools/dis_work/DSSfloatingPad.dis",
-      "dig_path": "tools/dis_work/DSSfloatingPad-01.dig",
-      "n_verts": 8,
-      "n_tris": 12,
+      "dig_name": "DSSfloatingPad-00.dig",
+      "dml_name": "DSSfloatingPad.dml",
+      "materials": [
+        "sworddrop3.bmp",
+        "sworddrop1.bmp",
+        "cold_16b.BMP",
+        "light_cold.BMP",
+        "light_dark.BMP",
+        "droppheonix2.BMP",
+        "dropeagle2.BMP",
+        "dropeagle5.BMP"
+      ],
+      "n_verts": 88,
+      "n_tris": 172,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
-        -6.0,
-        -6.0,
-        17.0
+        -6.375,
+        -6.875,
+        16.0
       ],
       "bounds_max": [
-        6.0,
-        6.0,
+        6.375,
+        6.875,
         17.5
       ]
     },
     {
       "fileName": "DSSfloatingPad.1.dis",
-      "dis_path": "tools/dis_work/DSSfloatingPad.dis",
-      "dig_path": "tools/dis_work/DSSfloatingPad-01.dig",
-      "n_verts": 8,
-      "n_tris": 12,
+      "dig_name": "DSSfloatingPad-00.dig",
+      "dml_name": "DSSfloatingPad.dml",
+      "materials": [
+        "sworddrop3.bmp",
+        "sworddrop1.bmp",
+        "cold_16b.BMP",
+        "light_cold.BMP",
+        "light_dark.BMP",
+        "droppheonix2.BMP",
+        "dropeagle2.BMP",
+        "dropeagle5.BMP"
+      ],
+      "n_verts": 88,
+      "n_tris": 172,
+      "n_portals_skipped": 0,
+      "n_null_skipped": 0,
       "bounds_min": [
-        -6.0,
-        -6.0,
-        17.0
+        -6.375,
+        -6.875,
+        16.0
       ],
       "bounds_max": [
-        6.0,
-        6.0,
+        6.375,
+        6.875,
         17.5
       ]
     }

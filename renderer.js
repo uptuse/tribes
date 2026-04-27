@@ -1450,7 +1450,7 @@ async function initBuildings() {
  * BufferGeometry with per-vertex normals that preserve hard edges on
  * architectural seams while smoothing curved surfaces.
  */
-function computeCreaseNormals(geometry, creaseAngleDeg = 40) {
+function computeCreaseNormals(geometry, creaseAngleDeg = 40, materialColors = null) {
     const posAttr = geometry.getAttribute('position');
     const index = geometry.getIndex();
     if (!index) return geometry; // already non-indexed, bail
@@ -1535,40 +1535,40 @@ function computeCreaseNormals(geometry, creaseAngleDeg = 40) {
         }
     }
 
-    // R32.47: Normal-based material zone vertex colors.
-    // In DIS local coords (z-up before the -90° X rotation), face normals tell us
-    // surface type: z+ = floor, z- = ceiling, horizontal = wall. We assign subtle
-    // tint variations per zone so walls, floors, ceilings, and edges are visually
-    // distinct — recreating the multi-material look the original textures provided.
+    // R32.48: Material-palette-based vertex colors replace R32.47 normal-based zone hack.
+    // materialColors is a Float32Array[numTris * 3] (r,g,b per triangle) if provided.
+    // Falls back to face-normal-based zone tinting when null (backward compat for non-v2).
     const newColors = new Float32Array(numTris * 9);
-    for (let t = 0; t < numTris; t++) {
-        const fnx = faceNormals[t * 3], fny = faceNormals[t * 3 + 1], fnz = faceNormals[t * 3 + 2];
-        // Classify by dominant normal direction (local DIS coords: x-right, y-forward, z-up)
-        let r, g, b;
-        const absZ = Math.abs(fnz), absX = Math.abs(fnx), absY = Math.abs(fny);
-        if (fnz > 0.65) {
-            // Floor (upward-facing) — slightly lighter warm tone
-            r = 1.12; g = 1.10; b = 1.06;
-        } else if (fnz < -0.65) {
-            // Ceiling (downward-facing) — darker, cooler
-            r = 0.78; g = 0.78; b = 0.82;
-        } else if (absZ < 0.3 && (absX > 0.5 || absY > 0.5)) {
-            // Wall (mostly horizontal normal) — base tone, slight variation by direction
-            if (absX > absY) {
-                // Side wall (X-facing)
-                r = 0.95; g = 0.93; b = 0.90;
-            } else {
-                // Front/back wall (Y-facing)
-                r = 0.88; g = 0.87; b = 0.85;
+    if (materialColors && materialColors.length === numTris * 3) {
+        for (let t = 0; t < numTris; t++) {
+            const r = materialColors[t * 3], g = materialColors[t * 3 + 1], b = materialColors[t * 3 + 2];
+            for (let j = 0; j < 3; j++) {
+                newColors[t * 9 + j * 3]     = r;
+                newColors[t * 9 + j * 3 + 1] = g;
+                newColors[t * 9 + j * 3 + 2] = b;
             }
-        } else {
-            // Angled/structural edge — distinct accent
-            r = 0.82; g = 0.80; b = 0.76;
         }
-        for (let j = 0; j < 3; j++) {
-            newColors[t * 9 + j * 3]     = r;
-            newColors[t * 9 + j * 3 + 1] = g;
-            newColors[t * 9 + j * 3 + 2] = b;
+    } else {
+        // Legacy R32.47 normal-based zone tinting (fallback for v1 blobs)
+        for (let t = 0; t < numTris; t++) {
+            const fnx = faceNormals[t * 3], fny = faceNormals[t * 3 + 1], fnz = faceNormals[t * 3 + 2];
+            let r, g, b;
+            const absZ = Math.abs(fnz), absX = Math.abs(fnx), absY = Math.abs(fny);
+            if (fnz > 0.65) {
+                r = 1.12; g = 1.10; b = 1.06;
+            } else if (fnz < -0.65) {
+                r = 0.78; g = 0.78; b = 0.82;
+            } else if (absZ < 0.3 && (absX > 0.5 || absY > 0.5)) {
+                if (absX > absY) { r = 0.95; g = 0.93; b = 0.90; }
+                else { r = 0.88; g = 0.87; b = 0.85; }
+            } else {
+                r = 0.82; g = 0.80; b = 0.76;
+            }
+            for (let j = 0; j < 3; j++) {
+                newColors[t * 9 + j * 3]     = r;
+                newColors[t * 9 + j * 3 + 1] = g;
+                newColors[t * 9 + j * 3 + 2] = b;
+            }
         }
     }
 
@@ -1585,14 +1585,16 @@ function computeCreaseNormals(geometry, creaseAngleDeg = 40) {
  * Midpoint subdivision: each triangle becomes 4 by inserting edge midpoints.
  * No vertex smoothing — just adds resolution for crease normals to work with.
  * Input: raw position array (flat float[]) and index array (flat uint[]).
- * Returns { positions: Float32Array, indices: Uint32Array }.
+ * Optional triData: any per-triangle array; each parent tri's value is copied to its 4 children.
+ * Returns { positions: Float32Array, indices: Uint32Array, triData?: Array }.
  */
-function midpointSubdivide(positions, indices) {
+function midpointSubdivide(positions, indices, triData = null) {
     const edgeMap = new Map();
     // Copy original positions into a growable array
     const newPos = [];
     for (let i = 0; i < positions.length; i++) newPos.push(positions[i]);
     const newIdx = [];
+    const newTriData = triData ? [] : null;
 
     const edgeKey = (a, b) => a < b ? (a * 100000 + b) : (b * 100000 + a);
 
@@ -1620,12 +1622,19 @@ function midpointSubdivide(positions, indices) {
         newIdx.push(m01, i1, m12);
         newIdx.push(m20, m12, i2);
         newIdx.push(m01, m12, m20);
+        // Propagate per-tri data: all 4 children get parent's value
+        if (newTriData) {
+            const val = triData[t / 3];
+            newTriData.push(val, val, val, val);
+        }
     }
 
-    return {
+    const result = {
         positions: new Float32Array(newPos),
         indices: new Uint32Array(newIdx),
     };
+    if (newTriData) result.triData = newTriData;
+    return result;
 }
 
 // ============================================================
@@ -1641,32 +1650,49 @@ let interiorShapesGroup = null;
 
 async function initInteriorShapes() {
     try {
-        const [blobRes, infoRes, canonRes] = await Promise.all([
+        const [blobRes, infoRes, canonRes, paletteRes] = await Promise.all([
             fetch('assets/maps/raindance/raindance_meshes.bin'),
             fetch('assets/maps/raindance/raindance_meshes.json'),
             fetch('assets/maps/raindance/canonical.json'),
+            fetch('assets/maps/raindance/material_palette.json'),
         ]);
         if (!blobRes.ok || !infoRes.ok || !canonRes.ok) {
-            console.warn('[R32.1] Interior shape assets missing; skipping');
+            console.warn('[R32.48] Interior shape assets missing; skipping');
             return;
         }
         const blob = await blobRes.arrayBuffer();
         const info = await infoRes.json();
         const canon = await canonRes.json();
+        const palette = paletteRes.ok ? await paletteRes.json() : {};
+        const defaultEntry = palette['_default'] || { color: [0.50, 0.48, 0.45], roughness: 0.75, metalness: 0.10, emissive: null };
+
+        // R32.48: Palette lookup — match texture name (case-insensitive, strip .bmp)
+        // then prefix match for numbered variants (e.g. ext_grey9 → ext_grey)
+        function lookupPalette(texName) {
+            const key = texName.toLowerCase().replace(/\.bmp$/i, '');
+            if (palette[key]) return palette[key];
+            // Prefix match: strip trailing digits
+            const prefix = key.replace(/\d+$/, '');
+            if (prefix !== key && palette[prefix]) return palette[prefix];
+            return defaultEntry;
+        }
 
         // Parse the binary blob. Format:
         //   u32 'RDMS', u32 version, u32 num_meshes
         //   per mesh: u8 nameLen, char[nameLen] name,
         //             u32 nVerts, f32[3*nVerts] positions,
-        //             u32 nIndices, u32[nIndices] indices
+        //             u32 nUVs, f32[2*nUVs] uvs,           (v2+)
+        //             u32 nIndices, u32[nIndices] indices,
+        //             u32 nTris, u8[nTris] material_indices (v2+)
         const dv = new DataView(blob);
         let off = 0;
         const magic = String.fromCharCode(dv.getUint8(0), dv.getUint8(1), dv.getUint8(2), dv.getUint8(3));
         off = 4;
-        if (magic !== 'RDMS') { console.warn('[R32.1] bad magic', magic); return; }
+        if (magic !== 'RDMS') { console.warn('[R32.48] bad magic', magic); return; }
         const version = dv.getUint32(off, true); off += 4;
         const num = dv.getUint32(off, true); off += 4;
-        if (version !== 1) console.warn('[R32.1] unexpected mesh blob version', version);
+        console.log('[R32.48] Mesh blob version', version, '—', num, 'meshes');
+
         const meshes = new Map();
         for (let i = 0; i < num; i++) {
             const nameLen = dv.getUint8(off); off += 1;
@@ -1676,47 +1702,77 @@ async function initInteriorShapes() {
             const nVerts = dv.getUint32(off, true); off += 4;
             const positions = new Float32Array(blob.slice(off, off + nVerts * 12));
             off += nVerts * 12;
+
+            let uvs = null, materialIndices = null;
+            if (version >= 2) {
+                const nUVs = dv.getUint32(off, true); off += 4;
+                uvs = new Float32Array(blob.slice(off, off + nUVs * 8));
+                off += nUVs * 8;
+            }
+
             const nIdx = dv.getUint32(off, true); off += 4;
             const indices = new Uint32Array(blob.slice(off, off + nIdx * 4));
             off += nIdx * 4;
-            meshes.set(name, { positions, indices, nVerts });
+
+            if (version >= 2) {
+                const nTris = dv.getUint32(off, true); off += 4;
+                materialIndices = new Uint8Array(blob.slice(off, off + nTris));
+                off += nTris;
+            }
+
+            meshes.set(name, { positions, indices, nVerts, uvs, materialIndices });
         }
-        console.log('[R32.1] Loaded', meshes.size, 'unique interior-shape meshes');
+        console.log('[R32.48] Loaded', meshes.size, 'unique interior-shape meshes');
 
-        // R32.45: per-category material differentiation — buildings, towers,
-        // bridge, rocks, pads, cubes each get distinct PBR properties.
-        // R32.46: flatShading: false — crease-aware smooth normals handle edge detection
-        // R32.47: vertexColors: true — normal-based material zone tinting
+        // Build a material name list lookup from sidecar JSON
+        const meshMaterialNames = new Map();
+        for (const m of (info.meshes || [])) {
+            meshMaterialNames.set(m.fileName, m.materials || []);
+        }
+
+        // R32.48: Per-mesh material using geometry groups from the material palette.
+        // Each unique material index gets its own PBR material (color, roughness, metalness, emissive).
+        // Vertex colors still used for per-triangle tinting within each material group.
         const _matProps = { side: THREE.DoubleSide, flatShading: false, vertexColors: true };
-        const matBuilding = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0xA89D90, roughness: 0.82, metalness: 0.10, envMapIntensity: 0.35,
-            emissive: 0x1a1814, emissiveIntensity: 0.35 });
-        const matTower = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0x8A8580, roughness: 0.65, metalness: 0.30, envMapIntensity: 0.50,
-            emissive: 0x141210, emissiveIntensity: 0.25 });
-        const matBridge = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0x9A9080, roughness: 0.70, metalness: 0.25, envMapIntensity: 0.40,
-            emissive: 0x181510, emissiveIntensity: 0.30 });
-        const matRock = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0x5A5248, roughness: 0.95, metalness: 0.02, envMapIntensity: 0.15,
-            emissive: 0x0A0908, emissiveIntensity: 0.15 });
-        const matPad = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0x4A4A50, roughness: 0.50, metalness: 0.55, envMapIntensity: 0.60,
-            emissive: 0x101012, emissiveIntensity: 0.20 });
-        const matCube = new THREE.MeshStandardMaterial({ ..._matProps,
-            color: 0xA89D90, roughness: 0.78, metalness: 0.08, envMapIntensity: 0.30,
-            emissive: 0x1a1814, emissiveIntensity: 0.35 });
 
-        // Map fileName prefix → material
-        function _pickInteriorMat(fileName) {
-            const n = fileName.toLowerCase();
-            if (n.startsWith('esmall2') || n.startsWith('bunker4')) return matBuilding;
-            if (n.startsWith('betower2') || n.startsWith('iobservation') ||
-                n.startsWith('mis_ob'))                              return matTower;
-            if (n.startsWith('expbridge'))                           return matBridge;
-            if (n.startsWith('lrock'))                               return matRock;
-            if (n.startsWith('swsfloatingpad') || n.startsWith('dssfloatingpad')) return matPad;
-            return matCube; // cube.*.dis + anything unrecognized
+        // Cache of material arrays per mesh filename (since multiple instances share geometry)
+        const matArrayCache = new Map();
+
+        function buildMaterialArray(fileName) {
+            if (matArrayCache.has(fileName)) return matArrayCache.get(fileName);
+            const matNames = meshMaterialNames.get(fileName) || [];
+            const mats = matNames.map(texName => {
+                const entry = lookupPalette(texName);
+                const [cr, cg, cb] = entry.color;
+                const mat = new THREE.MeshStandardMaterial({
+                    ..._matProps,
+                    color: new THREE.Color(cr, cg, cb),
+                    roughness: entry.roughness,
+                    metalness: entry.metalness,
+                    envMapIntensity: 0.35,
+                });
+                if (entry.emissive) {
+                    mat.emissive = new THREE.Color(entry.emissive[0], entry.emissive[1], entry.emissive[2]);
+                    mat.emissiveIntensity = 0.65;
+                } else {
+                    // Subtle ambient emissive for non-emissive materials
+                    mat.emissive = new THREE.Color(cr * 0.08, cg * 0.08, cb * 0.08);
+                    mat.emissiveIntensity = 0.30;
+                }
+                return mat;
+            });
+            // Fallback material for indices not covered by the DML list
+            const fallback = new THREE.MeshStandardMaterial({
+                ..._matProps,
+                color: new THREE.Color(defaultEntry.color[0], defaultEntry.color[1], defaultEntry.color[2]),
+                roughness: defaultEntry.roughness,
+                metalness: defaultEntry.metalness,
+                envMapIntensity: 0.35,
+                emissive: new THREE.Color(0x1a1814),
+                emissiveIntensity: 0.30,
+            });
+            matArrayCache.set(fileName, { mats, fallback });
+            return { mats, fallback };
         }
 
         // Create a parent group for easy hide/show + selective culling
@@ -1732,6 +1788,7 @@ async function initInteriorShapes() {
         // is right-handed with CCW winding. We flip the index winding (i,j,k)->(i,k,j)
         // so face normals computed by computeCreaseNormals point outward.
         // R32.46: crease-aware smooth normals + midpoint subdivision for rocks
+        // R32.48: material-palette vertex colors + geometry groups
         const geomCache = new Map();
         const _t0 = performance.now();
         let _enhancedCount = 0;
@@ -1740,13 +1797,20 @@ async function initInteriorShapes() {
             const m = meshes.get(fileName);
             if (!m) return null;
 
+            const matNames = meshMaterialNames.get(fileName) || [];
+            const hasV2Materials = m.materialIndices && matNames.length > 0;
+
             // Flip winding from CW (DirectX) to CCW (Three.js)
+            const nTris = m.indices.length / 3;
             const flipped = new Uint32Array(m.indices.length);
             for (let t = 0; t < m.indices.length; t += 3) {
                 flipped[t]   = m.indices[t];
                 flipped[t+1] = m.indices[t+2];
                 flipped[t+2] = m.indices[t+1];
             }
+
+            // Per-triangle material index array (parallel to triangles after flip)
+            let matIndices = m.materialIndices ? Array.from(m.materialIndices) : null;
 
             let finalPositions = m.positions;
             let finalIndices = flipped;
@@ -1755,9 +1819,58 @@ async function initInteriorShapes() {
             // crease normals have more geometry to smooth with
             const isRock = fileName.toLowerCase().startsWith('lrock');
             if (isRock) {
-                const sub = midpointSubdivide(finalPositions, finalIndices);
+                const sub = midpointSubdivide(finalPositions, finalIndices, matIndices);
                 finalPositions = sub.positions;
                 finalIndices = sub.indices;
+                if (sub.triData) matIndices = sub.triData;
+            }
+
+            // R32.48: Build per-triangle material color array from palette
+            let materialColors = null;
+            let groupInfo = null; // { groups: [{matIdx, start, count}], uniqueMatIndices: [] }
+            if (hasV2Materials && matIndices) {
+                const finalNTris = finalIndices.length / 3;
+
+                // Sort triangles by material index for contiguous groups
+                const triOrder = Array.from({ length: finalNTris }, (_, i) => i);
+                triOrder.sort((a, b) => (matIndices[a] || 0) - (matIndices[b] || 0));
+
+                // Reorder indices and material indices according to sort
+                const sortedIndices = new Uint32Array(finalIndices.length);
+                const sortedMatIndices = new Array(finalNTris);
+                for (let i = 0; i < finalNTris; i++) {
+                    const src = triOrder[i];
+                    sortedIndices[i * 3]     = finalIndices[src * 3];
+                    sortedIndices[i * 3 + 1] = finalIndices[src * 3 + 1];
+                    sortedIndices[i * 3 + 2] = finalIndices[src * 3 + 2];
+                    sortedMatIndices[i] = matIndices[src] || 0;
+                }
+                finalIndices = sortedIndices;
+
+                // Build per-tri color array from palette
+                materialColors = new Float32Array(finalNTris * 3);
+                for (let t = 0; t < finalNTris; t++) {
+                    const mi = sortedMatIndices[t];
+                    const texName = mi < matNames.length ? matNames[mi] : '';
+                    const entry = texName ? lookupPalette(texName) : defaultEntry;
+                    materialColors[t * 3]     = entry.color[0];
+                    materialColors[t * 3 + 1] = entry.color[1];
+                    materialColors[t * 3 + 2] = entry.color[2];
+                }
+
+                // Build group boundaries
+                const groups = [];
+                let groupStart = 0;
+                let prevMat = sortedMatIndices[0];
+                for (let t = 1; t <= finalNTris; t++) {
+                    const curMat = t < finalNTris ? sortedMatIndices[t] : -1;
+                    if (curMat !== prevMat) {
+                        groups.push({ matIdx: prevMat, start: groupStart * 3, count: (t - groupStart) * 3 });
+                        groupStart = t;
+                        prevMat = curMat;
+                    }
+                }
+                groupInfo = groups;
             }
 
             // Build indexed geometry first (needed for crease normal computation)
@@ -1767,10 +1880,22 @@ async function initInteriorShapes() {
 
             // R32.46: Crease-aware smooth normals — 40° for architectural meshes,
             // 55° for rocks (rounder surfaces benefit from wider averaging)
+            // R32.48: Pass materialColors for palette-based vertex coloring
             const creaseAngle = isRock ? 55 : 40;
-            const enhanced = computeCreaseNormals(g, creaseAngle);
-            _enhancedCount++;
+            const enhanced = computeCreaseNormals(g, creaseAngle, materialColors);
 
+            // R32.48: Apply geometry groups for multi-material rendering.
+            // After crease normals, geometry is non-indexed: each triangle = 3 consecutive verts.
+            // Groups reference vertex offsets, so group.start = triStart * 3, count = triCount * 3.
+            if (groupInfo && groupInfo.length > 0) {
+                enhanced.clearGroups();
+                for (let gi = 0; gi < groupInfo.length; gi++) {
+                    const grp = groupInfo[gi];
+                    enhanced.addGroup(grp.start, grp.count, grp.matIdx);
+                }
+            }
+
+            _enhancedCount++;
             geomCache.set(fileName, enhanced);
             return enhanced;
         };
@@ -1783,7 +1908,19 @@ async function initInteriorShapes() {
         for (const item of items) {
             const geom = getGeom(item.fileName);
             if (!geom) { missed++; continue; }
-            const mesh = new THREE.Mesh(geom, _pickInteriorMat(item.fileName));
+
+            // R32.48: build material array for this mesh
+            const { mats, fallback } = buildMaterialArray(item.fileName);
+            // Create material array indexed by material slot.
+            // Geometry groups reference matIdx (the DML material index).
+            // Build a sparse array: slot i = mats[i] if exists, else fallback.
+            const maxSlot = Math.max(mats.length - 1, ...(geom.groups || []).map(g => g.materialIndex));
+            const matArray = [];
+            for (let i = 0; i <= maxSlot; i++) {
+                matArray.push(i < mats.length ? mats[i] : fallback);
+            }
+
+            const mesh = new THREE.Mesh(geom, matArray.length > 1 ? matArray : (matArray[0] || fallback));
             // Inner: rotate -90deg around X to map Tribes local-z-up to Three y-up
             mesh.rotation.x = -Math.PI / 2;
             mesh.castShadow = true;
@@ -1800,9 +1937,9 @@ async function initInteriorShapes() {
             interiorShapesGroup.add(outer);
             placed++;
         }
-        console.log('[R32.1] Interior shapes placed:', placed, '(missed', missed, ')');
-        console.log('[R32.46] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
-            _enhancedCount, 'unique meshes (crease normals + rock subdivision)');
+        console.log('[R32.48] Interior shapes placed:', placed, '(missed', missed, ')');
+        console.log('[R32.48] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
+            _enhancedCount, 'unique meshes (crease normals + rock subdivision + material palette)');
 
         // R32.1 O1 (corrected R32.1.1): push world-space AABBs to C++ for collision.
         // Manus R32.1.1 changed rotation architecture: inner mesh Rx(-PI/2), outer Group Ry(rotZ).

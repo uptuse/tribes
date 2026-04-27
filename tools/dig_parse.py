@@ -153,9 +153,16 @@ def parse_dig(path: Path) -> dict:
 
 
 def build_geometry(path: Path) -> dict:
-    """Convert a DIG into a renderable {positions, indices, materials} dict.
+    """Convert a DIG into a renderable mesh dict.
 
+    Returns positions, indices, per-tri material indices, and UV coordinates.
     Each surface is a polygon fan: triangles (v0, v1, v2), (v0, v2, v3), ...
+
+    Surface flags (from Darkstar itrgeometry.h):
+      bit 0: type — 0=Material (renderable), 1=Link (BSP portal, skip)
+      bit 6: visibleToOutside
+    Surfaces with type=Link (flags & 1) are filtered out.
+    Material index 255 = NullMaterial (also filtered).
     """
     data = path.read_bytes()
     p = 0
@@ -178,24 +185,54 @@ def build_geometry(path: Path) -> dict:
         p += 20  # 18 bytes content + 2 bytes pad
     p += n_bsp * 8 + n_solid * 12 + n_empty * 44 + n_pvs
 
+    # Vertices: each has pIdx (position index) and tIdx (texcoord index)
     verts_pidx = []
+    verts_tidx = []
     for _ in range(n_vert):
-        pIdx = struct.unpack_from('<H', data, p)[0]; p += 4
+        pIdx, tIdx = struct.unpack_from('<HH', data, p)
         verts_pidx.append(pIdx)
+        verts_tidx.append(tIdx)
+        p += 4
     pts3 = []
     for _ in range(n_p3):
         pts3.append(struct.unpack_from('<3f', data, p))
         p += 12
+    pts2 = []
+    for _ in range(n_p2):
+        pts2.append(struct.unpack_from('<2f', data, p))
+        p += 8
 
     # Build positions + indices
     positions = []
     for x, y, z in pts3:
         positions.extend([x, y, z])
 
+    # UV array parallel to positions (one UV per unique 3D point).
+    # Multiple vertices may share the same point but have different UVs;
+    # we store the last-seen UV per point index. For split UVs we'd need
+    # to duplicate points, but for PBR-color-only rendering this is fine.
+    uvs = [0.0, 0.0] * len(pts3)
+    for vi in range(n_vert):
+        pi = verts_pidx[vi]
+        ti = verts_tidx[vi]
+        if ti < len(pts2) and pi < len(pts3):
+            uvs[pi * 2]     = pts2[ti][0]
+            uvs[pi * 2 + 1] = pts2[ti][1]
+
     indices = []
     materials_per_tri = []
+    n_portals_skipped = 0
+    n_null_skipped = 0
     for flags, materials, plane_idx, vert_idx, nv in surfs:
         if nv < 3:
+            continue
+        # Skip Link-type surfaces (BSP portals — not renderable)
+        if flags & 1:
+            n_portals_skipped += 1
+            continue
+        # Skip NullMaterial surfaces
+        if materials == 255:
+            n_null_skipped += 1
             continue
         # Polygon fan v0,v1,v2 / v0,v2,v3 / ...
         if vert_idx + nv > len(verts_pidx):
@@ -209,10 +246,13 @@ def build_geometry(path: Path) -> dict:
 
     return dict(
         positions=positions,
+        uvs=uvs,
         indices=indices,
         materials_per_tri=materials_per_tri,
         n_verts=len(pts3),
         n_tris=len(indices) // 3,
+        n_portals_skipped=n_portals_skipped,
+        n_null_skipped=n_null_skipped,
     )
 
 
