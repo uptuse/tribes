@@ -1535,9 +1535,47 @@ function computeCreaseNormals(geometry, creaseAngleDeg = 40) {
         }
     }
 
+    // R32.47: Normal-based material zone vertex colors.
+    // In DIS local coords (z-up before the -90° X rotation), face normals tell us
+    // surface type: z+ = floor, z- = ceiling, horizontal = wall. We assign subtle
+    // tint variations per zone so walls, floors, ceilings, and edges are visually
+    // distinct — recreating the multi-material look the original textures provided.
+    const newColors = new Float32Array(numTris * 9);
+    for (let t = 0; t < numTris; t++) {
+        const fnx = faceNormals[t * 3], fny = faceNormals[t * 3 + 1], fnz = faceNormals[t * 3 + 2];
+        // Classify by dominant normal direction (local DIS coords: x-right, y-forward, z-up)
+        let r, g, b;
+        const absZ = Math.abs(fnz), absX = Math.abs(fnx), absY = Math.abs(fny);
+        if (fnz > 0.65) {
+            // Floor (upward-facing) — slightly lighter warm tone
+            r = 1.12; g = 1.10; b = 1.06;
+        } else if (fnz < -0.65) {
+            // Ceiling (downward-facing) — darker, cooler
+            r = 0.78; g = 0.78; b = 0.82;
+        } else if (absZ < 0.3 && (absX > 0.5 || absY > 0.5)) {
+            // Wall (mostly horizontal normal) — base tone, slight variation by direction
+            if (absX > absY) {
+                // Side wall (X-facing)
+                r = 0.95; g = 0.93; b = 0.90;
+            } else {
+                // Front/back wall (Y-facing)
+                r = 0.88; g = 0.87; b = 0.85;
+            }
+        } else {
+            // Angled/structural edge — distinct accent
+            r = 0.82; g = 0.80; b = 0.76;
+        }
+        for (let j = 0; j < 3; j++) {
+            newColors[t * 9 + j * 3]     = r;
+            newColors[t * 9 + j * 3 + 1] = g;
+            newColors[t * 9 + j * 3 + 2] = b;
+        }
+    }
+
     const newGeom = new THREE.BufferGeometry();
     newGeom.setAttribute('position', new THREE.BufferAttribute(newPositions, 3));
     newGeom.setAttribute('normal', new THREE.BufferAttribute(newNormals, 3));
+    newGeom.setAttribute('color', new THREE.BufferAttribute(newColors, 3));
     newGeom.computeBoundingBox();
     newGeom.computeBoundingSphere();
     return newGeom;
@@ -1648,7 +1686,8 @@ async function initInteriorShapes() {
         // R32.45: per-category material differentiation — buildings, towers,
         // bridge, rocks, pads, cubes each get distinct PBR properties.
         // R32.46: flatShading: false — crease-aware smooth normals handle edge detection
-        const _matProps = { side: THREE.DoubleSide, flatShading: false };
+        // R32.47: vertexColors: true — normal-based material zone tinting
+        const _matProps = { side: THREE.DoubleSide, flatShading: false, vertexColors: true };
         const matBuilding = new THREE.MeshStandardMaterial({ ..._matProps,
             color: 0xA89D90, roughness: 0.82, metalness: 0.10, envMapIntensity: 0.35,
             emissive: 0x1a1814, emissiveIntensity: 0.35 });

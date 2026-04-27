@@ -188,3 +188,10 @@
 2026-04-27 | d6f49c2 | chore(R32.44): dead code removal ~1700 LOC — delete renderer_polish.js (1146L), generateTerrainTextures+3 helpers (270L), initScene_camera_init stub, old grass system (226L), duplicate CommandMap import
 
 2026-04-27 | pending | feat(R32.45): visual polish — aniso filtering on terrain DataArrayTextures (max anisotropy), soft shadow penumbra (radius=3), 6-category interior shape material differentiation (buildings/towers/bridge/rocks/pads/cubes), building envMapIntensity bump (baseMat 0.35, armMat 0.50), camera FOV punch on nearby explosions (+2.5° within 30m, 200ms decay), exponential² fog (FogExp2 density=0.0022 replacing linear near=200/far=450)
+
+## R32.47 — Material zone vertex colors for interior shapes
+- Inferred material zones from face normals: floor/ceiling/wall/structural edge
+- Per-face vertex colors give visual depth to buildings, towers, bridges
+- Vertex color multipliers × per-category material tint = rich surface variation
+- Zero performance cost — vertex attribute, no extra passes
+- Investigated .vol archives: .dig geometry files are loose (not in any .vol)

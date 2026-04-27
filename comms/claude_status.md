@@ -1,41 +1,34 @@
-# Claude Status — R32.46
+# Claude Status — R32.47
 
-## Latest Build
-**R32.46** — Geometry Enhancement: Crease-Aware Smooth Normals + Rock Subdivision
+**HEAD:** (pending push)
+**What shipped:** Normal-based material zone vertex colors for interior shapes.
 
-### What Changed (R32.45 → R32.46)
+## R32.47 — Material zone inference from face normals
 
-#### 1. Crease-Aware Smooth Normals for Interior Shapes
-- Replaced simple `computeVertexNormals()` + `flatShading: true` with a custom `computeCreaseNormals()` algorithm
-- For each vertex, averages normals from adjacent faces ONLY when dihedral angle < crease threshold
-- Architectural meshes use 40° crease angle — flat wall panels stay hard-edged while curved transitions smooth
-- Rocks use 55° crease angle — more aggressive smoothing for natural surfaces
-- All interior shape materials switched to `flatShading: false` to use the custom normals
-- Geometry is de-indexed (non-indexed) to allow per-vertex-per-face normals at crease boundaries
-- **Visual effect**: Buildings look like machined industrial structures instead of faceted wireframe extracts. Panel seams and edges remain crisp while surface transitions are smooth.
+The original `.dig` geometry files (which contain per-face material indices) are
+only stored as loose files on the user's machine — they're not in any `.vol`
+archive or in the git repo. The Raindance.vol contains `.dil` (lightmaps) and
+`.dis` (index) but not `.dig` (geometry).
 
-#### 2. Midpoint Subdivision for Rock Meshes
-- Rock meshes (lrock1-6) get one pass of midpoint subdivision before crease normal computation
-- Each triangle splits into 4 sub-triangles at edge midpoints (no position smoothing — keeps original silhouette)
-- Quadruples triangle count on rocks: e.g. lrock3 goes from 24→96 tris, lrock6 from 50→200 tris
-- The extra geometry gives the crease normal algorithm more vertices to smooth, making rocks rounder
-- **Visual effect**: Rocks look like weathered natural formations instead of angular crystal shapes
+Since we can't access the original material data, I inferred material zones from
+the existing mesh geometry using face normal direction:
 
-#### 3. Implementation Details
-- `computeCreaseNormals(geometry, creaseAngleDeg)` — takes indexed BufferGeometry, returns non-indexed with custom normals
-- `midpointSubdivide(positions, indices)` — pure geometry operation, returns new position/index arrays
-- Both functions operate at load time only (inside `initInteriorShapes`), zero per-frame cost
-- AABB collision code untouched — still reads from `info.meshes` bounds, not geometry
-- Performance: processing all 32 unique meshes takes ~few ms at startup
+- **Floor** (upward-facing, local z > 0.65): lighter warm tint (×1.12, ×1.10, ×1.06)
+- **Ceiling** (downward-facing, local z < -0.65): darker cool tint (×0.78, ×0.78, ×0.82)
+- **Side wall** (X-facing horizontal): subtle warm (×0.95, ×0.93, ×0.90)
+- **Front/back wall** (Y-facing horizontal): slightly cooler (×0.88, ×0.87, ×0.85)
+- **Structural edges** (angled surfaces): dark accent (×0.82, ×0.80, ×0.76)
 
-### Previous (R32.45)
-- Anisotropic filtering on terrain textures
-- Soft PCF shadow penumbra (shadow.radius = 3)
-- Interior shape material differentiation (6 categories)
-- Building envMapIntensity tuning
-- FOV punch on nearby explosions
-- FogExp2 atmospheric haze
+These vertex color multipliers combine with the per-category material colors
+(building grey, tower steel, rock brown, etc.) to produce visually distinct
+surfaces within each mesh — floors read lighter than walls, walls read lighter
+than ceilings, giving depth and readability to the structures.
 
-## Status
-- ✅ R32.46 pushed
-- Awaiting user feedback on visual quality of enhanced geometry
+Zero performance cost — vertex colors are a per-vertex attribute, no extra
+draw calls or texture lookups. The crease-normal pipeline from R32.46 was
+extended to output the color attribute alongside position and normal.
+
+## Files changed
+- `renderer.js`: `computeCreaseNormals()` now outputs vertex color attribute;
+  interior materials have `vertexColors: true`
+- `index.html`: version chip → R32.47
