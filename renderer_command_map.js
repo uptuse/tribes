@@ -47,12 +47,12 @@
         c.style.cssText = [
             'position:fixed', 'inset:0',
             'width:100%', 'height:100%',
-            'z-index:80',
+            'z-index:99999',                       // R32.17.3: above all HUD layers
             'display:none',
             'pointer-events:none',
-            'background:rgba(2,8,16,0.78)',
-            'backdrop-filter:blur(2px)',
-            '-webkit-backdrop-filter:blur(2px)',
+            'background:rgba(2,8,16,0.85)',
+            'backdrop-filter:blur(3px)',
+            '-webkit-backdrop-filter:blur(3px)',
         ].join(';') + ';';
         document.body.appendChild(c);
         STATE.canvas = c;
@@ -115,8 +115,28 @@
     }
 
     function toggle() { STATE.active ? close() : open(); }
-    function open()   { STATE.active = true;  STATE.canvas.style.display = 'block'; }
+    function open()   {
+        STATE.active = true;
+        STATE.canvas.style.display = 'block';
+        console.log('[CommandMap] open: canvas display=' + STATE.canvas.style.display +
+                    ', size=' + STATE.canvas.width + 'x' + STATE.canvas.height +
+                    ', z=' + STATE.canvas.style.zIndex);
+        _startSelfLoop();
+    }
     function close()  { STATE.active = false; STATE.canvas.style.display = 'none';  }
+
+    // R32.17.3: Self-driven render loop — don't depend on renderer.js calling update().
+    let _selfRafActive = false;
+    function _startSelfLoop() {
+        if (_selfRafActive) return;
+        _selfRafActive = true;
+        function _raf() {
+            if (!STATE.active) { _selfRafActive = false; return; }
+            try { update(); } catch (e) { console.warn('[CommandMap] update error:', e); }
+            requestAnimationFrame(_raf);
+        }
+        requestAnimationFrame(_raf);
+    }
 
     // -------------------------------------------------------------------------
     // Terrain hillshade — sample heightmap, render as offscreen canvas, cache
