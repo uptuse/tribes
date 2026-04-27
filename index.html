@@ -859,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.3</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.12.4</div>
     </div>
   </div>
 
@@ -3106,13 +3106,14 @@
         if(this.prevHealth>0 && health<=0){
           this.playShazbot(true);
         }
-        // R32.12.3: ambient "distant-teammate" Shazbot every 25-60s at moderate
-        // volume (was 60-180s in R32.12 — user reported never hearing one).
+        // R32.12.4: ambient "distant-teammate" Shazbot every 60s exactly
+        // (user request — was 25-60s randomized in R32.12.3). First one fires
+        // 60s after the first AE.update() call so there's a brief grace period.
         var nowMs=performance.now();
-        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+15000+Math.random()*15000; // first one in 15-30s
+        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+60000;
         if(nowMs>=this._shazbotNextAt){
           this.playShazbot(false);
-          this._shazbotNextAt=nowMs+25000+Math.random()*35000; // every 25-60s after
+          this._shazbotNextAt=nowMs+60000;
         }
         // Damage received
         if(this.prevHealth>=0&&health<this.prevHealth-0.01){this.playUI(5);}
