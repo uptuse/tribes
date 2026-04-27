@@ -1102,7 +1102,8 @@ function initTerrain() {
                      // per user ("crank it so we know its obvious"). pow squares-and-then-some
                      // the AO so e.g. a 0.7 crevice becomes 0.41 (-60%) instead of -25%.
                      // Toggle off via the AO chip and the world brightens up a lot.
-                     aoT = pow(clamp(aoT, 0.05, 1.0), 2.5);
+                     // R32.38.4-manus: 2.5 -> 4.0 per user request for unmistakable A/B.
+                     aoT = pow(clamp(aoT, 0.05, 1.0), 4.0);
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
