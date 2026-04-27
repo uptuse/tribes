@@ -3878,15 +3878,14 @@ function initGrassRing() {
     bladeGeom.setIndex([0, 1, 2]);
     bladeGeom.computeVertexNormals();
 
-    // Material: vertex-colored (per-instance via instanceColor), double-sided so
-    // edge-on blades still render, no alpha test (solid triangle), and a
-    // wind-shader injection that uses the SAME global clock as everything else
-    // (keeps Principle 2/4 unified-wind from the spec). The wind path is pure
-    // ALU — 3-sin synth, no texture fetch — cheap on every GPU.
-    const mat = new THREE.MeshBasicMaterial({
-        color: 0xffffff,         // tinted per-instance via instanceColor
+    // R32.32.2-manus: switched to MeshLambertMaterial so the blades pick up scene
+    // light direction (sun + ambient) and read as 3D rather than emissive flats.
+    // We rely on Three's built-in instanceColor path (lazy-created by
+    // InstancedMesh.setColorAt). Three.js r170 auto-injects USE_INSTANCING_COLOR
+    // when an instanceColor attribute exists on the InstancedMesh.
+    const mat = new THREE.MeshLambertMaterial({
+        color: 0xffffff,         // multiplied by per-instance instanceColor
         side: THREE.DoubleSide,
-        vertexColors: false,     // we use instanceColor, not vertex colors
         toneMapped: true
     });
     mat.userData.isGrassRing = true; // R32.27.1 toonify-skip key
@@ -3917,10 +3916,11 @@ function initGrassRing() {
     _grassRingMesh = new THREE.InstancedMesh(bladeGeom, mat, N);
     _grassRingMesh.frustumCulled = false; // we manage placement ourselves
     _grassRingMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-    // InstancedBufferAttribute for per-blade colour
-    const colors = new Float32Array(N * 3);
-    _grassRingMesh.instanceColor = new THREE.InstancedBufferAttribute(colors, 3);
-    _grassRingMesh.instanceColor.setUsage(THREE.DynamicDrawUsage);
+    // R32.32.2-manus: do NOT manually attach instanceColor as an InstancedBufferAttribute
+    // — InstancedMesh.setColorAt() lazy-creates it as the correct three-internal
+    // attribute, and that's what triggers the USE_INSTANCING_COLOR shader define.
+    // Manually attaching one with the wrong type silently breaks per-instance
+    // tinting (R32.32.1 bug).
 
     // Pre-place all blades RANDOMLY around the world origin (camera spawn).
     // updateGrassRing will reposition them around the actual camera every frame.
@@ -3945,16 +3945,23 @@ function initGrassRing() {
         const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
         const idx = (sy * splatN + sx) * 4;
         const wG = splat[idx],   wR = splat[idx+1], wD = splat[idx+2], wS = splat[idx+3];
-        // Blend grass-green / rock-grey / dirt-brown / sand-tan by splat weights.
-        // Dimmed slightly so blades darken against terrain at distance.
-        const rR = (wG * 0.36 + wR * 0.46 + wD * 0.42 + wS * 0.78) * 0.85;
-        const gG = (wG * 0.52 + wR * 0.46 + wD * 0.36 + wS * 0.74) * 0.85;
-        const bB = (wG * 0.22 + wR * 0.42 + wD * 0.24 + wS * 0.56) * 0.85;
-        c.setRGB(rR, gG, bB);
-        // Yaw + scale jitter
+        // R32.32.2-manus: terrain-tinted blade palette tuned to read AGAINST the
+        // pale painterly terrain. Grass blades = saturated leaf green, rock =
+        // medium warm grey, dirt = warm brown, sand = pale straw. Slight per-
+        // blade jitter so the lawn doesn't look uniform.
+        const jitter = 0.85 + Math.random() * 0.30;
+        const rR = (wG * 0.30 + wR * 0.55 + wD * 0.55 + wS * 0.85) * jitter;
+        const gG = (wG * 0.62 + wR * 0.52 + wD * 0.42 + wS * 0.80) * jitter;
+        const bB = (wG * 0.18 + wR * 0.45 + wD * 0.22 + wS * 0.55) * jitter;
+        c.setRGB(
+            Math.min(1.0, Math.max(0.05, rR)),
+            Math.min(1.0, Math.max(0.05, gG)),
+            Math.min(1.0, Math.max(0.05, bB))
+        );
+        // Yaw + scale jitter (taller average so they read at distance)
         e.set(0, Math.random() * Math.PI * 2, 0);
         q.setFromEuler(e);
-        const sc = 0.7 + Math.random() * 0.7;
+        const sc = 1.4 + Math.random() * 1.2;   // 0.35 m → 0.65 m blade height
         s.set(sc, sc, sc);
         p.set(wx, wy, wz);
         m.compose(p, q, s);
@@ -4015,13 +4022,19 @@ function updateGrassRing(t) {
         const sy = Math.max(0, Math.min(splatN - 1, Math.floor(v * (splatN - 1))));
         const idx = (sy * splatN + sx) * 4;
         const wG = splat[idx],   wR = splat[idx+1], wD = splat[idx+2], wS = splat[idx+3];
-        const rR = (wG * 0.36 + wR * 0.46 + wD * 0.42 + wS * 0.78) * 0.85;
-        const gG = (wG * 0.52 + wR * 0.46 + wD * 0.36 + wS * 0.74) * 0.85;
-        const bB = (wG * 0.22 + wR * 0.42 + wD * 0.24 + wS * 0.56) * 0.85;
-        c.setRGB(rR, gG, bB);
+        // R32.32.2-manus: same palette as initGrassRing — keep these in sync.
+        const jitter = 0.85 + Math.random() * 0.30;
+        const rR = (wG * 0.30 + wR * 0.55 + wD * 0.55 + wS * 0.85) * jitter;
+        const gG = (wG * 0.62 + wR * 0.52 + wD * 0.42 + wS * 0.80) * jitter;
+        const bB = (wG * 0.18 + wR * 0.45 + wD * 0.22 + wS * 0.55) * jitter;
+        c.setRGB(
+            Math.min(1.0, Math.max(0.05, rR)),
+            Math.min(1.0, Math.max(0.05, gG)),
+            Math.min(1.0, Math.max(0.05, bB))
+        );
         e.set(0, Math.random() * Math.PI * 2, 0);
         q.setFromEuler(e);
-        const sc = 0.7 + Math.random() * 0.7;
+        const sc = 1.4 + Math.random() * 1.2;
         s.set(sc, sc, sc);
         p.set(wx, wy, wz);
         m.compose(p, q, s);
