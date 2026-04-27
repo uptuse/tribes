@@ -673,7 +673,8 @@
       window.addEventListener('error', function(e){ add('[ERR] ' + (e.message||e) + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?')); }, true);
       window.addEventListener('unhandledrejection', function(e){ add('[REJ] ' + (e.reason && (e.reason.message||e.reason))); });
       var origErr = console.error;
-      console.error = function(){ add('[console.err] ' + Array.from(arguments).map(function(a){return typeof a==='object'?JSON.stringify(a):String(a);}).join(' ').slice(0,200)); origErr.apply(console, arguments); };
+      function stringify(a){ if(a==null) return String(a); if(a.message) return a.message + (a.stack?(' :: '+String(a.stack).split('\n').slice(0,3).join(' | ')):''); if(typeof a==='object'){ try{ return JSON.stringify(a); }catch(_){ return String(a); } } return String(a); }
+      console.error = function(){ add('[ERR] ' + Array.from(arguments).map(stringify).join(' ').slice(0,400)); origErr.apply(console, arguments); };
       var origWarn = console.warn;
       console.warn = function(){ add('[console.warn] ' + Array.from(arguments).map(function(a){return String(a);}).join(' ').slice(0,200)); origWarn.apply(console, arguments); };
       // Periodic state dump
@@ -4164,7 +4165,7 @@
               console.error('[R29] renderer.js has no start() export');
             }
           }).catch(function(err){
-            console.error('[R29] renderer.js import FAILED:', err);
+            console.error('[R29] renderer.js import FAILED. msg=', err && err.message, ' stack=', err && err.stack, ' str=', String(err));
           });
         }else{
           console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
