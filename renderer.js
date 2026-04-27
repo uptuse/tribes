@@ -986,7 +986,7 @@ function initTerrain() {
         // R32.38-manus: AO is now wired (default ON). Roughness + POM stay 0.0
         // until R32.38.1 / R32.38.2 wire those features back in.
         shader.uniforms.uUseRoughness = { value: 0.0 };
-        shader.uniforms.uUseAO        = { value: 0.0 };  // R32.38.8: temporarily disabled
+        shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO', true) };
         shader.uniforms.uUsePOM       = { value: 0.0 };
 
         shader.vertexShader = shader.vertexShader
@@ -1098,14 +1098,7 @@ function initTerrain() {
                      float aD_ = texture2D(uTileDirtA,  tUv).r;
                      float aS_ = texture2D(uTileSandA,  tUv).r;
                      float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     // R32.38.7-manus: SAFETY-FLOORED AO. R32.38.6 went black on user
-                     // (chip showed 38.6) which means my contrast remap took aoT below
-                     // expected. Hard-floor multiplier at 0.65 so terrain CANNOT go below
-                     // 65% brightness even with broken math. Range now 0.65..1.0 so
-                     // crevices darken by max 35%, broad areas stay bright. Less dramatic
-                     // but provably safe.
-                     aoT = clamp(aoT, 0.0, 1.0);                  // raw bound first
-                     aoT = mix(0.65, 1.0, aoT);                   // 0->0.65, 1->1.0
+                     aoT = mix(1.0, aoT, 0.85);
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
