@@ -1098,12 +1098,18 @@ function initTerrain() {
                      float aD_ = texture2D(uTileDirtA,  tUv).r;
                      float aS_ = texture2D(uTileSandA,  tUv).r;
                      float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     // R32.38.3-manus: cranked from mix(1.0, aoT, 0.85) to pow(aoT, 2.5)
-                     // per user ("crank it so we know its obvious"). pow squares-and-then-some
-                     // the AO so e.g. a 0.7 crevice becomes 0.41 (-60%) instead of -25%.
-                     // Toggle off via the AO chip and the world brightens up a lot.
-                     // R32.38.4-manus: 2.5 -> 4.0 per user request for unmistakable A/B.
-                     aoT = pow(clamp(aoT, 0.05, 1.0), 2.5);
+                     // R32.38.6-manus: HIGH-CONTRAST AO MAPPING.
+                     // The pow(2.5)/pow(4.0) approach failed: pow darkens ALL AO
+                     // values uniformly, which either washed out the effect (2.5)
+                     // or killed the terrain entirely (4.0 made grass go black).
+                     // New approach: only the bottom 40% of AO darkness counts as
+                     // a 'real crevice'; the top 60% becomes a no-op (full bright).
+                     // This means broad textured areas stay normal but real crevices
+                     // get a deep, crisp 0.15-strength shadow. ON/OFF should be
+                     // immediately obvious in cracks/seams, invisible elsewhere.
+                     float aoCrev = smoothstep(0.20, 0.60, aoT);  // 0=deep crevice, 1=open
+                     aoT = mix(0.15, 1.0, aoCrev);                // crevices to 15%, open stays 100%
+                     aoT = clamp(aoT, 0.15, 1.0);                 // safety floor
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
