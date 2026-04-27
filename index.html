@@ -16,8 +16,9 @@
        these just warm the cache. -->
   <link rel="preload" as="fetch" type="application/wasm" href="tribes.wasm" crossorigin="anonymous">
   <link rel="preload" as="script" href="tribes.js">
-  <link rel="modulepreload" href="./renderer.js">
-  <link rel="modulepreload" href="./vendor/three/r170/three.module.js">
+  <!-- R32.25.4: modulepreload removed — it triggered renderer.js loading BEFORE the importmap was parsed,
+       which made the bare 'three' specifier fail to resolve, leaving the entire 3D scene black.
+       Loss is ~100ms cold-start savings; correctness wins. -->
 
   <!-- R32.25-manus: typography pair (Visual Cohesion #2.8). Existing Cinzel/Barlow
        Condensed pair already provides Tribes-flavored sci-fi headline+body identity
@@ -663,36 +664,6 @@
   </script>
 </head>
 <body>
-  <!-- R32.25.4-DIAG: temporary diagnostic overlay -->
-  <div id="diag-overlay" style="position:fixed;top:0;left:0;max-width:600px;max-height:50vh;overflow:auto;background:rgba(0,0,0,0.85);color:#0f0;font:11px/1.3 monospace;padding:8px;z-index:999999;border:1px solid #0f0;pointer-events:auto;">DIAG: waiting...</div>
-  <script>
-    (function(){
-      var diag = document.getElementById('diag-overlay');
-      var lines = [];
-      function add(s){ lines.push(s); if(lines.length>40) lines.shift(); diag.textContent = lines.join('\n'); }
-      window.addEventListener('error', function(e){ add('[ERR] ' + (e.message||e) + ' @ ' + (e.filename||'?') + ':' + (e.lineno||'?')); }, true);
-      window.addEventListener('unhandledrejection', function(e){ add('[REJ] ' + (e.reason && (e.reason.message||e.reason))); });
-      var origErr = console.error;
-      function stringify(a){ if(a==null) return String(a); if(a.message) return a.message + (a.stack?(' :: '+String(a.stack).split('\n').slice(0,3).join(' | ')):''); if(typeof a==='object'){ try{ return JSON.stringify(a); }catch(_){ return String(a); } } return String(a); }
-      console.error = function(){ add('[ERR] ' + Array.from(arguments).map(stringify).join(' ').slice(0,400)); origErr.apply(console, arguments); };
-      var origWarn = console.warn;
-      console.warn = function(){ add('[console.warn] ' + Array.from(arguments).map(function(a){return String(a);}).join(' ').slice(0,200)); origWarn.apply(console, arguments); };
-      // Periodic state dump
-      setInterval(function(){
-        try {
-          var s = window.scene, c = window.camera, r = window.renderer;
-          var info = 'state: ';
-          info += 'scene=' + (s ? 'YES kids='+s.children.length : 'NO');
-          info += ' camera=' + (c ? ('YES pos=('+c.position.x.toFixed(1)+','+c.position.y.toFixed(1)+','+c.position.z.toFixed(1)+') fov='+c.fov.toFixed(1)) : 'NO');
-          info += ' renderer=' + (r ? ('YES calls='+r.info.render.calls) : 'NO');
-          if(s && s.background) info += ' bg=' + (s.background.isColor ? '#'+s.background.getHexString() : s.background.type);
-          if(s) info += ' fog=' + (s.fog ? 'YES' : 'NO');
-          add(info);
-        } catch(e){ add('[diag-err] '+e.message); }
-      }, 1500);
-      add('DIAG online');
-    })();
-  </script>
   <!-- Loading Screen -->
   <div id="loading">
     <div class="subtitle">STARSIEGE</div>
@@ -1025,7 +996,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.25.3</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.25.4</div>
     </div>
   </div>
 
