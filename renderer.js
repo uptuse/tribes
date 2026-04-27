@@ -1098,7 +1098,11 @@ function initTerrain() {
                      float aD_ = texture2D(uTileDirtA,  tUv).r;
                      float aS_ = texture2D(uTileSandA,  tUv).r;
                      float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     aoT = mix(1.0, aoT, 0.85);
+                     // R32.38.3-manus: cranked from mix(1.0, aoT, 0.85) to pow(aoT, 2.5)
+                     // per user ("crank it so we know its obvious"). pow squares-and-then-some
+                     // the AO so e.g. a 0.7 crevice becomes 0.41 (-60%) instead of -25%.
+                     // Toggle off via the AO chip and the world brightens up a lot.
+                     aoT = pow(clamp(aoT, 0.05, 1.0), 2.5);
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
