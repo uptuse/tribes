@@ -200,6 +200,19 @@ export async function start() {
         }
     } catch (e) { console.warn('[R32.20] Toonify pass failed:', e && e.message ? e.message : e); }
 
+    // R32.27: LivingColor desaturation pass — strip color from world materials,
+    // leave players/projectiles/flags/weapon/base-discs/repair-packs vivid.
+    // Mood (D): Cold World, Living Color. ?livingcolor=off disables.
+    // MUST run AFTER Toonify so it operates on the post-conversion materials
+    // (MeshToonMaterial) rather than the original PBR ones (which Toonify will
+    // discard moments later).
+    try {
+        if (window.LivingColor && window.LivingColor.enabled) {
+            const r = window.LivingColor.init(THREE, scene);
+            console.log('[R32.27] LivingColor pass complete:', r);
+        }
+    } catch (e) { console.warn('[R32.27] LivingColor pass failed:', e && e.message ? e.message : e); }
+
     console.log('[R18] Init complete. Entering render loop.');
     requestAnimationFrame(loop);
 }
@@ -1901,6 +1914,7 @@ function createPlayerMesh(armor) {
         leftArm, rightArm, leftLeg, rightLeg, body,
         torso, // R32.5: handle for per-frame pitch
         armorMat, // can recolor for team
+        _livingColorAlive: true, // R32.27: players carry color, world doesn't
     };
 
     // R31: propagate frustumCulled=false to all descendant meshes so none
@@ -2069,6 +2083,9 @@ function initProjectiles() {
         });
         const mesh = new THREE.Mesh(geom, mat);
         mesh.visible = false;
+        // R32.27: projectiles are emitted by people — they keep their color
+        mesh.userData = mesh.userData || {};
+        mesh.userData._livingColorAlive = true;
         scene.add(mesh);
         projectileMeshes.push(mesh);
     }
@@ -2095,6 +2112,10 @@ function initFlags() {
         banner.position.set(0.75, 3.5, 0);
         banner.castShadow = true;
         group.add(banner);
+        // R32.27: flags are alive — the team-colored banner is the most
+        // important saturated element on the map.
+        group.userData = group.userData || {};
+        group.userData._livingColorAlive = true;
         scene.add(group);
         flagMeshes.push(group);
     }
@@ -2306,6 +2327,10 @@ function initWeaponViewmodel() {
     });
 
     weaponHand = group;
+    // R32.27: weapon viewmodel is alive — it's literally in the player's
+    // hands. Tag the group so its full material set keeps PBR color.
+    weaponHand.userData = weaponHand.userData || {};
+    weaponHand.userData._livingColorAlive = true;
     // Expose muzzle anchor globally for CombatFX
     window._weaponMuzzleAnchor = muzzleAnchor;
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
