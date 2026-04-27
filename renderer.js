@@ -1064,49 +1064,46 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
-                 // R32.33-manus: chroma-pump. Pushes each channel away from the
-                 // mean (luminance) by 30%, which boosts saturation without
-                 // changing brightness. Painterly stays painterly; the colors
-                 // just have more presence.
+                 // R32.34.2-manus: chroma-pump dialed 1.30 -> 1.10 because user
+                 // reported flat/banded near-ground after R32.33. The 1.30
+                 // pushed already-saturated grass/sand textures past their
+                 // natural variation budget into uniform color blocks. 1.10
+                 // still adds visible chroma without flattening highlights.
                  {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
-                     sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.30;
+                     sampledDiffuseColor.rgb = lum + (sampledDiffuseColor.rgb - lum) * 1.10;
                  }
-                 // R32.34-manus: LIVING TERRAIN — AMBIENT BREATH (3 components).
-                 // The world should be alive even when the player stands still.
-                 // All driven by the existing uTime (now wired to per-frame tick
-                 // in renderer loop()). uWindDir is a unit-ish vector chosen so
-                 // the wash drift goes diagonally across the map.
+                 // R32.34.2-manus: LIVING TERRAIN — AMBIENT BREATH OVERSHOOT MODE.
+                 // User said R32.34's amplitudes were imperceptible and asked
+                 // explicitly to "make the stuff extreme - overshoot - so I can
+                 // tell." So we crank everything 4-6× over R32.34, neutralize
+                 // the warm bias (was washing the whole frame yellowish), and
+                 // calibrate from here. Goal: user can clearly see each
+                 // component, then we dial back to the visual sweet spot.
                  {
-                     // (1) WIND DRIFT ON SPLAT — re-evaluate the smaller wash
-                     // octaves at slowly-translating coordinates so the
-                     // painterly color flows in the wind direction at
-                     // ~0.30 m/s. Subtle (±3% per channel) but visibly alive.
-                     vec2 driftXZ = vWorldXZ - uWindDir * (uTime * 0.30);
+                     // (1) WIND DRIFT ON SPLAT — ±25% (was ±4%). Painterly
+                     // wash visibly slides across the terrain in uWindDir.
+                     // Speed bumped 0.30 -> 0.6 m/s for unmistakable motion.
+                     // Bias NEUTRALIZED to white (was warm 1.0/0.85/0.65,
+                     // which was tinting the whole map yellowish over time).
+                     vec2 driftXZ = vWorldXZ - uWindDir * (uTime * 0.60);
                      float dN1 = vnoise(driftXZ * 0.045 + vec2(31.7, 19.3));
                      float dN2 = vnoise(driftXZ * 0.18  + vec2(7.4,  53.1));
-                     float driftAmt = (dN1 - 0.5) * 0.045 + (dN2 - 0.5) * 0.025;
-                     sampledDiffuseColor.rgb += vec3(driftAmt * 1.0,
-                                                     driftAmt * 0.85,
-                                                     driftAmt * 0.65);
-                     // (2) MICRO-SHIMMER — high-frequency time wave at
-                     // ~25cm period; ±1.5% brightness. Gives the terrain a
-                     // constant low-amplitude alive feeling, like grass
-                     // rustling that you can't quite resolve to individual
-                     // blades. Phase varies per-position so it doesn't pulse
-                     // uniformly.
+                     float driftAmt = (dN1 - 0.5) * 0.30 + (dN2 - 0.5) * 0.20;
+                     sampledDiffuseColor.rgb *= (1.0 + driftAmt);
+                     // (2) MICRO-SHIMMER — ±10% (was ±1.5%). Visible
+                     // texture-level rustle.
                      float shimmerPhase = vWorldXZ.x * 4.0 + vWorldXZ.y * 4.0 + uTime * 1.7;
-                     float shimmer = sin(shimmerPhase) * 0.015;
+                     float shimmer = sin(shimmerPhase) * 0.10;
                      sampledDiffuseColor.rgb *= (1.0 + shimmer);
-                     // (3) SUN-SPOT DRIFT — large-scale (~300m period)
-                     // brightness modulation that drifts in the wind
-                     // direction at ~5 m/s. Reads as cloud shadows passing
-                     // overhead. ±6% brightness. Centered slightly on the
-                     // dim side so it predominantly darkens (cloud shadows,
-                     // not bright spots) which feels more natural.
+                     // (3) SUN-SPOT DRIFT — ±35% (was ±6%). Bright-and-dark
+                     // cloud shadows sweeping across the map at 5 m/s. THIS
+                     // should be the most obvious: standing still and looking
+                     // at the wide green ridge in the user's screenshot, you
+                     // should see slow brightness waves passing through it.
                      vec2 cloudUV = vWorldXZ * 0.003 - uWindDir * (uTime * 5.0) * 0.003;
                      float cloudN = vnoise(cloudUV);
-                     float cloudShade = mix(0.94, 1.06, cloudN); // ±6%
+                     float cloudShade = mix(0.65, 1.35, cloudN); // ±35%
                      sampledDiffuseColor.rgb *= cloudShade;
                  }
                  // R32.32.1-manus: removed the grass-fuzz block from R32.32 step 1 —
