@@ -3858,10 +3858,13 @@ function initGrassRing() {
         return;
     }
 
+    // R32.32.3-manus: 4× density bump for find-the-ceiling test. User asked
+    // explicitly for 4× of my recommendation so we can confirm the system
+    // scales, then dial back to a sweet spot. Was 50k/80k/120k. Now 1M/1.6M/2.8M.
     const tier = (window.__qualityTier || 'mid');
-    const N = (tier === 'ultra') ? 120000 : (tier === 'high') ? 80000 : (tier === 'mid') ? 50000 : (tier === 'low') ? 0 : 50000;
+    const N = (tier === 'ultra') ? 2800000 : (tier === 'high') ? 1600000 : (tier === 'mid') ? 1000000 : (tier === 'low') ? 0 : 1000000;
     if (N === 0) {
-        console.log('[R32.32.1] Grass ring skipped on low tier');
+        console.log('[R32.32.3] Grass ring skipped on low tier');
         return;
     }
     const RING_RADIUS = 100.0;   // metres around camera
@@ -3934,7 +3937,13 @@ function initGrassRing() {
     const c = new THREE.Color();
     for (let i = 0; i < N; i++) {
         const angle = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random()) * RING_RADIUS;
+        // R32.32.3-manus: camera-biased radial distribution. r = R * rand^2 packs
+        // many more blades close to the camera (where the eye reads them) and
+        // fewer at the ring edge (where they're tiny pixels anyway). Was
+        // sqrt(rand) which is the AREA-uniform distribution — visually too
+        // sparse near the player.
+        const u01 = Math.random();
+        const r = (u01 * u01) * RING_RADIUS;
         const wx = Math.cos(angle) * r;
         const wz = Math.sin(angle) * r;
         const wy = sampleTerrainH(wx, wz);
@@ -3972,7 +3981,7 @@ function initGrassRing() {
     if (_grassRingMesh.instanceColor) _grassRingMesh.instanceColor.needsUpdate = true;
     _grassRingState = { N: N, RING_RADIUS: RING_RADIUS, recycleCursor: 0 };
     scene.add(_grassRingMesh);
-    console.log('[R32.32.1] Grass ring placed:', N, 'thin blades in', RING_RADIUS, 'm camera-local ring');
+    console.log('[R32.32.3] Grass ring placed:', N, 'thin blades in', RING_RADIUS, 'm camera-local ring (camera-biased r=R*rand^2)');
 }
 
 function updateGrassRing(t) {
@@ -3988,7 +3997,10 @@ function updateGrassRing(t) {
     const N = _grassRingState.N;
     const RING_RADIUS = _grassRingState.RING_RADIUS;
     const RING_R2 = RING_RADIUS * RING_RADIUS;
-    const RECYCLE_PER_FRAME = Math.min(2500, Math.floor(N * 0.04));
+    // R32.32.3-manus: with N up to 2.8M we need a beefier recycle budget so
+    // blades that fall outside the ring get repositioned in a few frames, not
+    // a few seconds. Cap at 12000 / frame which is still ~0.2 ms of CPU work.
+    const RECYCLE_PER_FRAME = Math.min(12000, Math.max(2500, Math.floor(N * 0.012)));
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
     const splat = _splatData.splatAttr;
@@ -4011,7 +4023,9 @@ function updateGrassRing(t) {
         if (dx * dx + dz * dz <= RING_R2) continue; // still in range, leave it alone
         // Recycle: pick a new position inside the ring around the camera
         const angle = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random()) * RING_RADIUS;
+        // R32.32.3-manus: same camera-biased r = R * rand^2 distribution as init.
+        const u01 = Math.random();
+        const r = (u01 * u01) * RING_RADIUS;
         const wx = camX + Math.cos(angle) * r;
         const wz = camZ + Math.sin(angle) * r;
         const wy = sampleTerrainH(wx, wz);
