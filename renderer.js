@@ -191,6 +191,15 @@ export async function start() {
     window.__tribesApplyQuality = applyQuality;
     onResize();
 
+    // R32.20: Toonify pass — convert all MeshStandardMaterial to MeshToonMaterial
+    // for visual cohesion. ?style=pbr disables. Runs once after scene is fully built.
+    try {
+        if (window.Toonify && window.Toonify.enabled) {
+            const r = window.Toonify.init(THREE, scene);
+            console.log('[R32.20] Toonify pass complete:', r);
+        }
+    } catch (e) { console.warn('[R32.20] Toonify pass failed:', e && e.message ? e.message : e); }
+
     console.log('[R18] Init complete. Entering render loop.');
     requestAnimationFrame(loop);
 }

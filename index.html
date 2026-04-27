@@ -986,7 +986,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.19</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.20</div>
     </div>
   </div>
 
@@ -4094,6 +4094,14 @@
           __zoomScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
           __zoomScr.onerror = function(e){ console.error('[R32.18] renderer_zoom.js FAILED to load', e); };
           document.head.appendChild(__zoomScr);
+
+          // R32.20-manus: load Toonify module BEFORE renderer.js so window.Toonify
+          // is defined by the time renderer.js's start() runs and calls Toonify.init.
+          var __toonScr = document.createElement('script');
+          __toonScr.src = './renderer_toonify.js?v=' + Date.now();
+          __toonScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.20] renderer_toonify.js loaded via script tag'); };
+          __toonScr.onerror = function(e){ console.error('[R32.20] renderer_toonify.js FAILED to load', e); };
+          document.head.appendChild(__toonScr);
 
           import('./renderer.js').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
