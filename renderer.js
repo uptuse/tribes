@@ -975,11 +975,15 @@ function initTerrain() {
         shader.uniforms.uTileSandA   = { value: sandA };
         shader.uniforms.uTileSandD   = { value: sandD };
         // R32.37.1-manus: PBR feature toggles (default ON; user can A/B in Settings).
+        // R32.37.3-manus: POM defaults to OFF after R32.37.1's white-fog regression.
+        // The original POM walked UV using a derivative-based proxy view dir that
+        // exploded at distance, sending sample coords into garbage and producing a
+        // uniform haze. Rough/AO default ON because their isolated impact is small.
         shader.uniforms.uUseRoughness = { value: _pbrInit('pbrRoughness', true)  };
         shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO',        true)  };
-        shader.uniforms.uUsePOM       = { value: _pbrInit('pbrPOM',       true)  };
-        shader.uniforms.uPOMSteps     = { value: 10.0 };  // raymarch step count (8–16 typical)
-        shader.uniforms.uPOMScale     = { value: 0.06 };  // displacement amplitude in tile-uv units (~6cm at 9m tiles)
+        shader.uniforms.uUsePOM       = { value: _pbrInit('pbrPOM',       false) };
+        shader.uniforms.uPOMSteps     = { value: 8.0  };  // raymarch step count (8–16 typical)
+        shader.uniforms.uPOMScale     = { value: 0.025 }; // tile-uv units; ~2.3cm at 9m tiles — small + safe
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };
         // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
@@ -1092,48 +1096,53 @@ function initTerrain() {
                  float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
-                 // R32.37.1-manus: PARALLAX OCCLUSION MAPPING.
-                 // Cheap approximation: we don't have true tangent-space view
-                 // here (terrain is flat-world-aligned), so build a screen-space
-                 // proxy from screen-space derivatives of vWorldXZ vs vWorldY.
-                 // dFdx/dFdy of vWorldY tells us how the surface tilts toward
-                 // the camera in pixel space; we use that as the parallax
-                 // direction. Works because terrain is locally flat under any
-                 // single shading pixel and we only need a rough offset cue.
+                 // R32.37.3-manus: PARALLAX OCCLUSION MAPPING (rewritten).
+                 // Previous version (R32.37.1) used dFdx/dFdy(vWorldY) as a
+                 // proxy view direction. That blew up at distance — derivatives
+                 // explode when terrain compresses to a thin band of pixels at
+                 // the horizon, sending UV walk into garbage and wrecking the
+                 // far field. THIS version uses the canonical tangent-space
+                 // approach: vViewPosition is the camera-to-fragment vector in
+                 // view space; transpose(tbn) takes it to tangent space; the
+                 // .xy of that, normalized, IS the per-pixel parallax direction.
+                 // Plus three guards: (a) hard clamp on per-step offset, (b)
+                 // distance fade so POM is zero past ~60 m, (c) skip POM near
+                 // grazing angles where it would produce extreme offsets.
                  if (uUsePOM > 0.5) {
-                     vec2 dXZ = vec2(dFdx(vWorldY), dFdy(vWorldY));
-                     // Direction in tile-uv space pointing toward higher
-                     // ground in screen space; use as the "view ray xy".
-                     vec2 viewDirUV = -dXZ;
-                     float vlen = length(viewDirUV) + 1e-4;
-                     viewDirUV /= vlen;
-                     // Total displacement vector to march across, scaled by
-                     // uPOMScale (in tile-uv units). Cap so it can't blow up.
-                     vec2 maxOffset = viewDirUV * uPOMScale;
-                     float steps = max(2.0, uPOMSteps);
-                     float stepDepth = 1.0 / steps;
-                     vec2  stepUV    = maxOffset / steps;
-                     // Linear search: walk along the ray accumulating depth
-                     // until the sampled height meets the ray depth.
-                     vec2  curUV     = tUv;
-                     float curDepth  = 0.0;
-                     // Sample displacement as splat-weighted blend (mirrors color blend).
-                     // Single-sample (not stochastic) to keep POM cost low.
-                     float h = 0.0;
-                     for (float i = 0.0; i < 16.0; i += 1.0) {
-                         if (i >= steps) break;
-                         float dG1 = texture2D(uTileGrassD,  curUV).r;
-                         float dG2 = texture2D(uTileGrassD2, curUV * 0.83 + vec2(13.7, 7.1)).r;
-                         float dG_ = mix(dG1, dG2, smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125)));
-                         float dR_ = texture2D(uTileRockD,  curUV).r;
-                         float dD_ = texture2D(uTileDirtD,  curUV).r;
-                         float dS_ = texture2D(uTileSandD,  curUV).r;
-                         h = dG_*splatW.r + dR_*splatW.g + dD_*splatW.b + dS_*splatW.a;
-                         if (curDepth >= 1.0 - h) break;
-                         curUV    += stepUV;
-                         curDepth += stepDepth;
+                     // Distance fade [0..1]: full POM under 25m, off past 60m.
+                     float distM = length(vViewPosition);
+                     float pomFade = 1.0 - smoothstep(25.0, 60.0, distM);
+                     if (pomFade > 0.01) {
+                         // Tangent-space view direction (camera → fragment, then to TS).
+                         vec3 V_view = normalize( vViewPosition );
+                         vec3 V_ts   = normalize( transpose(tbn) * V_view );
+                         // Skip near-grazing angles — V_ts.z near zero blows up.
+                         float zCos = max(0.20, abs(V_ts.z));
+                         vec2 maxOffset = (V_ts.xy / zCos) * (uPOMScale * pomFade);
+                         // Hard cap magnitude: never walk more than uPOMScale UV units total.
+                         float mlen = length(maxOffset);
+                         if (mlen > uPOMScale) maxOffset *= (uPOMScale / mlen);
+                         float steps = max(2.0, uPOMSteps);
+                         float stepDepth = 1.0 / steps;
+                         vec2  stepUV    = maxOffset / steps;
+                         vec2  curUV     = tUv;
+                         float curDepth  = 0.0;
+                         float h = 0.0;
+                         for (float i = 0.0; i < 16.0; i += 1.0) {
+                             if (i >= steps) break;
+                             float dG1 = texture2D(uTileGrassD,  curUV).r;
+                             float dG2 = texture2D(uTileGrassD2, curUV * 0.83 + vec2(13.7, 7.1)).r;
+                             float dG_ = mix(dG1, dG2, smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125)));
+                             float dR_ = texture2D(uTileRockD,  curUV).r;
+                             float dD_ = texture2D(uTileDirtD,  curUV).r;
+                             float dS_ = texture2D(uTileSandD,  curUV).r;
+                             h = dG_*splatW.r + dR_*splatW.g + dD_*splatW.b + dS_*splatW.a;
+                             if (curDepth >= 1.0 - h) break;
+                             curUV    += stepUV;
+                             curDepth += stepDepth;
+                         }
+                         tUv = curUV;
                      }
-                     tUv = curUV;
                  }
                  // R32.10.1: grass species blend per-pixel (period ~80m).
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
@@ -1244,16 +1253,18 @@ function initTerrain() {
             .replace('#include <roughnessmap_fragment>',
                 `float roughnessFactor = roughness;
                  if (uUseRoughness > 0.5) {
-                     float rG1 = texture2D(uTileGrassR,  tUv).g;
-                     float rG2 = texture2D(uTileGrassR2, tUv * 0.83 + vec2(13.7, 7.1)).g;
+                     // R32.37.3-manus: read .r (canonical roughness channel; AmbientCG
+                     // roughness JPGs are grayscale so all channels match anyway).
+                     // Tighter band biased rougher (0.65–1.00) so the terrain stays
+                     // matte/painterly and never gets glossy enough to mirror the sky.
+                     float rG1 = texture2D(uTileGrassR,  tUv).r;
+                     float rG2 = texture2D(uTileGrassR2, tUv * 0.83 + vec2(13.7, 7.1)).r;
                      float rG_ = mix(rG1, rG2, gMix);
-                     float rR_ = texture2D(uTileRockR,  tUv).g;
-                     float rD_ = texture2D(uTileDirtR,  tUv).g;
-                     float rS_ = texture2D(uTileSandR,  tUv).g;
+                     float rR_ = texture2D(uTileRockR,  tUv).r;
+                     float rD_ = texture2D(uTileDirtR,  tUv).r;
+                     float rS_ = texture2D(uTileSandR,  tUv).r;
                      float rT  = rG_*splatW.r + rR_*splatW.g + rD_*splatW.b + rS_*splatW.a;
-                     // Map texture roughness [0..1] to a slightly tighter band
-                     // so the world doesn't go fully glossy or fully chalky.
-                     roughnessFactor = clamp(0.55 + 0.42 * rT, 0.30, 1.00);
+                     roughnessFactor = clamp(0.65 + 0.35 * rT, 0.50, 1.00);
                  }`);
         mat.userData.shader = shader;
     };
