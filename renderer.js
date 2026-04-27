@@ -906,6 +906,26 @@ function initTerrain() {
     const dirtN   = loadTex('assets/textures/terrain/ground037_normal.jpg', false);
     const sandC   = loadTex('assets/textures/terrain/ground003_color.jpg', true);
     const sandN   = loadTex('assets/textures/terrain/ground003_normal.jpg', false);
+    // R32.37.1-manus: full PBR — Roughness + AO + Displacement maps per slot.
+    // Roughness controls highlight tightness (shiny vs matte). AO is pre-baked
+    // micro-shadow that we multiply into diffuse for depth in crevices.
+    // Displacement (height) feeds the POM raymarch in the fragment shader.
+    // All linear-data textures (no sRGB).
+    const grassR  = loadTex('assets/textures/terrain/grass001_rough.jpg', false);
+    const grassA  = loadTex('assets/textures/terrain/grass001_ao.jpg',    false);
+    const grassD  = loadTex('assets/textures/terrain/grass001_disp.jpg',  false);
+    const grassR2 = loadTex('assets/textures/terrain/grass002_rough.jpg', false);
+    const grassA2 = loadTex('assets/textures/terrain/grass002_ao.jpg',    false);
+    const grassD2 = loadTex('assets/textures/terrain/grass002_disp.jpg',  false);
+    const rockR   = loadTex('assets/textures/terrain/rock030_rough.jpg',  false);
+    const rockA   = loadTex('assets/textures/terrain/rock030_ao.jpg',     false);
+    const rockD   = loadTex('assets/textures/terrain/rock030_disp.jpg',   false);
+    const dirtR   = loadTex('assets/textures/terrain/ground037_rough.jpg',false);
+    const dirtA   = loadTex('assets/textures/terrain/ground037_ao.jpg',   false);
+    const dirtD   = loadTex('assets/textures/terrain/ground037_disp.jpg', false);
+    const sandR   = loadTex('assets/textures/terrain/ground003_rough.jpg',false);
+    const sandA   = loadTex('assets/textures/terrain/ground003_ao.jpg',   false);  // synthesized neutral white (Ground003 has no AO source)
+    const sandD   = loadTex('assets/textures/terrain/ground003_disp.jpg', false);
 
     const mat = new THREE.MeshStandardMaterial({
         map: grassC,                             // fallback if shader injection ever fails
@@ -915,7 +935,18 @@ function initTerrain() {
         metalness: 0.0,
         envMapIntensity: 0.30,
     });
-    mat.userData.tiles = { grassC, grassN, grassC2, grassN2, rockC, rockN, dirtC, dirtN, sandC, sandN };
+    mat.userData.tiles = { grassC, grassN, grassC2, grassN2, rockC, rockN, dirtC, dirtN, sandC, sandN,
+                           grassR, grassA, grassD, grassR2, grassA2, grassD2,
+                           rockR, rockA, rockD, dirtR, dirtA, dirtD, sandR, sandA, sandD };
+    // R32.37.1-manus: read PBR toggles from window.ST so the user's saved
+    // settings (or defaults) take effect on first compile. Toggle changes
+    // after compile route through window.__tribesSetTerrainPBR (defined below).
+    function _pbrInit(key, dflt) {
+        try {
+            if (window.ST && typeof window.ST[key] === 'boolean') return window.ST[key] ? 1.0 : 0.0;
+        } catch(e) {}
+        return dflt ? 1.0 : 0.0;
+    }
     mat.onBeforeCompile = (shader) => {
         shader.uniforms.uTileGrassC  = { value: grassC };
         shader.uniforms.uTileGrassN  = { value: grassN };
@@ -927,6 +958,28 @@ function initTerrain() {
         shader.uniforms.uTileDirtN   = { value: dirtN };
         shader.uniforms.uTileSandC   = { value: sandC };
         shader.uniforms.uTileSandN   = { value: sandN };
+        // R32.37.1-manus: full PBR map uniforms.
+        shader.uniforms.uTileGrassR  = { value: grassR };
+        shader.uniforms.uTileGrassA  = { value: grassA };
+        shader.uniforms.uTileGrassD  = { value: grassD };
+        shader.uniforms.uTileGrassR2 = { value: grassR2 };
+        shader.uniforms.uTileGrassA2 = { value: grassA2 };
+        shader.uniforms.uTileGrassD2 = { value: grassD2 };
+        shader.uniforms.uTileRockR   = { value: rockR };
+        shader.uniforms.uTileRockA   = { value: rockA };
+        shader.uniforms.uTileRockD   = { value: rockD };
+        shader.uniforms.uTileDirtR   = { value: dirtR };
+        shader.uniforms.uTileDirtA   = { value: dirtA };
+        shader.uniforms.uTileDirtD   = { value: dirtD };
+        shader.uniforms.uTileSandR   = { value: sandR };
+        shader.uniforms.uTileSandA   = { value: sandA };
+        shader.uniforms.uTileSandD   = { value: sandD };
+        // R32.37.1-manus: PBR feature toggles (default ON; user can A/B in Settings).
+        shader.uniforms.uUseRoughness = { value: _pbrInit('pbrRoughness', true)  };
+        shader.uniforms.uUseAO        = { value: _pbrInit('pbrAO',        true)  };
+        shader.uniforms.uUsePOM       = { value: _pbrInit('pbrPOM',       true)  };
+        shader.uniforms.uPOMSteps     = { value: 10.0 };  // raymarch step count (8–16 typical)
+        shader.uniforms.uPOMScale     = { value: 0.06 };  // displacement amplitude in tile-uv units (~6cm at 9m tiles)
         shader.uniforms.uTerrainSize = { value: span };
         shader.uniforms.uTileMeters  = { value: 9.0 };
         // R32.32-manus: unified wind uniforms for the terrain-fuzz grass layer.
@@ -978,6 +1031,17 @@ function initTerrain() {
                  uniform sampler2D uTileRockC;   uniform sampler2D uTileRockN;
                  uniform sampler2D uTileDirtC;   uniform sampler2D uTileDirtN;
                  uniform sampler2D uTileSandC;   uniform sampler2D uTileSandN;
+                 // R32.37.1-manus: PBR rough/AO/disp samplers + toggles
+                 uniform sampler2D uTileGrassR;  uniform sampler2D uTileGrassA;  uniform sampler2D uTileGrassD;
+                 uniform sampler2D uTileGrassR2; uniform sampler2D uTileGrassA2; uniform sampler2D uTileGrassD2;
+                 uniform sampler2D uTileRockR;   uniform sampler2D uTileRockA;   uniform sampler2D uTileRockD;
+                 uniform sampler2D uTileDirtR;   uniform sampler2D uTileDirtA;   uniform sampler2D uTileDirtD;
+                 uniform sampler2D uTileSandR;   uniform sampler2D uTileSandA;   uniform sampler2D uTileSandD;
+                 uniform float uUseRoughness;
+                 uniform float uUseAO;
+                 uniform float uUsePOM;
+                 uniform float uPOMSteps;
+                 uniform float uPOMScale;
                  uniform float uTileMeters;
                  uniform float uTerrainSize;
                  varying vec4 vSplat;
@@ -1028,6 +1092,49 @@ function initTerrain() {
                  float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
+                 // R32.37.1-manus: PARALLAX OCCLUSION MAPPING.
+                 // Cheap approximation: we don't have true tangent-space view
+                 // here (terrain is flat-world-aligned), so build a screen-space
+                 // proxy from screen-space derivatives of vWorldXZ vs vWorldY.
+                 // dFdx/dFdy of vWorldY tells us how the surface tilts toward
+                 // the camera in pixel space; we use that as the parallax
+                 // direction. Works because terrain is locally flat under any
+                 // single shading pixel and we only need a rough offset cue.
+                 if (uUsePOM > 0.5) {
+                     vec2 dXZ = vec2(dFdx(vWorldY), dFdy(vWorldY));
+                     // Direction in tile-uv space pointing toward higher
+                     // ground in screen space; use as the "view ray xy".
+                     vec2 viewDirUV = -dXZ;
+                     float vlen = length(viewDirUV) + 1e-4;
+                     viewDirUV /= vlen;
+                     // Total displacement vector to march across, scaled by
+                     // uPOMScale (in tile-uv units). Cap so it can't blow up.
+                     vec2 maxOffset = viewDirUV * uPOMScale;
+                     float steps = max(2.0, uPOMSteps);
+                     float stepDepth = 1.0 / steps;
+                     vec2  stepUV    = maxOffset / steps;
+                     // Linear search: walk along the ray accumulating depth
+                     // until the sampled height meets the ray depth.
+                     vec2  curUV     = tUv;
+                     float curDepth  = 0.0;
+                     // Sample displacement as splat-weighted blend (mirrors color blend).
+                     // Single-sample (not stochastic) to keep POM cost low.
+                     float h = 0.0;
+                     for (float i = 0.0; i < 16.0; i += 1.0) {
+                         if (i >= steps) break;
+                         float dG1 = texture2D(uTileGrassD,  curUV).r;
+                         float dG2 = texture2D(uTileGrassD2, curUV * 0.83 + vec2(13.7, 7.1)).r;
+                         float dG_ = mix(dG1, dG2, smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125)));
+                         float dR_ = texture2D(uTileRockD,  curUV).r;
+                         float dD_ = texture2D(uTileDirtD,  curUV).r;
+                         float dS_ = texture2D(uTileSandD,  curUV).r;
+                         h = dG_*splatW.r + dR_*splatW.g + dD_*splatW.b + dS_*splatW.a;
+                         if (curDepth >= 1.0 - h) break;
+                         curUV    += stepUV;
+                         curDepth += stepDepth;
+                     }
+                     tUv = curUV;
+                 }
                  // R32.10.1: grass species blend per-pixel (period ~80m).
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
                  vec4 cG1 = stochasticSample(uTileGrassC,  tUv);
@@ -1071,6 +1178,22 @@ function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
+                 // R32.37.1-manus: PER-SLOT AMBIENT OCCLUSION from PBR maps.
+                 // Blend the 5 AO textures by the same splat weights, then
+                 // multiply into diffuse. uUseAO toggles the contribution
+                 // (1.0 = full AO, 0.0 = white/no-AO) for A/B comparison.
+                 if (uUseAO > 0.5) {
+                     float aG1 = texture2D(uTileGrassA,  tUv).r;
+                     float aG2 = texture2D(uTileGrassA2, tUv * 0.83 + vec2(13.7, 7.1)).r;
+                     float aG_ = mix(aG1, aG2, gMix);
+                     float aR_ = texture2D(uTileRockA,  tUv).r;
+                     float aD_ = texture2D(uTileDirtA,  tUv).r;
+                     float aS_ = texture2D(uTileSandA,  tUv).r;
+                     float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
+                     // Soften AO so it darkens crevices but doesn't crush midtones.
+                     aoT = mix(1.0, aoT, 0.85);
+                     sampledDiffuseColor.rgb *= aoT;
+                 }
                  // R32.34.2-manus: chroma-pump dialed 1.30 -> 1.10 because user
                  // reported flat/banded near-ground after R32.33. The 1.30
                  // pushed already-saturated grass/sand textures past their
@@ -1098,7 +1221,10 @@ function initTerrain() {
                  // step 2 (camera-local thin-blade ring geometry).
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
-                `vec2 nUv = vWorldXZ / uTileMeters;
+                // R32.37.1-manus: normals now sample at the POM-shifted tUv
+                // (instead of plain vWorldXZ/uTileMeters) so bumps + lighting
+                // stay in lock-step with the parallax-shifted color.
+                `vec2 nUv = tUv;
                  vec3 nG1 = stochasticSample(uTileGrassN,  nUv).xyz * 2.0 - 1.0;
                  vec3 nG2 = stochasticSample(uTileGrassN2, nUv * 0.83 + vec2(13.7, 7.1)).xyz * 2.0 - 1.0;
                  vec3 nG  = mix(nG1, nG2, gMix);
@@ -1107,14 +1233,47 @@ function initTerrain() {
                  vec3 nS = stochasticSample(uTileSandN,  nUv).xyz * 2.0 - 1.0;
                  vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
                  mapN.xy *= normalScale;
-                 normal = normalize( tbn * mapN );`);
+                 normal = normalize( tbn * mapN );`)
+            // R32.37.1-manus: PER-SLOT ROUGHNESS MAPS.
+            // MeshStandardMaterial uses a fixed `roughness` uniform (0.93 set
+            // above) plus an optional roughnessMap. We don't bind a map slot;
+            // instead we override the <roughnessmap_fragment> chunk to write
+            // `roughnessFactor` directly from a splat-weighted blend of our
+            // 5 per-slot roughness textures. uUseRoughness toggles the
+            // override on/off; when off we keep the constant 0.93 for A/B.
+            .replace('#include <roughnessmap_fragment>',
+                `float roughnessFactor = roughness;
+                 if (uUseRoughness > 0.5) {
+                     float rG1 = texture2D(uTileGrassR,  tUv).g;
+                     float rG2 = texture2D(uTileGrassR2, tUv * 0.83 + vec2(13.7, 7.1)).g;
+                     float rG_ = mix(rG1, rG2, gMix);
+                     float rR_ = texture2D(uTileRockR,  tUv).g;
+                     float rD_ = texture2D(uTileDirtR,  tUv).g;
+                     float rS_ = texture2D(uTileSandR,  tUv).g;
+                     float rT  = rG_*splatW.r + rR_*splatW.g + rD_*splatW.b + rS_*splatW.a;
+                     // Map texture roughness [0..1] to a slightly tighter band
+                     // so the world doesn't go fully glossy or fully chalky.
+                     roughnessFactor = clamp(0.55 + 0.42 * rT, 0.30, 1.00);
+                 }`);
         mat.userData.shader = shader;
     };
 
     terrainMesh = new THREE.Mesh(flatGeom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
-    console.log('[R32.10] Painterly terrain: faceted ' + size + 'x' + size + ', dual-grass blend + path zones + wet patches + stochastic splat (CC0 PBR x5)');
+    // R32.37.1-manus: live PBR toggle hook — index.html settings checkboxes
+    // call this on change to flip the uniform without recompile.
+    window.__tribesSetTerrainPBR = function(key, on) {
+        if (!terrainMesh || !terrainMesh.material || !terrainMesh.material.userData) return;
+        const sh = terrainMesh.material.userData.shader;
+        if (!sh || !sh.uniforms) return;
+        const map = { roughness: 'uUseRoughness', ao: 'uUseAO', pom: 'uUsePOM' };
+        const uname = map[key];
+        if (!uname || !sh.uniforms[uname]) return;
+        sh.uniforms[uname].value = on ? 1.0 : 0.0;
+        terrainMesh.material.needsUpdate = false; // uniform-only change, no recompile
+    };
+    console.log('[R32.37.1] PBR terrain: 25 maps loaded (Color+Normal+Rough+AO+Disp x5 slots), POM enabled');
 }
 
 // ============================================================

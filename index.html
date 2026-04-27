@@ -678,7 +678,7 @@
   <!-- R32.34.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.37</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.37.1</div>
   <!-- R32.36-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <script>
@@ -1351,6 +1351,11 @@
         <div class="s-row"><div class="s-label">Shadows</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-shadows" onchange="sSave('shadows',this.checked)"><span class="s-note"> (overridden by Graphics Quality)</span></div></div>
         <div class="s-row"><div class="s-label">VSync</div><div class="s-ctrl"><span class="s-note">Browser-controlled</span></div></div>
         <div class="s-row"><div class="s-label">Show FPS</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-fps" onchange="sSave('showFPS',this.checked);document.getElementById('fps-counter').style.display=this.checked?'block':'none'"></div></div>
+        <!-- R32.37.1-manus: Per-feature PBR toggles for A/B comparison of the new 2K texture stack -->
+        <div class="s-section">Terrain PBR</div>
+        <div class="s-row"><div class="s-label">Roughness Maps</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-rough" onchange="sSave('pbrRoughness',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('roughness',this.checked)"><span class="s-note"> per-tile shininess from PBR map</span></div></div>
+        <div class="s-row"><div class="s-label">Ambient Occlusion</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-ao" onchange="sSave('pbrAO',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('ao',this.checked)"><span class="s-note"> baked micro-shadow in crevices</span></div></div>
+        <div class="s-row"><div class="s-label">Parallax Depth (POM)</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-pom" onchange="sSave('pbrPOM',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('pom',this.checked)"><span class="s-note"> fake 3D depth from displacement (~5-10% FPS)</span></div></div>
       </div>
 
       <!-- GAMEPLAY TAB -->
@@ -3587,6 +3592,8 @@
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
       graphicsQuality:'high',
+      // R32.37.1-manus: per-feature PBR toggles (default ON; settings UI lets user A/B them).
+      pbrRoughness:true, pbrAO:true, pbrPOM:true,
       crosshairColor:'amber',crosshairScale:1.0,
       showDamageNumbers:true,showKillFeed:true,autoPickupAmmo:true,
       colorBlindMode:'off',         // R23: off | deuteranopia | protanopia | tritanopia
@@ -3733,6 +3740,10 @@
       sv('s-res',ST.resolutionScale);sVal('s-res-v',ST.resolutionScale+'%');
       sv('s-rdist',Math.round(ST.renderDist*10));sVal('s-rdist-v',ST.renderDist.toFixed(1)+'×');
       sc('s-shadows',ST.shadows);sc('s-fps',ST.showFPS);
+      // R32.37.1-manus: PBR toggles
+      sc('s-pbr-rough',ST.pbrRoughness!==false);
+      sc('s-pbr-ao',ST.pbrAO!==false);
+      sc('s-pbr-pom',ST.pbrPOM!==false);
       var qs=document.getElementById('s-quality');if(qs)qs.value=ST.graphicsQuality||'high';
       // Gameplay
       buildColorSwatches();
