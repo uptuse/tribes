@@ -3582,10 +3582,11 @@ function _makeGrassBladeTexture() {
     // Wider, less pinched silhouette — reads as a chunky Ghibli blade, not a
     // thin needle. Edges curve smoothly to a single tip vertex at top-center.
     ctx.beginPath();
-    ctx.moveTo(W * 0.30, H);                              // bottom-left
-    ctx.lineTo(W * 0.70, H);                              // bottom-right
-    ctx.quadraticCurveTo(W * 0.78, H * 0.55, W * 0.55, 0); // right edge to tip
-    ctx.quadraticCurveTo(W * 0.22, H * 0.55, W * 0.30, H); // left edge back
+    // R32.28-manus: thinner blade. Base narrowed 30-70% -> 42-58% canvas.
+    ctx.moveTo(W * 0.42, H);                              // bottom-left
+    ctx.lineTo(W * 0.58, H);                              // bottom-right
+    ctx.quadraticCurveTo(W * 0.62, H * 0.55, W * 0.52, 0); // right edge to tip
+    ctx.quadraticCurveTo(W * 0.38, H * 0.55, W * 0.42, H); // left edge back
     ctx.closePath();
     ctx.fill();
     const tex = new THREE.CanvasTexture(c);
@@ -3612,9 +3613,12 @@ function initGrass() {
     //   high/ultra: 80k -> 140k blades  (single-tri => 140k tris vs old 960k)
     //   mid:        30k ->  55k blades  (single-tri =>  55k tris vs old 360k)
     //   classic mode keeps old counts and old cross-quad geometry.
+    // R32.28-manus: density bump. User reported R32.27.3 as "a bald man".
+    // Covering the bald spots needs ~2.5x more blades. Single-tri still keeps
+    // total tris (350k) under R32.8's cross-quad cost of 960k.
     const TARGET = _classicMode
         ? ((tier === 'high' || tier === 'ultra') ? 80000 : 30000)
-        : ((tier === 'high' || tier === 'ultra') ? 140000 : 55000);
+        : ((tier === 'high' || tier === 'ultra') ? 350000 : 140000);
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
 
@@ -3747,7 +3751,9 @@ function initGrass() {
         // R32.27.3-manus: splatAttr stores normalized weights (0..1 Float32),
         // not 0..255 bytes — do NOT divide by 255 (legacy splatRGBA was bytes).
         const grassW = splat[(sy * splatN + sx) * 4];
-        if (Math.random() > grassW * 1.1) continue;
+        // R32.28-manus: loosened rejection threshold 1.1 -> 2.5 so mixed-grass
+        // areas (grass+dirt, grass+sand) accept blades instead of being bald.
+        if (Math.random() > grassW * 2.5) continue;
         const wy = sampleTerrainH(wx, wz);
         if (!Number.isFinite(wy)) continue;
         // R32.27-manus: slightly taller blades + wider scale range. Single-tri
