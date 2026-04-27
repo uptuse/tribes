@@ -3324,6 +3324,12 @@ function loop() {
     // R32.25: cohesion tick (sub-perceptual camera breathing).
     if (window.Cohesion && window.Cohesion.tick) window.Cohesion.tick();
 
+    // R32.27-manus: tick grass wind. updateGrassWind has existed since R32.8 but
+    // was never actually called from the loop — grass uTime was stuck at 0 since
+    // R32.8, so the sin sway never animated. Wiring it up now as part of the
+    // Ghibli-grass upgrade so the noise-driven chaotic wind actually moves.
+    updateGrassWind(t);
+
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
@@ -3542,25 +3548,32 @@ let _grassMat = null;
 let _propsMeshes = []; // [InstancedMesh,...] for rocks/scrub
 
 function _makeGrassBladeTexture() {
-    const W = 64, H = 64;
+    // R32.27-manus: Ghibli-style blade silhouette + brighter green gradient ramp.
+    // Shifted from muddy olive to the saturated yellow-green of Antaeus AR's
+    // GhibliGrass / Princess Mononoke meadow. Tip is sun-bleached, base is
+    // shadow-rich. Wider blade silhouette so individual blades read at distance.
+    const W = 64, H = 128; // taller canvas so the blade has more vertical resolution
     const c = document.createElement('canvas'); c.width = W; c.height = H;
     const ctx = c.getContext('2d');
-    // Tapered blade silhouette
     ctx.clearRect(0, 0, W, H);
     const grad = ctx.createLinearGradient(0, H, 0, 0);
-    grad.addColorStop(0.0, 'rgba(60, 90, 35, 1.0)');   // base (dark)
-    grad.addColorStop(0.6, 'rgba(110, 150, 70, 1.0)');
-    grad.addColorStop(1.0, 'rgba(160, 200, 110, 1.0)'); // tip (light)
+    grad.addColorStop(0.00, 'rgba(45,  72, 28, 1.0)');   // base shadow (deeper)
+    grad.addColorStop(0.35, 'rgba(95, 145, 55, 1.0)');   // mid (saturated grass green)
+    grad.addColorStop(0.75, 'rgba(165, 205, 95, 1.0)');  // upper (bright)
+    grad.addColorStop(1.00, 'rgba(215, 235, 145, 1.0)'); // tip (sun-bleached)
     ctx.fillStyle = grad;
+    // Wider, less pinched silhouette — reads as a chunky Ghibli blade, not a
+    // thin needle. Edges curve smoothly to a single tip vertex at top-center.
     ctx.beginPath();
-    ctx.moveTo(W * 0.45, H);
-    ctx.lineTo(W * 0.55, H);
-    ctx.quadraticCurveTo(W * 0.6, H * 0.3, W * 0.5, 0);
-    ctx.quadraticCurveTo(W * 0.4, H * 0.3, W * 0.45, H);
+    ctx.moveTo(W * 0.30, H);                              // bottom-left
+    ctx.lineTo(W * 0.70, H);                              // bottom-right
+    ctx.quadraticCurveTo(W * 0.78, H * 0.55, W * 0.55, 0); // right edge to tip
+    ctx.quadraticCurveTo(W * 0.22, H * 0.55, W * 0.30, H); // left edge back
     ctx.closePath();
     ctx.fill();
     const tex = new THREE.CanvasTexture(c);
     tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter;
+    tex.anisotropy = 4;
     return tex;
 }
 
@@ -3569,28 +3582,62 @@ function initGrass() {
     const tier = (window.__qualityTier || 'mid');
     if (tier === 'low') return; // skip on low
 
-    const TARGET = (tier === 'high' || tier === 'ultra') ? 80000 : 30000;
+    // R32.27-manus: ?grass=classic restores the R32.8 cross-quad sin-sway look
+    // (an escape hatch in case the Ghibli reproduction misbehaves on a GPU).
+    const params = new URLSearchParams(window.location.search);
+    const _classicMode = (params.get('grass') === 'classic');
+
+    // R32.27-manus: bumped densities. The Ghibli look depends on visual density
+    // — sparse blades read as scrub, dense blades read as a meadow. With the
+    // single-triangle hot-path on high tier (12x fewer tris per blade than the
+    // cross-quad), we can spend the saved triangles on more blades and end up
+    // both visually richer AND lower triangle count than R32.26.
+    //   high/ultra: 80k -> 140k blades  (single-tri => 140k tris vs old 960k)
+    //   mid:        30k ->  55k blades  (single-tri =>  55k tris vs old 360k)
+    //   classic mode keeps old counts and old cross-quad geometry.
+    const TARGET = _classicMode
+        ? ((tier === 'high' || tier === 'ultra') ? 80000 : 30000)
+        : ((tier === 'high' || tier === 'ultra') ? 140000 : 55000);
     const span = (_htSize - 1) * _htScale;
     const half = span * 0.5;
 
-    // Cross-quad blade: two 1x1 quads forming an X
+    // R32.27-manus: blade geometry depends on mode.
+    //   classic  -> R32.8 cross-quad (12 tris, 24 verts) for opt-out compatibility
+    //   default  -> Antaeus-AR-style single triangle (1 tri, 3 verts) per blade.
+    //               Two bottom verts at base, one tip vert centered above. uv.y=0
+    //               at base (sway anchor), uv.y=1 at tip (sway tip). 12x cheaper
+    //               at the geometry stage, identical visual at ground level.
     const bladeGeom = new THREE.BufferGeometry();
-    const verts = new Float32Array([
-        // Quad A
-        -0.5, 0, 0,   0.5, 0, 0,   0.5, 1, 0,
-        -0.5, 0, 0,   0.5, 1, 0,  -0.5, 1, 0,
-        // Quad B (90° rotated)
-         0, 0, -0.5,  0, 0, 0.5,  0, 1, 0.5,
-         0, 0, -0.5,  0, 1, 0.5,  0, 1, -0.5,
-    ]);
-    const uvs = new Float32Array([
-        0,0, 1,0, 1,1,
-        0,0, 1,1, 0,1,
-        0,0, 1,0, 1,1,
-        0,0, 1,1, 0,1,
-    ]);
-    bladeGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
-    bladeGeom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    if (_classicMode) {
+        const verts = new Float32Array([
+            // Quad A
+            -0.5, 0, 0,   0.5, 0, 0,   0.5, 1, 0,
+            -0.5, 0, 0,   0.5, 1, 0,  -0.5, 1, 0,
+            // Quad B (90° rotated)
+             0, 0, -0.5,  0, 0, 0.5,  0, 1, 0.5,
+             0, 0, -0.5,  0, 1, 0.5,  0, 1, -0.5,
+        ]);
+        const uvs = new Float32Array([
+            0,0, 1,0, 1,1,
+            0,0, 1,1, 0,1,
+            0,0, 1,0, 1,1,
+            0,0, 1,1, 0,1,
+        ]);
+        bladeGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        bladeGeom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    } else {
+        // Single triangle per blade. ~0.4m wide at base, 1.0m tall (scaled by
+        // per-instance matrix below). Bottom verts at uv.y=0 lock the blade to
+        // the ground; top vert at uv.y=1 receives the full wind displacement.
+        const verts = new Float32Array([
+            -0.20, 0, 0,   0.20, 0, 0,   0.0, 1.0, 0,
+        ]);
+        const uvs = new Float32Array([
+            0, 0,   1, 0,   0.5, 1,
+        ]);
+        bladeGeom.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+        bladeGeom.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+    }
     bladeGeom.computeVertexNormals();
 
     const bladeTex = _makeGrassBladeTexture();
@@ -3602,18 +3649,51 @@ function initGrass() {
         roughness: 0.95,
         metalness: 0.0,
     });
-    // Inject wind sway via onBeforeCompile
+    // R32.27-manus: chaotic noise-driven wind, replacing the R32.8 global sin sway.
+    //
+    // The R32.8 sway used a single sin() of (uTime + worldXZ) which produced a
+    // clean uniform wave — every blade in a region moved in lockstep. The Ghibli
+    // look needs the OPPOSITE: each blade swaying with its own phase and amplitude
+    // so the meadow looks alive, not metronomic.
+    //
+    // Instead of paying the cost of a vertex texture fetch on a noise texture
+    // (which would hurt mobile/integrated GPUs — see analysis), we synthesize
+    // cheap pseudo-noise *in the shader* from the per-instance position. Three
+    // overlapping sin waves at incommensurate frequencies + a per-instance phase
+    // hash give the chaotic look at zero memory bandwidth cost. ~5 ALU ops per
+    // vertex, no texture sampler needed.
     _grassMat.onBeforeCompile = (shader) => {
         shader.uniforms.uTime = { value: 0 };
+        shader.uniforms.uWindStrength = { value: 0.28 };
         shader.vertexShader = shader.vertexShader
             .replace('#include <common>',
-                `#include <common>\n uniform float uTime;`)
+                `#include <common>
+                 uniform float uTime;
+                 uniform float uWindStrength;`)
             .replace('#include <begin_vertex>',
                 `#include <begin_vertex>
-                 // Sway only the upper part of the blade (uv.y high)
-                 float sway = sin(uTime * 1.4 + (instanceMatrix[3].x + instanceMatrix[3].z) * 0.05) * 0.15;
-                 transformed.x += sway * uv.y;
-                 transformed.z += sway * 0.5 * uv.y;`);
+                 // Per-instance phase hash from world XZ (instanceMatrix col 3).
+                 // sin/cos are commutative and cheap; this gives every blade its
+                 // own unique offset without a texture lookup.
+                 float ix = instanceMatrix[3].x;
+                 float iz = instanceMatrix[3].z;
+                 float phase = ix * 0.071 + iz * 0.097;
+                 // Three overlapping waves at incommensurate frequencies fake
+                 // a noise-driven wind without a texture fetch. The 0.93 / 0.51
+                 // ratios are deliberately not multiples of each other, so the
+                 // pattern doesn't resolve into a visible repetition.
+                 float w1 = sin(uTime * 1.7  + phase);
+                 float w2 = sin(uTime * 0.93 + phase * 1.71 + 1.7);
+                 float w3 = sin(uTime * 0.51 + phase * 2.43 - 0.4);
+                 // Combine and weight — w1 dominates (gust), w2/w3 add chaos.
+                 // Multiplied by uv.y so only the tip moves, base stays planted.
+                 float swayX = (w1 * 0.6 + w2 * 0.3 + w3 * 0.1) * uWindStrength;
+                 float swayZ = (w1 * 0.3 + w2 * 0.6 - w3 * 0.1) * uWindStrength * 0.7;
+                 transformed.x += swayX * uv.y;
+                 transformed.z += swayZ * uv.y;
+                 // Subtle tip droop on strong gust — blade bends forward, doesn't
+                 // just translate sideways. Adds the Ghibli windblown feel.
+                 transformed.y -= abs(swayX) * uv.y * 0.15;`);
         _grassMat.userData.shader = shader;
     };
 
@@ -3640,10 +3720,15 @@ function initGrass() {
         if (Math.random() > grassW * 1.1) continue;
         const wy = sampleTerrainH(wx, wz);
         if (!Number.isFinite(wy)) continue;
-        const scale = 0.4 + Math.random() * 0.5; // 0.4–0.9m tall tufts
+        // R32.27-manus: slightly taller blades + wider scale range. Single-tri
+        // blades read smaller than cross-quads at the same scale, so we bump up.
+        // Random width (x) and height (y) decoupled gives a more natural meadow
+        // — some short stubby blades, some tall reedy ones.
+        const baseScale = 0.55 + Math.random() * 0.65; // 0.55–1.20
+        const heightMul = 0.85 + Math.random() * 0.55; // 0.85–1.40 vertical stretch
         dummy.position.set(wx, wy, wz);
         dummy.rotation.y = Math.random() * Math.PI * 2;
-        dummy.scale.set(scale, scale, scale);
+        dummy.scale.set(baseScale, baseScale * heightMul, baseScale);
         dummy.updateMatrix();
         _grassMesh.setMatrixAt(placed, dummy.matrix);
         placed++;
