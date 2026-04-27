@@ -376,10 +376,18 @@ function onShoot(weaponType) {
 
 function onDamage(amount) {
     // Items 43 + 44 — vignette pulse + camera shake
+    // R32.14: stronger response curve. Was sublinear (0.012/0.008) which made
+    // a 50-dmg sniper hit look identical to a 5-dmg pellet. New curve gives
+    // big hits noticeably more vignette and shake without making small hits
+    // disappear.
+    var amt = Math.max(0, amount);
     if (_vignettePulse) {
-        _vignettePulse.alpha = Math.min(0.7, (_vignettePulse.alpha || 0) + Math.min(0.6, amount * 0.012));
+        var pulseAdd = Math.min(0.85, 0.18 + amt * 0.018);
+        _vignettePulse.alpha = Math.min(0.85, (_vignettePulse.alpha || 0) + pulseAdd);
     }
-    onNearMiss(Math.min(0.6, amount * 0.008));
+    // Trauma curve: 5dmg → 0.20, 20dmg → 0.45, 50+ → 0.85 cap
+    var trauma = Math.min(0.85, 0.10 + amt * 0.018);
+    onNearMiss(trauma);
 }
 
 function onSpawn() {

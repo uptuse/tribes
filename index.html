@@ -424,16 +424,46 @@
     #spawn-prot.show { display:block; }
 
     /* R22: Damage indicator arcs — fade out red 60° wedge on HUD edge */
+    /* R32.14: arc thickness/opacity now scale with damage via inline vars. */
     #damage-arcs { position:fixed; top:0; left:0; width:100%; height:100%; z-index:13;
       pointer-events:none; }
-    .dmg-arc { position:absolute; top:50%; left:50%; width:240px; height:240px;
+    .dmg-arc { position:absolute; top:50%; left:50%;
+      --arc-size: 240px;
+      --arc-thick: 9px;
+      --arc-opacity: 0.6;
+      width:var(--arc-size); height:var(--arc-size);
       transform:translate(-50%,-50%);
-      background:conic-gradient(from -30deg, transparent 0deg, rgba(220,40,40,0.6) 30deg, rgba(220,40,40,0.6) 90deg, transparent 120deg, transparent 360deg);
+      background:conic-gradient(from -30deg, transparent 0deg,
+        rgba(255,60,40,var(--arc-opacity)) 30deg,
+        rgba(220,40,40,var(--arc-opacity)) 90deg,
+        transparent 120deg, transparent 360deg);
       border-radius:50%;
-      mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
-      -webkit-mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
+      mask:radial-gradient(circle,
+        transparent calc(var(--arc-size)/2 - var(--arc-thick) - 11px),
+        black     calc(var(--arc-size)/2 - var(--arc-thick) - 1px),
+        black     calc(var(--arc-size)/2 - 1px),
+        transparent var(--arc-size));
+      -webkit-mask:radial-gradient(circle,
+        transparent calc(var(--arc-size)/2 - var(--arc-thick) - 11px),
+        black     calc(var(--arc-size)/2 - var(--arc-thick) - 1px),
+        black     calc(var(--arc-size)/2 - 1px),
+        transparent var(--arc-size));
       opacity:0; transition:opacity 1.5s; }
     .dmg-arc.show { opacity:1; transition:opacity 0.05s; }
+
+    /* R32.14: Critical-HP sustained pulse (HP < 25). Distinct from per-hit
+       damage flash — this is an always-on red breathing edge vignette to
+       communicate "you're about to die" without nagging on top of every shot. */
+    #critical-hp-vignette { position:fixed; inset:0; pointer-events:none; z-index:12;
+      background:radial-gradient(ellipse at center,
+        transparent 50%, rgba(220,30,30,0.55) 100%);
+      opacity:0; transition:opacity 0.35s ease-out;
+      animation:critPulse 1.1s ease-in-out infinite; }
+    #critical-hp-vignette.active { opacity:0.85; }
+    @keyframes critPulse {
+      0%,100% { filter:brightness(0.85); }
+      50%     { filter:brightness(1.25); }
+    }
 
     /* R21: Toast notification (centre top, fades out) */
     #toast { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
@@ -717,6 +747,8 @@
   <div id="countdown"></div>
   <div id="spawn-prot">INVULNERABLE 3.0s</div>
   <div id="damage-arcs"></div>
+  <!-- R32.14: critical-HP sustained red vignette -->
+  <div id="critical-hp-vignette"></div>
 
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
@@ -912,7 +944,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.7</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.14</div>
     </div>
   </div>
 
@@ -1477,17 +1509,29 @@
             while(bestAng<-Math.PI) bestAng += 2*Math.PI;
           }
         }
-        if(bestDist<Infinity && window.showDamageArc) window.showDamageArc(bestAng);
+        // R32.14: pass the actual damage amount so arc thickness/opacity scale.
+        if(bestDist<Infinity && window.showDamageArc) window.showDamageArc(bestAng, _lastDmgAmount || 10);
       }
     }
+    // R32.14: track most recent damage amount so the bearing-fallback arc and
+    // the C++-supplied onDamageSource can both render scaled visuals.
+    var _lastDmgAmount = 0;
     window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
       // Damage flash on HP drop (>= 2 HP loss to filter noise / regen)
       if(lastHpForFlash>=0 && hp<lastHpForFlash-2 && hp>0){
+        var dmgAmt = lastHpForFlash - hp;
+        _lastDmgAmount = dmgAmt;
         triggerDamageFlash();
-        // R32.7 — polish vignette + shake on real damage event
-        try { if(window.__tribesPolish) window.__tribesPolish.onDamage(lastHpForFlash - hp); } catch(e) {}
+        // R32.7 — polish vignette + shake on real damage event (now scaled)
+        try { if(window.__tribesPolish) window.__tribesPolish.onDamage(dmgAmt); } catch(e) {}
       }
       lastHpForFlash=hp;
+      // R32.14: critical-HP sustained red pulse vignette (HP < 25 and alive).
+      var critV = document.getElementById('critical-hp-vignette');
+      if(critV){
+        if(hp > 0 && hp < 25) critV.classList.add('active');
+        else critV.classList.remove('active');
+      }
       // Health bar
       var hf=document.getElementById('hp-fill');
       if(hf){
@@ -2532,12 +2576,22 @@
     }
 
     // R22: Damage indicator arcs — pool of up to 4
+    // R32.14: optional 2nd arg = damage amount; scales thickness + opacity so
+    // a chaingun pellet looks distinct from a sniper hit.
     var _damageArcs = [];
-    function showDamageArc(angleRad){
+    function showDamageArc(angleRad, dmgAmount){
       var container = document.getElementById('damage-arcs');
       if(!container) return;
       var arc = document.createElement('div');
       arc.className = 'dmg-arc';
+      // Damage → visual params. dmg 0–5 → thin/dim; 5–20 → medium; 20+ → thick/bright.
+      var dmg = (typeof dmgAmount === 'number') ? Math.max(0, dmgAmount) : 10;
+      var thickness = 6 + Math.min(22, dmg * 0.85);   // 6–28 px
+      var opacity   = 0.40 + Math.min(0.55, dmg * 0.025); // 0.40–0.95
+      var size      = 240 + Math.min(80, dmg * 2.2);  // 240–320 px
+      arc.style.setProperty('--arc-thick', thickness.toFixed(1) + 'px');
+      arc.style.setProperty('--arc-opacity', opacity.toFixed(2));
+      arc.style.setProperty('--arc-size', size.toFixed(0) + 'px');
       arc.style.transform = 'translate(-50%,-50%) rotate(' + (angleRad * 180 / Math.PI) + 'deg)';
       container.appendChild(arc);
       _damageArcs.push(arc);
@@ -2575,7 +2629,8 @@
         // Normalise to -π..π
         while(relAngle>Math.PI)relAngle-=2*Math.PI;
         while(relAngle<-Math.PI)relAngle+=2*Math.PI;
-        showDamageArc(relAngle);
+        // R32.14: scale arc by most-recent dmg amount tracked in updateHUD.
+        showDamageArc(relAngle, _lastDmgAmount || 10);
       } catch(e) {}
     };
 
