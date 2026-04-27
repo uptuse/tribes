@@ -134,6 +134,23 @@ export async function start() {
     initParticles();
     initWeaponViewmodel();
     initRain(); // R32.0: Raindance.MIS "Rain1" Snowfall
+    // R32.27.2-manus: re-enable Ghibli-style grass on top of the painterly terrain.
+    // initGrass + initDetailProps were dropped from the start() sequence in R32.9
+    // because the OLD muddy-olive cross-quad sin-sway grass fought the watercolor
+    // terrain. The R32.27 rewrite (bright Ghibli ramp, single-tri, chaotic per-blade
+    // noise wind, 140k blades on high tier) is designed to COMPLEMENT painterly
+    // terrain, not fight it. Wrapped in try/catch so a grass init failure can't
+    // black-screen the game. Escape hatches: ?grass=off skips entirely;
+    // ?grass=classic restores R32.8 cross-quad sin-sway. initDetailProps (rocks/
+    // scrub) intentionally remains dormant pending a separate decision.
+    try {
+        const _grassMode = (new URLSearchParams(window.location.search)).get('grass');
+        if (_grassMode !== 'off') {
+            initGrass();
+        } else {
+            console.log('[R32.27.2] Grass disabled via ?grass=off');
+        }
+    } catch (e) { console.warn('[R32.27.2] initGrass failed:', e && e.message ? e.message : e); }
     // R32.9 — fake grass and procedural rocks were dropped: they broke the painterly Tribes look.
     // R29.2: initStateViews() must run BEFORE initPostProcessing() because the
     // RenderPass(scene, camera) constructor captures the camera reference, and
