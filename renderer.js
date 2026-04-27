@@ -1103,7 +1103,7 @@ function initTerrain() {
                      // the AO so e.g. a 0.7 crevice becomes 0.41 (-60%) instead of -25%.
                      // Toggle off via the AO chip and the world brightens up a lot.
                      // R32.38.4-manus: 2.5 -> 4.0 per user request for unmistakable A/B.
-                     aoT = pow(clamp(aoT, 0.05, 1.0), 4.0);
+                     aoT = pow(clamp(aoT, 0.05, 1.0), 2.5);
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
