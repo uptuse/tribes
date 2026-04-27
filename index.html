@@ -451,6 +451,36 @@
       opacity:0; transition:opacity 1.5s; }
     .dmg-arc.show { opacity:1; transition:opacity 0.05s; }
 
+    /* R32.16: Spectator-mode HUD label + subtle letterbox — shown while dead,
+       orbit camera circles the death spot. */
+    #spec-label { display:none; position:fixed; top:42%; left:50%;
+      transform:translate(-50%,-50%); z-index:60;
+      font-family:'Barlow Condensed',sans-serif; font-weight:700;
+      font-size:1.6em; letter-spacing:8px; color:#FFC850;
+      text-shadow:0 0 12px rgba(255,200,80,0.55), 0 2px 4px rgba(0,0,0,0.85);
+      padding:8px 28px; pointer-events:none;
+      border-top:1px solid rgba(255,200,80,0.35);
+      border-bottom:1px solid rgba(255,200,80,0.35);
+      background:linear-gradient(90deg, transparent, rgba(0,0,0,0.55), transparent);
+      animation:specBreathe 2.6s ease-in-out infinite; }
+    #spec-label.show { display:block; }
+    @keyframes specBreathe {
+      0%,100% { opacity:0.78; }
+      50%     { opacity:1.0; }
+    }
+    /* R32.16: cinematic letterbox bars during spectator. */
+    #spec-bars { display:none; position:fixed; inset:0; z-index:11;
+      pointer-events:none; }
+    #spec-bars.show { display:block; }
+    #spec-bars::before, #spec-bars::after {
+      content:''; position:absolute; left:0; right:0; height:11vh;
+      background:#000; transition:transform 0.6s cubic-bezier(0.2,0.8,0.2,1);
+    }
+    #spec-bars::before { top:0;    transform:translateY(-100%); }
+    #spec-bars::after  { bottom:0; transform:translateY( 100%); }
+    #spec-bars.show::before { transform:translateY(0); }
+    #spec-bars.show::after  { transform:translateY(0); }
+
     /* R32.14: Critical-HP sustained pulse (HP < 25). Distinct from per-hit
        damage flash — this is an always-on red breathing edge vignette to
        communicate "you're about to die" without nagging on top of every shot. */
@@ -749,6 +779,9 @@
   <div id="damage-arcs"></div>
   <!-- R32.14: critical-HP sustained red vignette -->
   <div id="critical-hp-vignette"></div>
+  <!-- R32.16: spectator HUD elements -->
+  <div id="spec-bars"></div>
+  <div id="spec-label">SPECTATING — RESPAWNING</div>
 
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
@@ -944,7 +977,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.15</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.16</div>
     </div>
   </div>
 

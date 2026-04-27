@@ -2858,6 +2858,40 @@ function syncParticles() {
     particleGeom.attributes.size.needsUpdate = true;
 }
 
+// R32.16-manus: spectator/freecam orbit state. Activated while local player
+// is dead; orbits the death position at altitude with a slow auto-yaw and
+// a gentle pitch sway. Returns control to live-cam on respawn.
+const _spec = {
+    active: false,
+    deathX: 0, deathY: 0, deathZ: 0,
+    yaw: 0,           // current orbit yaw (rad)
+    yawRate: 0.35,    // rad/sec
+    radius: 14,       // m from death point
+    height: 6,        // m above death point
+    pitch: -0.20,     // look down ~11°
+    fadeIn: 0,        // 0–1 fade for the overlay
+};
+function _enterSpectator(deathX, deathY, deathZ) {
+    _spec.active = true;
+    _spec.deathX = deathX; _spec.deathY = deathY; _spec.deathZ = deathZ;
+    _spec.yaw = 0;
+    _spec.fadeIn = 0;
+    // Show "SPECTATING" HUD label + letterbox bars
+    const el = document.getElementById('spec-label');
+    if (el) el.classList.add('show');
+    const bars = document.getElementById('spec-bars');
+    if (bars) bars.classList.add('show');
+    // Hide weapon viewmodel
+    if (weaponHand) weaponHand.visible = false;
+}
+function _exitSpectator() {
+    _spec.active = false;
+    const el = document.getElementById('spec-label');
+    if (el) el.classList.remove('show');
+    const bars = document.getElementById('spec-bars');
+    if (bars) bars.classList.remove('show');
+}
+
 function syncCamera() {
     const localIdx = Module._getLocalPlayerIdx();
     // R30.1: hard guard against invalid local player index. Without this,
@@ -2877,6 +2911,28 @@ function syncCamera() {
     // safe default (initialized to 0,100,0 above the basin).
     if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) return;
     if (px === 0 && py === 0 && pz === 0) return;     // unspawned local player
+
+    // R32.16-manus: spectator/freecam while dead.
+    const aliveLocal = playerView[o + 13] > 0.5;
+    if (!aliveLocal) {
+        if (!_spec.active) _enterSpectator(px, py, pz);
+        // Advance yaw and recompute camera transform around captured death pos.
+        const dt = 1 / 60;
+        _spec.yaw += _spec.yawRate * dt;
+        _spec.fadeIn = Math.min(1, _spec.fadeIn + dt * 1.6);
+        const cx = _spec.deathX + Math.sin(_spec.yaw) * _spec.radius;
+        const cz = _spec.deathZ + Math.cos(_spec.yaw) * _spec.radius;
+        const cy = _spec.deathY + _spec.height + Math.sin(_spec.yaw * 0.4) * 0.6;
+        camera.position.set(cx, cy, cz);
+        // Look at the death point with a slight downward bias
+        const dx = _spec.deathX - cx, dy = (_spec.deathY + 1.0) - cy, dz = _spec.deathZ - cz;
+        const lookYaw   = Math.atan2(dx, -dz);  // Three.js convention
+        const lookPitch = Math.atan2(dy, Math.hypot(dx, dz));
+        camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
+        return;
+    } else if (_spec.active) {
+        _exitSpectator();
+    }
 
     // R31: negate yaw. C++ forward = {sin(yaw), 0, -cos(yaw)}.
     // Three.js camera forward at rotation.y=θ = {-sin(θ), 0, -cos(θ)}.
