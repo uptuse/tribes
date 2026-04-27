@@ -912,7 +912,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.1</div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.13.2</div>
     </div>
   </div>
 
@@ -2936,8 +2936,22 @@
         // impact: noise burst
         b=mb(0.15);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*5)*0.9;}
         this.bufs[4]=b;
-        // player hit: metallic clang
-        b=mb(0.18);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,f3=380*Math.exp(-t*5)+80,e=Math.exp(-t*15);da[i]=(Math.sin(2*Math.PI*f3*t)*0.5+(Math.random()*2-1)*0.45)*e;}
+        // R32.13.2: player hit (damage taken) — sharp armor TANG with shield-shimmer overtone
+        // Tribes signature: hard metallic strike with brief high-shimmer tail (shield/armor electronics)
+        b=mb(0.30);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var atk=Math.exp(-t*40); // hard transient
+          var ring=Math.exp(-t*8); // body decay
+          var shim=Math.exp(-t*4); // shimmer tail
+          var f_main=520*Math.exp(-t*6)+140; // main TANG body, descends
+          var f_shim=2400+Math.sin(2*Math.PI*60*t)*180; // shimmer with FM
+          da[i]=(
+            Math.sin(2*Math.PI*f_main*t)*0.45*ring +
+            Math.sin(2*Math.PI*f_main*1.78*t)*0.18*ring + // inharmonic body
+            (Math.random()*2-1)*0.30*atk + // strike noise
+            Math.sin(2*Math.PI*f_shim*t)*0.10*shim // shield shimmer
+          )*0.85;
+        }
         this.bufs[5]=b;
         // flag pickup: rising arpeggio C-E-G
         b=mb(0.45);da=d(b);[523,659,784].forEach(function(freq,fi){var s=Math.floor(fi*0.13*sr);for(var j=0;j<Math.floor(0.12*sr)&&s+j<da.length;j++){var t=j/sr,e=(t<0.01?t/0.01:Math.exp(-(t-0.01)*12));da[s+j]+=Math.sin(2*Math.PI*freq*t)*e*0.55;}});
@@ -2948,8 +2962,19 @@
         // generator destroy: long explosion
         b=mb(1.8);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,e=Math.exp(-t*1.8),bz=Math.sin(2*Math.PI*220*t)*0.08*Math.exp(-t*3);da[i]=((Math.random()*2-1)*0.8+bz)*e;}
         this.bufs[8]=b;
-        // footstep: short thud
-        b=mb(0.06);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*8)*0.55;}
+        // R32.13.2: footstep — armored boot on dirt/grass thud
+        // Tribes character: heavy mass-armored impact with low-mid body, short (so rapid steps don't blur)
+        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var atk=Math.exp(-t*45); // sharp boot-to-ground transient
+          var body=Math.exp(-t*20); // armor body decay
+          var f_thud=85*Math.exp(-t*15)+45; // descending sub thud
+          da[i]=(
+            Math.sin(2*Math.PI*f_thud*t)*0.55*body + // sub thud
+            (Math.random()*2-1)*0.18*atk + // dirt/grass crunch
+            Math.sin(2*Math.PI*220*t)*0.08*Math.exp(-t*30) // boot-leather mid tone
+          )*0.6;
+        }
         this.bufs[9]=b;
         // jetpack loop: noise + hum (loopable)
         b=mb(0.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=(Math.random()*2-1)*0.22+Math.sin(2*Math.PI*60*t)*0.12+Math.sin(2*Math.PI*120*t)*0.06;}
@@ -2960,11 +2985,35 @@
         // R22: mortar_boom — noise burst + low-pass tail
         b=mb(1.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var e=Math.exp(-t*1.2);da[i]=((Math.random()*2-1)*0.7+Math.sin(2*Math.PI*45*t)*0.3)*e;}
         this.bufs[12]=b;
-        // R22: damage_give — hit-confirm "tink" (880Hz sine, 0.1s decay)
-        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=Math.sin(2*Math.PI*880*t)*Math.exp(-t*25)*0.5;}
+        // R32.13.2: hit-confirm "tink" — NOW THE PRIMARY HIT-CONFIRM (was wrongly slot 15)
+        // Modern shooter convention: short, bright, distinct, non-fatiguing on rapid hits.
+        // Two stacked sine harmonics give it a touch of metallic character vs pure tone.
+        b=mb(0.12);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var e=Math.exp(-t*32); // very short decay
+          da[i]=(
+            Math.sin(2*Math.PI*1320*t)*0.45 + // E6 fundamental — cuts through mix
+            Math.sin(2*Math.PI*2640*t)*0.18 + // octave above for sparkle
+            Math.sin(2*Math.PI*1980*t)*0.10 // perfect 5th — musical, not harsh
+          )*e*0.55;
+        }
         this.bufs[13]=b;
-        // R22: respawn arpeggio (C5 → G4 → C4)
-        b=mb(0.80);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=t<0.27?523:(t<0.54?392:262);var e=t<0.75?Math.exp(-(t%0.27)*8):0;da[i]=Math.sin(2*Math.PI*f*t)*e*0.4;}
+        // R32.13.2: respawn — "matter recombobulation" swelling synth + chord resolve
+        // Tribes character: telepad / inv-station hum that resolves into a confident chord
+        b=mb(1.10);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var swell=Math.min(1, t/0.55); // ramp up first half
+          var fall =t<0.55?1:Math.exp(-(t-0.55)*3.2); // decay second half
+          var e=swell*fall;
+          // Hum: detuned saw pair (fundamentals) sweeping up
+          var fbase=110+t*40;
+          var saw1=2*((fbase*t)%1)-1;
+          var saw2=2*((fbase*1.005*t)%1)-1; // slight detune for chorusing
+          // Chord on top: C major triad (262/330/392) entering at t=0.40
+          var ch=t>0.40?Math.min(1,(t-0.40)/0.20):0;
+          var triad=Math.sin(2*Math.PI*262*t)*0.30+Math.sin(2*Math.PI*330*t)*0.25+Math.sin(2*Math.PI*392*t)*0.20;
+          da[i]=((saw1+saw2)*0.10 + triad*ch)*e*0.45;
+        }
         this.bufs[14]=b;
         // R22: match_start_horn — sawtooth + harmonics, decrescendo
         b=mb(1.20);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220;var e=Math.exp(-t*1.2);var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5+Math.sin(2*Math.PI*f*3*t)*0.3)*e*0.35;}
@@ -3066,7 +3115,7 @@
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[19];
         var g=this.ctx.createGain();
         var p=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
-        // R32.13.1: ambient much quieter — sample is now distance-processed (heavy LP, big reverb)
+        // R32.13.2: ambient much quieter — sample is now distance-processed (heavy LP, big reverb)
         // and was annoying at 0.30-0.48. Drop to 0.10-0.18 — felt-not-heard.
         if(loud){g.gain.value=0.85;} // was 0.95 too
         else{g.gain.value=0.10+Math.random()*0.08;}
@@ -3153,7 +3202,7 @@
         // ~30% of the time on hard landings so the user actually hears it.
         if(this._prevOnGround===false && onGround===true && speed>16){
           this.playUI(18);
-          // R32.13.1: dropped 30%→10% AND switched to ambient (distant) vol so it's not blasting in your face on every fall
+          // R32.13.2: dropped 30%→10% AND switched to ambient (distant) vol so it's not blasting in your face on every fall
           if(Math.random()<0.10) this.playShazbot(false);
         }
         this._prevOnGround=onGround;
@@ -3166,7 +3215,7 @@
         // (user request — was 25-60s randomized in R32.12.3). First one fires
         // 60s after the first AE.update() call so there's a brief grace period.
         var nowMs=performance.now();
-        // R32.13.1: interval bumped 60s → 90s (less frequent = less annoying)
+        // R32.13.2: interval bumped 60s → 90s (less frequent = less annoying)
         if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+90000;
         if(nowMs>=this._shazbotNextAt){
           this.playShazbot(false);
@@ -3701,7 +3750,11 @@
         // Fallback to legacy "+" tick if CombatFX hasn't loaded yet
         t.classList.remove('hide'); t.classList.add('show');
       }
-      if(window.playSoundUI) window.playSoundUI(15); // UI slot (R11 audio has 16 bufs)
+      // R32.13.2: BUG FIX — was firing slot 15 (1.2s sawtooth match-start horn) on every hit.
+      // That's why the user heard "the annoying fire shot" — it wasn't the fire sound at
+      // all, it was the match-horn blasting on hit-confirm. Slot 13 is the proper
+      // 880Hz hit-confirm "tink" designed exactly for this.
+      if(window.playSoundUI) window.playSoundUI(13);
       clearTimeout(_hitTickTimer);
       _hitTickTimer=setTimeout(function(){
         t.classList.remove('show'); t.classList.add('hide');
