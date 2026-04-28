@@ -2073,18 +2073,17 @@ async function initInteriorShapes() {
 function initCustomModels() {
     const loader = new GLTFLoader();
     // Team 0 spawn: Tribes [-256.5, -10.3552, 35.7834]
-    // toWorld: x = -256.5, y = 35.7834, z = -(-10.3552) = 10.3552
-    // Place wolf slightly offset from base so it's visible
-    const wolfX = -250;  // slightly east of base
-    const wolfZ = 15;    // slightly south
+    // toWorld: x = tribesX, y = tribesZ, z = -tribesY
+    const wolfX = -256.5;
+    const wolfZ = 10.35;
     const wolfY = sampleTerrainH(wolfX, wolfZ);
 
     loader.load('./assets/models/wolf_sentinel.glb', (gltf) => {
         const model = gltf.scene;
         model.name = 'WolfSentinel';
 
-        // Model is ~2 units tall; scale to ~15 units (imposing sentinel)
-        const scale = 15;
+        // Model is ~2 units tall; scale to ~50 units (very visible for testing)
+        const scale = 50;
         model.scale.set(scale, scale, scale);
 
         // Position on terrain
