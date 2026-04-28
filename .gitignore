@@ -1,7 +1,5 @@
 .manus_last_reviewed_sha
 build/
-assets/*.dts
-assets/*.DTS
 assets/*.bmp
 assets/*.BMP
 assets/*.vol
