@@ -9,25 +9,6 @@
   <meta name="keywords" content="Tribes, Starsiege, browser game, WebAssembly, WebGL, FPS, capture the flag, skiing, jetpack">
   <meta name="author" content="Tribes BE community port (fan project)">
   <link rel="canonical" href="https://uptuse.github.io/tribes/">
-
-  <!-- R32.19-manus: resource hints. Preload the heavy assets in parallel with HTML
-       parse so they finish ahead of when the runtime asks for them. The async
-       <script src="tribes.js"> at the bottom still controls actual execution order;
-       these just warm the cache. -->
-  <link rel="preload" as="fetch" type="application/wasm" href="tribes.wasm" crossorigin="anonymous">
-  <link rel="preload" as="script" href="tribes.js">
-  <!-- R32.25.4: modulepreload removed — it triggered renderer.js loading BEFORE the importmap was parsed,
-       which made the bare 'three' specifier fail to resolve, leaving the entire 3D scene black.
-       Loss is ~100ms cold-start savings; correctness wins. -->
-
-  <!-- R32.25-manus: typography pair (Visual Cohesion #2.8). Existing Cinzel/Barlow
-       Condensed pair already provides Tribes-flavored sci-fi headline+body identity
-       (more thematic than playbook's generic Rajdhani recommendation). Adding only
-       Courier Prime as the intentional monospaced face for telemetry readouts that
-       currently default to ugly browser-monospace. Preconnect saves ~100ms. -->
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:wght@400;700&display=swap">
   <!-- OpenGraph / Facebook / Discord -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="Starsiege: Tribes — Browser Edition">
@@ -252,68 +233,15 @@
     #ski-slope-bar { width:100px; height:8px; background:#1a1a1a; border:1px solid #333;
       position:relative; overflow:hidden; }
     #ski-slope-fill { position:absolute; top:0; height:100%; width:0; transition:width 0.1s, background 0.1s; }
-    #ski-slope-label { font-size:0.65em; color:#888; font-family:'Courier Prime',monospace; }
-    #ski-speed { font-family:'Courier Prime',monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
+    #ski-slope-label { font-size:0.65em; color:#888; font-family:monospace; }
+    #ski-speed { font-family:monospace; font-size:1.1em; color:#00d8ff; line-height:1; }
     #ski-speed-unit { font-size:0.7em; color:#5A8090; }
-    /* D2: hit-confirm tick (extended R32.13 with brass chevrons + kill flash) */
+    /* D2: hit-confirm tick */
     #hit-tick { display:none; position:absolute; top:50%; left:50%;
       transform:translate(-50%,-50%); color:#fff; font-size:1.6em; font-weight:bold;
       pointer-events:none; z-index:20; opacity:0; transition:opacity 0.2s; }
     #hit-tick.show { display:block; opacity:1; }
     #hit-tick.hide { opacity:0; }
-    /* R32.13: replace the bare "+" with 4 expanding chevrons drawn via CSS */
-    #hit-tick.r3213-hit, #hit-tick.r3213-kill {
-      color: transparent; width: 36px; height: 36px; font-size: 0;
-      background: transparent;
-    }
-    #hit-tick.r3213-hit::before, #hit-tick.r3213-hit::after,
-    #hit-tick.r3213-kill::before, #hit-tick.r3213-kill::after {
-      content: ""; position: absolute; top: 50%; left: 50%;
-      transform-origin: center;
-      pointer-events: none;
-    }
-    /* Two crossed brass chevrons that expand outward + fade */
-    #hit-tick.r3213-hit::before {
-      width: 18px; height: 3px; background: #f0c060;
-      box-shadow: 0 0 6px #f0c060, 0 0 12px #f08020;
-      animation: r3213-hit-h 0.30s ease-out forwards;
-    }
-    #hit-tick.r3213-hit::after {
-      width: 3px; height: 18px; background: #f0c060;
-      box-shadow: 0 0 6px #f0c060, 0 0 12px #f08020;
-      animation: r3213-hit-v 0.30s ease-out forwards;
-    }
-    /* Kill (strong) variant: red, larger, longer */
-    #hit-tick.r3213-kill::before {
-      width: 26px; height: 4px; background: #ff5040;
-      box-shadow: 0 0 8px #ff5040, 0 0 16px #ff2010;
-      animation: r3213-kill-h 0.48s ease-out forwards;
-    }
-    #hit-tick.r3213-kill::after {
-      width: 4px; height: 26px; background: #ff5040;
-      box-shadow: 0 0 8px #ff5040, 0 0 16px #ff2010;
-      animation: r3213-kill-v 0.48s ease-out forwards;
-    }
-    @keyframes r3213-hit-h {
-      0%   { transform: translate(-50%,-50%) scaleX(0.3); opacity: 0; }
-      30%  { transform: translate(-50%,-50%) scaleX(1.0); opacity: 1; }
-      100% { transform: translate(-50%,-50%) scaleX(1.4); opacity: 0; }
-    }
-    @keyframes r3213-hit-v {
-      0%   { transform: translate(-50%,-50%) scaleY(0.3); opacity: 0; }
-      30%  { transform: translate(-50%,-50%) scaleY(1.0); opacity: 1; }
-      100% { transform: translate(-50%,-50%) scaleY(1.4); opacity: 0; }
-    }
-    @keyframes r3213-kill-h {
-      0%   { transform: translate(-50%,-50%) rotate(45deg) scaleX(0.3); opacity: 0; }
-      25%  { transform: translate(-50%,-50%) rotate(45deg) scaleX(1.0); opacity: 1; }
-      100% { transform: translate(-50%,-50%) rotate(45deg) scaleX(1.6); opacity: 0; }
-    }
-    @keyframes r3213-kill-v {
-      0%   { transform: translate(-50%,-50%) rotate(45deg) scaleY(0.3); opacity: 0; }
-      25%  { transform: translate(-50%,-50%) rotate(45deg) scaleY(1.0); opacity: 1; }
-      100% { transform: translate(-50%,-50%) rotate(45deg) scaleY(1.6); opacity: 0; }
-    }
 
     #hud-compass { position:absolute; top:10px; left:50%; transform:translateX(-50%);
       width:380px; height:28px; overflow:hidden; pointer-events:none; }
@@ -384,7 +312,7 @@
       border:1px solid #3A2A10; padding:3px 14px; pointer-events:none; display:none; }
 
     /* Respawn overlay */
-    #respawn-overlay { display:none !important; /* R32.63.5: god mode — no death screen */ }
+    #respawn-overlay { display:none; position:absolute; top:0; left:0; width:100%; height:100%;
       background:rgba(80,0,0,0.35); z-index:13; pointer-events:none;
       align-items:center; justify-content:center; flex-direction:column; }
     #respawn-overlay.active { display:flex; }
@@ -443,76 +371,16 @@
     #spawn-prot.show { display:block; }
 
     /* R22: Damage indicator arcs — fade out red 60° wedge on HUD edge */
-    /* R32.14: arc thickness/opacity now scale with damage via inline vars. */
-    #damage-arcs { display:none !important; /* R32.63.4: god mode */ }
+    #damage-arcs { position:fixed; top:0; left:0; width:100%; height:100%; z-index:13;
       pointer-events:none; }
-    .dmg-arc { position:absolute; top:50%; left:50%;
-      --arc-size: 240px;
-      --arc-thick: 9px;
-      --arc-opacity: 0.6;
-      width:var(--arc-size); height:var(--arc-size);
+    .dmg-arc { position:absolute; top:50%; left:50%; width:240px; height:240px;
       transform:translate(-50%,-50%);
-      background:conic-gradient(from -30deg, transparent 0deg,
-        rgba(255,60,40,var(--arc-opacity)) 30deg,
-        rgba(220,40,40,var(--arc-opacity)) 90deg,
-        transparent 120deg, transparent 360deg);
+      background:conic-gradient(from -30deg, transparent 0deg, rgba(220,40,40,0.6) 30deg, rgba(220,40,40,0.6) 90deg, transparent 120deg, transparent 360deg);
       border-radius:50%;
-      mask:radial-gradient(circle,
-        transparent calc(var(--arc-size)/2 - var(--arc-thick) - 11px),
-        black     calc(var(--arc-size)/2 - var(--arc-thick) - 1px),
-        black     calc(var(--arc-size)/2 - 1px),
-        transparent var(--arc-size));
-      -webkit-mask:radial-gradient(circle,
-        transparent calc(var(--arc-size)/2 - var(--arc-thick) - 11px),
-        black     calc(var(--arc-size)/2 - var(--arc-thick) - 1px),
-        black     calc(var(--arc-size)/2 - 1px),
-        transparent var(--arc-size));
+      mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
+      -webkit-mask:radial-gradient(circle, transparent 100px, black 110px, black 119px, transparent 120px);
       opacity:0; transition:opacity 1.5s; }
     .dmg-arc.show { opacity:1; transition:opacity 0.05s; }
-
-    /* R32.16: Spectator-mode HUD label + subtle letterbox — shown while dead,
-       orbit camera circles the death spot. */
-    #spec-label { display:none; position:fixed; top:42%; left:50%;
-      transform:translate(-50%,-50%); z-index:60;
-      font-family:'Barlow Condensed',sans-serif; font-weight:700;
-      font-size:1.6em; letter-spacing:8px; color:#FFC850;
-      text-shadow:0 0 12px rgba(255,200,80,0.55), 0 2px 4px rgba(0,0,0,0.85);
-      padding:8px 28px; pointer-events:none;
-      border-top:1px solid rgba(255,200,80,0.35);
-      border-bottom:1px solid rgba(255,200,80,0.35);
-      background:linear-gradient(90deg, transparent, rgba(0,0,0,0.55), transparent);
-      animation:specBreathe 2.6s ease-in-out infinite; }
-    #spec-label.show { display:block; }
-    @keyframes specBreathe {
-      0%,100% { opacity:0.78; }
-      50%     { opacity:1.0; }
-    }
-    /* R32.16: cinematic letterbox bars during spectator. */
-    #spec-bars { display:none; position:fixed; inset:0; z-index:11;
-      pointer-events:none; }
-    #spec-bars.show { display:block; }
-    #spec-bars::before, #spec-bars::after {
-      content:''; position:absolute; left:0; right:0; height:11vh;
-      background:#000; transition:transform 0.6s cubic-bezier(0.2,0.8,0.2,1);
-    }
-    #spec-bars::before { top:0;    transform:translateY(-100%); }
-    #spec-bars::after  { bottom:0; transform:translateY( 100%); }
-    #spec-bars.show::before { transform:translateY(0); }
-    #spec-bars.show::after  { transform:translateY(0); }
-
-    /* R32.14: Critical-HP sustained pulse (HP < 25). Distinct from per-hit
-       damage flash — this is an always-on red breathing edge vignette to
-       communicate "you're about to die" without nagging on top of every shot. */
-    #critical-hp-vignette { display:none !important; /* R32.63.4: god mode */ }
-      background:radial-gradient(ellipse at center,
-        transparent 50%, rgba(220,30,30,0.55) 100%);
-      opacity:0; transition:opacity 0.35s ease-out;
-      animation:critPulse 1.1s ease-in-out infinite; }
-    #critical-hp-vignette.active { opacity:0.85; }
-    @keyframes critPulse {
-      0%,100% { filter:brightness(0.85); }
-      50%     { filter:brightness(1.25); }
-    }
 
     /* R21: Toast notification (centre top, fades out) */
     #toast { display:none; position:fixed; top:60px; left:50%; transform:translateX(-50%);
@@ -675,117 +543,6 @@
   <!-- Game Canvas -->
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
 
-  <!-- R32.34.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
-       User asked for this so they can verify each new build is actually live.
-       The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.80</div>
-  <!-- R32.36-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
-  <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
-  <!-- R32.40-manus: in-game day/night clock chip. Updated by the renderer's
-       DayNight module via window.__tribesSetGameClock(). Sits between FPS and
-       PBR chips; pure cosmetic, no interaction needed. -->
-  <div id="clock-chip" style="position:fixed;top:64px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DC9EA;border:1px solid rgba(157,201,234,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:64px;text-align:right;">--:-- AM</div>
-  <script>
-    // R32.40-manus: tiny shim so renderer.js can update the clock chip without
-    // worrying about element existence.
-    window.__tribesSetGameClock = function(text) {
-      var c = document.getElementById('clock-chip');
-      if (c && c.textContent !== text) c.textContent = text;
-    };
-  </script>
-  <script>
-    // Simple, lightweight FPS counter. Samples last ~30 frames at any time and
-    // updates the chip 4 times per second so the number doesn't strobe.
-    (function() {
-      var times = [];
-      var chip = document.getElementById('fps-chip');
-      function tick(now) {
-        times.push(now);
-        // Keep last second of timestamps
-        while (times.length > 0 && times[0] < now - 1000) times.shift();
-        requestAnimationFrame(tick);
-      }
-      requestAnimationFrame(tick);
-      setInterval(function() {
-        if (!chip) return;
-        var n = times.length;
-        if (n < 2) { chip.textContent = '-- fps'; return; }
-        var span = (times[n - 1] - times[0]) / 1000;
-        var fps = span > 0 ? Math.round((n - 1) / span) : 0;
-        chip.textContent = fps + ' fps';
-        // Color-code: green >=50, amber 30-49, red <30
-        chip.style.color = (fps >= 50) ? '#9DEAA0' : (fps >= 30) ? '#FFD479' : '#FF8A8A';
-        chip.style.borderColor = (fps >= 50) ? 'rgba(157,234,160,0.35)' : (fps >= 30) ? 'rgba(255,212,121,0.35)' : 'rgba(255,138,138,0.35)';
-      }, 250);
-    })();
-  </script>
-
-  <!-- R32.37.2-manus: PBR toggle chips on the main game HUD per user request
-       ("I want the tabs on the game itself - not settings"). Three clickable
-       chips stacked under the FPS chip: Roughness / Ambient Occlusion /
-       Parallax (POM). Click to toggle; green border = ON, red border = OFF.
-       State persists in localStorage via the same ST.pbr* keys as the
-       Settings menu, so opening Settings shows the same state. -->
-  <div id="pbr-chips" style="position:fixed;top:92px;right:10px;z-index:10000;display:flex;flex-direction:column;gap:4px;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;">
-    <div class="pbr-chip" id="pbr-chip-rough" data-key="roughness" data-st="pbrRoughness" title="Per-tile shininess from PBR roughness map" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">R: ON</div>
-    <div class="pbr-chip" id="pbr-chip-ao"    data-key="ao"        data-st="pbrAO"        title="Baked micro-shadow in crevices"               style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">AO: ON</div>
-    <div class="pbr-chip" id="pbr-chip-pom"   data-key="pom"       data-st="pbrPOM"       title="Parallax Occlusion Mapping (3D depth from height map; ~5-10% FPS)" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">POM: ON</div>
-  </div>
-  <script>
-    // R32.37.2-manus: PBR chip wiring. Reads/writes ST.pbr* via the same
-    // saveSettings() pipeline as the Settings menu, and pushes the toggle
-    // through window.__tribesSetTerrainPBR(key, on) to flip the shader
-    // uniform live (no recompile). Mirrors any open Settings checkbox by id.
-    (function(){
-      var LABELS = { roughness: 'R', ao: 'AO', pom: 'POM' };
-      function paint(chip, on) {
-        var key  = chip.dataset.key;
-        chip.textContent = LABELS[key] + ': ' + (on ? 'ON' : 'OFF');
-        chip.style.color       = on ? '#9DEAA0' : '#FF8A8A';
-        chip.style.borderColor = on ? 'rgba(157,234,160,0.55)' : 'rgba(255,138,138,0.55)';
-        chip.style.opacity     = on ? '1.0' : '0.78';
-      }
-      function readST(stKey) {
-        // Default ON if unset; respect explicit false
-        try { return (window.ST && window.ST[stKey] !== false); } catch(e) { return true; }
-      }
-      function syncOne(chip) {
-        paint(chip, readST(chip.dataset.st));
-      }
-      function syncAll() {
-        document.querySelectorAll('#pbr-chips .pbr-chip').forEach(syncOne);
-      }
-      // Click handler
-      document.querySelectorAll('#pbr-chips .pbr-chip').forEach(function(chip){
-        chip.addEventListener('click', function(){
-          var stKey = chip.dataset.st, key = chip.dataset.key;
-          var cur = readST(stKey);
-          var next = !cur;
-          // 1) update ST + persist
-          if (window.ST) {
-            window.ST[stKey] = next;
-            if (typeof saveSettings === 'function') saveSettings();
-          }
-          // 2) push to shader uniform
-          if (window.__tribesSetTerrainPBR) window.__tribesSetTerrainPBR(key, next);
-          // 3) repaint our chip
-          paint(chip, next);
-          // 4) keep the (possibly already-built) Settings checkbox in sync
-          var idMap = { roughness: 's-pbr-rough', ao: 's-pbr-ao', pom: 's-pbr-pom' };
-          var cb = document.getElementById(idMap[key]);
-          if (cb) cb.checked = next;
-        });
-      });
-      // Sync once ST is loaded; the loadSettings() call happens later in
-      // index.html, so wait one tick.
-      setTimeout(syncAll, 0);
-      // Re-sync after settings load to honour any saved ST values.
-      window.addEventListener('load', function(){ setTimeout(syncAll, 50); });
-      // Expose so other code (e.g. Settings checkbox onchange) can re-sync chips.
-      window.__tribesSyncPBRChips = syncAll;
-    })();
-  </script>
-
   <!-- In-Game HUD -->
   <div id="hud">
     <!-- Health + Energy — bottom-left -->
@@ -907,11 +664,6 @@
   <div id="countdown"></div>
   <div id="spawn-prot">INVULNERABLE 3.0s</div>
   <div id="damage-arcs"></div>
-  <!-- R32.14: critical-HP sustained red vignette -->
-  <div id="critical-hp-vignette"></div>
-  <!-- R32.16: spectator HUD elements -->
-  <div id="spec-bars"></div>
-  <div id="spec-label">SPECTATING — RESPAWNING</div>
 
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
@@ -1107,7 +859,7 @@
       </div>
       <input id="replay-file-input" type="file" accept=".tribes-replay" style="display:none;" onchange="watchReplayFromFile(this)" />
       <div class="footer" style="text-align:left;">Fan project &mdash; not affiliated with Dynamix or Sierra</div>
-      <div class="footer" style="text-align:right; margin-top:-12px;"><script>document.write('Version 0.4 / ' + (document.getElementById('version-chip')?document.getElementById('version-chip').textContent:'?'));</script></div>
+      <div class="footer" style="text-align:right; margin-top:-12px;">Version 0.4 / R32.1.3</div>
     </div>
   </div>
 
@@ -1121,8 +873,6 @@
           <div style="margin:6px 0;">
             <button class="btn-small btn-selected">Capture The Flag</button>
           </div>
-          <!-- R32.63.1: Team size (bots) hidden — bots disabled per user request -->
-          <!--
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Team Size</div>
           <div style="margin:6px 0;">
             <button class="btn-small" onclick="setBotCount(2)">2v2</button>
@@ -1130,7 +880,6 @@
             <button class="btn-small" onclick="setBotCount(6)">6v6</button>
             <button class="btn-small" onclick="setBotCount(8)">8v8</button>
           </div>
-          -->
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Score Limit</div>
           <div style="margin:6px 0;">
             <button class="btn-small" onclick="setScoreLimit(3)">3 Caps</button>
@@ -1386,8 +1135,7 @@
         <div class="s-row"><div class="s-label">Master Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-master" oninput="sSave('masterVolume',+this.value);sVal('s-master-v',this.value);applyAudio()"></div><div class="s-val" id="s-master-v">80</div></div>
         <div class="s-row"><div class="s-label">SFX Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-sfx" oninput="sSave('sfxVolume',+this.value);sVal('s-sfx-v',this.value);applyAudio()"></div><div class="s-val" id="s-sfx-v">100</div></div>
         <div class="s-row"><div class="s-label">UI Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-ui" oninput="sSave('uiVolume',+this.value);sVal('s-ui-v',this.value);applyAudio()"></div><div class="s-val" id="s-ui-v">80</div></div>
-        <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value);applyAudio()"></div><div class="s-val" id="s-music-v">50</div></div>
-<!-- R32.12.2: Ambience Volume slider hidden — ambience layer disabled (piano contamination in generated track). -->
+        <div class="s-row"><div class="s-label">Music Volume</div><div class="s-ctrl"><input type="range" class="s-slider" min="0" max="100" id="s-music" oninput="sSave('musicVolume',+this.value);sVal('s-music-v',this.value)"></div><div class="s-val" id="s-music-v">60</div><span class="s-note">&nbsp;(future)</span></div>
       </div>
 
       <!-- CONTROLS TAB -->
@@ -1432,11 +1180,6 @@
         <div class="s-row"><div class="s-label">Shadows</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-shadows" onchange="sSave('shadows',this.checked)"><span class="s-note"> (overridden by Graphics Quality)</span></div></div>
         <div class="s-row"><div class="s-label">VSync</div><div class="s-ctrl"><span class="s-note">Browser-controlled</span></div></div>
         <div class="s-row"><div class="s-label">Show FPS</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-fps" onchange="sSave('showFPS',this.checked);document.getElementById('fps-counter').style.display=this.checked?'block':'none'"></div></div>
-        <!-- R32.37.1-manus: Per-feature PBR toggles for A/B comparison of the new 2K texture stack -->
-        <div class="s-section">Terrain PBR</div>
-        <div class="s-row"><div class="s-label">Roughness Maps</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-rough" onchange="sSave('pbrRoughness',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('roughness',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> per-tile shininess from PBR map</span></div></div>
-        <div class="s-row"><div class="s-label">Ambient Occlusion</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-ao" onchange="sSave('pbrAO',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('ao',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> baked micro-shadow in crevices</span></div></div>
-        <div class="s-row"><div class="s-label">Parallax Depth (POM)</div><div class="s-ctrl"><input type="checkbox" class="s-check" id="s-pbr-pom" onchange="sSave('pbrPOM',this.checked);if(window.__tribesSetTerrainPBR)window.__tribesSetTerrainPBR('pom',this.checked);if(window.__tribesSyncPBRChips)window.__tribesSyncPBRChips()"><span class="s-note"> fake 3D depth from displacement (~5-10% FPS)</span></div></div>
       </div>
 
       <!-- GAMEPLAY TAB -->
@@ -1509,9 +1252,7 @@
 
   <script>
     var currentScreen='loading', selectedTeam=0, selectedArmor=0, gameStarted=false;
-    // R32.10.2: bots default to 0 (Solo) so playtest drops the user straight into the world.
-    // Use the Game Setup screen 2v2/4v4/etc. buttons to opt back in.
-    var gameSettings={botCount:0,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
+    var gameSettings={botCount:4,scoreLimit:5,timeLimit:600}; // player prefs in ST (settings system)
 
     function showScreen(id){
       document.querySelectorAll('.overlay').forEach(function(el){el.classList.remove('active');});
@@ -1537,7 +1278,7 @@
         if (n >= 0 && n <= 2) setTimeout(function(){ selectArmor(n); }, 0);
       }
     } catch (e) {}
-    function setBotCount(n){gameSettings.botCount=0;} // R32.63.4: always 0, bots disabled
+    function setBotCount(n){gameSettings.botCount=n;}
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
     // R25: map picker — selectedMapId flows into the WS query string at lobby creation.
@@ -1615,8 +1356,7 @@
     }, 100);
     function quickStart(){
       selectedTeam=0;selectedArmor=0;
-      // R32.10.2: 0 bots for visual playtesting (was 4).
-      gameSettings={botCount:0,scoreLimit:5,timeLimit:600};
+      gameSettings={botCount:4,scoreLimit:5,timeLimit:600};
       startGame();
     }
     function toggleInvert(){
@@ -1647,20 +1387,46 @@
 
     var lastWpn=-1;
     var lastHpForFlash=-1, _flashTimeout=null;
-    function triggerDamageFlash(){ /* no-op: god mode R32.63.5 */ }
-    // R32.14: track most recent damage amount so the bearing-fallback arc and
-    // the C++-supplied onDamageSource can both render scaled visuals.
-    var _lastDmgAmount = 0;
-    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
-      // R32.63.4: GOD MODE — override hp to 100, suppress all damage
-      hp = 100;
-      lastHpForFlash=100;
-      // R32.14: critical-HP sustained red pulse vignette (HP < 25 and alive).
-      var critV = document.getElementById('critical-hp-vignette');
-      if(critV){
-        if(hp > 0 && hp < 25) critV.classList.add('active');
-        else critV.classList.remove('active');
+    function triggerDamageFlash(){
+      var df=document.getElementById('damage-flash');if(!df)return;
+      df.classList.add('hit');
+      if(_flashTimeout)clearTimeout(_flashTimeout);
+      _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
+      // R22: also fire damage arc toward nearest visible enemy
+      // R29.3: Module.calledRun guard
+      if(Module && Module.calledRun && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
+        var ptr = Module._getPlayerStatePtr();
+        var stride = Module._getPlayerStateStride();
+        var count = Module._getPlayerStateCount();
+        var localIdx = Module._getLocalPlayerIdx();
+        var view = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
+        var lo = localIdx * stride;
+        var lx = view[lo], lz = view[lo+2], lyaw = view[lo+4];
+        var localTeam = view[lo+11];
+        var bestDist=Infinity, bestAng=0;
+        for(var ii=0; ii<count; ii++){
+          if(ii===localIdx) continue;
+          var oo = ii*stride;
+          if(view[oo+18]<0.5 || view[oo+13]<0.5) continue; // visible+alive
+          if(view[oo+11]===localTeam) continue;
+          var dx = view[oo]-lx, dz = view[oo+2]-lz;
+          var d = Math.hypot(dx,dz);
+          if(d < bestDist){
+            bestDist = d;
+            // World-bearing - localYaw → screen-relative angle (0=front, +=right)
+            var wb = Math.atan2(dx, -dz);
+            bestAng = wb - lyaw;
+            while(bestAng>Math.PI) bestAng -= 2*Math.PI;
+            while(bestAng<-Math.PI) bestAng += 2*Math.PI;
+          }
+        }
+        if(bestDist<Infinity && window.showDamageArc) window.showDamageArc(bestAng);
       }
+    }
+    window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
+      // Damage flash on HP drop (>= 2 HP loss to filter noise / regen)
+      if(lastHpForFlash>=0 && hp<lastHpForFlash-2 && hp>0){triggerDamageFlash();}
+      lastHpForFlash=hp;
       // Health bar
       var hf=document.getElementById('hp-fill');
       if(hf){
@@ -1691,15 +1457,6 @@
       // Flag carry indicator
       var fc=document.getElementById('hud-flag-carry');
       if(fc){if(carrying>=0)fc.classList.add('active');else fc.classList.remove('active');}
-      // R32.7 — detect local-player flag pickup / drop edges
-      try {
-        if(window.__tribesPolish){
-          var prevCarry = (typeof _r327PrevCarry !== 'undefined') ? _r327PrevCarry : -1;
-          if(carrying >= 0 && prevCarry < 0) window.__tribesPolish.onFlagEvent('pickup', carrying);
-          else if(carrying < 0 && prevCarry >= 0) window.__tribesPolish.onFlagEvent('drop', prevCarry);
-          window._r327PrevCarry = carrying;
-        }
-      } catch(e) {}
       // Update audio listener position
       AE.lx=px;AE.lz=pz;AE.lyaw=yaw1000/1000;
       // Compass
@@ -1817,13 +1574,6 @@
     function startGame(){
       AE.init(); // lazy init on first real user interaction
       applySettings(); // apply all settings including audio now that AE is up
-      AE.startMusic(); // R32.11: kick off moody background track (loops, routes through master)
-      AE.loadRealSamples(); // R32.12: async-load real disc-fire/ski/lightning/landing/shazbot samples
-      // R32.12.2: ambience layer DISABLED — user feedback "remove the piano music."
-      // The generated battle_ambience.mp3 came back with musical/piano content
-      // and was competing with the synthwave music. Killed entirely; battlefield
-      // feel now comes purely from event SFX (lightning, thunder, gunfire, shazbot, rain).
-      // AE.startAmbience(); // disabled—see R32.12.2
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
       document.getElementById('hud').classList.add('active');
@@ -1832,8 +1582,7 @@
       document.getElementById('conn-quality').classList.add('show');
       // R21: show tutorial overlay on first match (skips if user has seen it)
       showTutorial();
-      // R32.63.1: force bots off — user requested removal
-      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,0,gameSettings.scoreLimit,gameSettings.timeLimit);
+      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
       // R29: Three.js init moved to onRuntimeInitialized (below) so it starts
       // before any frame paints, not on PLAY click. Nothing to do here.
       canvas.requestPointerLock();
@@ -1841,8 +1590,6 @@
     function restartGame(){
       document.getElementById('victoryscreen').classList.remove('active');
       if(Module._restartGame)Module._restartGame();
-      // R32.63.4: force 0 bots on restart too
-      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,0,gameSettings.scoreLimit,gameSettings.timeLimit);
       gameStarted=true;canvas.requestPointerLock();
     }
     function toMainMenu(){
@@ -2708,22 +2455,12 @@
     }
 
     // R22: Damage indicator arcs — pool of up to 4
-    // R32.14: optional 2nd arg = damage amount; scales thickness + opacity so
-    // a chaingun pellet looks distinct from a sniper hit.
     var _damageArcs = [];
-    function showDamageArc(angleRad, dmgAmount){
+    function showDamageArc(angleRad){
       var container = document.getElementById('damage-arcs');
       if(!container) return;
       var arc = document.createElement('div');
       arc.className = 'dmg-arc';
-      // Damage → visual params. dmg 0–5 → thin/dim; 5–20 → medium; 20+ → thick/bright.
-      var dmg = (typeof dmgAmount === 'number') ? Math.max(0, dmgAmount) : 10;
-      var thickness = 6 + Math.min(22, dmg * 0.85);   // 6–28 px
-      var opacity   = 0.40 + Math.min(0.55, dmg * 0.025); // 0.40–0.95
-      var size      = 240 + Math.min(80, dmg * 2.2);  // 240–320 px
-      arc.style.setProperty('--arc-thick', thickness.toFixed(1) + 'px');
-      arc.style.setProperty('--arc-opacity', opacity.toFixed(2));
-      arc.style.setProperty('--arc-size', size.toFixed(0) + 'px');
       arc.style.transform = 'translate(-50%,-50%) rotate(' + (angleRad * 180 / Math.PI) + 'deg)';
       container.appendChild(arc);
       _damageArcs.push(arc);
@@ -2761,8 +2498,7 @@
         // Normalise to -π..π
         while(relAngle>Math.PI)relAngle-=2*Math.PI;
         while(relAngle<-Math.PI)relAngle+=2*Math.PI;
-        // R32.14: scale arc by most-recent dmg amount tracked in updateHUD.
-        showDamageArc(relAngle, _lastDmgAmount || 10);
+        showDamageArc(relAngle);
       } catch(e) {}
     };
 
@@ -3079,24 +2815,8 @@
     // ============================================================
     var AE={
       ctx:null,master:null,sfxBus:null,uiBus:null,bufs:{},
-      jetNode:null,jetGain:null,muted:true,footTimer:0,
+      jetNode:null,jetGain:null,muted:false,footTimer:0,
       prevJetting:false,prevHealth:-1,lx:0,lz:0,lyaw:0,
-      // R32.11: streaming background music (loops). Uses HTMLAudioElement +
-      // MediaElementSource so it routes through AE.master (mute already
-      // applies). Volume default 0.50 of master — R32.11.4 user feedback, was 0.35.
-      musicEl:null,musicNode:null,musicGain:null,musicVol:0.50,
-
-      // R32.12: distant-battle ambience layer (separate <audio>, loops).
-      // Distant gunfire, far-off explosions, faint shouts, low rumble bed.
-      // R32.12.1: 0.40→0.12 — was competing with music, now sits firmly
-      // underneath as background texture only.
-      ambienceEl:null,ambienceVol:0.12,
-      // R32.12: random shazbot timer + landing tracker.
-      _shazbotNextAt:0,         // performance.now() ms when next ambient shazbot fires
-      _prevSpeedY:0,            // tracked vertical-speed proxy (not yet exposed by C++ — fallback to gross-fall heuristic via `onGround` transition)
-      _prevOnGround:true,       // for landing-impact detection
-      _prevSpeed:0,             // for landing-velocity heuristic
-      _samplesLoaded:false,
 
       init:function(){
         if(this.ctx)return;
@@ -3114,29 +2834,8 @@
         // chaingun: noise burst
         b=mb(0.04);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*4)*0.7;}
         this.bufs[1]=b;
-        // R32.13.6: plasma — was a rising-sine chirp (800→1300Hz) which IS the
-        // "ping" the user kept hearing on every weapon fire (C++ tribes.js:6453
-        // passes weapon-fire ID dynamically, and apparently passed 2 frequently).
-        // Replaced with a Tribes-plasma-flavored sound: short noise puff + sub
-        // thump + brief LP-filtered crackle. No rising tone, no pitched ring,
-        // no content above ~1.5 kHz that could read as a ping.
-        b=mb(0.22);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var atk=Math.exp(-t*60);                          // sharp transient
-          var bod=Math.exp(-t*9)*(1-Math.exp(-t*180));      // body envelope
-          var sub=Math.sin(2*Math.PI*(60*Math.exp(-t*8)+45)*t)*0.55*bod;  // sub thump 95→45Hz
-          var noise=(Math.random()*2-1);
-          // Crude one-pole LP on noise to keep it sub-1kHz (pseudo via running avg surrogate)
-          var crackle=noise*0.40*atk;
-          // Mid hum — single 180Hz sine (well below ping range), brief
-          var hum=Math.sin(2*Math.PI*180*t)*0.12*Math.exp(-t*22);
-          da[i]=(sub+crackle+hum)*0.65;
-        }
-        // Apply a simple lowpass smoothing pass over slot 2 to crush any
-        // residual high-frequency content from the noise term.
-        var lp=new Float32Array(da.length); var acc=0; var k=0.18;
-        for(i=0;i<da.length;i++){acc+=k*(da[i]-acc); lp[i]=acc;}
-        for(i=0;i<da.length;i++){da[i]=lp[i];}
+        // plasma: rising sine
+        b=mb(0.22);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,e=(t<0.02?t/0.02:Math.exp(-(t-0.02)*8));da[i]=Math.sin(2*Math.PI*(800+500*t)*t)*e*0.6;}
         this.bufs[2]=b;
         // grenade: hollow pop
         b=mb(0.25);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,f2=(100*Math.exp(-t*4)+40),e=Math.exp(-t*12);da[i]=(Math.sin(2*Math.PI*f2*t)*0.7+(Math.random()*2-1)*0.2)*e*0.9;}
@@ -3144,22 +2843,8 @@
         // impact: noise burst
         b=mb(0.15);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*5)*0.9;}
         this.bufs[4]=b;
-        // R32.13.3: player hit (damage taken) — sharp armor TANG with shield-shimmer overtone
-        // Tribes signature: hard metallic strike with brief high-shimmer tail (shield/armor electronics)
-        b=mb(0.30);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var atk=Math.exp(-t*40); // hard transient
-          var ring=Math.exp(-t*8); // body decay
-          var shim=Math.exp(-t*4); // shimmer tail
-          var f_main=520*Math.exp(-t*6)+140; // main TANG body, descends
-          var f_shim=2400+Math.sin(2*Math.PI*60*t)*180; // shimmer with FM
-          da[i]=(
-            Math.sin(2*Math.PI*f_main*t)*0.45*ring +
-            Math.sin(2*Math.PI*f_main*1.78*t)*0.18*ring + // inharmonic body
-            (Math.random()*2-1)*0.30*atk + // strike noise
-            Math.sin(2*Math.PI*f_shim*t)*0.10*shim // shield shimmer
-          )*0.85;
-        }
+        // player hit: metallic clang
+        b=mb(0.18);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,f3=380*Math.exp(-t*5)+80,e=Math.exp(-t*15);da[i]=(Math.sin(2*Math.PI*f3*t)*0.5+(Math.random()*2-1)*0.45)*e;}
         this.bufs[5]=b;
         // flag pickup: rising arpeggio C-E-G
         b=mb(0.45);da=d(b);[523,659,784].forEach(function(freq,fi){var s=Math.floor(fi*0.13*sr);for(var j=0;j<Math.floor(0.12*sr)&&s+j<da.length;j++){var t=j/sr,e=(t<0.01?t/0.01:Math.exp(-(t-0.01)*12));da[s+j]+=Math.sin(2*Math.PI*freq*t)*e*0.55;}});
@@ -3170,46 +2855,9 @@
         // generator destroy: long explosion
         b=mb(1.8);da=d(b);for(i=0;i<da.length;i++){var t=i/sr,e=Math.exp(-t*1.8),bz=Math.sin(2*Math.PI*220*t)*0.08*Math.exp(-t*3);da[i]=((Math.random()*2-1)*0.8+bz)*e;}
         this.bufs[8]=b;
-        // R32.13.3: footstep — armored boot on dirt/grass thud
-        // Tribes character: heavy mass-armored impact with low-mid body, short (so rapid steps don't blur)
-        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var atk=Math.exp(-t*45); // sharp boot-to-ground transient
-          var body=Math.exp(-t*20); // armor body decay
-          var f_thud=85*Math.exp(-t*15)+45; // descending sub thud
-          da[i]=(
-            Math.sin(2*Math.PI*f_thud*t)*0.55*body + // sub thud
-            (Math.random()*2-1)*0.18*atk + // dirt/grass crunch
-            Math.sin(2*Math.PI*220*t)*0.08*Math.exp(-t*30) // boot-leather mid tone
-          )*0.6;
-        }
+        // footstep: short thud
+        b=mb(0.06);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*8)*0.55;}
         this.bufs[9]=b;
-        // R32.76: footstep variation — rock/hard surface (brighter, more click)
-        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var atk=Math.exp(-t*55);
-          var body=Math.exp(-t*25);
-          var f_thud=110*Math.exp(-t*12)+60;
-          da[i]=(
-            Math.sin(2*Math.PI*f_thud*t)*0.45*body +
-            (Math.random()*2-1)*0.25*atk +
-            Math.sin(2*Math.PI*340*t)*0.10*Math.exp(-t*35)
-          )*0.55;
-        }
-        this.bufs[20]=b;
-        // R32.76: footstep variation — scuff/shuffle (softer, different decay)
-        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var atk=Math.exp(-t*35);
-          var body=Math.exp(-t*18);
-          var f_thud=75*Math.exp(-t*18)+40;
-          da[i]=(
-            Math.sin(2*Math.PI*f_thud*t)*0.50*body +
-            (Math.random()*2-1)*0.22*atk +
-            Math.sin(2*Math.PI*180*t)*0.06*Math.exp(-t*25)
-          )*0.55;
-        }
-        this.bufs[21]=b;
         // jetpack loop: noise + hum (loopable)
         b=mb(0.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=(Math.random()*2-1)*0.22+Math.sin(2*Math.PI*60*t)*0.12+Math.sin(2*Math.PI*120*t)*0.06;}
         this.bufs[10]=b;
@@ -3219,35 +2867,11 @@
         // R22: mortar_boom — noise burst + low-pass tail
         b=mb(1.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var e=Math.exp(-t*1.2);da[i]=((Math.random()*2-1)*0.7+Math.sin(2*Math.PI*45*t)*0.3)*e;}
         this.bufs[12]=b;
-        // R32.13.3: hit-confirm "tink" — NOW THE PRIMARY HIT-CONFIRM (was wrongly slot 15)
-        // Modern shooter convention: short, bright, distinct, non-fatiguing on rapid hits.
-        // Two stacked sine harmonics give it a touch of metallic character vs pure tone.
-        b=mb(0.12);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var e=Math.exp(-t*32); // very short decay
-          da[i]=(
-            Math.sin(2*Math.PI*1320*t)*0.45 + // E6 fundamental — cuts through mix
-            Math.sin(2*Math.PI*2640*t)*0.18 + // octave above for sparkle
-            Math.sin(2*Math.PI*1980*t)*0.10 // perfect 5th — musical, not harsh
-          )*e*0.55;
-        }
+        // R22: damage_give — hit-confirm "tink" (880Hz sine, 0.1s decay)
+        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=Math.sin(2*Math.PI*880*t)*Math.exp(-t*25)*0.5;}
         this.bufs[13]=b;
-        // R32.13.3: respawn — "matter recombobulation" swelling synth + chord resolve
-        // Tribes character: telepad / inv-station hum that resolves into a confident chord
-        b=mb(1.10);da=d(b);for(i=0;i<da.length;i++){
-          var t=i/sr;
-          var swell=Math.min(1, t/0.55); // ramp up first half
-          var fall =t<0.55?1:Math.exp(-(t-0.55)*3.2); // decay second half
-          var e=swell*fall;
-          // Hum: detuned saw pair (fundamentals) sweeping up
-          var fbase=110+t*40;
-          var saw1=2*((fbase*t)%1)-1;
-          var saw2=2*((fbase*1.005*t)%1)-1; // slight detune for chorusing
-          // Chord on top: C major triad (262/330/392) entering at t=0.40
-          var ch=t>0.40?Math.min(1,(t-0.40)/0.20):0;
-          var triad=Math.sin(2*Math.PI*262*t)*0.30+Math.sin(2*Math.PI*330*t)*0.25+Math.sin(2*Math.PI*392*t)*0.20;
-          da[i]=((saw1+saw2)*0.10 + triad*ch)*e*0.45;
-        }
+        // R22: respawn arpeggio (C5 → G4 → C4)
+        b=mb(0.80);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=t<0.27?523:(t<0.54?392:262);var e=t<0.75?Math.exp(-(t%0.27)*8):0;da[i]=Math.sin(2*Math.PI*f*t)*e*0.4;}
         this.bufs[14]=b;
         // R22: match_start_horn — sawtooth + harmonics, decrescendo
         b=mb(1.20);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220;var e=Math.exp(-t*1.2);var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5+Math.sin(2*Math.PI*f*3*t)*0.3)*e*0.35;}
@@ -3255,181 +2879,10 @@
         // R22: match_end_horn — same but ascending crescendo→decrescendo
         b=mb(1.50);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220+t*60;var e=t<0.6?(t/0.6):(Math.exp(-(t-0.6)*2.5));var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5)*e*0.35;}
         this.bufs[16]=b;
-
-        // R32.13.7: GLOBAL ANTI-PING PASS. Three previous fixes (R32.13.3, .4,
-        // .6) targeted specific slots and the user STILL hears "ping ping
-        // ping." Stop playing whack-a-mole. Apply a strong one-pole lowpass
-        // to EVERY procedural buffer at construction time — cutoff ~600 Hz,
-        // run twice for ~12 dB/oct rolloff. After this, no procedural slot
-        // can possibly contain a pitched mid/treble component. Match-horns
-        // and bell-chord arpeggio are intentionally excluded since they're
-        // supposed to be musical event stings, not gameplay sounds.
-        var skip={7:1,15:1,16:1};  // flag-capture bell, match-start, match-end
-        for(var s=0;s<this.bufs.length;s++){
-          if(skip[s]||!this.bufs[s])continue;
-          var data=this.bufs[s].getChannelData(0);
-          // Two-pass one-pole LP. k=0.10 -> cutoff ~700 Hz at SR=44100.
-          var acc=0,kk=0.10;
-          for(var ii=0;ii<data.length;ii++){acc+=kk*(data[ii]-acc);data[ii]=acc;}
-          acc=0;
-          for(ii=0;ii<data.length;ii++){acc+=kk*(data[ii]-acc);data[ii]=acc;}
-          // Re-normalize so we don't lose volume from the LP.
-          var peak=0;
-          for(ii=0;ii<data.length;ii++){var av=Math.abs(data[ii]);if(av>peak)peak=av;}
-          if(peak>0.001){var g=0.85/peak;for(ii=0;ii<data.length;ii++)data[ii]*=g;}
-        }
-        console.log('[R32.13.7] global anti-ping LP applied to all procedural slots');
-      },
-
-      // R32.13.7: applies the same anti-ping LP to async-loaded sample slots
-      // (disc_fire, chaingun, disc_impact, ski, lightning_crack, hard_landing,
-      // shazbot). Some of those samples were already designed sub-only, but
-      // we run it anyway to be belt-and-braces.
-      _antiPingLP:function(audioBuf){
-        try{
-          for(var ch=0;ch<audioBuf.numberOfChannels;ch++){
-            var data=audioBuf.getChannelData(ch);
-            var acc=0,kk=0.10;
-            for(var i=0;i<data.length;i++){acc+=kk*(data[i]-acc);data[i]=acc;}
-            acc=0;
-            for(i=0;i<data.length;i++){acc+=kk*(data[i]-acc);data[i]=acc;}
-            var peak=0;
-            for(i=0;i<data.length;i++){var av=Math.abs(data[i]);if(av>peak)peak=av;}
-            if(peak>0.001){var g=0.85/peak;for(i=0;i<data.length;i++)data[i]*=g;}
-          }
-        }catch(e){console.warn('[R32.13.7] _antiPingLP failed:',e);}
-      },
-
-      // R32.12: load a real audio sample (WAV or MP3) into bufs[slot],
-      // overwriting whatever procedural buffer was there. Async fetch+decode.
-      // Used to replace the "sounds bad" procedural disc-fire / landing /
-      // ski / lightning-rumble with proper synthesized samples.
-      _loadSample:function(slot, url, onDone){
-        var self=this;
-        if(!this.ctx)return;
-        fetch(url).then(function(r){if(!r.ok)throw new Error('HTTP '+r.status);return r.arrayBuffer();})
-          .then(function(buf){return self.ctx.decodeAudioData(buf);})
-          .then(function(audioBuf){
-            // R32.13.7: nuke any high-freq content from sample-loaded slots
-            // EXCEPT slot 19 (shazbot voice) which needs intelligibility.
-            if(slot!==19) self._antiPingLP(audioBuf);
-            self.bufs[slot]=audioBuf;
-            console.log('[R32.12] loaded sample slot '+slot+' from '+url+' ('+audioBuf.duration.toFixed(2)+'s)');
-            if(onDone)onDone();
-          })
-          .catch(function(e){console.warn('[R32.12] sample load FAILED slot '+slot+' from '+url+':',e);});
-      },
-      // R32.12: kick off async loads of all real samples. Called from startGame
-      // right after AE.init(). The procedural buffers built in init() act as
-      // immediate fallbacks until decode finishes (typically <500ms).
-      loadRealSamples:function(){
-        if(this._samplesLoaded)return;
-        this._samplesLoaded=true;
-        // R32.12.3 SLOT MAP FIX. R32.12 incorrectly clobbered slots 8/12/13
-        // which were already used (generator-explosion / mortar-boom /
-        // hit-confirm-tink). Now uses safe slots 17+ for new samples and
-        // only overwrites slot 0 (disc fire — that one was always
-        // weapon-fire and needed a real sample), slot 1 (chaingun), slot 4
-        // (disc impact — was 0.15s of pure white noise, sounded broken),
-        // slot 11 (ski — procedural sounded like jetpack).
-        var self=this;
-        // Slot 0: disc-launcher MUZZLE fire (real bass sweep + plasma + ping)
-        this._loadSample(0,'assets/audio/sfx/disc_fire.wav');
-        // Slot 1: chaingun tac-pop (was 0.04s decayed white noise — too thin)
-        this._loadSample(1,'assets/audio/sfx/chaingun.wav');
-        // Slot 4: disc/projectile IMPACT (was just 0.15s of pure white noise!)
-        this._loadSample(4,'assets/audio/sfx/disc_impact.wav');
-        // Slot 11: ski rush — wide-band air rush (was procedural, too jet-like)
-        this._loadSample(11,'assets/audio/sfx/ski_rush.wav',function(){
-          if(self.skiNode){self.stopSki();setTimeout(function(){if(self.prevSkiing)self.startSki();},200);}
-        });
-        // Slot 17 (NEW): lightning crack — fired from polish-module after each flash
-        this._loadSample(17,'assets/audio/sfx/lightning_crack.wav');
-        // Slot 18 (NEW): hard-landing thud
-        this._loadSample(18,'assets/audio/sfx/hard_landing.wav');
-        // Slot 19 (NEW): "SHAZBOT!" yelled voice line
-        this._loadSample(19,'assets/audio/voice/shazbot.wav');
-      },
-      // R32.12: distant-battle ambience layer. Separate <audio> from music.
-      startAmbience:function(){
-        if(!this.ambienceEl){
-          var el=document.createElement('audio');
-          el.src='assets/audio/sfx/battle_ambience.mp3';
-          el.loop=true;
-          el.preload='auto';
-          el.volume=this.ambienceVol;
-          el.style.display='none';
-          document.body.appendChild(el);
-          this.ambienceEl=el;
-        }
-        var el=this.ambienceEl;
-        var attempt=function(label){
-          var pp=el.play();
-          if(pp&&pp.then)pp.then(function(){console.log('[R32.12] ambience started ('+label+')');})
-                          .catch(function(e){console.log('[R32.12] ambience play() rejected ('+label+'): '+e.name);});
-        };
-        attempt('immediate');
-        if(!this._ambienceRetryWired){
-          this._ambienceRetryWired=true;
-          var retry=function(ev){if(el.paused)attempt('gesture:'+ev.type);};
-          var opts={capture:true,passive:true};
-          ['pointerdown','keydown','click'].forEach(function(ev){document.addEventListener(ev,retry,opts);});
-        }
-      },
-      stopAmbience:function(){if(this.ambienceEl){try{this.ambienceEl.pause();}catch(e){}}},
-      setAmbienceVolume:function(v){
-        v=Math.max(0,Math.min(1,v));
-        this.ambienceVol=v;
-        if(this.ambienceEl)this.ambienceEl.volume=v;
-      },
-
-      // R32.12.3: "Shazbot!" callout. `loud` true = local player triggered
-      // (death/hard landing/etc, full volume centered). `loud` false = ambient
-      // distant-teammate flavor (low vol, random pan). Slot 19 holds the
-      // post-processed yelled battle-cry version (R32.12.3 was slot 13).
-      playShazbot:function(loud){
-        if(!this.ctx||this.muted||!this.bufs[19]){
-          console.log('[R32.12.3] shazbot skipped: ctx='+!!this.ctx+' muted='+this.muted+' loaded='+!!this.bufs[19]);
-          return;
-        }
-        var src=this.ctx.createBufferSource();src.buffer=this.bufs[19];
-        var g=this.ctx.createGain();
-        var p=this.ctx.createStereoPanner?this.ctx.createStereoPanner():null;
-        // R32.13.3: ambient much quieter — sample is now distance-processed (heavy LP, big reverb)
-        // and was annoying at 0.30-0.48. Drop to 0.10-0.18 — felt-not-heard.
-        if(loud){g.gain.value=0.85;} // was 0.95 too
-        else{g.gain.value=0.10+Math.random()*0.08;}
-        if(p){p.pan.value=loud?0:(Math.random()*1.6-0.8);src.connect(g).connect(p).connect(this.uiBus);}
-        else{src.connect(g).connect(this.uiBus);}
-        src.start();
-        console.log('[R32.12.3] shazbot fired ('+(loud?'loud':'ambient')+', vol='+g.gain.value.toFixed(2)+')');
-      },
-
-      // R32.13.5: per-slot kill switch + diagnostic logger.
-      // Toggle slot mute from console: AE.muteSlot(13) / AE.unmuteSlot(13)
-      // Toggle full firing log: AE.logSounds = true|false
-      _slotMutes:{},
-      logSounds:false, // R32.13.6: ping found (slot 2 plasma chirp); logging off by default again
-      muteSlot:function(id){this._slotMutes[id]=true;console.log('[AE] slot '+id+' MUTED');},
-      unmuteSlot:function(id){this._slotMutes[id]=false;console.log('[AE] slot '+id+' UNMUTED');},
-      _logFire:function(id,kind,extra){
-        if(!this.logSounds)return;
-        var name=this._slotName(id);
-        if(window.DEBUG_LOGS) console.log('%c[SND] '+kind+' slot='+id+' ('+name+')'+(extra||''),'color:#c4a14c;font-weight:bold');
-      },
-      _slotName:function(id){
-        var names={0:'disc_fire',1:'chaingun',2:'plasma',3:'grenade',4:'disc_impact',
-          5:'player_hit_TANG',6:'flag_pickup_arp',7:'flag_capture_bell',8:'gen_destroy_explode',
-          9:'footstep',10:'jet_loop',11:'ski_loop',12:'mortar_boom',13:'hit_confirm_TINK',
-          14:'respawn_hum',15:'match_start_horn',16:'match_end_horn',17:'lightning_crack',
-          18:'hard_landing',19:'shazbot'};
-        return names[id]||'slot'+id;
       },
 
       playAt:function(id,x,y,z){
         if(!this.ctx||this.muted||!this.bufs[id])return;
-        if(this._slotMutes[id]){this._logFire(id,'playAt(MUTED)',' @'+x.toFixed(1)+','+y.toFixed(1)+','+z.toFixed(1));return;}
-        this._logFire(id,'playAt',' @'+x.toFixed(1)+','+y.toFixed(1)+','+z.toFixed(1));
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
         var pan=this.ctx.createPanner();
         pan.panningModel='HRTF';pan.distanceModel='inverse';
@@ -3441,8 +2894,6 @@
 
       playUI:function(id){
         if(!this.ctx||this.muted||!this.bufs[id])return;
-        if(this._slotMutes[id]){this._logFire(id,'playUI(MUTED)');return;}
-        this._logFire(id,'playUI');
         var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
         src.connect(this.uiBus);src.start();
       },
@@ -3500,55 +2951,7 @@
         if(onGround&&speed>3&&!jetting){
           var interval=Math.max(0.25,0.55-speed/250);
           this.footTimer-=0.0167;
-          if(this.footTimer<=0){var _fstep=[9,20,21][Math.floor(Math.random()*3)];this.playUI(_fstep);this.footTimer=interval;}
-        }
-        // R32.12.3: hard-landing thud on air→ground transition with high speed.
-        // Slot 18 (was slot 12, restored to mortar_boom). Also fires shazbot
-        // ~30% of the time on hard landings so the user actually hears it.
-        if(this._prevOnGround===false && onGround===true && speed>16){
-          this.playUI(18);
-          // R32.13.3: dropped 30%→10% AND switched to ambient (distant) vol so it's not blasting in your face on every fall
-          if(Math.random()<0.10) this.playShazbot(false);
-        }
-        this._prevOnGround=onGround;
-        this._prevSpeed=speed;
-        // R32.76: ambient generator hum — proximity-based low-frequency oscillator
-        if(!this._humNode && this.ctx && window.__generatorPositions && window.__generatorPositions.length > 0) {
-          var g=this.ctx.createGain();g.gain.setValueAtTime(0,this.ctx.currentTime);
-          g.connect(this.uiBus);
-          var osc1=this.ctx.createOscillator();osc1.type='sine';osc1.frequency.value=60;
-          var osc2=this.ctx.createOscillator();osc2.type='sine';osc2.frequency.value=120;
-          var g2=this.ctx.createGain();g2.gain.value=0.4;
-          osc1.connect(g);osc2.connect(g2);g2.connect(g);
-          osc1.start();osc2.start();
-          this._humNode=osc1;this._humNode2=osc2;this._humGain=g;
-        }
-        if(this._humGain && window.__generatorPositions && typeof window.__camX==='number') {
-          var cx=window.__camX,cy=window.__camY,cz=window.__camZ;
-          var minD=1e9;
-          for(var gi=0;gi<window.__generatorPositions.length;gi++){
-            var gp=window.__generatorPositions[gi];
-            var dx=gp.x-cx,dy=gp.y-cy,dz=gp.z-cz;
-            var d=Math.sqrt(dx*dx+dy*dy+dz*dz);
-            if(d<minD) minD=d;
-          }
-          // Hum audible within 25m, full volume at 5m
-          var vol=minD<5?0.12:minD>25?0:0.12*(1-(minD-5)/20);
-          this._humGain.gain.setTargetAtTime(vol,this.ctx.currentTime,0.15);
-        }
-        // R32.12.3: "Shazbot!" on local-player death.
-        if(this.prevHealth>0 && health<=0){
-          this.playShazbot(true);
-        }
-        // R32.12.4: ambient "distant-teammate" Shazbot every 60s exactly
-        // (user request — was 25-60s randomized in R32.12.3). First one fires
-        // 60s after the first AE.update() call so there's a brief grace period.
-        var nowMs=performance.now();
-        // R32.13.3: interval bumped 60s → 90s (less frequent = less annoying)
-        if(this._shazbotNextAt===0)this._shazbotNextAt=nowMs+90000;
-        if(nowMs>=this._shazbotNextAt){
-          this.playShazbot(false);
-          this._shazbotNextAt=nowMs+90000;
+          if(this.footTimer<=0){this.playUI(9);this.footTimer=interval;}
         }
         // Damage received
         if(this.prevHealth>=0&&health<this.prevHealth-0.01){this.playUI(5);}
@@ -3580,78 +2983,12 @@
         if(this.master)this.master.gain.value=this.muted?0:0.55;
         if(this.muted&&this.jetNode)this.stopJet();
         if(this.muted&&this.skiNode)this.stopSki();
-        // R32.12: also pause/resume ambience on mute (music handled separately by setMusicVolume).
-        if(this.ambienceEl){if(this.muted)this.ambienceEl.pause();else this.ambienceEl.play().catch(function(){});}
-      },
-
-      // R32.11.1: moody Tribes background music. Simplified from R32.11:
-      // dropped MediaElementSource+CORS routing (was failing silently in some
-      // browsers and required AudioContext.resume() which only works from a
-      // user gesture). Now just a plain <audio> element with element.volume
-      // controlled directly. Loses the AE.mute() integration on the music
-      // (small cost; the M-key still mutes SFX), gains: actually plays.
-      // If the first play() rejects (autoplay policy), we attach a one-shot
-      // pointerdown/keydown retry so the very next click anywhere starts it.
-      startMusic:function(){
-        if(!this.musicEl){
-          var el=document.createElement('audio');
-          el.src='assets/audio/music/raindance_battle.mp3';  // R32.11.3: fast-paced moody synthwave (was raindance_ambient.mp3 — too slow/atmospheric for combat)
-          el.loop=true;
-          el.preload='auto';
-          el.volume=this.musicVol;
-          el.style.display='none';
-          document.body.appendChild(el);
-          // R32.11.2: log lifecycle events so console shows what actually happened.
-          el.addEventListener('canplay',function(){console.log('[R32.11.2] music canplay');});
-          el.addEventListener('playing',function(){console.log('[R32.11.2] music PLAYING (vol='+el.volume+')');});
-          el.addEventListener('error',function(){console.error('[R32.11.2] music ERROR',el.error);});
-          this.musicEl=el;
-        }
-        var el=this.musicEl;
-        // Try immediate play. If the browser blocks it (autoplay policy), wire
-        // up a comprehensive set of one-shot user-gesture listeners on BOTH
-        // document and window in CAPTURE phase — capture phase fires before
-        // the canvas pointer-lock handler swallows the event.
-        var attempt=function(label){
-          var pp=el.play();
-          if(pp&&pp.then)pp.then(function(){console.log('[R32.11.2] music started ('+label+')');})
-                          .catch(function(e){console.log('[R32.11.2] music play() rejected ('+label+'): '+e.name);});
-        };
-        attempt('immediate');
-        // Always wire up gesture retries (cheap, removed-on-first-fire). This
-        // way even if the immediate play succeeded, a single click won't stop it,
-        // and if it failed, the next click WILL start it.
-        if(!this._musicRetryWired){
-          this._musicRetryWired=true;
-          var retry=function(ev){
-            if(!el.paused)return;
-            attempt('gesture:'+ev.type);
-          };
-          var opts={capture:true,passive:true};
-          var evs=['pointerdown','mousedown','touchstart','keydown','click'];
-          var targets=[document,window,document.getElementById('canvas')].filter(Boolean);
-          targets.forEach(function(t){evs.forEach(function(ev){t.addEventListener(ev,retry,opts);});});
-          // Also when the file finishes preloading, try again — some browsers
-          // need the canplaythrough event before play() works.
-          el.addEventListener('canplaythrough',function(){attempt('canplaythrough');},{once:true});
-        }
-      },
-      stopMusic:function(){
-        if(this.musicEl){try{this.musicEl.pause();}catch(e){}}
-      },
-      setMusicVolume:function(v){
-        v=Math.max(0,Math.min(1,v));
-        this.musicVol=v;
-        if(this.musicEl)this.musicEl.volume=v;
       }
     };
 
     // Global bridges called from C++ via EM_ASM
     window.playSoundAt=function(id,x,y,z){AE.playAt(id,x,y,z);};
     window.playSoundUI=function(id){AE.playUI(id);};
-    // R32.12.3 debug: manual shazbot trigger from console. Type `shaz()` to test.
-    window.shaz=function(loud){AE.playShazbot(loud!==false);};
-    window.AE=AE; // also expose AE for live tweaking
     // D2 R31.6: 5th param skiing
     window.updateAudio=function(jetting,onGround,speed10,health1000,skiing){
       if(!AE.ctx)return;
@@ -3679,13 +3016,11 @@
     ];
     var DEFAULT_SETTINGS={
       _v:2,
-      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,ambienceVolume:12,muted:true,
+      masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:60,muted:false,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
       resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
       graphicsQuality:'high',
-      // R32.37.1-manus: per-feature PBR toggles (default ON; settings UI lets user A/B them).
-      pbrRoughness:true, pbrAO:true, pbrPOM:false,
       crosshairColor:'amber',crosshairScale:1.0,
       showDamageNumbers:true,showKillFeed:true,autoPickupAmmo:true,
       colorBlindMode:'off',         // R23: off | deuteranopia | protanopia | tritanopia
@@ -3737,11 +3072,6 @@
       if(AE.master)AE.master.gain.value=ST.muted?0:(ST.masterVolume/100)*0.55;
       if(AE.sfxBus)AE.sfxBus.gain.value=ST.sfxVolume/100;
       if(AE.uiBus)AE.uiBus.gain.value=ST.uiVolume/100;
-      // R32.11.4: actually wire the Music Volume slider (was "(future)").
-      // Slider is 0–100, AE expects 0–1. Also respect mute.
-      if(AE.setMusicVolume)AE.setMusicVolume(ST.muted?0:(ST.musicVolume/100));
-      // R32.12.1: ambience slider (default 12% so it sits under music).
-      if(AE.setAmbienceVolume)AE.setAmbienceVolume(ST.muted?0:((ST.ambienceVolume==null?12:ST.ambienceVolume)/100));
     }
     function applyToCpp(){
       if(!Module._setSettings)return;
@@ -3818,8 +3148,6 @@
       sv('s-sfx',ST.sfxVolume);sVal('s-sfx-v',ST.sfxVolume);
       sv('s-ui',ST.uiVolume);sVal('s-ui-v',ST.uiVolume);
       sv('s-music',ST.musicVolume);sVal('s-music-v',ST.musicVolume);
-      var ambVal=(ST.ambienceVolume==null?12:ST.ambienceVolume);
-      sv('s-ambience',ambVal);sVal('s-ambience-v',ambVal);
       sc('s-muted',ST.muted);
       // Controls
       sv('s-sens',Math.round(ST.sensitivity*10));sVal('s-sens-v',ST.sensitivity.toFixed(1)+'×');
@@ -3832,10 +3160,6 @@
       sv('s-res',ST.resolutionScale);sVal('s-res-v',ST.resolutionScale+'%');
       sv('s-rdist',Math.round(ST.renderDist*10));sVal('s-rdist-v',ST.renderDist.toFixed(1)+'×');
       sc('s-shadows',ST.shadows);sc('s-fps',ST.showFPS);
-      // R32.37.1-manus: PBR toggles
-      sc('s-pbr-rough',ST.pbrRoughness!==false);
-      sc('s-pbr-ao',ST.pbrAO!==false);
-      sc('s-pbr-pom',ST.pbrPOM!==false);
       var qs=document.getElementById('s-quality');if(qs)qs.value=ST.graphicsQuality||'high';
       // Gameplay
       buildColorSwatches();
@@ -4077,42 +3401,14 @@
     window.onHitConfirm=function(dmg){
       var t=document.getElementById('hit-tick');
       if(!t) return;
-      // R32.13: use upgraded CSS hit-flash (chevrons + brass/red glow).
-      // dmg >= 50 = strong/kill flash; otherwise normal hit.
-      if (window.CombatFX && window.CombatFX.flashHit) {
-        window.CombatFX.flashHit(dmg >= 50);
-      } else {
-        // Fallback to legacy "+" tick if CombatFX hasn't loaded yet
-        t.classList.remove('hide'); t.classList.add('show');
-      }
-      // R32.13.3: BUG FIX — was firing slot 15 (1.2s sawtooth match-start horn) on every hit.
-      // That's why the user heard "the annoying fire shot" — it wasn't the fire sound at
-      // all, it was the match-horn blasting on hit-confirm. Slot 13 is the proper
-      // 880Hz hit-confirm "tink" designed exactly for this.
-      if(window.playSoundUI) window.playSoundUI(13);
+      t.classList.remove('hide'); t.classList.add('show');
+      if(window.playSoundUI) window.playSoundUI(15); // UI slot (R11 audio has 16 bufs)
       clearTimeout(_hitTickTimer);
       _hitTickTimer=setTimeout(function(){
         t.classList.remove('show'); t.classList.add('hide');
         setTimeout(function(){t.classList.remove('hide');t.style.display='none';t.style.display='';},200);
       }, 200);
     };
-
-    // R32.13 (manus): global mousedown fire trigger for muzzle flash + tracer.
-    // Only fires while pointer-locked (i.e. actively playing, not in menus).
-    // Rate-limited to 250 ms (4 shots/sec) to match the disc launcher cadence;
-    // C++ already enforces its own weapon cooldown, so this is just to keep the
-    // visual + tracer from spamming if someone holds the button.
-    var _r3213LastFire = 0;
-    document.addEventListener('mousedown', function(e){
-      if (e.button !== 0) return;
-      if (!document.pointerLockElement) return;
-      var now = performance.now();
-      if (now - _r3213LastFire < 250) return;
-      _r3213LastFire = now;
-      if (window.CombatFX && window.CombatFX.fire) {
-        try { window.CombatFX.fire(); } catch(_e){}
-      }
-    }, { capture: true, passive: true });
 
     loadSettings(); // load immediately before anything else
 
@@ -4143,17 +3439,7 @@
         console.log(t);
         if(t.indexOf('[CTF]')===0)setFlagStatus(t.substring(5));
         if(t.indexOf('[KILL]')===0)addKillMsg(t.substring(6));
-        if(t.indexOf('[EVENT]')===0){
-          addEventMsg(t.substring(7));
-          // R32.7 — parse flag events for visual feedback
-          try {
-            if(window.__tribesPolish){
-              var msg = t.substring(7).toLowerCase();
-              if(msg.indexOf('captur') >= 0) window.__tribesPolish.onFlagEvent('capture', -1);
-              else if(msg.indexOf('return') >= 0) window.__tribesPolish.onFlagEvent('return', -1);
-            }
-          } catch(e){}
-        }
+        if(t.indexOf('[EVENT]')===0)addEventMsg(t.substring(7));
         if(t.indexOf('[STATION:CLOSE]')===0){stClose();}
         else if(t.indexOf('[STATION:')===0&&t.indexOf('APPLIED')<0){
           var parts=t.slice(9).replace(']','').split(':');
@@ -4163,16 +3449,7 @@
       printErr:function(t){console.error(t);},
       setStatus:function(t){
         var lt=document.getElementById('load-text'),lb=document.getElementById('load-bar');
-        if(!t){
-          document.getElementById('loading').classList.add('hidden');
-          // R32.10.3: Emscripten fires setStatus('') when run-deps hit 0,
-          // which used to unconditionally re-open the main menu and stomp
-          // our auto-quickStart. Honor `?menu=1` here too; otherwise stay
-          // out of the way and let onRuntimeInitialized's quickStart() run.
-          var _wantMenu = new URLSearchParams(location.search).get('menu') === '1';
-          if(_wantMenu) showScreen('mainmenu');
-          return;
-        }
+        if(!t){document.getElementById('loading').classList.add('hidden');showScreen('mainmenu');return;}
         if(lt)lt.textContent=t;
         var m=t.match(/\((\d+)\/(\d+)\)/);if(m&&lb)lb.style.width=(parseInt(m[1])/parseInt(m[2])*100)+'%';
       },
@@ -4183,33 +3460,7 @@
       },
       onRuntimeInitialized:function(){
         document.getElementById('loading').classList.add('hidden');
-        // R32.10.3: skip main menu, force Solo (0 bots), drop into world.
-        // Append `?menu=1` to the URL to restore the original menu flow.
-        var _wantMenu = new URLSearchParams(location.search).get('menu') === '1';
-        if(_wantMenu){
-          showScreen('mainmenu');
-        } else {
-          // Sync call (no setTimeout) so we win the race with any later
-          // setStatus('')→showScreen('mainmenu'). Defensive: also force-hide
-          // the menu twice (now + 250ms later) in case any other code path
-          // (network/replay/tier modules) re-opens it.
-          var _autoStart = function(){
-            try {
-              // R32.63.4: force 0 bots BEFORE quickStart
-              if(Module._setGameSettings) Module._setGameSettings(0, 0, 0, 5, 600);
-              if(!gameStarted) quickStart();
-              // Belt-and-braces: nuke any overlay that snuck back in.
-              var mm = document.getElementById('mainmenu');
-              if(mm) mm.classList.remove('active');
-            } catch(e){
-              console.error('[R32.10.3] auto-quickStart failed:', e);
-              showScreen('mainmenu');
-            }
-          };
-          _autoStart();
-          setTimeout(_autoStart, 250);
-          setTimeout(_autoStart, 1000);
-        }
+        showScreen('mainmenu');
         // R17 cutover: Three.js is the DEFAULT renderer.
         // Opt out via ?renderer=legacy (sunsetting in R18.1).
         var rendererFlag = new URLSearchParams(location.search).get('renderer');
@@ -4227,61 +3478,7 @@
           } else {
             console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
           }
-          // R32.43: use version string for cache-busting instead of Date.now()
-          // (allows browser caching between reloads of the same version)
-          var __cacheVer = (document.getElementById('version-chip') || {}).textContent || 'dev';
-
-          // R32.17.2-manus: load Command Map module up-front via classic script
-          // tag (cache-busted) so its keydown listener is wired BEFORE anything
-          // else, regardless of whether renderer.js or WASM is ready.
-          var __cmdScr = document.createElement('script');
-          __cmdScr.src = './renderer_command_map.js?v=' + __cacheVer;
-          __cmdScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.17.2] renderer_command_map.js loaded via script tag'); };
-          __cmdScr.onerror = function(e){ console.error('[R32.17.2] renderer_command_map.js FAILED to load', e); };
-          document.head.appendChild(__cmdScr);
-
-          // R32.77: load Minimap radar module
-          var __mmScr = document.createElement('script');
-          __mmScr.src = './renderer_minimap.js?v=' + __cacheVer;
-          __mmScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.77] renderer_minimap.js loaded via script tag'); };
-          __mmScr.onerror = function(e){ console.error('[R32.77] renderer_minimap.js FAILED to load', e); };
-          document.head.appendChild(__mmScr);
-
-          // R32.18-manus: load ZoomFX module same way
-          var __zoomScr = document.createElement('script');
-          __zoomScr.src = './renderer_zoom.js?v=' + __cacheVer;
-          __zoomScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.18] renderer_zoom.js loaded via script tag'); };
-          __zoomScr.onerror = function(e){ console.error('[R32.18] renderer_zoom.js FAILED to load', e); };
-          document.head.appendChild(__zoomScr);
-
-          // R32.25-manus: load Cohesion module (camera breathing + ambient mood bed)
-          var __cohScr = document.createElement('script');
-          __cohScr.src = './renderer_cohesion.js?v=' + __cacheVer;
-          __cohScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.25] renderer_cohesion.js loaded'); };
-          __cohScr.onerror = function(e){ console.error('[R32.25] renderer_cohesion.js FAILED to load', e); };
-          document.head.appendChild(__cohScr);
-
-          // R32.21-manus: load Palette FIRST so all subsequent modules can reference window.PALETTE
-          var __palScr = document.createElement('script');
-          __palScr.src = './renderer_palette.js?v=' + __cacheVer;
-          __palScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.21] renderer_palette.js loaded'); };
-          __palScr.onerror = function(e){ console.error('[R32.21] renderer_palette.js FAILED to load', e); };
-          document.head.appendChild(__palScr);
-
-          // R32.20-manus: load Toonify module BEFORE renderer.js so window.Toonify
-          // is defined by the time renderer.js's start() runs and calls Toonify.init.
-          var __toonScr = document.createElement('script');
-          __toonScr.src = './renderer_toonify.js?v=' + __cacheVer;
-          __toonScr.onload = function(){ if(window.DEBUG_LOGS) console.log('[R32.20] renderer_toonify.js loaded via script tag'); };
-          __toonScr.onerror = function(e){ console.error('[R32.20] renderer_toonify.js FAILED to load', e); };
-          document.head.appendChild(__toonScr);
-
-          // R32.56: Debug panel for isolating interior shapes bug
-          var __dbgScr = document.createElement('script');
-          __dbgScr.src = './renderer_debug_panel.js?v=' + __cacheVer;
-          document.head.appendChild(__dbgScr);
-
-          import('./renderer.js?v=' + __cacheVer).then(function(m){
+          import('./renderer.js').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
             if(typeof m.start === 'function'){
               m.start();
@@ -4290,7 +3487,7 @@
               console.error('[R29] renderer.js has no start() export');
             }
           }).catch(function(err){
-            console.error('[R29] renderer.js import FAILED. msg=', err && err.message, ' stack=', err && err.stack, ' str=', String(err));
+            console.error('[R29] renderer.js import FAILED:', err);
           });
         }else{
           console.log('[R17] Legacy WebGL renderer (?renderer=legacy). Sunsetting R18.1.');
