@@ -3367,7 +3367,7 @@ function initPostProcessing() {
     // selective without paying the perf cost of selective rendering.
     // Was: (res, 0.4 strength, 0.6 radius, 0.85 threshold)
     bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.30, 0.45, 0.92);
-    bloomPass.enabled = false;  // R32.65.2: disabled for perf — 0.30 strength barely visible
+    bloomPass.enabled = true;   // R32.81: night-adaptive bloom — driven by DayNight cycle
     composer.addPass(bloomPass);
     // R32.65.2: SMAA removed — smooth terrain + smooth normals make it unnecessary
     if (tier.postProcess === 'full') {
@@ -4953,6 +4953,17 @@ function loop() {
     // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
+    // R32.81: night-adaptive bloom — off during day, ramps up at dusk, full at night
+    try {
+        const dm = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
+        if (bloomPass) {
+            // dayMix: 1=noon, 0=midnight. Bloom activates below 0.5 (dusk)
+            const nightBloom = dm < 0.15 ? 1.0 : (dm > 0.5 ? 0.0 : (0.5 - dm) / 0.35);
+            bloomPass.enabled = nightBloom > 0.01;
+            bloomPass.strength = 0.55 * nightBloom;   // max 0.55 at full night
+            bloomPass.threshold = 0.92 - 0.15 * nightBloom; // lower threshold at night → more glow
+        }
+    } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
     syncProjectiles();
