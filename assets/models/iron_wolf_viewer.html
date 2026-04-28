@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Iron Wolf Juggernaut — LOD Comparison</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; }
+  canvas { display: block; }
+  
+  #ui { position: absolute; top: 0; left: 0; right: 0; padding: 12px; z-index: 10; pointer-events: none; }
+  #title { font-size: 18px; color: #ff6600; margin-bottom: 8px; text-shadow: 0 0 10px rgba(255,102,0,0.5); }
+  
+  #lod-buttons { pointer-events: auto; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  #lod-buttons button {
+    background: #1a1a2e; color: #aaa; border: 1px solid #333;
+    padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 13px;
+    border-radius: 3px; transition: all 0.2s;
+  }
+  #lod-buttons button:hover { border-color: #ff6600; color: #ff6600; }
+  #lod-buttons button.active { background: #ff6600; color: #000; border-color: #ff6600; font-weight: bold; }
+  
+  #options { pointer-events: auto; display: flex; gap: 12px; align-items: center; margin-bottom: 8px; }
+  #options label { cursor: pointer; font-size: 12px; color: #888; }
+  #options input { margin-right: 4px; }
+  
+  #stats {
+    position: absolute; bottom: 12px; left: 12px; z-index: 10;
+    background: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 4px;
+    border: 1px solid #333; font-size: 13px; line-height: 1.6;
+  }
+  #stats .label { color: #888; }
+  #stats .value { color: #ff6600; font-weight: bold; }
+  #stats .reduction { color: #0f0; }
+  
+  #side-by-side-hint {
+    position: absolute; bottom: 12px; right: 12px; z-index: 10;
+    color: #555; font-size: 11px;
+  }
+</style>
+</head>
+<body>
+
+<div id="ui">
+  <div id="title">🐺 Iron Wolf Juggernaut — LOD Decimation Test</div>
+  <div id="lod-buttons">
+    <button onclick="showLOD('50k')" id="btn-50k">50K Rig Source</button>
+    <button onclick="showLOD('lod0')" id="btn-lod0" class="active">LOD0 (10K)</button>
+    <button onclick="showLOD('lod1')" id="btn-lod1">LOD1 (3K)</button>
+    <button onclick="showLOD('lod2')" id="btn-lod2">LOD2 (3K far)</button>
+    <button onclick="showLOD('all')" id="btn-all">Side by Side</button>
+  </div>
+  <div id="options">
+    <label><input type="checkbox" id="wireframe" onchange="toggleWireframe()"> Wireframe</label>
+    <label><input type="checkbox" id="autorotate" checked onchange="toggleRotate()"> Auto-rotate</label>
+    <label><input type="checkbox" id="normals-toggle" onchange="toggleNormals()"> Flat Shading</label>
+  </div>
+</div>
+
+<div id="stats">Loading...</div>
+<div id="side-by-side-hint">Orbit: drag · Zoom: scroll</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 1.0, 3.0);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.enableDamping = true;
+controls.dampingFactor = 0.05;
+controls.autoRotate = true;
+controls.autoRotateSpeed = 2.0;
+controls.update();
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.8);
+keyLight.position.set(3, 5, 4);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.6);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xff6600, 0.4);
+rimLight.position.set(0, 3, -4);
+scene.add(rimLight);
+
+// Ground plane
+const groundGeo = new THREE.PlaneGeometry(20, 20);
+const groundMat = new THREE.MeshStandardMaterial({ 
+  color: 0x111122, roughness: 0.9, metalness: 0.0 
+});
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = -0.01;
+scene.add(ground);
+
+// Grid
+const grid = new THREE.GridHelper(10, 20, 0x222244, 0x1a1a2e);
+scene.add(grid);
+
+// Source data
+const SOURCE_VERTS = 739688;
+const SOURCE_TRIS = 1479679;
+
+const LOD_INFO = {
+  '50k':  { file: 'iron_wolf_50k.glb',  label: '50K (Rig Source)', targetTris: 50000, texSize: '4096' },
+  'lod0': { file: 'iron_wolf_lod0.glb', label: 'LOD0 (Close)',     targetTris: 10000, texSize: '4096' },
+  'lod1': { file: 'iron_wolf_lod1.glb', label: 'LOD1 (Mid)',       targetTris: 3000,  texSize: '2048' },
+  'lod2': { file: 'iron_wolf_lod2.glb', label: 'LOD2 (Far)',       targetTris: 500,   texSize: '512' },
+};
+
+const models = {};
+const loader = new GLTFLoader();
+let currentMode = 'lod0';
+let wireframeOn = false;
+let flatShading = false;
+
+function loadModel(key) {
+  return new Promise((resolve, reject) => {
+    const info = LOD_INFO[key];
+    loader.load('./' + info.file, (gltf) => {
+      const model = gltf.scene;
+      
+      // Center and normalize
+      const box = new THREE.Box3().setFromObject(model);
+      const size = box.getSize(new THREE.Vector3());
+      const center = box.getCenter(new THREE.Vector3());
+      
+      // Scale to 1.8m tall
+      const scale = 1.8 / Math.max(size.x, size.y, size.z);
+      model.scale.setScalar(scale);
+      
+      const box2 = new THREE.Box3().setFromObject(model);
+      const center2 = box2.getCenter(new THREE.Vector3());
+      model.position.sub(center2);
+      model.position.y = -box2.min.y;
+      
+      // Count geometry
+      let verts = 0, tris = 0;
+      model.traverse(child => {
+        if (child.isMesh && child.geometry) {
+          verts += child.geometry.attributes.position.count;
+          tris += child.geometry.index 
+            ? child.geometry.index.count / 3 
+            : child.geometry.attributes.position.count / 3;
+        }
+      });
+      
+      model.visible = false;
+      scene.add(model);
+      
+      models[key] = {
+        scene: model,
+        verts: verts,
+        tris: Math.round(tris),
+        fileSize: null, // will estimate from geometry
+        info: info,
+      };
+      
+      // Get file size via fetch
+      fetch('./' + info.file, { method: 'HEAD' }).then(r => {
+        const bytes = parseInt(r.headers.get('content-length') || '0');
+        models[key].fileSize = bytes;
+        if (currentMode === key || currentMode === 'all') updateStats();
+      }).catch(() => {});
+      
+      resolve(models[key]);
+    }, undefined, reject);
+  });
+}
+
+// Load all models
+Promise.all(Object.keys(LOD_INFO).map(k => loadModel(k))).then(() => {
+  showLOD('lod0');
+});
+
+window.showLOD = function(mode) {
+  currentMode = mode;
+  
+  // Update buttons
+  document.querySelectorAll('#lod-buttons button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + mode);
+  if (btn) btn.classList.add('active');
+  
+  if (mode === 'all') {
+    // Side by side: show all 4 offset along X
+    const keys = ['50k', 'lod0', 'lod1', 'lod2'];
+    const spacing = 1.5;
+    const totalWidth = (keys.length - 1) * spacing;
+    
+    keys.forEach((k, i) => {
+      if (models[k]) {
+        models[k].scene.visible = true;
+        models[k].scene.position.x = -totalWidth / 2 + i * spacing;
+      }
+    });
+    
+    controls.target.set(0, 0.9, 0);
+    camera.position.set(0, 1.5, 5.5);
+  } else {
+    // Single model
+    Object.keys(models).forEach(k => {
+      if (models[k]) {
+        models[k].scene.visible = (k === mode);
+        models[k].scene.position.x = 0;
+      }
+    });
+    
+    controls.target.set(0, 0.9, 0);
+    camera.position.set(0, 1.0, 3.0);
+  }
+  
+  controls.update();
+  updateStats();
+};
+
+function updateStats() {
+  const el = document.getElementById('stats');
+  
+  if (currentMode === 'all') {
+    let html = '<div style="display:flex;gap:20px;">';
+    ['50k', 'lod0', 'lod1', 'lod2'].forEach(k => {
+      const m = models[k];
+      if (!m) return;
+      const reduction = ((1 - m.tris / SOURCE_TRIS) * 100).toFixed(1);
+      const sizeTxt = m.fileSize ? (m.fileSize / (1024 * 1024)).toFixed(1) + ' MB' : '...';
+      html += `<div>
+        <div class="value">${m.info.label}</div>
+        <div><span class="label">Tris:</span> <span class="value">${m.tris.toLocaleString()}</span></div>
+        <div><span class="label">Verts:</span> ${m.verts.toLocaleString()}</div>
+        <div><span class="label">Tex:</span> ${m.info.texSize}px</div>
+        <div><span class="label">File:</span> ${sizeTxt}</div>
+        <div class="reduction">-${reduction}%</div>
+      </div>`;
+    });
+    html += '</div>';
+    el.innerHTML = html;
+  } else {
+    const m = models[currentMode];
+    if (!m) { el.textContent = 'Loading...'; return; }
+    const reduction = ((1 - m.tris / SOURCE_TRIS) * 100).toFixed(1);
+    const sizeTxt = m.fileSize ? (m.fileSize / (1024 * 1024)).toFixed(1) + ' MB' : '...';
+    el.innerHTML = `
+      <div class="value" style="font-size:15px;margin-bottom:4px;">${m.info.label}</div>
+      <div><span class="label">Triangles:</span> <span class="value">${m.tris.toLocaleString()}</span> <span class="label">(source: ${SOURCE_TRIS.toLocaleString()})</span></div>
+      <div><span class="label">Vertices:</span> <span class="value">${m.verts.toLocaleString()}</span> <span class="label">(source: ${SOURCE_VERTS.toLocaleString()})</span></div>
+      <div><span class="label">Reduction:</span> <span class="reduction">${reduction}%</span></div>
+      <div><span class="label">Texture:</span> ${m.info.texSize}px</div>
+      <div><span class="label">File size:</span> <span class="value">${sizeTxt}</span></div>
+    `;
+  }
+}
+
+window.toggleWireframe = function() {
+  wireframeOn = document.getElementById('wireframe').checked;
+  Object.values(models).forEach(m => {
+    m.scene.traverse(child => {
+      if (child.isMesh && child.material) {
+        child.material.wireframe = wireframeOn;
+      }
+    });
+  });
+};
+
+window.toggleRotate = function() {
+  controls.autoRotate = document.getElementById('autorotate').checked;
+};
+
+window.toggleNormals = function() {
+  flatShading = document.getElementById('normals-toggle').checked;
+  Object.values(models).forEach(m => {
+    m.scene.traverse(child => {
+      if (child.isMesh && child.material) {
+        child.material.flatShading = flatShading;
+        child.material.needsUpdate = true;
+      }
+    });
+  });
+};
+
+// Animation loop
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
