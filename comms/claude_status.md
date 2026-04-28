@@ -1,46 +1,35 @@
-# Claude Status — R32.76
+# Claude Status — R32.78
 
-**HEAD:** R32.76 (pending push)
-**What shipped:** Phase 3 Gameplay complete — WASM verification + bot AI research.
+**HEAD:** b0937a5 (R32.78)
+**What shipped:** ALL 6 PHASES COMPLETE. Overnight build plan finished.
 
-## Phase 3 Progress — ALL COMPLETE
-- [x] Verify WASM R32.66 — code audit of air control, jetting, skiing, JS↔WASM paths
-- [x] Interior lighting — R32.75 (PointLights at stations/generators, team-tinted, DayNight modulation)
-- [x] Station interaction range — verified 4m open / 6m close, generator-online check
-- [x] Generator destructibility — verified 800HP, damage, cascade, auto-repair, visual/audio feedback
-- [x] Research bot AI — full evaluation in docs/bot-ai-research.md
+## Overnight Build Plan — COMPLETE
+- Phase 0: Foundation ✅ (R32.67–R32.69)
+- Phase 1: Textures & Visual Character ✅ (R32.70–R32.71)
+- Phase 2: Effects ✅ (R32.72–R32.74)
+- Phase 3: Gameplay ✅ (R32.75–R32.76)
+- Phase 4: Quality of Life ✅ (R32.77 + pre-existing)
+- Phase 5: Atmosphere ✅ (R32.76)
+- Phase 6: Asset Modernization & Editor ✅ (R32.76 research + R32.78 editor)
 
-## R32.76 — WASM Verification + Bot AI Research
+## R32.78 — Raindance Asset Editor
+- Standalone browser tool at `/editor/`
+- Three.js r170 with OrbitControls + TransformControls
+- Loads Raindance heightmap terrain as ground reference
+- All 32 buildings as wireframe bounding boxes (gold=bases, blue=structures, green=rocks)
+- GLB/GLTF model loading (file picker or URL) + primitive shapes
+- Transform gizmo: translate/rotate/scale with world/local toggle
+- Snap-to-grid, duplicate (Ctrl+D), delete, focus (F)
+- Export/import placements as JSON in Tribes coordinate system
+- Dark sci-fi UI matching game aesthetic
 
-### WASM Air Control Verification
-- Emscripten 3.1.6 keyboard callbacks (`onKD`/`onKU`) wire directly to `keys[256]` array
-- `emscripten_set_keydown_callback(EMSCRIPTEN_EVENT_TARGET_DOCUMENT, ...)` at init
-- WASD (87/83/65/68) + arrow keys build `moveDir` vector from `flatFwd` and `right`
-- Airborne branch: `airAcc = maxFwdSpeed * 0.5 * dt`, capped at `maxJetFwdVel`
-- Jetting: T1 jet-split formula — `vertPct = 1 - clamp(forwardDot / maxJetFwdVel, 0, 1)`
-- Skiing: slope gravity + mogul timer (0.25s airSkiTimer)
-- Deployed `tribes.wasm` timestamp confirms current source
+## R32.77 — Minimap Radar
+- 144px circular radar in bottom-left HUD
+- Player-centered, rotates with yaw
+- Team-colored dots, flag triangles, building footprints
+- Grid rings at 66/133m, north indicator, 200m range
+- Canvas2D, updated every frame from WASM state views
 
-### Station Interaction Verified
-- F key (keyCode 70) triggers at `lenSq < 16` (4m radius)
-- Auto-close at `lenSq > 36` (6m)
-- `generatorAlive[stTeam]` gates station functionality
-- JS `[STATION:idx:genOk]` printf protocol bridges to HTML UI
-
-### Generator Destructibility Verified
-- 800HP generators with AABB hit detection (1.8m × 3.0m)
-- `generatorAlive[team] = false` cascades: turrets offline
-- Auto-repair 5HP/s when no enemies within 30m (900 lenSq)
-- Visual: alive = team-colored pulse (2s interval), destroyed = yellow sparks (0.5s)
-- `EM_ASM` playSoundAt on destruction
-
-### Bot AI Research
-- Evaluated 5 libraries: recast-navigation-js, navcat, Yuka.js, three-pathfinding, octree 3D
-- Recommended: **hybrid waypoint graph** (ground A* + interior waypoints + flight edges)
-- ~160 lines C++, zero external dependencies, matches original T1 approach
-- Full report: `docs/bot-ai-research.md`
-- Highest impact: interior waypoints (let bots enter bases) + generator targeting
-
-### Files changed (R32.76)
-- `docs/bot-ai-research.md`: new — full research report
-- `index.html`: version chip → R32.76
+## Waiting on
+- No new Manus feedback (manus_feedback.md unchanged since R32.1.3 era)
+- All HEARTBEAT items checked off
