@@ -3098,10 +3098,9 @@ function initPostProcessing() {
     // selective without paying the perf cost of selective rendering.
     // Was: (res, 0.4 strength, 0.6 radius, 0.85 threshold)
     bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.30, 0.45, 0.92);
+    bloomPass.enabled = false;  // R32.65.2: disabled for perf — 0.30 strength barely visible
     composer.addPass(bloomPass);
-    // R32.64.2: SMAA — smooths terrain triangle edges and all geometry seams
-    const smaaPass = new SMAAPass(window.innerWidth * (tier.pixelRatio || 1), window.innerHeight * (tier.pixelRatio || 1));
-    composer.addPass(smaaPass);
+    // R32.65.2: SMAA removed — smooth terrain + smooth normals make it unnecessary
     if (tier.postProcess === 'full') {
         gradePass = new ShaderPass(makeVignetteAndGradeShader());
         composer.addPass(gradePass);
