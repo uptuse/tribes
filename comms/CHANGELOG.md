@@ -195,3 +195,14 @@
 - Vertex color multipliers × per-category material tint = rich surface variation
 - Zero performance cost — vertex attribute, no extra passes
 - Investigated .vol archives: .dig geometry files are loose (not in any .vol)
+
+## R32.68 — Per-triangle interior mesh collision (Phase 0 fix)
+- Fixed 2 compile errors in wasm_main.cpp that prevented WASM rebuild:
+  1. `appendInteriorMeshTris()` was nested inside `setLocalAimPoint3P()` (invalid C++)
+  2. `projectileHitsInterior()` forward reference before declaration
+- Rebuilt WASM with emcc 3.1.6 — `appendInteriorMeshTris` now properly exported
+- Capsule-vs-triangle collision: player modeled as vertical capsule (2 spheres)
+- 4-iteration convergence with velocity slide along surface normals
+- Broadphase: per-mesh world-space AABB. Narrowphase: closest-point-on-triangle
+- Buildings now have doorway-accurate collision — no more force field, no more walk-through
+- Player can enter buildings through doorways and navigate interior corridors

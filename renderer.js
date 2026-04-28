@@ -2127,52 +2127,67 @@ async function initInteriorShapes() {
             }
         }
 
-        // R32.1 O1 (corrected R32.1.1): push world-space AABBs to C++ for collision.
-        // Manus R32.1.1 changed rotation architecture: inner mesh Rx(-PI/2), outer Group Ry(rotZ).
-        //   Step 1: inner mesh rotation.x = -PI/2: DIS (lx,ly,lz_up) → (lx, lz, -ly)
-        //   Step 2: outer Group rotation.y = rotZ (was Rz on single mesh — now Ry on group):
-        //           Ry: wx = ax*cos(r)+az*sin(r), wy = ay, wz = -ax*sin(r)+az*cos(r)
-        //   Step 3: translate by world position
-        if (typeof Module !== 'undefined' && Module._appendInteriorShapeAABBs && Module._malloc && Module.HEAPF32) {
-            const meshBounds = new Map();
-            for (const s of info.meshes) meshBounds.set(s.fileName, { mn: s.bounds_min, mx: s.bounds_max });
-
-            const aabbData = [];
+        // R32.68: Send per-triangle collision data to C++ instead of whole-building AABBs.
+        // This enables building entry through doorways and eliminates the "force field" effect.
+        // For each placed interior shape instance, transform all triangles to world space
+        // and send them along with the world-space AABB for broadphase.
+        if (typeof Module !== 'undefined' && Module._appendInteriorMeshTris && Module._malloc && Module.HEAPF32) {
             for (const item of items) {
-                const bd = meshBounds.get(item.fileName);
+                const meshData = meshes.get(item.fileName);
+                if (!meshData) continue;
+                const bd = info.meshes.find(m => m.fileName === item.fileName);
                 if (!bd) continue;
-                const [bx0,by0,bz0] = bd.mn, [bx1,by1,bz1] = bd.mx;
+
                 const w = toWorld(item.position);
                 const meshRotZ = -(item.rotation?.[2] ?? 0);
                 const cosR = Math.cos(meshRotZ), sinR = Math.sin(meshRotZ);
-                const corners = [
-                    [bx0,by0,bz0],[bx1,by0,bz0],[bx0,by1,bz0],[bx1,by1,bz0],
-                    [bx0,by0,bz1],[bx1,by0,bz1],[bx0,by1,bz1],[bx1,by1,bz1],
-                ];
-                let mnX=Infinity,mnY=Infinity,mnZ=Infinity, mxX=-Infinity,mxY=-Infinity,mxZ=-Infinity;
-                for (const [lx,ly,lz] of corners) {
-                    // Step 1: inner Rx(-PI/2): (lx,ly,lz) → (lx, lz, -ly)
-                    const ax=lx, ay=lz, az=-ly;
-                    // Step 2: outer Ry(rotZ): wx=ax*cos+az*sin, wy=ay, wz=-ax*sin+az*cos
-                    const fx = ax*cosR + az*sinR + w.x;
-                    const fy = ay + w.y;
-                    const fz = -ax*sinR + az*cosR + w.z;
-                    mnX=Math.min(mnX,fx); mxX=Math.max(mxX,fx);
-                    mnY=Math.min(mnY,fy); mxY=Math.max(mxY,fy);
-                    mnZ=Math.min(mnZ,fz); mxZ=Math.max(mxZ,fz);
+
+                // Transform function: DIS local → world space
+                // Step 1: inner Rx(-PI/2): (lx,ly,lz) → (lx, lz, -ly)
+                // Step 2: outer Ry(rotZ): wx=ax*cos+az*sin, wy=ay, wz=-ax*sin+az*cos
+                // Step 3: translate by world position
+                function xform(lx, ly, lz) {
+                    const ax = lx, ay = lz, az = -ly;
+                    return [
+                        ax * cosR + az * sinR + w.x,
+                        ay + w.y,
+                        -ax * sinR + az * cosR + w.z
+                    ];
                 }
-                aabbData.push(mnX,mnY,mnZ, mxX,mxY,mxZ);
-            }
-            if (aabbData.length > 0) {
-                const count = aabbData.length / 6;
-                const bytes = aabbData.length * 4;
+
+                const { positions, indices } = meshData;
+                const numTris = indices.length / 3;
+                if (numTris === 0) continue;
+
+                // Build world-space triangle array (9 floats per tri: v0x,v0y,v0z, v1x,v1y,v1z, v2x,v2y,v2z)
+                const triData = new Float32Array(numTris * 9);
+                let mnX = Infinity, mnY = Infinity, mnZ = Infinity;
+                let mxX = -Infinity, mxY = -Infinity, mxZ = -Infinity;
+
+                for (let t = 0; t < numTris; t++) {
+                    const i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
+                    const [x0, y0, z0] = xform(positions[i0*3], positions[i0*3+1], positions[i0*3+2]);
+                    const [x1, y1, z1] = xform(positions[i1*3], positions[i1*3+1], positions[i1*3+2]);
+                    const [x2, y2, z2] = xform(positions[i2*3], positions[i2*3+1], positions[i2*3+2]);
+                    triData[t*9+0] = x0; triData[t*9+1] = y0; triData[t*9+2] = z0;
+                    triData[t*9+3] = x1; triData[t*9+4] = y1; triData[t*9+5] = z1;
+                    triData[t*9+6] = x2; triData[t*9+7] = y2; triData[t*9+8] = z2;
+                    // Update AABB
+                    mnX = Math.min(mnX, x0, x1, x2); mxX = Math.max(mxX, x0, x1, x2);
+                    mnY = Math.min(mnY, y0, y1, y2); mxY = Math.max(mxY, y0, y1, y2);
+                    mnZ = Math.min(mnZ, z0, z1, z2); mxZ = Math.max(mxZ, z0, z1, z2);
+                }
+
+                // Send to WASM
+                const bytes = triData.length * 4;
                 const ptr = Module._malloc(bytes);
                 if (ptr) {
-                    Module.HEAPF32.set(aabbData, ptr / 4);
-                    Module._appendInteriorShapeAABBs(count, ptr);
+                    Module.HEAPF32.set(triData, ptr / 4);
+                    Module._appendInteriorMeshTris(numTris, ptr, mnX, mnY, mnZ, mxX, mxY, mxZ);
                     Module._free(ptr);
                 }
             }
+            console.log('[R32.68] Per-triangle collision data sent to WASM');
         }
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);

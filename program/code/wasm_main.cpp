@@ -472,6 +472,7 @@ static bool resolvePlayerBuildingCollision(Vec3& pos, Vec3& vel, float playerRad
     return hit;
 }
 
+static bool projectileHitsInterior(Vec3 pos); // forward declaration
 static bool projectileHitsBuilding(Vec3 pos) {
     for (int i = 0; i < numBuildings; i++) {
         const Building& bld = buildings[i];
@@ -481,6 +482,193 @@ static bool projectileHitsBuilding(Vec3 pos) {
             pos.y < bld.pos.y + bld.halfSize.y &&
             fabsf(pos.z - bld.pos.z) < bld.halfSize.z) {
             return true;
+        }
+    }
+    return projectileHitsInterior(pos);
+}
+
+// ============================================================
+// R32.68: Per-triangle interior mesh collision
+// Replaces whole-building AABB collision with actual mesh geometry.
+// Fixes "force field" / teleportation and enables building entry.
+// ============================================================
+static const int MAX_COL_TRIS   = 16384;
+static const int MAX_COL_MESHES = 64;
+
+struct ColTri {
+    Vec3 v0, v1, v2;
+    Vec3 normal;
+};
+
+struct ColMesh {
+    Vec3 aabbMin, aabbMax;  // world-space bounding box for broadphase
+    int  triStart, triCount;
+};
+
+static ColTri  g_colTris[MAX_COL_TRIS];
+static int     g_numColTris = 0;
+static ColMesh g_colMeshes[MAX_COL_MESHES];
+static int     g_numColMeshes = 0;
+
+// --- Vector helpers (inline, used by collision) ---
+static inline Vec3 v3cross(Vec3 a, Vec3 b) {
+    return {a.y*b.z - a.z*b.y, a.z*b.x - a.x*b.z, a.x*b.y - a.y*b.x};
+}
+static inline float v3dot(Vec3 a, Vec3 b) { return a.x*b.x + a.y*b.y + a.z*b.z; }
+static inline float v3lenSq(Vec3 a) { return a.x*a.x + a.y*a.y + a.z*a.z; }
+static inline Vec3  v3sub(Vec3 a, Vec3 b) { return {a.x-b.x, a.y-b.y, a.z-b.z}; }
+static inline Vec3  v3add(Vec3 a, Vec3 b) { return {a.x+b.x, a.y+b.y, a.z+b.z}; }
+static inline Vec3  v3scale(Vec3 a, float s) { return {a.x*s, a.y*s, a.z*s}; }
+
+// Closest point on line segment AB to point P
+static Vec3 closestPointOnSegment(Vec3 p, Vec3 a, Vec3 b) {
+    Vec3 ab = v3sub(b, a);
+    float t = v3dot(v3sub(p, a), ab);
+    float denom = v3dot(ab, ab);
+    if (denom < 1e-10f) return a;
+    t /= denom;
+    if (t < 0) t = 0; else if (t > 1) t = 1;
+    return v3add(a, v3scale(ab, t));
+}
+
+// Closest point on triangle to point P
+static Vec3 closestPointOnTriangle(Vec3 p, Vec3 v0, Vec3 v1, Vec3 v2) {
+    Vec3 e0 = v3sub(v1, v0), e1 = v3sub(v2, v0), v = v3sub(p, v0);
+    float d00 = v3dot(e0, e0), d01 = v3dot(e0, e1), d11 = v3dot(e1, e1);
+    float d20 = v3dot(v, e0),  d21 = v3dot(v, e1);
+    float denom = d00*d11 - d01*d01;
+    if (fabsf(denom) < 1e-10f) return v0; // degenerate
+    float invD = 1.0f / denom;
+    float s = (d11*d20 - d01*d21) * invD;
+    float t = (d00*d21 - d01*d20) * invD;
+    if (s >= 0 && t >= 0 && s + t <= 1) {
+        return v3add(v0, v3add(v3scale(e0, s), v3scale(e1, t))); // inside triangle
+    }
+    // Closest point on edges
+    Vec3 c0 = closestPointOnSegment(p, v0, v1);
+    Vec3 c1 = closestPointOnSegment(p, v1, v2);
+    Vec3 c2 = closestPointOnSegment(p, v2, v0);
+    float d0 = v3lenSq(v3sub(p, c0));
+    float d1 = v3lenSq(v3sub(p, c1));
+    float d2 = v3lenSq(v3sub(p, c2));
+    if (d0 <= d1 && d0 <= d2) return c0;
+    if (d1 <= d2) return c1;
+    return c2;
+}
+
+// Sphere vs triangle collision. Returns push direction and depth if colliding.
+static bool sphereVsTriangle(Vec3 center, float radius, const ColTri& tri,
+                              Vec3& pushDir, float& pushDepth) {
+    Vec3 closest = closestPointOnTriangle(center, tri.v0, tri.v1, tri.v2);
+    Vec3 diff = v3sub(center, closest);
+    float distSq = v3lenSq(diff);
+    if (distSq > radius*radius || distSq < 1e-10f) return false;
+    float dist = sqrtf(distSq);
+    pushDir = v3scale(diff, 1.0f / dist);
+    pushDepth = radius - dist;
+    return true;
+}
+
+// Resolve player collision against all interior mesh triangles.
+// Player model: vertical capsule = two spheres (bottom + top) connected.
+//   pos.y = feet. Player occupies [pos.y, pos.y + playerHeight].
+//   Lower sphere center: (pos.x, pos.y + radius, pos.z)
+//   Upper sphere center: (pos.x, pos.y + playerHeight - radius, pos.z)
+// Returns true if any collision was resolved.
+static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
+                                            float playerRadius, float playerHeight) {
+    if (g_numColMeshes == 0) return false;
+    bool anyHit = false;
+    const float PAD = 0.5f; // broadphase padding
+
+    // Capsule spheres
+    float loY = pos.y + playerRadius;
+    float hiY = pos.y + playerHeight - playerRadius;
+    if (hiY < loY) hiY = loY; // degenerate: single sphere
+
+    Vec3 loCenter = {pos.x, loY, pos.z};
+    Vec3 hiCenter = {pos.x, hiY, pos.z};
+
+    // Iterate up to 4 times for convergence
+    for (int iter = 0; iter < 4; iter++) {
+        loCenter = {pos.x, pos.y + playerRadius, pos.z};
+        hiCenter = {pos.x, pos.y + playerHeight - playerRadius, pos.z};
+        if (hiCenter.y < loCenter.y) hiCenter.y = loCenter.y;
+
+        Vec3 bestPush = {0,0,0};
+        float bestDepth = 0;
+
+        for (int mi = 0; mi < g_numColMeshes; mi++) {
+            const ColMesh& m = g_colMeshes[mi];
+            // Broadphase: player AABB vs mesh AABB
+            float pMinX = pos.x - playerRadius - PAD;
+            float pMaxX = pos.x + playerRadius + PAD;
+            float pMinY = pos.y - PAD;
+            float pMaxY = pos.y + playerHeight + PAD;
+            float pMinZ = pos.z - playerRadius - PAD;
+            float pMaxZ = pos.z + playerRadius + PAD;
+
+            if (pMaxX < m.aabbMin.x || pMinX > m.aabbMax.x ||
+                pMaxY < m.aabbMin.y || pMinY > m.aabbMax.y ||
+                pMaxZ < m.aabbMin.z || pMinZ > m.aabbMax.z) continue;
+
+            // Narrowphase: test each triangle
+            for (int ti = m.triStart; ti < m.triStart + m.triCount; ti++) {
+                const ColTri& tri = g_colTris[ti];
+                Vec3 pushDir; float pushDepth;
+
+                // Test lower sphere
+                if (sphereVsTriangle(loCenter, playerRadius, tri, pushDir, pushDepth)) {
+                    if (pushDepth > bestDepth) {
+                        bestDepth = pushDepth;
+                        bestPush = pushDir;
+                    }
+                }
+                // Test upper sphere
+                if (hiCenter.y != loCenter.y) {
+                    if (sphereVsTriangle(hiCenter, playerRadius, tri, pushDir, pushDepth)) {
+                        if (pushDepth > bestDepth) {
+                            bestDepth = pushDepth;
+                            bestPush = pushDir;
+                        }
+                    }
+                }
+            }
+        }
+
+        if (bestDepth < 0.001f) break; // no collision this iteration
+
+        // Apply push-out
+        pos = v3add(pos, v3scale(bestPush, bestDepth + 0.001f));
+
+        // Slide velocity: remove component along push direction
+        float velDot = v3dot(vel, bestPush);
+        if (velDot < 0) { // only if moving INTO the surface
+            vel = v3sub(vel, v3scale(bestPush, velDot));
+        }
+
+        // Floor detection: if push is mostly upward, zero downward vel
+        if (bestPush.y > 0.5f && vel.y < 0) vel.y = 0;
+        // Ceiling: if push is mostly downward, zero upward vel
+        if (bestPush.y < -0.5f && vel.y > 0) vel.y = 0;
+
+        anyHit = true;
+    }
+
+    return anyHit;
+}
+
+// Also check projectile vs interior triangles (for explosions hitting buildings)
+static bool projectileHitsInterior(Vec3 pos) {
+    for (int mi = 0; mi < g_numColMeshes; mi++) {
+        const ColMesh& m = g_colMeshes[mi];
+        if (pos.x < m.aabbMin.x || pos.x > m.aabbMax.x ||
+            pos.y < m.aabbMin.y || pos.y > m.aabbMax.y ||
+            pos.z < m.aabbMin.z || pos.z > m.aabbMax.z) continue;
+        for (int ti = m.triStart; ti < m.triStart + m.triCount; ti++) {
+            const ColTri& tri = g_colTris[ti];
+            Vec3 closest = closestPointOnTriangle(pos, tri.v0, tri.v1, tri.v2);
+            if (v3lenSq(v3sub(pos, closest)) < 0.25f) return true; // within 0.5m
         }
     }
     return false;
@@ -1356,6 +1544,7 @@ static void updateBot(int pi,float dt){
     th=getH(p.pos.x,p.pos.z);
     if(p.pos.y<th+1){p.pos.y=th+1;if(p.vel.y<0)p.vel.y=0;}
     resolvePlayerBuildingCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
+    resolvePlayerInteriorCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
     p.speed=sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z);
 
     // ------- ENGAGEMENT (with LOS gating) -------
@@ -1752,6 +1941,47 @@ extern "C" {
         aimPoint3P={x,y,z}; hasAimPoint3P=true;
     }
 
+    // R32.68: Append per-triangle collision data for one interior mesh instance.
+    // Format: triData = 9 floats per triangle [v0x,v0y,v0z, v1x,v1y,v1z, v2x,v2y,v2z]
+    //         all in world space (already transformed by JS).
+    // bboxMin/Max = world-space AABB for broadphase.
+    void   appendInteriorMeshTris(int numTris, float* triData,
+                                   float bmnX, float bmnY, float bmnZ,
+                                   float bmxX, float bmxY, float bmxZ) {
+        if (numTris <= 0 || !triData) return;
+        if (g_numColMeshes >= MAX_COL_MESHES) {
+            printf("[R32.68] appendInteriorMeshTris: MAX_COL_MESHES (%d) reached\n", MAX_COL_MESHES);
+            return;
+        }
+        int startIdx = g_numColTris;
+        int added = 0;
+        for (int i = 0; i < numTris; i++) {
+            if (g_numColTris >= MAX_COL_TRIS) {
+                printf("[R32.68] appendInteriorMeshTris: MAX_COL_TRIS (%d) reached after %d/%d\n",
+                       MAX_COL_TRIS, added, numTris);
+                break;
+            }
+            float* t = triData + i * 9;
+            Vec3 v0 = {t[0], t[1], t[2]};
+            Vec3 v1 = {t[3], t[4], t[5]};
+            Vec3 v2 = {t[6], t[7], t[8]};
+            Vec3 e0 = v3sub(v1, v0), e1 = v3sub(v2, v0);
+            Vec3 n = v3cross(e0, e1);
+            float lenSq = v3dot(n, n);
+            if (lenSq < 1e-10f) continue; // degenerate triangle
+            float invLen = 1.0f / sqrtf(lenSq);
+            n = v3scale(n, invLen);
+            g_colTris[g_numColTris++] = {v0, v1, v2, n};
+            added++;
+        }
+        g_colMeshes[g_numColMeshes++] = {
+            {bmnX, bmnY, bmnZ}, {bmxX, bmxY, bmxZ},
+            startIdx, added
+        };
+        printf("[R32.68] appendInteriorMeshTris: mesh %d — %d tris (total %d tris, %d meshes)\n",
+               g_numColMeshes - 1, added, g_numColTris, g_numColMeshes);
+    }
+
     // D1: Ski HUD exports — queried every frame by index.html ski HUD widget
     int    getPlayerSkiing()   { return players[localPlayer].skiing ? 1 : 0; }
     float  getPlayerSpeed()    { Player&p=players[localPlayer]; return sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z); }
@@ -2011,6 +2241,7 @@ extern "C" void mainLoop(){
             if(!me.skiing){me.vel.x*=0.9f;me.vel.z*=0.9f;}
         }
         resolvePlayerBuildingCollision(me.pos, me.vel, ad.hitW, ad.hitH);
+        resolvePlayerInteriorCollision(me.pos, me.vel, ad.hitW, ad.hitH);
         float we=TSIZE*TSCALE*0.48f; // ~985m from center
         me.pos.x=fmaxf(-we,fminf(we,me.pos.x));
         me.pos.z=fmaxf(-we,fminf(we,me.pos.z));

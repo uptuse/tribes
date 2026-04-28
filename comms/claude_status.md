@@ -1,34 +1,53 @@
-# Claude Status — R32.47
+# Claude Status — R32.68
 
-**HEAD:** (pending push)
-**What shipped:** Normal-based material zone vertex colors for interior shapes.
+**HEAD:** R32.68 (pending push)
+**What shipped:** Per-triangle interior mesh collision — fixes building force field / teleportation, enables building entry through doorways.
 
-## R32.47 — Material zone inference from face normals
+## R32.68 — Per-triangle interior collision
 
-The original `.dig` geometry files (which contain per-face material indices) are
-only stored as loose files on the user's machine — they're not in any `.vol`
-archive or in the git repo. The Raindance.vol contains `.dil` (lightmaps) and
-`.dis` (index) but not `.dig` (geometry).
+### Problem
+The old AABB-based collision used whole-building bounding boxes for interior shapes.
+These oversized boxes created an "invisible force field" around every building (Manus
+reported this in R32.1.3). Touching a building would eject the player instead of
+allowing them to walk along walls or enter through doorways.
 
-Since we can't access the original material data, I inferred material zones from
-the existing mesh geometry using face normal direction:
+### Solution
+Replaced whole-building AABB collision with per-triangle mesh collision:
 
-- **Floor** (upward-facing, local z > 0.65): lighter warm tint (×1.12, ×1.10, ×1.06)
-- **Ceiling** (downward-facing, local z < -0.65): darker cool tint (×0.78, ×0.78, ×0.82)
-- **Side wall** (X-facing horizontal): subtle warm (×0.95, ×0.93, ×0.90)
-- **Front/back wall** (Y-facing horizontal): slightly cooler (×0.88, ×0.87, ×0.85)
-- **Structural edges** (angled surfaces): dark accent (×0.82, ×0.80, ×0.76)
+**WASM side (`wasm_main.cpp`):**
+- New `ColTri` / `ColMesh` data structures for world-space triangle storage
+- `resolvePlayerInteriorCollision()`: capsule (two-sphere) vs triangle collision
+  - Broadphase: player AABB vs mesh AABB (0.5m padding)
+  - Narrowphase: sphere-vs-triangle closest-point test
+  - Iterative solver (up to 4 passes) for multi-contact convergence
+  - Velocity sliding along surfaces instead of ejection
+  - Floor/ceiling detection from push direction
+- `projectileHitsInterior()`: projectile-vs-triangle test for explosions
+- `appendInteriorMeshTris()`: C export receiving world-space triangle data from JS
+- Both local player and bot update loops call the new collision function
 
-These vertex color multipliers combine with the per-category material colors
-(building grey, tower steel, rock brown, etc.) to produce visually distinct
-surfaces within each mesh — floors read lighter than walls, walls read lighter
-than ceilings, giving depth and readability to the structures.
+**JS side (`renderer.js`):**
+- Replaced `appendInteriorShapeAABBs()` call with per-triangle data pipeline
+- For each of 32 interior shape instances: transforms all triangles from DIS local
+  space to world space (Rx(-π/2) → Ry(rotZ) → translate), computes world AABB,
+  sends to WASM via heap allocation
 
-Zero performance cost — vertex colors are a per-vertex attribute, no extra
-draw calls or texture lookups. The crease-normal pipeline from R32.46 was
-extended to output the color attribute alongside position and normal.
+**Build (`build.sh`):**
+- Added `_appendInteriorMeshTris` to EXPORTED_FUNCTIONS
+
+### Performance
+- Broadphase AABB cull means only nearby meshes test triangles (typically 1-3 meshes per frame)
+- MAX_COL_TRIS = 16384, MAX_COL_MESHES = 64 — well within budget for 32 interior shapes
+- WASM binary grew ~26KB (622K → 648K)
+
+### Phase 0 status
+- [x] Fix building collision/teleportation — DONE (this commit)
+- [x] Enable building entry — DONE (natural consequence of per-triangle collision)
+- [ ] Lock building geometry — needs verification against canonical.json / .dis data
 
 ## Files changed
-- `renderer.js`: `computeCreaseNormals()` now outputs vertex color attribute;
-  interior materials have `vertexColors: true`
-- `index.html`: version chip → R32.47
+- `program/code/wasm_main.cpp`: +231 lines (collision system + export function)
+- `renderer.js`: replaced AABB pipeline with triangle pipeline
+- `build.sh`: added export
+- `tribes.js` + `tribes.wasm`: rebuilt binary
+- `index.html`: version chip → R32.68
