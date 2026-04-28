@@ -132,20 +132,40 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// Use the actual Three.js terrain height at the player's XZ position.
-// WASM pos.y = wasm_terrainH + 1.8 (capsule offset). Instead of guessing
-// the offset, we sample the JS terrain directly and compute air distance.
-const CAPSULE_OFFSET = 1.8; // wasm_main.cpp line 2133
+// Raycast straight down from player position onto the terrain mesh.
+// This is the visual ground truth — no offset math, no two-system mismatch.
+let _terrainMesh = null;
+const _downRay = new THREE.Raycaster();
+_downRay.far = 500;
+const _downDir = new THREE.Vector3(0, -1, 0);
+const _rayOrigin = new THREE.Vector3();
+
 function _groundY(playerX, playerY, playerZ) {
-    const sample = window._sampleTerrainH;
-    if (!sample) return playerY - CAPSULE_OFFSET;
-    const terrainH = sample(playerX, playerZ);
-    // WASM/JS terrain samplers have ~0.2m interpolation gap.
-    // When near ground (rawAir < 0.5), snap feet to JS terrain exactly.
-    // When airborne, offset from terrain by the air distance.
-    const rawAir = playerY - terrainH - CAPSULE_OFFSET;
-    if (rawAir < 0.5) return terrainH; // on/near ground — snap
-    return terrainH + rawAir;           // airborne
+    // Find terrain mesh once (lazy lookup)
+    if (!_terrainMesh && _scene) {
+        _scene.traverse(child => {
+            if (!_terrainMesh && child.isMesh && child.geometry &&
+                child.geometry.attributes.position &&
+                child.geometry.attributes.position.count > 10000) {
+                // Terrain is the largest mesh in the scene
+                _terrainMesh = child;
+            }
+        });
+    }
+    if (!_terrainMesh) return playerY - CAPSULE_OFFSET; // fallback before terrain loads
+
+    // Cast ray from well above the player straight down
+    _rayOrigin.set(playerX, playerY + 50, playerZ);
+    _downRay.set(_rayOrigin, _downDir);
+    const hits = _downRay.intersectObject(_terrainMesh, false);
+    if (hits.length > 0) {
+        const terrainY = hits[0].point.y;
+        // How far above ground? When on ground, WASM pos.y ≈ terrainY + ~2
+        const airDist = Math.max(0, playerY - terrainY - CAPSULE_OFFSET);
+        if (airDist < 0.5) return terrainY; // on/near ground — snap to exact hit
+        return terrainY + airDist;           // airborne
+    }
+    return playerY - CAPSULE_OFFSET; // fallback if ray misses
 }
 
 // ── Local player sync ───────────────────────────────────────
