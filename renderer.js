@@ -1053,24 +1053,24 @@ function createBuildingMesh(type, halfExtents, colorRGB) {
 
     if (type === 3) {
         // TURRET — pedestal + dome + barrel
-        const pedGeom = new THREE.CylinderGeometry(halfExtents[0] * 0.9, halfExtents[0] * 1.05, halfExtents[1] * 1.4, 10);
+        const pedGeom = new THREE.CylinderGeometry(halfExtents[0] * 0.9, halfExtents[0] * 1.05, halfExtents[1] * 1.4, 24);
         const ped = new THREE.Mesh(pedGeom, baseMat);
         ped.position.y = halfExtents[1] * 0.7;
         ped.castShadow = ped.receiveShadow = true;
         group.add(ped);
-        const domeGeom = new THREE.SphereGeometry(halfExtents[0] * 1.1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.55);
+        const domeGeom = new THREE.SphereGeometry(halfExtents[0] * 1.1, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55);
         const dome = new THREE.Mesh(domeGeom, accentMat);
         dome.position.y = halfExtents[1] * 1.45;
         dome.castShadow = true;
         group.add(dome);
-        const barrelGeom = new THREE.CylinderGeometry(0.13, 0.16, 1.4, 8);
+        const barrelGeom = new THREE.CylinderGeometry(0.13, 0.16, 1.4, 16);
         const barrel = new THREE.Mesh(barrelGeom, accentMat);
         barrel.rotation.z = Math.PI / 2;
         barrel.position.set(halfExtents[0] * 1.0, halfExtents[1] * 1.45, 0);
         barrel.castShadow = true;
         group.add(barrel);
         // Sensor "eye" — small emissive dot on dome
-        const eyeGeom = new THREE.SphereGeometry(0.08, 8, 6);
+        const eyeGeom = new THREE.SphereGeometry(0.08, 12, 8);
         const eyeMat = new THREE.MeshBasicMaterial({ color: 0xff3333 });
         const eye = new THREE.Mesh(eyeGeom, eyeMat);
         eye.position.set(halfExtents[0] * 0.9, halfExtents[1] * 1.55, 0.0);
@@ -1078,13 +1078,13 @@ function createBuildingMesh(type, halfExtents, colorRGB) {
         group.userData = { barrel: barrel };
     } else if (type === 4) {
         // STATION — cylindrical kiosk + glowing display
-        const cylGeom = new THREE.CylinderGeometry(halfExtents[0] * 1.2, halfExtents[0] * 1.3, halfExtents[1] * 2, 14);
+        const cylGeom = new THREE.CylinderGeometry(halfExtents[0] * 1.2, halfExtents[0] * 1.3, halfExtents[1] * 2, 28);
         const cyl = new THREE.Mesh(cylGeom, baseMat);
         cyl.position.y = halfExtents[1];
         cyl.castShadow = cyl.receiveShadow = true;
         group.add(cyl);
         // Glowing top ring
-        const ringGeom = new THREE.TorusGeometry(halfExtents[0] * 1.3, 0.06, 6, 24);
+        const ringGeom = new THREE.TorusGeometry(halfExtents[0] * 1.3, 0.06, 12, 32);
         const ringMat = new THREE.MeshBasicMaterial({ color: 0xFFC850 });
         const ring = new THREE.Mesh(ringGeom, ringMat);
         ring.rotation.x = Math.PI / 2;
@@ -1262,7 +1262,7 @@ function createCanonicalMesh(datablock, teamIdx) {
         // Top vent + chimney
         const vent = new THREE.Mesh(new THREE.BoxGeometry(hx * 1.6, 0.2, hz * 1.6), armMat);
         vent.position.y = hy * 2 + 0.1; g.add(vent);
-        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.9, 8), armMat);
+        const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.3, 0.9, 20), armMat);
         stack.position.y = hy * 2 + 0.65; g.add(stack);
         g.userData = { panels: panels };
         return g;
@@ -1271,7 +1271,7 @@ function createCanonicalMesh(datablock, teamIdx) {
     if (datablock === 'AmmoStation' || datablock === 'InventoryStation' || datablock === 'CommandStation') {
         // Hex kiosk — differentiate by accent color of top ring.
         const r = 1.0, h = 1.5;
-        const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.1, r * 1.2, h * 2, 6), baseMat);
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.1, r * 1.2, h * 2, 24), baseMat);
         body.position.y = h; body.castShadow = body.receiveShadow = true; g.add(body);
         // Top ring (datablock-tinted to differentiate at a glance)
         let ringHex = 0xFFC850; // default
@@ -1279,7 +1279,7 @@ function createCanonicalMesh(datablock, teamIdx) {
         if (datablock === 'InventoryStation') ringHex = 0x40C0FF; // cyan
         if (datablock === 'CommandStation')   ringHex = 0xFFE060; // gold
         const ringMat = new THREE.MeshBasicMaterial({ color: ringHex });
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.18, 0.08, 6, 24), ringMat);
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(r * 1.18, 0.08, 12, 32), ringMat);
         ring.rotation.x = Math.PI / 2; ring.position.y = h * 1.95; g.add(ring);
         // Display panels (3 sides on hex)
         const panelMat = new THREE.MeshBasicMaterial({ color: ringHex, transparent: true, opacity: 0.75, side: THREE.DoubleSide });
@@ -1291,7 +1291,7 @@ function createCanonicalMesh(datablock, teamIdx) {
             g.add(panel);
         }
         // Team-color foot stripe so allegiance is readable from any angle
-        const stripe = new THREE.Mesh(new THREE.TorusGeometry(r * 1.22, 0.04, 6, 18), glowMat);
+        const stripe = new THREE.Mesh(new THREE.TorusGeometry(r * 1.22, 0.04, 12, 32), glowMat);
         stripe.rotation.x = Math.PI / 2; stripe.position.y = 0.1; g.add(stripe);
         return g;
     }
@@ -1317,18 +1317,18 @@ function createCanonicalMesh(datablock, teamIdx) {
     if (datablock === 'plasmaTurret') {
         // Plasma turret — pedestal + domed head + glowing coil ring
         const pedH = 1.0;
-        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, pedH, 12), baseMat);
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.05, pedH, 24), baseMat);
         ped.position.y = pedH * 0.5; ped.castShadow = ped.receiveShadow = true; g.add(ped);
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.95, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), armMat);
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.95, 24, 16, 0, Math.PI * 2, 0, Math.PI * 0.55), armMat);
         dome.position.y = pedH + 0.05; g.add(dome);
         // Plasma coil ring (emissive, slow rotation in syncBuildings if needed)
-        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.07, 8, 18), accentMat);
+        const coil = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.07, 12, 28), accentMat);
         coil.rotation.x = Math.PI / 2; coil.position.y = pedH + 0.45; g.add(coil);
         // Forward cannon
-        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 1.5, 10), armMat);
+        const barrel = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.20, 1.5, 20), armMat);
         barrel.rotation.z = Math.PI / 2; barrel.position.set(0.85, pedH + 0.45, 0); g.add(barrel);
         // Sensor eye
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 12, 8), glowMat);
         eye.position.set(0.55, pedH + 0.95, 0); g.add(eye);
         g.userData = { barrel: barrel };
         return g;
@@ -1348,14 +1348,14 @@ function createCanonicalMesh(datablock, teamIdx) {
             rail.position.set(0.45 * s, pedH + 0.55, 0); g.add(rail);
             // Two missiles per rail
             for (let m = 0; m < 2; m++) {
-                const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.55, 8), accentMat);
+                const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.08, 0.55, 16), accentMat);
                 tube.rotation.x = Math.PI / 2;
                 tube.position.set(0.45 * s, pedH + 0.55 + (m === 0 ? 0.18 : -0.18), 0.0);
                 g.add(tube);
             }
         }
         // Forward sensor
-        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat);
+        const eye = new THREE.Mesh(new THREE.SphereGeometry(0.10, 12, 8), glowMat);
         eye.position.set(0, pedH + 0.45, 0.71); g.add(eye);
         return g;
     }
@@ -1363,16 +1363,16 @@ function createCanonicalMesh(datablock, teamIdx) {
     if (datablock === 'PulseSensor') {
         // Slim pole with rotating dish at top — distinct from turrets
         const poleH = 2.4;
-        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.13, poleH, 8), baseMat);
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.10, 0.13, poleH, 16), baseMat);
         pole.position.y = poleH * 0.5; pole.castShadow = pole.receiveShadow = true; g.add(pole);
         // Cap
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.15, 12), armMat);
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.15, 20), armMat);
         cap.position.y = poleH + 0.07; g.add(cap);
         // Dish (shallow paraboloid as half-sphere flattened)
-        const dish = new THREE.Mesh(new THREE.SphereGeometry(0.55, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), accentMat);
+        const dish = new THREE.Mesh(new THREE.SphereGeometry(0.55, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.35), accentMat);
         dish.position.y = poleH + 0.20; g.add(dish);
         // Pulsing emissive dot at dish center
-        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), glowMat);
+        const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), glowMat);
         dot.position.y = poleH + 0.30; g.add(dot);
         g.userData = { dish: dish, isSensor: true };
         return g;
@@ -2245,7 +2245,7 @@ async function initBaseAccents() {
             // Two small rim lights (team-tinted dots) at front and back
             const dotMat = new THREE.MeshBasicMaterial({ color: TEAM_COLORS[teamIdx] });
             for (let s = 0; s < 4; s++) {
-                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 6), dotMat);
+                const dot = new THREE.Mesh(new THREE.SphereGeometry(0.08, 12, 8), dotMat);
                 const a = s * Math.PI / 2;
                 dot.position.set(Math.cos(a) * 1.32, 0.13, Math.sin(a) * 1.32);
                 g.add(dot);
