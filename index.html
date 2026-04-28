@@ -1121,6 +1121,8 @@
           <div style="margin:6px 0;">
             <button class="btn-small btn-selected">Capture The Flag</button>
           </div>
+          <!-- R32.63.1: Team size (bots) hidden — bots disabled per user request -->
+          <!--
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Team Size</div>
           <div style="margin:6px 0;">
             <button class="btn-small" onclick="setBotCount(2)">2v2</button>
@@ -1128,6 +1130,7 @@
             <button class="btn-small" onclick="setBotCount(6)">6v6</button>
             <button class="btn-small" onclick="setBotCount(8)">8v8</button>
           </div>
+          -->
           <div style="color:#9A8A6A;font-size:0.78em;letter-spacing:2px;text-transform:uppercase;margin-top:12px;">Score Limit</div>
           <div style="margin:6px 0;">
             <button class="btn-small" onclick="setScoreLimit(3)">3 Caps</button>
@@ -1871,7 +1874,8 @@
       document.getElementById('conn-quality').classList.add('show');
       // R21: show tutorial overlay on first match (skips if user has seen it)
       showTutorial();
-      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,gameSettings.botCount,gameSettings.scoreLimit,gameSettings.timeLimit);
+      // R32.63.1: force bots off — user requested removal
+      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,0,gameSettings.scoreLimit,gameSettings.timeLimit);
       // R29: Three.js init moved to onRuntimeInitialized (below) so it starts
       // before any frame paints, not on PLAY click. Nothing to do here.
       canvas.requestPointerLock();
