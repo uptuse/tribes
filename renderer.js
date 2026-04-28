@@ -2067,6 +2067,33 @@ async function initInteriorShapes() {
 }
 
 // ============================================================
+// R32.58: Release stuck keys on window blur / visibility change.
+// macOS screenshot (Cmd+Shift+4) fires Shift keydown, then macOS grabs
+// focus so the browser never gets keyup → player keeps sliding.
+// Fix: dispatch synthetic keyup for all common game keys on blur.
+// ============================================================
+(function initBlurKeyReset() {
+    const GAME_KEYS = [
+        'ShiftLeft','ShiftRight','KeyW','KeyA','KeyS','KeyD',
+        'Space','ControlLeft','ControlRight','KeyE','KeyR','KeyG',
+        'MetaLeft','MetaRight','AltLeft','AltRight',
+        'ArrowUp','ArrowDown','ArrowLeft','ArrowRight',
+        'Tab','KeyQ','KeyF','KeyZ','KeyX','KeyC'
+    ];
+    function releaseAll() {
+        for (const code of GAME_KEYS) {
+            window.dispatchEvent(new KeyboardEvent('keyup', {
+                code, key: '', bubbles: true, cancelable: true
+            }));
+        }
+    }
+    window.addEventListener('blur', releaseAll);
+    document.addEventListener('visibilitychange', () => {
+        if (document.hidden) releaseAll();
+    });
+})();
+
+// ============================================================
 // R32.57: Custom GLB model loader — places imported models in the scene.
 // Currently: Neon Wolf Sentinel near team 0 base.
 // ============================================================
