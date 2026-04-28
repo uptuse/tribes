@@ -440,7 +440,7 @@ const DayNight = (() => {
 
         // R32.63.6: env intensity lowered further — night near-zero, day moderate.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.70 + 0.30 * dayMix;  // R32.92: 0.70 night → 1.00 noon (was 0.35→1.00)
+            renderer.toneMappingExposure = 2.0 + 0.0 * dayMix;  // R32.93: TEST — fixed 2.0 exposure
         }
         if (typeof scene !== 'undefined') {
             // R32.63.6: env 0.05 at night → 0.45 at noon (was 0.15→0.55)
