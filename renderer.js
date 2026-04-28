@@ -422,7 +422,7 @@ const DayNight = (() => {
             scene.fog.color.copy(fogCol);
             // R32.63.6: fog density varies — thick at night (hide distant mountains),
             // lighter during day for depth/atmosphere
-            scene.fog.density = 0.0016 + 0.0030 * nightMix;  // day 0.0016, night 0.0046
+            scene.fog.density = 0.0006 + 0.0012 * nightMix;  // R32.63.8: very subtle (day 0.0006, night 0.0018)
         }
 
         // R32.63.6: env intensity lowered further — night near-zero, day moderate.
