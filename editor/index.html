@@ -175,9 +175,9 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // ═══════════════════ CONSTANTS ═══════════════════
 const TERRAIN_RAW_SIZE = 257;
-const TERRAIN_WORLD_SCALE = 24;  // Tribes 1 Raindance standard
-const TERRAIN_SPAN = (TERRAIN_RAW_SIZE - 1) * TERRAIN_WORLD_SCALE; // 6144
-const HEIGHTMAP_URL = '../assets/maps/raindance/heightmap.png';
+const TERRAIN_WORLD_SCALE = 8;  // Tribes 1 Raindance: 8m per cell (TSCALE in wasm_main.cpp)
+const TERRAIN_SPAN = (TERRAIN_RAW_SIZE - 1) * TERRAIN_WORLD_SCALE; // 2048
+const HEIGHTS_BIN_URL = 'raindance_heights.bin'; // Float32 game-world heights exported from raindance_heightmap.h
 const CANONICAL_URL = '../assets/maps/raindance/canonical.json';
 const MESHES_JSON_URL = '../assets/maps/raindance/raindance_meshes.json';
 
@@ -203,11 +203,12 @@ renderer.toneMappingExposure = 1.1;
 document.body.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
-scene.fog = new THREE.FogExp2(0x0a0c10, 0.00035);
+scene.background = new THREE.Color(0x1a2040);
+scene.fog = new THREE.FogExp2(0x1a2040, 0.0005);
 
 const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 8000);
-camera.position.set(-256, 80, 40);
-camera.lookAt(-256, 0, 24);
+camera.position.set(0, 120, 300);
+camera.lookAt(0, 30, 0);
 
 // Lights
 const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
@@ -219,7 +220,7 @@ const hemi = new THREE.HemisphereLight(0x6688aa, 0x443322, 0.4);
 scene.add(hemi);
 
 // Grid
-const gridHelper = new THREE.GridHelper(800, 80, 0x1a1f2e, 0x14171f);
+const gridHelper = new THREE.GridHelper(2048, 256, 0x1a1f2e, 0x14171f);
 gridHelper.position.y = 0.1;
 scene.add(gridHelper);
 
@@ -232,7 +233,7 @@ const orbitControls = new OrbitControls(camera, renderer.domElement);
 orbitControls.enableDamping = true;
 orbitControls.dampingFactor = 0.08;
 orbitControls.maxDistance = 3000;
-orbitControls.target.set(-256, 30, 24);
+orbitControls.target.set(0, 30, 0);
 
 const transformControls = new TransformControls(camera, renderer.domElement);
 transformControls.setSize(0.8);
@@ -251,39 +252,12 @@ const mouse = new THREE.Vector2();
 
 // ═══════════════════ LOAD TERRAIN ═══════════════════
 async function loadTerrain() {
-    const img = await new Promise((res, rej) => {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => res(img);
-        img.onerror = rej;
-        img.src = HEIGHTMAP_URL;
-    });
-
-    const c = document.createElement('canvas');
-    c.width = c.height = TERRAIN_RAW_SIZE;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    ctx.drawImage(img, 0, 0, TERRAIN_RAW_SIZE, TERRAIN_RAW_SIZE);
-    const data = ctx.getImageData(0, 0, TERRAIN_RAW_SIZE, TERRAIN_RAW_SIZE).data;
-
-    // 16-bit heightmap packed as RGBA (R=high byte, G=low byte in typical exports)
-    // The PNG is I;16, browser reads as 8-bit so we just use R channel scaled
-    const heights = new Float32Array(TERRAIN_RAW_SIZE * TERRAIN_RAW_SIZE);
-    // Determine scaling: The renderer uses WASM getHeightmapPtr which returns real Tribes heights.
-    // Since we can't run WASM here, we approximate from the 8-bit R channel.
-    // Typical Raindance height range: 0 to ~120 units
-    // The 16-bit image has values 0-65535, browser reads 8-bit (0-255).
-    // Scale factor: ~120/255 ≈ 0.47, but building Y positions suggest range ~13-65
-    // Actually the R channel from a 16-bit PNG varies by browser. Let's use a broader approach.
-    let rMax = 0;
-    for (let i = 0; i < data.length; i += 4) {
-        if (data[i] > rMax) rMax = data[i];
-    }
-    const hScale = 120 / Math.max(1, rMax);  // approximate
-    for (let j = 0; j < TERRAIN_RAW_SIZE; j++) {
-        for (let i = 0; i < TERRAIN_RAW_SIZE; i++) {
-            const px = (j * TERRAIN_RAW_SIZE + i) * 4;
-            heights[j * TERRAIN_RAW_SIZE + i] = data[px] * hScale;
-        }
+    // Load Float32 heights exported from raindance_heightmap.h (257×257 = 66049 floats)
+    const resp = await fetch(HEIGHTS_BIN_URL);
+    const buf = await resp.arrayBuffer();
+    const heights = new Float32Array(buf);
+    if (heights.length !== TERRAIN_RAW_SIZE * TERRAIN_RAW_SIZE) {
+        console.warn('Height count mismatch:', heights.length, 'expected', TERRAIN_RAW_SIZE * TERRAIN_RAW_SIZE);
     }
 
     const geom = new THREE.PlaneGeometry(TERRAIN_SPAN, TERRAIN_SPAN, TERRAIN_RAW_SIZE - 1, TERRAIN_RAW_SIZE - 1);
