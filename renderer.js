@@ -4953,15 +4953,13 @@ function loop() {
     // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
-    // R32.81: night-adaptive bloom — off during day, ramps up at dusk, full at night
+    // R32.81: night-adaptive bloom — CRANKED FOR TESTING
     try {
-        const dm = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
         if (bloomPass) {
-            // dayMix: 1=noon, 0=midnight. Bloom activates below 0.5 (dusk)
-            const nightBloom = dm < 0.15 ? 1.0 : (dm > 0.5 ? 0.0 : (0.5 - dm) / 0.35);
-            bloomPass.enabled = nightBloom > 0.01;
-            bloomPass.strength = 0.55 * nightBloom;   // max 0.55 at full night
-            bloomPass.threshold = 0.92 - 0.15 * nightBloom; // lower threshold at night → more glow
+            bloomPass.enabled = true;
+            bloomPass.strength = 2.0;      // NUCLEAR — normally 0.55 max
+            bloomPass.radius = 0.8;        // wide glow
+            bloomPass.threshold = 0.3;     // everything blooms
         }
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
