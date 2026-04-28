@@ -4053,10 +4053,10 @@ function syncCamera() {
     if (typeof window._tribesCamDist !== 'number') {
         // module-scope state — initialize on first call
         window._tribesCamDist = is3P ? 2.5 : 0.0; // hot-snap on init so first frame is clean
-        window._tribesCamHeight = is3P ? 1.0 : 1.7;
+        window._tribesCamHeight = is3P ? 1.4 : 1.7;
     }
     const targetDist = is3P ? 2.5 : 0.0;
-    const targetHeight = is3P ? 1.0 : 1.7;
+    const targetHeight = is3P ? 1.4 : 1.7;
     // Frame-rate-independent lerp toward target (~200ms time constant)
     const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
     window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * lerpAlpha;
