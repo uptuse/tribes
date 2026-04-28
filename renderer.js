@@ -4052,10 +4052,10 @@ function syncCamera() {
     // Smooth toggle: animate from prev distance to target over ~200ms.
     if (typeof window._tribesCamDist !== 'number') {
         // module-scope state — initialize on first call
-        window._tribesCamDist = is3P ? 4.0 : 0.0; // hot-snap on init so first frame is clean
+        window._tribesCamDist = is3P ? 3.2 : 0.0; // hot-snap on init so first frame is clean
         window._tribesCamHeight = is3P ? 1.6 : 1.7;
     }
-    const targetDist = is3P ? 4.0 : 0.0;
+    const targetDist = is3P ? 3.2 : 0.0;
     const targetHeight = is3P ? 1.6 : 1.7;
     // Frame-rate-independent lerp toward target (~200ms time constant)
     const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
