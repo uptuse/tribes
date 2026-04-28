@@ -3375,6 +3375,9 @@ function initPostProcessing() {
         composer.addPass(gradePass);
     }
     composer.addPass(new OutputPass());
+    console.log('[R32.81] Post-processing initialized: composer=' + !!composer + ' bloomPass=' + !!bloomPass + ' bloomEnabled=' + bloomPass.enabled + ' strength=' + bloomPass.strength);
+    window.__tribesBloom = bloomPass;
+    window.__tribesComposer = composer;
 }
 
 // R32.22: build a procedural cinematic 3D LUT (32^3) packed into a 1024x32
