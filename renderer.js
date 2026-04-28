@@ -4399,7 +4399,7 @@ function initJetExhaust() {
             void main() {
                 vAlpha = aAlpha;
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = aAlpha * 280.0 / max(1.0, -mv.z);
+                gl_PointSize = aAlpha * 90.0 / max(1.0, -mv.z);
                 gl_Position = projectionMatrix * mv;
             }
         `,
@@ -5028,8 +5028,8 @@ function updateJetExhaust(dt) {
         const yaw = -playerView[o + 4];
         const cy = Math.cos(yaw), sy = Math.sin(yaw);
 
-        // Two thruster nozzles (offset behind + below player center)
-        const nozzles = [[-0.16, 0.70, -0.50], [0.16, 0.70, -0.50]];
+        // Two thruster nozzles (jetpack — upper back, behind player)
+        const nozzles = [[-0.12, 1.20, -0.30], [0.12, 1.20, -0.30]];
         for (const [lx, ly, lz] of nozzles) {
             const wx = px + lx * cy - lz * sy;
             const wy = py + ly;
