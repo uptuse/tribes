@@ -18,6 +18,7 @@ let _gltf = null;
 let _scene = null;
 let _loaded = false;
 let _lastT = 0;
+let _footOffset = 0; // Y shift so model feet touch ground (computed from bounding box)
 
 // Per-slot character instances (indexed by player slot)
 const _chars = new Array(16).fill(null);
@@ -37,6 +38,15 @@ export function init(targetScene) {
     loader.load('./assets/models/crimson_sentinel_rigged.glb', (gltf) => {
         _gltf = gltf;
         _loaded = true;
+
+        // R32.112: Compute foot offset so model stands on ground, not floating.
+        // GLB origin may be at center; we need the distance from origin to the
+        // lowest point of the mesh so we can shift the model down by that amount.
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        _footOffset = box.min.y; // negative if origin is above feet
+        console.log('[R32.112] Foot offset:', _footOffset.toFixed(3),
+            'bbox Y range:', box.min.y.toFixed(2), '→', box.max.y.toFixed(2));
+
         console.log('[R32.109] Character model loaded:',
             gltf.animations.length, 'clips,',
             gltf.scene.children.length, 'root nodes');
@@ -97,6 +107,12 @@ function _createInstance() {
         if (child.isMesh || child.isSkinnedMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
+            // R32.112: Match scene lighting — other objects use envMapIntensity 0.30–0.50.
+            // GLB materials default to 1.0, making the character glow vs surroundings.
+            if (child.material) {
+                child.material.envMapIntensity = 0.4;
+                child.material.needsUpdate = true;
+            }
         }
     });
 
@@ -167,8 +183,12 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         if (playerMeshes[localIdx]) playerMeshes[localIdx].visible = false;
         char.model.visible = true;
 
-        // Position + rotation
-        char.model.position.set(playerView[o], playerView[o + 1], playerView[o + 2]);
+        // Position + rotation (R32.112: subtract _footOffset so feet touch ground)
+        char.model.position.set(
+            playerView[o],
+            playerView[o + 1] - _footOffset,
+            playerView[o + 2]
+        );
         char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
 
         // Determine animation from game state
@@ -210,7 +230,7 @@ function _spawnDemo(playerView, playerStride, localIdx) {
     // Place demo 8m in front of player's initial facing direction
     const yaw = playerView[o + 4];
     _demo.baseX = playerView[o] + Math.sin(yaw) * 8;
-    _demo.baseY = playerView[o + 1];
+    _demo.baseY = playerView[o + 1] - _footOffset; // R32.112: ground the model
     _demo.baseZ = playerView[o + 2] + Math.cos(yaw) * 8;
     _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     _demo.time = 0;
@@ -260,7 +280,7 @@ function _updateDemo(t, dt) {
         const jetPhase = (cycle - 15) / 3;
         _demo.model.position.set(
             _demo.baseX,
-            _demo.baseY + Math.sin(jetPhase * Math.PI) * 6,
+            _demo.baseY + Math.sin(jetPhase * Math.PI) * 6, // baseY already foot-offset corrected
             _demo.baseZ
         );
     } else if (cycle < 21) {
