@@ -4733,7 +4733,7 @@ function updateExplosionFX(dt) {
 // ============================================================
 // R32.82: Sky fairy particles — luminous floating motes in the sky at dusk/night
 // ============================================================
-const NIGHT_FAIRY_COUNT = 500;
+const NIGHT_FAIRY_COUNT = 64000;
 const NIGHT_FAIRY_RADIUS = 200;  // metres around camera (XZ only)
 const NIGHT_FAIRY_MIN_ALT = 40;  // metres above terrain
 const NIGHT_FAIRY_MAX_ALT = 130; // metres above terrain
