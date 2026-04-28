@@ -60,5 +60,23 @@ After decimation, always:
 - LODs: `assets/models/<model_name>_lod0.glb`, `_lod1.glb`, `_lod2.glb`
 - Rigging source: `assets/models/<model_name>_50k.glb` (only if source is >50k tris)
 
-## Important Discovery
-The Meshy FBX "texture" export is already decimated to ~10k tris. The 766k source mesh is NOT in the FBX — the large file size comes from embedded 4K textures. To get the 766k mesh, export from Meshy as OBJ or use a different quality tier. For now, the ~10k FBX IS the LOD0 source.
+## Important Discovery (Updated 2026-04-28)
+**CORRECTION:** The Meshy FBX "texture" exports are actually **high-poly** — ranging from ~329k to ~1.48M tris depending on the model. The pipeline correctly decimates them down through all 4 LOD tiers.
+
+### Source Tri Counts (from batch run)
+| Model | Source Tris | Team |
+|-------|-----------|------|
+| crimson_warforged | 1,389,709 | Blood Eagle |
+| crimson_sentinel | 347,647 | Blood Eagle |
+| crimson_titan | 769,963 | Blood Eagle |
+| aegis_sentinel | 731,859 | Diamond Sword |
+| obsidian_vanguard | 709,207 | Diamond Sword |
+| midnight_sentinel | 329,235 | Diamond Sword |
+| golden_phoenix | 411,681 | Phoenix |
+| violet_phoenix | 1,133,663 | Phoenix |
+| auric_phoenix | 777,119 | Phoenix |
+| iron_wolf | 1,479,679 | Starwolf |
+| emerald_sentinel | 878,704 | Starwolf |
+| neon_wolf | 406,466 | Starwolf |
+
+The pipeline decimates from these high-poly sources → 50k → 10k → 3k → 500 tris, with WEBP textures at 4K/2K/1K/512 respectively. Final LOD0 files are 1.1–1.9 MB (vs 68MB with the old PNG pipeline).

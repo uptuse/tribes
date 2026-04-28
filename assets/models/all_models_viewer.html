@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Firewolf — All Models Viewer</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #0a0a1a; color: #fff; font-family: 'Courier New', monospace; overflow: hidden; }
+  canvas { display: block; }
+  
+  #ui { position: absolute; top: 0; left: 0; right: 0; padding: 12px; z-index: 10; pointer-events: none; }
+  #title { font-size: 18px; color: #ff6600; margin-bottom: 8px; text-shadow: 0 0 10px rgba(255,102,0,0.5); }
+  
+  #model-selector-row { pointer-events: auto; display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  #model-selector-row label { font-size: 13px; color: #888; }
+  #model-select {
+    background: #1a1a2e; color: #ff6600; border: 1px solid #333;
+    padding: 6px 12px; font-family: inherit; font-size: 13px;
+    border-radius: 3px; cursor: pointer; min-width: 220px;
+  }
+  #model-select optgroup { color: #ff6600; background: #1a1a2e; }
+  #model-select option { color: #ccc; background: #1a1a2e; }
+  
+  #lod-buttons { pointer-events: auto; display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
+  #lod-buttons button {
+    background: #1a1a2e; color: #aaa; border: 1px solid #333;
+    padding: 8px 16px; cursor: pointer; font-family: inherit; font-size: 13px;
+    border-radius: 3px; transition: all 0.2s;
+  }
+  #lod-buttons button:hover { border-color: #ff6600; color: #ff6600; }
+  #lod-buttons button.active { background: #ff6600; color: #000; border-color: #ff6600; font-weight: bold; }
+  
+  #options { pointer-events: auto; display: flex; gap: 12px; align-items: center; margin-bottom: 8px; flex-wrap: wrap; }
+  #options label { cursor: pointer; font-size: 12px; color: #888; }
+  #options input[type="checkbox"] { margin-right: 4px; }
+  
+  #stats {
+    position: absolute; bottom: 12px; left: 12px; z-index: 10;
+    background: rgba(0,0,0,0.7); padding: 12px 16px; border-radius: 4px;
+    border: 1px solid #333; font-size: 13px; line-height: 1.6;
+  }
+  .stat-label { color: #888; }
+  .stat-value { color: #ff6600; font-weight: bold; }
+  
+  #loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    z-index: 20; font-size: 16px; color: #ff6600;
+    text-shadow: 0 0 10px rgba(255,102,0,0.5);
+  }
+  
+  #team-nav { pointer-events: auto; display: flex; gap: 4px; margin-bottom: 6px; }
+  #team-nav button {
+    background: transparent; color: #666; border: 1px solid #333;
+    padding: 4px 10px; cursor: pointer; font-family: inherit; font-size: 11px;
+    border-radius: 3px; transition: all 0.2s; text-transform: uppercase;
+  }
+  #team-nav button:hover { border-color: #ff6600; color: #ff6600; }
+  #team-nav button.active { background: #ff660030; color: #ff6600; border-color: #ff6600; }
+</style>
+</head>
+<body>
+
+<div id="loading">Loading model...</div>
+
+<div id="ui">
+  <div id="title">FIREWOLF — Model Viewer</div>
+  
+  <div id="team-nav">
+    <button data-team="all" class="active">All</button>
+    <button data-team="blood_eagle">Blood Eagle</button>
+    <button data-team="diamond_sword">Diamond Sword</button>
+    <button data-team="phoenix">Phoenix</button>
+    <button data-team="starwolf">Starwolf</button>
+  </div>
+  
+  <div id="model-selector-row">
+    <label>Model:</label>
+    <select id="model-select">
+      <optgroup label="— Blood Eagle —">
+        <option value="crimson_warforged" data-team="blood_eagle">Crimson Warforged</option>
+        <option value="crimson_sentinel" data-team="blood_eagle">Crimson Sentinel</option>
+        <option value="crimson_titan" data-team="blood_eagle">Crimson Titan</option>
+      </optgroup>
+      <optgroup label="— Diamond Sword —">
+        <option value="aegis_sentinel" data-team="diamond_sword">Aegis Sentinel</option>
+        <option value="obsidian_vanguard" data-team="diamond_sword">Obsidian Vanguard</option>
+        <option value="midnight_sentinel" data-team="diamond_sword">Midnight Sentinel</option>
+      </optgroup>
+      <optgroup label="— Phoenix —">
+        <option value="golden_phoenix" data-team="phoenix">Golden Phoenix Knight</option>
+        <option value="violet_phoenix" data-team="phoenix">Violet Phoenix</option>
+        <option value="auric_phoenix" data-team="phoenix">Auric Phoenix Knight</option>
+      </optgroup>
+      <optgroup label="— Starwolf —">
+        <option value="iron_wolf" data-team="starwolf">Iron Wolf Juggernaut</option>
+        <option value="emerald_sentinel" data-team="starwolf">Emerald Neon Sentinel</option>
+        <option value="neon_wolf" data-team="starwolf">Neon Wolf Sentinel</option>
+      </optgroup>
+    </select>
+    <button id="prev-btn" style="pointer-events:auto;background:#1a1a2e;color:#aaa;border:1px solid #333;padding:6px 10px;cursor:pointer;font-family:inherit;border-radius:3px;">◀ Prev</button>
+    <button id="next-btn" style="pointer-events:auto;background:#1a1a2e;color:#aaa;border:1px solid #333;padding:6px 10px;cursor:pointer;font-family:inherit;border-radius:3px;">Next ▶</button>
+  </div>
+  
+  <div id="lod-buttons">
+    <button data-lod="lod0" class="active">LOD0 (10k / 2K)</button>
+    <button data-lod="lod1">LOD1 (3k / 1K)</button>
+    <button data-lod="lod2">LOD2 (500 / 512)</button>
+  </div>
+  
+  <div id="options">
+    <label><input type="checkbox" id="wireframe"> Wireframe</label>
+    <label><input type="checkbox" id="auto-rotate" checked> Auto-rotate</label>
+    <label><input type="checkbox" id="flat-shading"> Flat shading</label>
+  </div>
+</div>
+
+<div id="stats">
+  <span class="stat-label">Model:</span> <span class="stat-value" id="stat-model">—</span><br>
+  <span class="stat-label">Team:</span> <span class="stat-value" id="stat-team">—</span><br>
+  <span class="stat-label">LOD:</span> <span class="stat-value" id="stat-lod">—</span><br>
+  <span class="stat-label">Tris:</span> <span class="stat-value" id="stat-tris">—</span><br>
+  <span class="stat-label">Verts:</span> <span class="stat-value" id="stat-verts">—</span><br>
+  <span class="stat-label">File:</span> <span class="stat-value" id="stat-file">—</span>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// Model registry
+const MODELS = {
+  crimson_warforged:  { name: 'Crimson Warforged', team: 'Blood Eagle' },
+  crimson_sentinel:   { name: 'Crimson Sentinel', team: 'Blood Eagle' },
+  crimson_titan:      { name: 'Crimson Titan', team: 'Blood Eagle' },
+  aegis_sentinel:     { name: 'Aegis Sentinel', team: 'Diamond Sword' },
+  obsidian_vanguard:  { name: 'Obsidian Vanguard', team: 'Diamond Sword' },
+  midnight_sentinel:  { name: 'Midnight Sentinel', team: 'Diamond Sword' },
+  golden_phoenix:     { name: 'Golden Phoenix Knight', team: 'Phoenix' },
+  violet_phoenix:     { name: 'Violet Phoenix', team: 'Phoenix' },
+  auric_phoenix:      { name: 'Auric Phoenix Knight', team: 'Phoenix' },
+  iron_wolf:          { name: 'Iron Wolf Juggernaut', team: 'Starwolf' },
+  emerald_sentinel:   { name: 'Emerald Neon Sentinel', team: 'Starwolf' },
+  neon_wolf:          { name: 'Neon Wolf Sentinel', team: 'Starwolf' },
+};
+
+const MODEL_KEYS = Object.keys(MODELS);
+const LODS = ['lod0', 'lod1', 'lod2'];
+
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.set(0, 1.5, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.2;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 0.8, 0);
+controls.autoRotate = true;
+controls.autoRotateSpeed = 2;
+controls.update();
+
+// Lighting
+const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
+scene.add(ambientLight);
+
+const keyLight = new THREE.DirectionalLight(0xffffff, 1.2);
+keyLight.position.set(3, 5, 3);
+scene.add(keyLight);
+
+const fillLight = new THREE.DirectionalLight(0x4488ff, 0.4);
+fillLight.position.set(-3, 2, -2);
+scene.add(fillLight);
+
+const rimLight = new THREE.DirectionalLight(0xff6600, 0.6);
+rimLight.position.set(0, 3, -4);
+scene.add(rimLight);
+
+// Environment map for metallic reflections
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+const envScene = new THREE.Scene();
+envScene.background = new THREE.Color(0x222233);
+const envLight1 = new THREE.DirectionalLight(0xffffff, 2);
+envLight1.position.set(1, 1, 1);
+envScene.add(envLight1);
+const envLight2 = new THREE.DirectionalLight(0x6688cc, 1);
+envLight2.position.set(-1, 0.5, -1);
+envScene.add(envLight2);
+const envMesh = new THREE.Mesh(
+  new THREE.SphereGeometry(5, 32, 32),
+  new THREE.MeshStandardMaterial({ color: 0x333344, side: THREE.BackSide, roughness: 1 })
+);
+envScene.add(envMesh);
+const envRT = pmremGenerator.fromScene(envScene, 0.04);
+scene.environment = envRT.texture;
+
+// Grid
+const grid = new THREE.GridHelper(10, 20, 0x333333, 0x222222);
+scene.add(grid);
+
+// State
+let currentModel = null;
+let currentModelKey = 'crimson_warforged';
+let currentLod = 'lod0';
+let wireframeEnabled = false;
+let flatShadingEnabled = false;
+
+const loader = new GLTFLoader();
+const loadingEl = document.getElementById('loading');
+
+function getModelUrl(slug, lod) {
+  return `${slug}_${lod}.glb`;
+}
+
+function loadModel(slug, lod) {
+  loadingEl.style.display = 'block';
+  const url = getModelUrl(slug, lod);
+  
+  // Remove existing model
+  if (currentModel) {
+    scene.remove(currentModel);
+    currentModel.traverse(child => {
+      if (child.geometry) child.geometry.dispose();
+      if (child.material) {
+        if (Array.isArray(child.material)) {
+          child.material.forEach(m => m.dispose());
+        } else {
+          child.material.dispose();
+        }
+      }
+    });
+  }
+  
+  loader.load(url,
+    (gltf) => {
+      currentModel = gltf.scene;
+      
+      // Center and normalize
+      const box = new THREE.Box3().setFromObject(currentModel);
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const maxDim = Math.max(size.x, size.y, size.z);
+      const scale = 2.0 / maxDim;
+      currentModel.scale.setScalar(scale);
+      currentModel.position.sub(center.multiplyScalar(scale));
+      currentModel.position.y -= box.min.y * scale;
+      
+      // Apply wireframe/flat shading state
+      applyMaterialOptions();
+      
+      scene.add(currentModel);
+      loadingEl.style.display = 'none';
+      updateStats(slug, lod, url);
+    },
+    undefined,
+    (err) => {
+      console.error('Load error:', err);
+      loadingEl.textContent = `Failed to load ${url}`;
+    }
+  );
+}
+
+function applyMaterialOptions() {
+  if (!currentModel) return;
+  currentModel.traverse(child => {
+    if (child.isMesh) {
+      if (child.material) {
+        child.material.wireframe = wireframeEnabled;
+        child.material.flatShading = flatShadingEnabled;
+        child.material.needsUpdate = true;
+      }
+    }
+  });
+}
+
+function updateStats(slug, lod, url) {
+  const info = MODELS[slug];
+  document.getElementById('stat-model').textContent = info.name;
+  document.getElementById('stat-team').textContent = info.team;
+  document.getElementById('stat-lod').textContent = lod.toUpperCase();
+  
+  let totalTris = 0, totalVerts = 0;
+  if (currentModel) {
+    currentModel.traverse(child => {
+      if (child.isMesh && child.geometry) {
+        const geo = child.geometry;
+        if (geo.index) {
+          totalTris += geo.index.count / 3;
+        } else {
+          totalTris += geo.attributes.position.count / 3;
+        }
+        totalVerts += geo.attributes.position.count;
+      }
+    });
+  }
+  document.getElementById('stat-tris').textContent = totalTris.toLocaleString();
+  document.getElementById('stat-verts').textContent = totalVerts.toLocaleString();
+  document.getElementById('stat-file').textContent = url;
+}
+
+// UI handlers
+const selectEl = document.getElementById('model-select');
+selectEl.addEventListener('change', () => {
+  currentModelKey = selectEl.value;
+  loadModel(currentModelKey, currentLod);
+});
+
+document.querySelectorAll('#lod-buttons button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#lod-buttons button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    currentLod = btn.dataset.lod;
+    loadModel(currentModelKey, currentLod);
+  });
+});
+
+document.getElementById('wireframe').addEventListener('change', (e) => {
+  wireframeEnabled = e.target.checked;
+  applyMaterialOptions();
+});
+
+document.getElementById('auto-rotate').addEventListener('change', (e) => {
+  controls.autoRotate = e.target.checked;
+});
+
+document.getElementById('flat-shading').addEventListener('change', (e) => {
+  flatShadingEnabled = e.target.checked;
+  applyMaterialOptions();
+});
+
+// Prev/Next buttons
+document.getElementById('prev-btn').addEventListener('click', () => {
+  const visibleOptions = getVisibleOptions();
+  const idx = visibleOptions.indexOf(currentModelKey);
+  const newIdx = (idx - 1 + visibleOptions.length) % visibleOptions.length;
+  currentModelKey = visibleOptions[newIdx];
+  selectEl.value = currentModelKey;
+  loadModel(currentModelKey, currentLod);
+});
+
+document.getElementById('next-btn').addEventListener('click', () => {
+  const visibleOptions = getVisibleOptions();
+  const idx = visibleOptions.indexOf(currentModelKey);
+  const newIdx = (idx + 1) % visibleOptions.length;
+  currentModelKey = visibleOptions[newIdx];
+  selectEl.value = currentModelKey;
+  loadModel(currentModelKey, currentLod);
+});
+
+function getVisibleOptions() {
+  return Array.from(selectEl.options)
+    .filter(o => !o.disabled && o.style.display !== 'none')
+    .map(o => o.value);
+}
+
+// Team nav filter
+document.querySelectorAll('#team-nav button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#team-nav button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const team = btn.dataset.team;
+    
+    // Show/hide options
+    Array.from(selectEl.options).forEach(opt => {
+      if (team === 'all' || opt.dataset.team === team) {
+        opt.style.display = '';
+        opt.disabled = false;
+      } else {
+        opt.style.display = 'none';
+        opt.disabled = true;
+      }
+    });
+    
+    // Show/hide optgroups
+    Array.from(selectEl.querySelectorAll('optgroup')).forEach(group => {
+      const hasVisible = Array.from(group.children).some(o => o.style.display !== 'none');
+      group.style.display = hasVisible ? '' : 'none';
+    });
+    
+    // If current selection is hidden, switch to first visible
+    const visibleOpts = getVisibleOptions();
+    if (!visibleOpts.includes(currentModelKey) && visibleOpts.length > 0) {
+      currentModelKey = visibleOpts[0];
+      selectEl.value = currentModelKey;
+      loadModel(currentModelKey, currentLod);
+    }
+  });
+});
+
+// Keyboard shortcuts
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'ArrowLeft' || e.key === 'a') {
+    document.getElementById('prev-btn').click();
+  } else if (e.key === 'ArrowRight' || e.key === 'd') {
+    document.getElementById('next-btn').click();
+  } else if (e.key === '1') {
+    document.querySelector('#lod-buttons button[data-lod="lod0"]').click();
+  } else if (e.key === '2') {
+    document.querySelector('#lod-buttons button[data-lod="lod1"]').click();
+  } else if (e.key === '3') {
+    document.querySelector('#lod-buttons button[data-lod="lod2"]').click();
+  } else if (e.key === 'w') {
+    const cb = document.getElementById('wireframe');
+    cb.checked = !cb.checked;
+    cb.dispatchEvent(new Event('change'));
+  }
+});
+
+// Resize
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// Animation loop
+function animate() {
+  requestAnimationFrame(animate);
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+// Initial load
+loadModel(currentModelKey, currentLod);
+</script>
+</body>
+</html>
