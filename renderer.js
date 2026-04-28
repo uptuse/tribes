@@ -346,7 +346,7 @@ const DayNight = (() => {
     const startHourMatch = mode.match(/^h=(\d+(?:\.\d+)?)$/);
     const startHour = startHourMatch ? Math.max(0, Math.min(24, parseFloat(startHourMatch[1]))) : 8.0;
     const cycleSeconds = mode === 'off' ? Infinity
-                       : mode === 'fast' ? 300
+                       : mode === 'fast' ? 120
                        : mode === 'slow' ? 3600
                        : 1800; // default 30 minutes
     // start the cycle so first frame is `startHour` AM
