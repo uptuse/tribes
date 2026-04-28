@@ -6953,7 +6953,6 @@ var _getThirdPerson = Module["_getThirdPerson"] = createExportWrapper("getThirdP
 
 /** @type {function(...*):?} */
 var _appendInteriorShapeAABBs = Module["_appendInteriorShapeAABBs"] = createExportWrapper("appendInteriorShapeAABBs");
-var _appendInteriorMeshTris = Module["_appendInteriorMeshTris"] = createExportWrapper("appendInteriorMeshTris");
 
 /** @type {function(...*):?} */
 var _setLocalAimPoint3P = Module["_setLocalAimPoint3P"] = createExportWrapper("setLocalAimPoint3P");
