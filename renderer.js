@@ -3336,6 +3336,7 @@ function initParticles() {
 // ============================================================
 function initPostProcessing() {
     const tier = readQualityFromSettings();
+    console.log('[R32.82] initPostProcessing: tier.postProcess=' + tier.postProcess + ' quality=' + currentQuality);
     // R32.54 DIAGNOSTIC: ?nopost → skip EffectComposer entirely, render direct
     const _dp = new URLSearchParams(window.location.search);
     if (_dp.has('nopost')) {
@@ -3344,6 +3345,7 @@ function initPostProcessing() {
         return;
     }
     if (!tier.postProcess) {
+        console.log('[R32.82] initPostProcessing BAILED: tier.postProcess is falsy (' + tier.postProcess + ')');
         composer = null;
         return;
     }
