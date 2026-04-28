@@ -4479,7 +4479,7 @@ function initInteriorLights() {
         // Generator: team-tinted warm light + slightly brighter (the heart of the base)
         if (db === 'Generator') {
             const color = teamIdx === 0 ? 0xFF9060 : (teamIdx === 1 ? 0x6090FF : 0xFFE0B0);
-            lightDefs.push({ x: pos.x, y: pos.y + 3.0, z: pos.z, color, intensity: 1.4, range: 14, team: teamIdx });
+            lightDefs.push({ x: pos.x, y: pos.y + 3.0, z: pos.z, color, intensity: 1.4, range: 14, team: teamIdx, isGenerator: true });
         }
         // Inventory / Ammo / Command stations: warm interior light
         if (db === 'InventoryStation' || db === 'AmmoStation' || db === 'CommandStation') {
@@ -4496,9 +4496,13 @@ function initInteriorLights() {
         light.castShadow = false; // performance: skip shadow casting for ambient interior lights
         light.decay = 2; // physically realistic falloff
         scene.add(light);
-        _interiorLights.push({ light, baseIntensity: def.intensity, team: def.team });
+        _interiorLights.push({ light, baseIntensity: def.intensity, team: def.team, isGenerator: def.isGenerator || false });
     }
     console.log('[R32.75] Interior lights placed:', _interiorLights.length);
+    // R32.76: Expose generator positions for proximity-based audio hum
+    window.__generatorPositions = _interiorLights
+        .filter(il => il.isGenerator)
+        .map(il => ({ x: il.light.position.x, y: il.light.position.y, z: il.light.position.z }));
 }
 
 function updateInteriorLights() {
@@ -4509,6 +4513,12 @@ function updateInteriorLights() {
     const nightBoost = 0.4 + 0.6 * (1.0 - dayMix);
     for (const il of _interiorLights) {
         il.light.intensity = il.baseIntensity * nightBoost;
+    }
+    // R32.76: expose camera position for audio proximity hum
+    if (camera) {
+        window.__camX = camera.position.x;
+        window.__camY = camera.position.y;
+        window.__camZ = camera.position.z;
     }
 }
 

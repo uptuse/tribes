@@ -678,7 +678,7 @@
   <!-- R32.34.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.75</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.76</div>
   <!-- R32.36-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.40-manus: in-game day/night clock chip. Updated by the renderer's
@@ -3184,6 +3184,32 @@
           )*0.6;
         }
         this.bufs[9]=b;
+        // R32.76: footstep variation — rock/hard surface (brighter, more click)
+        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var atk=Math.exp(-t*55);
+          var body=Math.exp(-t*25);
+          var f_thud=110*Math.exp(-t*12)+60;
+          da[i]=(
+            Math.sin(2*Math.PI*f_thud*t)*0.45*body +
+            (Math.random()*2-1)*0.25*atk +
+            Math.sin(2*Math.PI*340*t)*0.10*Math.exp(-t*35)
+          )*0.55;
+        }
+        this.bufs[20]=b;
+        // R32.76: footstep variation — scuff/shuffle (softer, different decay)
+        b=mb(0.10);da=d(b);for(i=0;i<da.length;i++){
+          var t=i/sr;
+          var atk=Math.exp(-t*35);
+          var body=Math.exp(-t*18);
+          var f_thud=75*Math.exp(-t*18)+40;
+          da[i]=(
+            Math.sin(2*Math.PI*f_thud*t)*0.50*body +
+            (Math.random()*2-1)*0.22*atk +
+            Math.sin(2*Math.PI*180*t)*0.06*Math.exp(-t*25)
+          )*0.55;
+        }
+        this.bufs[21]=b;
         // jetpack loop: noise + hum (loopable)
         b=mb(0.5);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;da[i]=(Math.random()*2-1)*0.22+Math.sin(2*Math.PI*60*t)*0.12+Math.sin(2*Math.PI*120*t)*0.06;}
         this.bufs[10]=b;
@@ -3474,7 +3500,7 @@
         if(onGround&&speed>3&&!jetting){
           var interval=Math.max(0.25,0.55-speed/250);
           this.footTimer-=0.0167;
-          if(this.footTimer<=0){this.playUI(9);this.footTimer=interval;}
+          if(this.footTimer<=0){var _fstep=[9,20,21][Math.floor(Math.random()*3)];this.playUI(_fstep);this.footTimer=interval;}
         }
         // R32.12.3: hard-landing thud on air→ground transition with high speed.
         // Slot 18 (was slot 12, restored to mortar_boom). Also fires shazbot
@@ -3486,6 +3512,30 @@
         }
         this._prevOnGround=onGround;
         this._prevSpeed=speed;
+        // R32.76: ambient generator hum — proximity-based low-frequency oscillator
+        if(!this._humNode && this.ctx && window.__generatorPositions && window.__generatorPositions.length > 0) {
+          var g=this.ctx.createGain();g.gain.setValueAtTime(0,this.ctx.currentTime);
+          g.connect(this.uiBus);
+          var osc1=this.ctx.createOscillator();osc1.type='sine';osc1.frequency.value=60;
+          var osc2=this.ctx.createOscillator();osc2.type='sine';osc2.frequency.value=120;
+          var g2=this.ctx.createGain();g2.gain.value=0.4;
+          osc1.connect(g);osc2.connect(g2);g2.connect(g);
+          osc1.start();osc2.start();
+          this._humNode=osc1;this._humNode2=osc2;this._humGain=g;
+        }
+        if(this._humGain && window.__generatorPositions && typeof window.__camX==='number') {
+          var cx=window.__camX,cy=window.__camY,cz=window.__camZ;
+          var minD=1e9;
+          for(var gi=0;gi<window.__generatorPositions.length;gi++){
+            var gp=window.__generatorPositions[gi];
+            var dx=gp.x-cx,dy=gp.y-cy,dz=gp.z-cz;
+            var d=Math.sqrt(dx*dx+dy*dy+dz*dz);
+            if(d<minD) minD=d;
+          }
+          // Hum audible within 25m, full volume at 5m
+          var vol=minD<5?0.12:minD>25?0:0.12*(1-(minD-5)/20);
+          this._humGain.gain.setTargetAtTime(vol,this.ctx.currentTime,0.15);
+        }
         // R32.12.3: "Shazbot!" on local-player death.
         if(this.prevHealth>0 && health<=0){
           this.playShazbot(true);
