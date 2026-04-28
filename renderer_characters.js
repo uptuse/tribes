@@ -29,18 +29,29 @@ export function init(targetScene) {
         _gltf = gltf;
         _loaded = true;
 
+        // R32.120: Strip root motion from all clips.
+        // Mixamo bakes Hips bone translation into movement anims (run, strafe, etc).
+        // In-game, position is controlled by WASM — root motion causes visual drift.
+        // Fix: remove .position tracks for the Hips bone (keep .quaternion + .scale).
+        for (const clip of gltf.animations) {
+            clip.tracks = clip.tracks.filter(track => {
+                // Track names are like "mixamorigHips.position", "mixamorigHips.quaternion"
+                if (track.name.endsWith('.position') && track.name.includes('Hips')) {
+                    console.log(`  [R32.120] Stripped root motion: ${track.name} from ${clip.name}`);
+                    return false; // remove this track
+                }
+                return true; // keep all other tracks
+            });
+        }
+
         // R32.119: Mixamo origin is at feet (Y=0). No offset needed.
-        // Just log bbox for diagnostics.
         gltf.scene.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(gltf.scene);
-        _footOffset = 0; // Mixamo models have origin at feet — no shift needed
-        console.log('[R32.119] Model bbox Y:', box.min.y.toFixed(4), '→', box.max.y.toFixed(4),
-            'height:', (box.max.y - box.min.y).toFixed(2) + 'm',
-            'footOffset: 0 (hardcoded — Mixamo origin at feet)');
+        _footOffset = 0;
 
-        console.log('[R32.113] Character loaded:', gltf.animations.length, 'clips');
+        console.log('[R32.120] Character loaded:', gltf.animations.length, 'clips');
         for (const clip of gltf.animations) {
-            console.log(`  clip: ${clip.name} (${clip.duration.toFixed(2)}s)`);
+            console.log(`  clip: ${clip.name} (${clip.duration.toFixed(2)}s, ${clip.tracks.length} tracks)`);
         }
     }, undefined, (err) => {
         console.error('[R32.113] Failed to load character model:', err);
