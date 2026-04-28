@@ -973,46 +973,35 @@ async function initTerrain() {
                      return mix(mix(vh(i), vh(i+vec2(1,0)), u.x),
                                 mix(vh(i+vec2(0,1)), vh(i+vec2(1,1)), u.x), u.y);
                  }
-                 vec4 stochasticSampleArray(sampler2DArray tex, vec2 uv, float layer) {
-                     vec2 cellId = floor(uv);
-                     vec2 f = fract(uv);
-                     float h0 = th_hash(cellId);
-                     float h1 = th_hash(cellId + vec2(1.0, 0.0));
-                     float h2 = th_hash(cellId + vec2(0.0, 1.0));
-                     float a0 = h0 * 6.2831853;
-                     float a1 = h1 * 6.2831853;
-                     float a2 = h2 * 6.2831853;
-                     mat2 R0 = mat2(cos(a0), -sin(a0), sin(a0), cos(a0));
-                     mat2 R1 = mat2(cos(a1), -sin(a1), sin(a1), cos(a1));
-                     mat2 R2 = mat2(cos(a2), -sin(a2), sin(a2), cos(a2));
-                     vec4 s0 = texture(tex, vec3(R0 * uv + vec2(h0, h1), layer));
-                     vec4 s1 = texture(tex, vec3(R1 * uv + vec2(h1, h2), layer));
-                     vec4 s2 = texture(tex, vec3(R2 * uv + vec2(h2, h0), layer));
-                     float w0 = (1.0 - f.x) * (1.0 - f.y);
-                     float w1 = f.x * (1.0 - f.y);
-                     float w2 = f.y;
-                     float wSum = w0 + w1 + w2 + 1e-4;
-                     return (s0 * w0 + s1 * w1 + s2 * w2) / wSum;
-                 }
-                 // R32.65.3: distance LOD — stochastic close, plain far
-                 vec4 lodSampleArray(sampler2DArray tex, vec2 uv, float layer, float lodBlend) {
-                     if (lodBlend >= 0.99) return texture(tex, vec3(uv, layer));
-                     if (lodBlend <= 0.01) return stochasticSampleArray(tex, uv, layer);
-                     return mix(stochasticSampleArray(tex, uv, layer), texture(tex, vec3(uv, layer)), lodBlend);
+                 // R32.65.5: middle-ground sampling — 1 plain fetch + procedural anti-tile noise
+                 // Replaces stochastic (3 fetches/sample). UV perturbation breaks tiling,
+                 // post-fetch noise adds variation. ~5 fetches total vs 35 stochastic.
+                 vec4 antiTileSample(sampler2DArray tex, vec2 uv, float layer) {
+                     // Smooth UV perturbation to break tiling grid alignment
+                     float pn1 = vnoise(uv * 0.37);
+                     float pn2 = vnoise(uv * 0.41 + vec2(7.3, 3.1));
+                     vec2 pertUv = uv + vec2(pn1, pn2) * 0.12;
+                     vec4 c = texture(tex, vec3(pertUv, layer));
+                     // Per-cell brightness variation to mask remaining repetition
+                     float cellVar = vnoise(uv * 0.19 + vec2(layer * 5.7, layer * 3.1));
+                     c.rgb *= 0.92 + cellVar * 0.16;
+                     return c;
                  }`)
             .replace('#include <map_fragment>',
-                `float camDist = length(vViewPosition);
-                 float lodBlend = smoothstep(80.0, 180.0, camDist);
-                 float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
+                `float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
-                 vec4 cG1 = lodSampleArray(uTerrainColor, tUv, 0.0, lodBlend);
-                 vec4 cG2 = lodSampleArray(uTerrainColor, tUv * 0.83 + vec2(13.7, 7.1), 1.0, lodBlend);
-                 vec4 cG  = mix(cG1, cG2, gMix);
-                 vec4 cR  = lodSampleArray(uTerrainColor, tUv, 2.0, lodBlend);
-                 vec4 cD  = lodSampleArray(uTerrainColor, tUv, 3.0, lodBlend);
-                 vec4 cS  = lodSampleArray(uTerrainColor, tUv, 4.0, lodBlend);
+                 // 1 fetch per layer (skip layers with <5% weight)
+                 vec4 cG = vec4(0.0);
+                 if (splatW.r > 0.05) {
+                     vec4 cG1 = antiTileSample(uTerrainColor, tUv, 0.0);
+                     vec4 cG2 = antiTileSample(uTerrainColor, tUv * 0.83 + vec2(13.7, 7.1), 1.0);
+                     cG = mix(cG1, cG2, gMix);
+                 }
+                 vec4 cR = splatW.g > 0.05 ? antiTileSample(uTerrainColor, tUv, 2.0) : vec4(0.0);
+                 vec4 cD = splatW.b > 0.05 ? antiTileSample(uTerrainColor, tUv, 3.0) : vec4(0.0);
+                 vec4 cS = splatW.a > 0.05 ? antiTileSample(uTerrainColor, tUv, 4.0) : vec4(0.0);
                  vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
                  float n1 = vnoise(vWorldXZ * 0.012);
                  float n2 = vnoise(vWorldXZ * 0.045 + vec2(31.7, 19.3));
@@ -1031,18 +1020,12 @@ async function initTerrain() {
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
-                 // R32.42: AO from array texture (layer indices match color layers)
-                 // R32.65.3: skip AO at distance — barely visible, saves 5 fetches
-                 if (uUseAO > 0.5 && lodBlend < 0.95) {
-                     float aG1 = texture(uTerrainAO, vec3(tUv, 0.0)).r;
-                     float aG2 = texture(uTerrainAO, vec3(tUv * 0.83 + vec2(13.7, 7.1), 1.0)).r;
-                     float aG_ = mix(aG1, aG2, gMix);
-                     float aR_ = texture(uTerrainAO, vec3(tUv, 2.0)).r;
-                     float aD_ = texture(uTerrainAO, vec3(tUv, 3.0)).r;
-                     float aS_ = texture(uTerrainAO, vec3(tUv, 4.0)).r;
-                     float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     aoT = mix(1.0, aoT, 0.85 * (1.0 - lodBlend));
-                     sampledDiffuseColor.rgb *= aoT;
+                 // R32.65.5: procedural AO replaces texture AO — slope + height + noise
+                 {
+                     float aoSlope = 1.0 - smoothstep(0.1, 0.6, slopeFromNormal) * 0.25;
+                     float aoHeight = 0.82 + 0.18 * hN;
+                     float aoNoise = 0.95 + vnoise(vWorldXZ * 0.08) * 0.10;
+                     sampledDiffuseColor.rgb *= aoSlope * aoHeight * aoNoise;
                  }
                  {
                      float lum = dot(sampledDiffuseColor.rgb, vec3(0.299, 0.587, 0.114));
@@ -1050,18 +1033,14 @@ async function initTerrain() {
                  }
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
-                `vec2 nUv = vWorldXZ / uTileMeters;
-                 // R32.65.3: skip normal maps at distance — use vertex normal only
-                 if (lodBlend < 0.95) {
-                     vec3 nG1 = lodSampleArray(uTerrainNormal, nUv, 0.0, lodBlend).xyz * 2.0 - 1.0;
-                     vec3 nG2 = lodSampleArray(uTerrainNormal, nUv * 0.83 + vec2(13.7, 7.1), 1.0, lodBlend).xyz * 2.0 - 1.0;
-                     vec3 nG  = mix(nG1, nG2, gMix);
-                     vec3 nR = lodSampleArray(uTerrainNormal, nUv, 2.0, lodBlend).xyz * 2.0 - 1.0;
-                     vec3 nD = lodSampleArray(uTerrainNormal, nUv, 3.0, lodBlend).xyz * 2.0 - 1.0;
-                     vec3 nS = lodSampleArray(uTerrainNormal, nUv, 4.0, lodBlend).xyz * 2.0 - 1.0;
-                     vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
-                     mapN.xy *= normalScale * (1.0 - lodBlend);
-                     normal = normalize( tbn * mapN );
+                `// R32.65.5: skip normal map textures entirely — smooth vertex normals
+                 // are sufficient with the 2× upscaled terrain. Procedural micro-detail
+                 // via noise perturbation of the interpolated normal.
+                 {
+                     float nPert1 = vnoise(vWorldXZ * 0.35) * 2.0 - 1.0;
+                     float nPert2 = vnoise(vWorldXZ * 0.35 + vec2(17.1, 31.4)) * 2.0 - 1.0;
+                     normal += tbn[0] * nPert1 * 0.04 + tbn[1] * nPert2 * 0.04;
+                     normal = normalize(normal);
                  }`)
             // R32.42: luminance-derived roughness (now safe with only 3+internals sampler units)
             .replace('#include <roughnessmap_fragment>',
