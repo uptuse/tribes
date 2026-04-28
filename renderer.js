@@ -1756,7 +1756,7 @@ async function initInteriorShapes() {
         // Each unique material index gets its own PBR material (color, roughness, metalness, emissive).
         // R32.48.1: polygonOffset prevents z-fighting on thin/coplanar surfaces with DoubleSide.
         const _matProps = {
-            side: THREE.FrontSide, flatShading: false, vertexColors: false,  // R32.64.1: smooth normals from computeCreaseNormals (was true — workaround for suspected broken normals)
+            side: THREE.FrontSide, flatShading: true, vertexColors: false,  // R32.64.2: REVERTED — flatShading OFF caused black flashing
             polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
         };
 
