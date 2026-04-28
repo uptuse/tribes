@@ -394,8 +394,8 @@ const DayNight = (() => {
         const sunCol = lerpColors(palette.nightSun, palette.dawnSun, palette.noonSun, palette.duskSun, t01);
         if (typeof sunLight !== 'undefined' && sunLight) {
             sunLight.color.copy(sunCol);
-            // R32.63.2: sun 0.9 at noon (was 1.2, too washed)
-            sunLight.intensity = 0.9 * dayMix;
+            // R32.63.4: sun 1.6 (was 0.9). Higher ratio vs ambient = visible shadows.
+            sunLight.intensity = 1.6 * dayMix;
             sunLight.castShadow = sunLight.intensity > 0.05;
         }
 
@@ -404,16 +404,16 @@ const DayNight = (() => {
             moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
             moonLight.target.position.set(0, 0, 0);
             moonLight.color.setHex(0x6688cc);
-            moonLight.intensity = 0.3 * nightMix; // R32.63.2: 0.6→0.3 (dimmer moonlight)
+            moonLight.intensity = 0.3 * nightMix;
         }
 
-        // Hemisphere fill
+        // Hemisphere fill — lowered to let directional sun dominate (shadow contrast)
         const hemiCol = lerpColors(palette.nightHemi, palette.dawnHemi, palette.noonHemi, palette.duskHemi, t01);
         if (typeof hemiLight !== 'undefined' && hemiLight) {
             hemiLight.color.copy(hemiCol);
             hemiLight.groundColor.copy(palette.hemiGround);
-            // R32.63.2: 0.25 night → 0.90 noon (was 0.40→1.20)
-            hemiLight.intensity = 0.25 + 0.65 * dayMix;
+            // R32.63.4: 0.20 night → 0.50 noon (was 0.25→0.90, too much fill = no shadows)
+            hemiLight.intensity = 0.20 + 0.30 * dayMix;
         }
 
         // Fog
@@ -422,14 +422,14 @@ const DayNight = (() => {
             scene.fog.color.copy(fogCol);
         }
 
-        // R32.63.2: exposure + env intensity. Night should feel genuinely dark.
+        // R32.63.4: env intensity lowered so directional sun creates visible shadows.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.55 + 0.60 * dayMix;  // 0.55 night → 1.15 noon
+            renderer.toneMappingExposure = 0.50 + 0.65 * dayMix;  // 0.50 night → 1.15 noon
         }
         if (typeof scene !== 'undefined') {
-            // R32.63.2: env 0.25 at night → 0.90 at noon (was 0.50→1.20)
+            // R32.63.4: env 0.15 at night → 0.55 at noon (low ambient = shadow contrast)
             if (scene.environmentIntensity !== undefined) {
-                scene.environmentIntensity = 0.25 + 0.65 * dayMix;
+                scene.environmentIntensity = 0.15 + 0.40 * dayMix;
             }
         }
 
@@ -531,15 +531,15 @@ function initLights() {
     sunLight.castShadow = tier.shadowMap > 0;
     if (tier.shadowMap > 0) {
         sunLight.shadow.mapSize.set(tier.shadowMap, tier.shadowMap);
-        sunLight.shadow.camera.near = 10;
-        sunLight.shadow.camera.far = 800;
-        const s = 200; // shadow frustum half-size, follows camera
+        sunLight.shadow.camera.near = 5;
+        sunLight.shadow.camera.far = 600;
+        const s = 120; // R32.63.4: tighter frustum (was 200) = sharper shadows
         sunLight.shadow.camera.left = -s;
         sunLight.shadow.camera.right = s;
         sunLight.shadow.camera.top = s;
         sunLight.shadow.camera.bottom = -s;
-        sunLight.shadow.bias = -0.0005;
-        sunLight.shadow.normalBias = 0.02;
+        sunLight.shadow.bias = -0.0003;
+        sunLight.shadow.normalBias = 0.03;
         sunLight.shadow.radius = 2; // R32.45→R32.47.1: soft PCF (was 3, caused edge flash)
     }
     scene.add(sunLight);
@@ -3765,7 +3765,7 @@ function syncCamera() {
     // flicker on every surface. We snap the light+target in world XZ to the
     // nearest shadow texel size.
     if (sunLight.shadow && sunLight.shadow.mapSize) {
-        const shadowFrustumSize = 400; // s * 2, from shadow camera setup
+        const shadowFrustumSize = 240; // s * 2, from shadow camera setup (R32.63.4)
         const texelSize = shadowFrustumSize / sunLight.shadow.mapSize.x;
         sunLight.position.x = Math.round(sunLight.position.x / texelSize) * texelSize;
         sunLight.position.z = Math.round(sunLight.position.z / texelSize) * texelSize;
