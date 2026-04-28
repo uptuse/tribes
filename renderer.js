@@ -1793,6 +1793,102 @@ async function initInteriorShapes() {
             polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
         };
 
+        // R32.66: Procedural texture generator — runtime canvas textures by material category
+        const _texCache = new Map();
+        const _SZ = 128;
+        function _noise(ctx,w,h,r,g,b,a,spread){
+            const id=ctx.getImageData(0,0,w,h),d=id.data;
+            for(let i=0;i<d.length;i+=4){
+                const n=(Math.random()-0.5)*spread;
+                d[i]=Math.max(0,Math.min(255,r+n));
+                d[i+1]=Math.max(0,Math.min(255,g+n));
+                d[i+2]=Math.max(0,Math.min(255,b+n));
+                d[i+3]=a;
+            }
+            ctx.putImageData(id,0,0);
+        }
+        function _genProceduralTex(texName, baseColor) {
+            const key = texName.toLowerCase().replace(/\.bmp$/i,'');
+            if (_texCache.has(key)) return _texCache.get(key);
+            const c = document.createElement('canvas');
+            c.width = c.height = _SZ;
+            const ctx = c.getContext('2d');
+            const [cr,cg,cb] = [baseColor[0]*255|0, baseColor[1]*255|0, baseColor[2]*255|0];
+            // Classify by name prefix
+            if (key.startsWith('ext_iron') || key === 'itube' || key === 'ivent') {
+                // Dark iron — brushed metal + scratches
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,30);
+                ctx.strokeStyle='rgba(255,255,255,0.06)';
+                for(let i=0;i<60;i++){ctx.beginPath();const y=Math.random()*_SZ;ctx.moveTo(0,y);ctx.lineTo(_SZ,y+(Math.random()-0.5)*4);ctx.stroke();}
+                ctx.strokeStyle='rgba(0,0,0,0.15)';
+                for(let i=0;i<8;i++){ctx.beginPath();const y=Math.random()*_SZ;ctx.moveTo(Math.random()*_SZ,y);ctx.lineTo(Math.random()*_SZ,y+(Math.random()-0.5)*6);ctx.lineWidth=1+Math.random();ctx.stroke();}
+            } else if (key.startsWith('metal_') || key === 'base_metal' || key === 'special_metal' || key === 'idkmetalstrip' || key === 'iltmetal' || key === 'greyrib') {
+                // Light metal — fine brushed
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,20);
+                ctx.strokeStyle='rgba(255,255,255,0.04)';
+                for(let i=0;i<80;i++){ctx.beginPath();const y=Math.random()*_SZ;ctx.moveTo(0,y);ctx.lineTo(_SZ,y+(Math.random()-0.5)*2);ctx.stroke();}
+                ctx.strokeStyle='rgba(200,200,210,0.08)';
+                for(let i=0;i<3;i++){const y=Math.random()*_SZ;ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y);ctx.lineWidth=0.5;ctx.stroke();}
+            } else if (key.startsWith('ext_grey')) {
+                // Concrete/composite — noise + panel seams
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,18);
+                ctx.strokeStyle='rgba(0,0,0,0.12)';ctx.lineWidth=1;
+                ctx.strokeRect(2,2,_SZ-4,_SZ-4);
+                ctx.strokeStyle='rgba(0,0,0,0.06)';
+                ctx.beginPath();ctx.moveTo(0,_SZ/2);ctx.lineTo(_SZ,_SZ/2);ctx.stroke();
+                // subtle staining
+                ctx.fillStyle='rgba(80,70,55,0.06)';
+                for(let i=0;i<5;i++){ctx.beginPath();ctx.arc(Math.random()*_SZ,Math.random()*_SZ,8+Math.random()*15,0,Math.PI*2);ctx.fill();}
+            } else if (key.startsWith('base_warm') || key.startsWith('warm_') || key === 'special_warm') {
+                // Warm panels — noise + horizontal lines
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,15);
+                ctx.strokeStyle='rgba(0,0,0,0.08)';ctx.lineWidth=0.5;
+                for(let y=0;y<_SZ;y+=16){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y);ctx.stroke();}
+                ctx.strokeStyle='rgba(255,255,255,0.04)';
+                for(let y=8;y<_SZ;y+=16){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y);ctx.stroke();}
+            } else if (key.startsWith('cold_') || key === 'base_cold') {
+                // Cold panels — noise + grid
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,15);
+                ctx.strokeStyle='rgba(0,0,0,0.07)';ctx.lineWidth=0.5;
+                for(let y=0;y<_SZ;y+=32){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y);ctx.stroke();}
+                for(let x=0;x<_SZ;x+=32){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,_SZ);ctx.stroke();}
+            } else if (key === 'base_rock' || key.startsWith('ext_stone') || key.startsWith('lrrrr') || key === 'lcccc') {
+                // Rock — mottled organic
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,35);
+                ctx.fillStyle='rgba(70,90,50,0.08)';
+                for(let i=0;i<12;i++){ctx.beginPath();ctx.arc(Math.random()*_SZ,Math.random()*_SZ,6+Math.random()*18,0,Math.PI*2);ctx.fill();}
+                ctx.fillStyle='rgba(40,35,25,0.07)';
+                for(let i=0;i<8;i++){ctx.beginPath();ctx.arc(Math.random()*_SZ,Math.random()*_SZ,4+Math.random()*12,0,Math.PI*2);ctx.fill();}
+            } else if (key.startsWith('light_') || key === 'special_interface' || key === 'special_shield' || key === 'hdisplay_yellow' || key === 'redylight') {
+                // Emissive — scan lines + glow
+                ctx.fillStyle=`rgb(${cr},${cg},${cb})`;ctx.fillRect(0,0,_SZ,_SZ);
+                ctx.fillStyle='rgba(255,255,255,0.1)';
+                for(let y=0;y<_SZ;y+=4){ctx.fillRect(0,y,_SZ,1);}
+                ctx.fillStyle='rgba(255,255,255,0.15)';ctx.fillRect(0,_SZ/2-2,_SZ,4);
+            } else if (key.startsWith('base.emblem')) {
+                // Team emblem — base color + diamond pattern
+                ctx.fillStyle=`rgb(${cr},${cg},${cb})`;ctx.fillRect(0,0,_SZ,_SZ);
+                ctx.strokeStyle='rgba(255,255,255,0.12)';ctx.lineWidth=1;
+                const s=16;for(let y=-_SZ;y<_SZ*2;y+=s){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y+_SZ);ctx.stroke();ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y-_SZ);ctx.stroke();}
+            } else if (key === 'carpet_base') {
+                // Carpet — woven texture
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,12);
+                ctx.strokeStyle='rgba(0,0,0,0.06)';ctx.lineWidth=0.5;
+                for(let y=0;y<_SZ;y+=3){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(_SZ,y);ctx.stroke();}
+                for(let x=0;x<_SZ;x+=3){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,_SZ);ctx.stroke();}
+            } else {
+                // Default — subtle noise
+                _noise(ctx,_SZ,_SZ,cr,cg,cb,255,20);
+            }
+            const tex = new THREE.CanvasTexture(c);
+            tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+            tex.repeat.set(2,2);
+            tex.magFilter = THREE.LinearFilter;
+            tex.minFilter = THREE.LinearMipmapLinearFilter;
+            _texCache.set(key, tex);
+            return tex;
+        }
+
         // Cache of material arrays per mesh filename (since multiple instances share geometry)
         const matArrayCache = new Map();
 
@@ -1802,9 +1898,11 @@ async function initInteriorShapes() {
             const mats = matNames.map(texName => {
                 const entry = lookupPalette(texName);
                 const [cr, cg, cb] = entry.color;
+                const procTex = _genProceduralTex(texName, entry.color);
                 const mat = new THREE.MeshStandardMaterial({
                     ..._matProps,
-                    color: new THREE.Color(cr, cg, cb),
+                    color: new THREE.Color(1, 1, 1),
+                    map: procTex,
                     roughness: entry.roughness,
                     metalness: entry.metalness,
                     envMapIntensity: 0.35,
