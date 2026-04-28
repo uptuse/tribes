@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=137'; // R32.116: cache bust
+import * as Characters from './renderer_characters.js?v=140'; // R32.116: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -158,10 +158,6 @@ export async function start() {
     }
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
 
-    // R32.139: Terrain carving — depress terrain vertices under building footprints
-    // Buildings are hobbit-holed into hillsides; the original game carved terrain around them.
-    try { _carveTerrainUnderBuildings(); } catch (e) { console.warn('[R32.139] terrain carve failed:', e); }
-
     // R32.104: Create Rapier cuboid colliders for buildings
     if (_rapierReady && window.RapierPhysics) {
         try { window.RapierPhysics.createBuildingColliders(); } catch (e) {
@@ -169,6 +165,10 @@ export async function start() {
         }
     }
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
+
+    // R32.140: Terrain carving — uses actual interior mesh bounding boxes
+    // Buildings are hobbit-holed into hillsides; carve terrain out from under them.
+    try { _carveTerrainUnderBuildings(); } catch (e) { console.warn('[R32.140] terrain carve failed:', e); }
     // R32.104: Interior mesh colliders are created inside registerModelCollision()
     // which is now redirected to Rapier (see below)
     initCustomModels(); // R32.57: load custom GLB models
@@ -1138,53 +1138,46 @@ async function initTerrain() {
     console.log('[R32.42] Terrain: 3 array textures (color+normal+AO), roughness enabled, POM disabled');
 }
 
-// R32.139: Carve terrain under building footprints
-// Depress terrain vertices that fall inside building AABBs so terrain
-// doesn't poke through doorways/entrances (hobbit-hole effect).
+// R32.140: Carve terrain under interior shapes (not WASM AABBs)
+// Uses actual placed mesh bounding boxes — much tighter than building AABBs.
+// Skips rocks. Depresses terrain vertices inside each shape's XZ footprint.
 function _carveTerrainUnderBuildings() {
-    if (!terrainMesh || !Module._getBuildingPtr) return;
-
-    const ptr = Module._getBuildingPtr();
-    const count = Module._getBuildingCount();
-    const stride = Module._getBuildingStride();
-    const bView = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
-
-    // Collect non-rock building AABBs
-    const buildings = [];
-    for (let b = 0; b < count; b++) {
-        const o = b * stride;
-        const type = bView[o + 6];
-        if (type === 5) continue; // skip rocks
-        buildings.push({
-            cx: bView[o], cy: bView[o + 1], cz: bView[o + 2],
-            hx: bView[o + 3], hy: bView[o + 4], hz: bView[o + 5]
-        });
-    }
-    if (!buildings.length) return;
+    if (!terrainMesh || !interiorShapesGroup) return;
 
     const geo = terrainMesh.geometry;
     const pos = geo.attributes.position;
     const size = _htSize;
     const scale = _htScale;
-    const half = (size - 1) * scale * 0.5;
-    let carved = 0;
 
+    // Collect world-space AABBs from interior shapes (skip rocks)
+    const boxes = [];
+    interiorShapesGroup.children.forEach(outer => {
+        if (!outer.userData) return;
+        const fn = (outer.userData.fileName || '').toLowerCase();
+        if (fn.startsWith('lrock')) return; // skip rocks
+        const box = new THREE.Box3().setFromObject(outer);
+        if (box.isEmpty()) return;
+        boxes.push(box);
+    });
+    if (!boxes.length) return;
+
+    let carved = 0;
     for (let vi = 0; vi < pos.count; vi++) {
         const wx = pos.getX(vi);
         const wy = pos.getY(vi);
         const wz = pos.getZ(vi);
 
-        for (const b of buildings) {
-            // Expand footprint by 2m margin for doorway clearance
-            const margin = 2.0;
-            if (wx >= b.cx - b.hx - margin && wx <= b.cx + b.hx + margin &&
-                wz >= b.cz - b.hz - margin && wz <= b.cz + b.hz + margin) {
-                // Building bottom = center Y minus half height
-                const buildingBottom = b.cy - b.hy;
-                // If terrain is above building bottom, push it down
-                if (wy > buildingBottom - 1.0) {
-                    pos.setY(vi, buildingBottom - 1.0);
+        for (const box of boxes) {
+            // Check XZ footprint with margin for doorway clearance
+            const margin = 3.0;
+            if (wx >= box.min.x - margin && wx <= box.max.x + margin &&
+                wz >= box.min.z - margin && wz <= box.max.z + margin) {
+                // Depress to below building bottom
+                const targetY = box.min.y - 2.0;
+                if (wy > targetY) {
+                    pos.setY(vi, targetY);
                     carved++;
+                    break; // only need to depress once per vertex
                 }
             }
         }
@@ -1193,7 +1186,7 @@ function _carveTerrainUnderBuildings() {
     if (carved > 0) {
         pos.needsUpdate = true;
         geo.computeVertexNormals();
-        // Also update the heightmap sample data
+        // Update heightmap sample data to match
         for (let vi = 0; vi < pos.count; vi++) {
             const j = Math.floor(vi / size);
             const i = vi % size;
@@ -1201,7 +1194,7 @@ function _carveTerrainUnderBuildings() {
                 _htData[j * size + i] = pos.getY(vi);
             }
         }
-        console.log(`[R32.139] Terrain carved: ${carved} vertices depressed under ${buildings.length} buildings`);
+        console.log(`[R32.140] Terrain carved: ${carved} vertices depressed under ${boxes.length} interior shapes`);
     }
 }
 

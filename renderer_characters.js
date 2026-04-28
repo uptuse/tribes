@@ -137,10 +137,9 @@ function _createInstance() {
     flameGeo.rotateX(Math.PI); // point downward
     const flameL = new THREE.Mesh(flameGeo, flameMat);
     const flameR = new THREE.Mesh(flameGeo, flameMat.clone());
-    // Position in model-local space (cm, since armature scale is 0.01)
-    // Upper back: x ±12cm, y ~120cm (back height), z -25cm (behind)
-    flameL.position.set(-12, 100, 25);
-    flameR.position.set(12, 100, 25);
+    // Position in world scale (model root is scale 1, armature child is 0.01)
+    flameL.position.set(-0.12, 1.0, 0.25);
+    flameR.position.set(0.12, 1.0, 0.25);
     flameL.scale.set(1, 1, 1);
     flameR.scale.set(1, 1, 1);
     flameL.visible = false;
@@ -157,10 +156,10 @@ function _createInstance() {
         depthWrite: false,
         side: THREE.DoubleSide,
     });
-    const boardGeo = new THREE.PlaneGeometry(30, 80); // width, length in cm
+    const boardGeo = new THREE.PlaneGeometry(0.35, 0.9); // width, length in meters (world scale)
     boardGeo.rotateX(-Math.PI / 2); // lay flat
     const skiBoard = new THREE.Mesh(boardGeo, boardMat);
-    skiBoard.position.set(0, 2, 0); // just above feet (2cm)
+    skiBoard.position.set(0, 0.02, 0); // just above feet (2cm, world scale)
     skiBoard.visible = false;
     model.add(skiBoard);
 
