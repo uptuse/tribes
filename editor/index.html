@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tribes — Raindance Asset Editor</title>
+<style>
+/* ───── reset & dark sci-fi base ───── */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI','Roboto',sans-serif;font-size:13px}
+canvas{display:block}
+
+/* ───── toolbar ───── */
+#toolbar{position:fixed;top:0;left:0;right:0;height:38px;background:rgba(12,14,22,0.92);border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;padding:0 10px;gap:8px;z-index:100;backdrop-filter:blur(6px)}
+#toolbar .title{font-family:'Roboto Mono',monospace;font-size:12px;color:#FFD479;letter-spacing:1px;margin-right:16px;white-space:nowrap}
+#toolbar button,#toolbar label{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#toolbar button:hover,#toolbar label:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#toolbar button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#toolbar .sep{width:1px;height:20px;background:rgba(255,255,255,0.08);margin:0 4px}
+#toolbar select{font-size:11px;padding:3px 6px;background:#16181f;border:1px solid rgba(255,255,255,0.12);color:#c8ccd4;border-radius:3px}
+#toolbar input[type=file]{display:none}
+#toolbar .snap-group{display:flex;align-items:center;gap:4px}
+#toolbar .snap-group input[type=checkbox]{accent-color:#FFD479}
+
+/* ───── side panel ───── */
+#panel{position:fixed;top:38px;right:0;width:280px;bottom:0;background:rgba(12,14,22,0.92);border-left:1px solid rgba(255,255,255,0.08);overflow-y:auto;z-index:90;backdrop-filter:blur(6px)}
+#panel h3{font-size:11px;color:#FFD479;text-transform:uppercase;letter-spacing:1.5px;padding:10px 12px 6px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.asset-item{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background .1s;display:flex;justify-content:space-between;align-items:center}
+.asset-item:hover{background:rgba(255,255,255,0.04)}
+.asset-item.selected{background:rgba(255,212,121,0.1);border-left:2px solid #FFD479}
+.asset-item .name{font-size:11px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:170px}
+.asset-item .info{font-size:9px;color:#666;font-family:'Roboto Mono',monospace}
+.asset-item .del-btn{font-size:10px;color:#664;padding:2px 6px;border-radius:2px;background:rgba(255,80,80,0.08);border:1px solid rgba(255,80,80,0.15);cursor:pointer;opacity:0;transition:opacity .15s}
+.asset-item:hover .del-btn{opacity:1}
+.asset-item .del-btn:hover{background:rgba(255,80,80,0.25);color:#ff6666}
+
+/* ───── transform panel ───── */
+#transform-panel{padding:10px 12px}
+#transform-panel h4{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:1px;margin:8px 0 4px}
+#transform-panel .row{display:flex;gap:4px;margin-bottom:3px}
+#transform-panel .row label{width:14px;font-size:10px;color:#FFD479;font-family:'Roboto Mono',monospace;line-height:22px}
+#transform-panel .row input{flex:1;background:#16181f;border:1px solid rgba(255,255,255,0.1);color:#c8ccd4;padding:2px 6px;border-radius:2px;font-size:11px;font-family:'Roboto Mono',monospace}
+#transform-panel .row input:focus{border-color:rgba(255,212,121,0.4);outline:none}
+
+/* ───── status bar ───── */
+#statusbar{position:fixed;bottom:0;left:0;right:280px;height:24px;background:rgba(12,14,22,0.92);border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;padding:0 12px;font-size:10px;color:#666;font-family:'Roboto Mono',monospace;z-index:100}
+#statusbar span{margin-right:20px}
+
+/* ───── loading overlay ───── */
+#loading-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.95);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:12px}
+#loading-overlay .spinner{width:32px;height:32px;border:3px solid rgba(255,212,121,0.15);border-top:3px solid #FFD479;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-overlay .text{font-size:12px;color:#FFD479;font-family:'Roboto Mono',monospace}
+
+/* ───── help overlay ───── */
+#help-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.88);display:none;align-items:center;justify-content:center;z-index:300}
+#help-overlay .card{background:#16181f;border:1px solid rgba(255,212,121,0.2);border-radius:6px;padding:24px 32px;max-width:500px;max-height:80vh;overflow-y:auto}
+#help-overlay .card h2{font-size:16px;color:#FFD479;margin-bottom:12px}
+#help-overlay .card p,#help-overlay .card li{font-size:12px;color:#b0b4bc;line-height:1.6}
+#help-overlay .card kbd{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);padding:1px 5px;border-radius:2px;font-size:11px;font-family:'Roboto Mono',monospace;color:#FFD479}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,212,121,0.3)}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="text">Loading Raindance terrain…</div>
+</div>
+
+<!-- Help overlay -->
+<div id="help-overlay" onclick="this.style.display='none'">
+  <div class="card" onclick="event.stopPropagation()">
+    <h2>⌨️ Raindance Asset Editor</h2>
+    <p style="margin-bottom:10px">Place, rotate, and scale 3D assets on the Raindance map.</p>
+    <ul style="padding-left:18px">
+      <li><kbd>W</kbd> Translate mode</li>
+      <li><kbd>E</kbd> Rotate mode</li>
+      <li><kbd>R</kbd> Scale mode</li>
+      <li><kbd>Q</kbd> Toggle world / local gizmo</li>
+      <li><kbd>G</kbd> Toggle snap-to-grid</li>
+      <li><kbd>Ctrl+D</kbd> Duplicate selected</li>
+      <li><kbd>Delete</kbd> / <kbd>Backspace</kbd> Remove selected</li>
+      <li><kbd>F</kbd> Focus camera on selected</li>
+      <li><kbd>Ctrl+S</kbd> Export JSON</li>
+      <li><kbd>Ctrl+O</kbd> Import JSON</li>
+      <li><kbd>H</kbd> Toggle this help</li>
+      <li><b>Left-click</b> on viewport to select / deselect</li>
+      <li><b>Orbit:</b> Left-drag (off gizmo) · <b>Pan:</b> Right-drag / Middle-drag · <b>Zoom:</b> Scroll</li>
+    </ul>
+    <p style="margin-top:12px;font-size:11px;color:#666">Exported JSON uses Tribes coordinate system (Z-up). Load GLB/GLTF models via the toolbar.</p>
+    <button onclick="document.getElementById('help-overlay').style.display='none'" style="margin-top:14px;padding:6px 16px;background:rgba(255,212,121,0.12);border:1px solid rgba(255,212,121,0.35);color:#FFD479;border-radius:3px;cursor:pointer;font-size:12px">Close</button>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <span class="title">▲ RAINDANCE ASSET EDITOR</span>
+  <label for="file-input" title="Load GLB/GLTF model">📂 Load Model</label>
+  <input type="file" id="file-input" accept=".glb,.gltf">
+  <button id="btn-url" title="Load model from URL">🔗 URL</button>
+  <div class="sep"></div>
+  <button id="btn-box" title="Add test box primitive">📦 Box</button>
+  <button id="btn-cyl" title="Add cylinder primitive">🔩 Cylinder</button>
+  <button id="btn-sphere" title="Add sphere primitive">⚽ Sphere</button>
+  <div class="sep"></div>
+  <button id="btn-translate" class="active" title="Translate (W)">⬛ Move</button>
+  <button id="btn-rotate" title="Rotate (E)">🔄 Rotate</button>
+  <button id="btn-scale" title="Scale (R)">📐 Scale</button>
+  <div class="sep"></div>
+  <div class="snap-group">
+    <input type="checkbox" id="snap-toggle" title="Snap to grid (G)">
+    <label for="snap-toggle" style="border:none;background:none;padding:0;color:#888">Snap</label>
+    <select id="snap-size"><option value="0.5">0.5</option><option value="1" selected>1</option><option value="2">2</option><option value="5">5</option><option value="10">10</option></select>
+  </div>
+  <button id="btn-world-local" title="Toggle world/local (Q)">🌍 World</button>
+  <div class="sep"></div>
+  <button id="btn-duplicate" title="Duplicate (Ctrl+D)">⧉ Dup</button>
+  <button id="btn-delete" title="Delete (Del)">🗑 Del</button>
+  <div class="sep"></div>
+  <button id="btn-export" title="Export JSON (Ctrl+S)">💾 Export</button>
+  <button id="btn-import" title="Import JSON (Ctrl+O)">📥 Import</button>
+  <input type="file" id="import-input" accept=".json" style="display:none">
+  <div class="sep"></div>
+  <button id="btn-help" title="Keyboard shortcuts (H)">❓</button>
+</div>
+
+<!-- Side panel -->
+<div id="panel">
+  <h3>Placed Assets</h3>
+  <div id="asset-list"></div>
+  <div id="transform-panel" style="display:none">
+    <h4>Position</h4>
+    <div class="row"><label>X</label><input type="number" step="0.1" id="tf-px"></div>
+    <div class="row"><label>Y</label><input type="number" step="0.1" id="tf-py"></div>
+    <div class="row"><label>Z</label><input type="number" step="0.1" id="tf-pz"></div>
+    <h4>Rotation (deg)</h4>
+    <div class="row"><label>X</label><input type="number" step="1" id="tf-rx"></div>
+    <div class="row"><label>Y</label><input type="number" step="1" id="tf-ry"></div>
+    <div class="row"><label>Z</label><input type="number" step="1" id="tf-rz"></div>
+    <h4>Scale</h4>
+    <div class="row"><label>X</label><input type="number" step="0.1" id="tf-sx" min="0.01"></div>
+    <div class="row"><label>Y</label><input type="number" step="0.1" id="tf-sy" min="0.01"></div>
+    <div class="row"><label>Z</label><input type="number" step="0.1" id="tf-sz" min="0.01"></div>
+  </div>
+</div>
+
+<!-- Status bar -->
+<div id="statusbar">
+  <span id="st-count">Assets: 0</span>
+  <span id="st-sel">No selection</span>
+  <span id="st-pos"></span>
+</div>
+
+<!-- Three.js from CDN (same r170 as game) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ═══════════════════ CONSTANTS ═══════════════════
+const TERRAIN_RAW_SIZE = 257;
+const TERRAIN_WORLD_SCALE = 24;  // Tribes 1 Raindance standard
+const TERRAIN_SPAN = (TERRAIN_RAW_SIZE - 1) * TERRAIN_WORLD_SCALE; // 6144
+const HEIGHTMAP_URL = '../assets/maps/raindance/heightmap.png';
+const CANONICAL_URL = '../assets/maps/raindance/canonical.json';
+const MESHES_JSON_URL = '../assets/maps/raindance/raindance_meshes.json';
+
+// Tribes Z-up → Three.js Y-up conversion
+function tribesToWorld(p) { return { x: p[0], y: p[2], z: -p[1] }; }
+function worldToTribes(v) { return [v.x, -v.z, v.y]; }
+
+// ═══════════════════ STATE ═══════════════════
+let placedAssets = [];   // [{id, name, modelUrl, mesh, tribesPos, tribesRot, tribesScale}]
+let selectedAsset = null;
+let nextId = 1;
+let snapEnabled = false;
+let gizmoSpace = 'world';
+
+// ═══════════════════ SCENE SETUP ═══════════════════
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0c10);
+renderer.shadowMap.enabled = false;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x0a0c10, 0.00035);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 8000);
+camera.position.set(-256, 80, 40);
+camera.lookAt(-256, 0, 24);
+
+// Lights
+const ambient = new THREE.AmbientLight(0x8899bb, 0.6);
+scene.add(ambient);
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+sun.position.set(200, 400, -100);
+scene.add(sun);
+const hemi = new THREE.HemisphereLight(0x6688aa, 0x443322, 0.4);
+scene.add(hemi);
+
+// Grid
+const gridHelper = new THREE.GridHelper(800, 80, 0x1a1f2e, 0x14171f);
+gridHelper.position.y = 0.1;
+scene.add(gridHelper);
+
+// Axes at origin
+const axes = new THREE.AxesHelper(20);
+scene.add(axes);
+
+// Controls
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.08;
+orbitControls.maxDistance = 3000;
+orbitControls.target.set(-256, 30, 24);
+
+const transformControls = new TransformControls(camera, renderer.domElement);
+transformControls.setSize(0.8);
+scene.add(transformControls);
+
+transformControls.addEventListener('dragging-changed', (e) => {
+    orbitControls.enabled = !e.value;
+});
+transformControls.addEventListener('objectChange', () => {
+    if (selectedAsset) updateTransformPanel();
+});
+
+// Raycaster for selection
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+
+// ═══════════════════ LOAD TERRAIN ═══════════════════
+async function loadTerrain() {
+    const img = await new Promise((res, rej) => {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.onload = () => res(img);
+        img.onerror = rej;
+        img.src = HEIGHTMAP_URL;
+    });
+
+    const c = document.createElement('canvas');
+    c.width = c.height = TERRAIN_RAW_SIZE;
+    const ctx = c.getContext('2d', { willReadFrequently: true });
+    ctx.drawImage(img, 0, 0, TERRAIN_RAW_SIZE, TERRAIN_RAW_SIZE);
+    const data = ctx.getImageData(0, 0, TERRAIN_RAW_SIZE, TERRAIN_RAW_SIZE).data;
+
+    // 16-bit heightmap packed as RGBA (R=high byte, G=low byte in typical exports)
+    // The PNG is I;16, browser reads as 8-bit so we just use R channel scaled
+    const heights = new Float32Array(TERRAIN_RAW_SIZE * TERRAIN_RAW_SIZE);
+    // Determine scaling: The renderer uses WASM getHeightmapPtr which returns real Tribes heights.
+    // Since we can't run WASM here, we approximate from the 8-bit R channel.
+    // Typical Raindance height range: 0 to ~120 units
+    // The 16-bit image has values 0-65535, browser reads 8-bit (0-255).
+    // Scale factor: ~120/255 ≈ 0.47, but building Y positions suggest range ~13-65
+    // Actually the R channel from a 16-bit PNG varies by browser. Let's use a broader approach.
+    let rMax = 0;
+    for (let i = 0; i < data.length; i += 4) {
+        if (data[i] > rMax) rMax = data[i];
+    }
+    const hScale = 120 / Math.max(1, rMax);  // approximate
+    for (let j = 0; j < TERRAIN_RAW_SIZE; j++) {
+        for (let i = 0; i < TERRAIN_RAW_SIZE; i++) {
+            const px = (j * TERRAIN_RAW_SIZE + i) * 4;
+            heights[j * TERRAIN_RAW_SIZE + i] = data[px] * hScale;
+        }
+    }
+
+    const geom = new THREE.PlaneGeometry(TERRAIN_SPAN, TERRAIN_SPAN, TERRAIN_RAW_SIZE - 1, TERRAIN_RAW_SIZE - 1);
+    geom.rotateX(-Math.PI / 2);
+    const pos = geom.attributes.position;
+    for (let j = 0; j < TERRAIN_RAW_SIZE; j++) {
+        for (let i = 0; i < TERRAIN_RAW_SIZE; i++) {
+            pos.setY(j * TERRAIN_RAW_SIZE + i, heights[j * TERRAIN_RAW_SIZE + i]);
+        }
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0x3a4a28,
+        roughness: 0.92,
+        metalness: 0.05,
+        wireframe: false,
+        flatShading: true,
+    });
+    const terrain = new THREE.Mesh(geom, mat);
+    terrain.receiveShadow = true;
+    terrain.userData.isTerrain = true;
+    scene.add(terrain);
+
+    return { heights, terrain };
+}
+
+// ═══════════════════ LOAD BUILDINGS ═══════════════════
+async function loadBuildings() {
+    let canon, meshesJson;
+    try {
+        const [cRes, mRes] = await Promise.all([fetch(CANONICAL_URL), fetch(MESHES_JSON_URL)]);
+        canon = await cRes.json();
+        meshesJson = await mRes.json();
+    } catch (e) {
+        console.warn('Could not load building data:', e);
+        return;
+    }
+
+    // Build bounds lookup from meshes JSON
+    const boundsMap = new Map();
+    for (const m of meshesJson.meshes) {
+        boundsMap.set(m.fileName, {
+            min: m.bounds_min || [0,0,0],
+            max: m.bounds_max || [0,0,0]
+        });
+    }
+
+    const items = canon.neutral_interior_shapes || [];
+    const buildingGroup = new THREE.Group();
+    buildingGroup.name = 'ExistingBuildings';
+
+    for (const item of items) {
+        const bounds = boundsMap.get(item.fileName);
+        if (!bounds) continue;
+
+        const bMin = bounds.min;
+        const bMax = bounds.max;
+        // Size in Tribes local coords (Z-up)
+        const sx = bMax[0] - bMin[0];
+        const sy = bMax[1] - bMin[1];
+        const sz = bMax[2] - bMin[2];
+        // Center offset in Tribes local coords
+        const cx = (bMin[0] + bMax[0]) / 2;
+        const cy = (bMin[1] + bMax[1]) / 2;
+        const cz = (bMin[2] + bMax[2]) / 2;
+
+        // Create wireframe box in Tribes local space, then transform
+        const boxGeom = new THREE.BoxGeometry(sx, sz, sy); // Note: Tribes Y maps to Three Z
+        const edges = new THREE.EdgesGeometry(boxGeom);
+        const isRock = item.fileName.toLowerCase().startsWith('lrock');
+        const isBase = item.fileName.toLowerCase().startsWith('esmall');
+        const color = isRock ? 0x446633 : isBase ? 0xFFD479 : 0x334466;
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ color, opacity: 0.4, transparent: true }));
+
+        // Position: Tribes [X,Y,Z] → Three [X,Z,-Y]
+        const w = tribesToWorld(item.position);
+
+        // Inner mesh offset (center of bounding box in Tribes local → Three local after -90deg X)
+        // After -90 X rotation: local Tribes [cx,cy,cz] → [cx, cz, -cy]
+        line.position.set(cx, cz, -cy);
+
+        const outer = new THREE.Group();
+        outer.position.set(w.x, w.y, w.z);
+
+        // Rotation from canonical: same logic as renderer
+        const _rx = item.rotation?.[0] || 0;
+        const _ry = item.rotation?.[1] || 0;
+        const _rz = item.rotation?.[2] || 0;
+        if (_rx === 0 && _ry === 0) {
+            outer.rotation.y = -_rz;
+        } else {
+            const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -_rx);
+            const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), -_ry);
+            const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -_rz);
+            outer.quaternion.copy(qz.multiply(qy).multiply(qx));
+        }
+
+        outer.add(line);
+        outer.userData = { buildingName: item.name || item.fileName, fileName: item.fileName };
+        buildingGroup.add(outer);
+
+        // Also add a label sprite
+        const label = makeLabel(item.name || item.fileName.replace(/\.\d+\.dis$/, ''));
+        label.position.set(w.x, w.y + sz + 3, w.z);
+        label.scale.set(8, 4, 1);
+        buildingGroup.add(label);
+    }
+
+    scene.add(buildingGroup);
+}
+
+function makeLabel(text) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgba(255,212,121,0.7)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 32);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    return new THREE.Sprite(mat);
+}
+
+// ═══════════════════ ASSET MANAGEMENT ═══════════════════
+const gltfLoader = new GLTFLoader();
+
+function addAsset(mesh, name, modelUrl) {
+    const id = nextId++;
+    mesh.userData.assetId = id;
+    mesh.userData.assetName = name;
+    scene.add(mesh);
+
+    const asset = {
+        id, name, modelUrl: modelUrl || null, mesh,
+        get tribesPos() { return worldToTribes(mesh.position); },
+        get tribesRot() {
+            return [
+                THREE.MathUtils.radToDeg(mesh.rotation.x),
+                THREE.MathUtils.radToDeg(mesh.rotation.y),
+                THREE.MathUtils.radToDeg(mesh.rotation.z)
+            ];
+        },
+        get tribesScale() { return [mesh.scale.x, mesh.scale.y, mesh.scale.z]; }
+    };
+    placedAssets.push(asset);
+    selectAsset(asset);
+    refreshAssetList();
+    updateStatus();
+    return asset;
+}
+
+function removeAsset(asset) {
+    if (!asset) return;
+    if (selectedAsset === asset) deselectAsset();
+    scene.remove(asset.mesh);
+    asset.mesh.traverse(c => { if (c.geometry) c.geometry.dispose(); if (c.material) { if (Array.isArray(c.material)) c.material.forEach(m => m.dispose()); else c.material.dispose(); }});
+    placedAssets = placedAssets.filter(a => a !== asset);
+    refreshAssetList();
+    updateStatus();
+}
+
+function duplicateAsset(asset) {
+    if (!asset) return;
+    const clone = asset.mesh.clone();
+    clone.position.copy(asset.mesh.position).add(new THREE.Vector3(5, 0, 5));
+    clone.rotation.copy(asset.mesh.rotation);
+    clone.scale.copy(asset.mesh.scale);
+    addAsset(clone, asset.name + ' (copy)', asset.modelUrl);
+}
+
+function selectAsset(asset) {
+    if (selectedAsset) deselectAsset();
+    selectedAsset = asset;
+    transformControls.attach(asset.mesh);
+    document.getElementById('transform-panel').style.display = 'block';
+    updateTransformPanel();
+    refreshAssetList();
+    updateStatus();
+}
+
+function deselectAsset() {
+    selectedAsset = null;
+    transformControls.detach();
+    document.getElementById('transform-panel').style.display = 'none';
+    refreshAssetList();
+    updateStatus();
+}
+
+function updateTransformPanel() {
+    if (!selectedAsset) return;
+    const m = selectedAsset.mesh;
+    document.getElementById('tf-px').value = m.position.x.toFixed(2);
+    document.getElementById('tf-py').value = m.position.y.toFixed(2);
+    document.getElementById('tf-pz').value = m.position.z.toFixed(2);
+    document.getElementById('tf-rx').value = THREE.MathUtils.radToDeg(m.rotation.x).toFixed(1);
+    document.getElementById('tf-ry').value = THREE.MathUtils.radToDeg(m.rotation.y).toFixed(1);
+    document.getElementById('tf-rz').value = THREE.MathUtils.radToDeg(m.rotation.z).toFixed(1);
+    document.getElementById('tf-sx').value = m.scale.x.toFixed(3);
+    document.getElementById('tf-sy').value = m.scale.y.toFixed(3);
+    document.getElementById('tf-sz').value = m.scale.z.toFixed(3);
+    updateStatus();
+}
+
+function applyTransformInput() {
+    if (!selectedAsset) return;
+    const m = selectedAsset.mesh;
+    m.position.set(
+        parseFloat(document.getElementById('tf-px').value) || 0,
+        parseFloat(document.getElementById('tf-py').value) || 0,
+        parseFloat(document.getElementById('tf-pz').value) || 0
+    );
+    m.rotation.set(
+        THREE.MathUtils.degToRad(parseFloat(document.getElementById('tf-rx').value) || 0),
+        THREE.MathUtils.degToRad(parseFloat(document.getElementById('tf-ry').value) || 0),
+        THREE.MathUtils.degToRad(parseFloat(document.getElementById('tf-rz').value) || 0)
+    );
+    m.scale.set(
+        Math.max(0.01, parseFloat(document.getElementById('tf-sx').value) || 1),
+        Math.max(0.01, parseFloat(document.getElementById('tf-sy').value) || 1),
+        Math.max(0.01, parseFloat(document.getElementById('tf-sz').value) || 1)
+    );
+}
+
+// ═══════════════════ SIDE PANEL ═══════════════════
+function refreshAssetList() {
+    const list = document.getElementById('asset-list');
+    list.innerHTML = '';
+    for (const asset of placedAssets) {
+        const div = document.createElement('div');
+        div.className = 'asset-item' + (selectedAsset === asset ? ' selected' : '');
+        const tp = asset.tribesPos;
+        div.innerHTML = `
+            <div>
+                <div class="name">${asset.name}</div>
+                <div class="info">[${tp[0].toFixed(0)}, ${tp[1].toFixed(0)}, ${tp[2].toFixed(0)}]</div>
+            </div>
+            <span class="del-btn" data-id="${asset.id}">✕</span>
+        `;
+        div.addEventListener('click', (e) => {
+            if (e.target.classList.contains('del-btn')) {
+                removeAsset(asset);
+                return;
+            }
+            selectAsset(asset);
+        });
+        list.appendChild(div);
+    }
+    document.getElementById('st-count').textContent = `Assets: ${placedAssets.length}`;
+}
+
+function updateStatus() {
+    const sel = document.getElementById('st-sel');
+    const pos = document.getElementById('st-pos');
+    if (selectedAsset) {
+        sel.textContent = `Selected: ${selectedAsset.name}`;
+        const tp = selectedAsset.tribesPos;
+        pos.textContent = `Tribes: [${tp[0].toFixed(1)}, ${tp[1].toFixed(1)}, ${tp[2].toFixed(1)}]`;
+    } else {
+        sel.textContent = 'No selection';
+        pos.textContent = '';
+    }
+}
+
+// ═══════════════════ EXPORT / IMPORT ═══════════════════
+function exportJSON() {
+    const data = {
+        version: 1,
+        map: 'Raindance',
+        exported: new Date().toISOString(),
+        assets: placedAssets.map(a => ({
+            name: a.name,
+            modelUrl: a.modelUrl,
+            position: a.tribesPos,
+            rotation: a.tribesRot,
+            scale: a.tribesScale,
+        }))
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `raindance-assets-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function importJSON(file) {
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); } catch { alert('Invalid JSON'); return; }
+    if (!data.assets || !Array.isArray(data.assets)) { alert('No assets array in JSON'); return; }
+
+    // Clear existing
+    while (placedAssets.length) removeAsset(placedAssets[0]);
+
+    for (const entry of data.assets) {
+        let mesh;
+        if (entry.modelUrl) {
+            try {
+                const gltf = await new Promise((res, rej) => gltfLoader.load(entry.modelUrl, res, undefined, rej));
+                mesh = gltf.scene;
+            } catch {
+                console.warn('Failed to load', entry.modelUrl, '- using placeholder box');
+                mesh = makePrimitive('box');
+            }
+        } else {
+            mesh = makePrimitive('box');
+        }
+
+        // Apply Tribes coords → Three.js
+        const w = tribesToWorld(entry.position || [0,0,0]);
+        mesh.position.set(w.x, w.y, w.z);
+        if (entry.rotation) {
+            mesh.rotation.set(
+                THREE.MathUtils.degToRad(entry.rotation[0] || 0),
+                THREE.MathUtils.degToRad(entry.rotation[1] || 0),
+                THREE.MathUtils.degToRad(entry.rotation[2] || 0)
+            );
+        }
+        if (entry.scale) {
+            mesh.scale.set(entry.scale[0] || 1, entry.scale[1] || 1, entry.scale[2] || 1);
+        }
+        addAsset(mesh, entry.name || 'imported', entry.modelUrl);
+    }
+}
+
+// ═══════════════════ PRIMITIVES ═══════════════════
+function makePrimitive(type) {
+    let geom;
+    const c = 0x667788;
+    switch (type) {
+        case 'box': geom = new THREE.BoxGeometry(2, 2, 2); break;
+        case 'cylinder': geom = new THREE.CylinderGeometry(1, 1, 3, 16); break;
+        case 'sphere': geom = new THREE.SphereGeometry(1.5, 16, 12); break;
+        default: geom = new THREE.BoxGeometry(2, 2, 2);
+    }
+    const mat = new THREE.MeshStandardMaterial({ color: c, roughness: 0.65, metalness: 0.35 });
+    return new THREE.Mesh(geom, mat);
+}
+
+// ═══════════════════ MODEL LOADING ═══════════════════
+function loadModelFile(file) {
+    const url = URL.createObjectURL(file);
+    const name = file.name.replace(/\.(glb|gltf)$/i, '');
+    gltfLoader.load(url, (gltf) => {
+        const model = gltf.scene;
+        // Place at camera target
+        model.position.copy(orbitControls.target);
+        model.position.y += 2;
+        addAsset(model, name, file.name);
+    }, undefined, (err) => {
+        console.error('GLTF load failed:', err);
+        alert('Failed to load model: ' + file.name);
+    });
+}
+
+function loadModelFromURL(url) {
+    const name = url.split('/').pop().replace(/\.(glb|gltf)$/i, '') || 'model';
+    gltfLoader.load(url, (gltf) => {
+        const model = gltf.scene;
+        model.position.copy(orbitControls.target);
+        model.position.y += 2;
+        addAsset(model, name, url);
+    }, undefined, (err) => {
+        console.error('GLTF load failed:', err);
+        alert('Failed to load model from URL');
+    });
+}
+
+// ═══════════════════ SELECTION BY CLICK ═══════════════════
+function onViewportClick(event) {
+    // Ignore if clicking on gizmo or UI
+    if (event.target !== renderer.domElement) return;
+
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+    const meshes = [];
+    for (const a of placedAssets) {
+        a.mesh.traverse(c => { if (c.isMesh) meshes.push(c); });
+    }
+    const hits = raycaster.intersectObjects(meshes, false);
+    if (hits.length > 0) {
+        // Find which asset this mesh belongs to
+        let obj = hits[0].object;
+        while (obj && !obj.userData.assetId) obj = obj.parent;
+        if (obj) {
+            const asset = placedAssets.find(a => a.id === obj.userData.assetId);
+            if (asset) { selectAsset(asset); return; }
+        }
+        // Fall through: mesh not in our assets (terrain/building wireframes)
+    }
+    deselectAsset();
+}
+
+// ═══════════════════ TOOLBAR EVENTS ═══════════════════
+document.getElementById('file-input').addEventListener('change', (e) => {
+    if (e.target.files[0]) loadModelFile(e.target.files[0]);
+    e.target.value = '';
+});
+
+document.getElementById('btn-url').addEventListener('click', () => {
+    const url = prompt('Enter GLB/GLTF URL:');
+    if (url) loadModelFromURL(url);
+});
+
+document.getElementById('btn-box').addEventListener('click', () => {
+    const m = makePrimitive('box');
+    m.position.copy(orbitControls.target);
+    m.position.y += 1;
+    addAsset(m, 'Box');
+});
+
+document.getElementById('btn-cyl').addEventListener('click', () => {
+    const m = makePrimitive('cylinder');
+    m.position.copy(orbitControls.target);
+    m.position.y += 1.5;
+    addAsset(m, 'Cylinder');
+});
+
+document.getElementById('btn-sphere').addEventListener('click', () => {
+    const m = makePrimitive('sphere');
+    m.position.copy(orbitControls.target);
+    m.position.y += 1.5;
+    addAsset(m, 'Sphere');
+});
+
+function setGizmoMode(mode) {
+    transformControls.setMode(mode);
+    document.getElementById('btn-translate').classList.toggle('active', mode === 'translate');
+    document.getElementById('btn-rotate').classList.toggle('active', mode === 'rotate');
+    document.getElementById('btn-scale').classList.toggle('active', mode === 'scale');
+}
+
+document.getElementById('btn-translate').addEventListener('click', () => setGizmoMode('translate'));
+document.getElementById('btn-rotate').addEventListener('click', () => setGizmoMode('rotate'));
+document.getElementById('btn-scale').addEventListener('click', () => setGizmoMode('scale'));
+
+document.getElementById('btn-world-local').addEventListener('click', () => {
+    gizmoSpace = gizmoSpace === 'world' ? 'local' : 'world';
+    transformControls.setSpace(gizmoSpace);
+    document.getElementById('btn-world-local').textContent = gizmoSpace === 'world' ? '🌍 World' : '📍 Local';
+});
+
+document.getElementById('btn-duplicate').addEventListener('click', () => duplicateAsset(selectedAsset));
+document.getElementById('btn-delete').addEventListener('click', () => removeAsset(selectedAsset));
+document.getElementById('btn-export').addEventListener('click', exportJSON);
+
+document.getElementById('btn-import').addEventListener('click', () => {
+    document.getElementById('import-input').click();
+});
+document.getElementById('import-input').addEventListener('change', (e) => {
+    if (e.target.files[0]) importJSON(e.target.files[0]);
+    e.target.value = '';
+});
+
+document.getElementById('btn-help').addEventListener('click', () => {
+    document.getElementById('help-overlay').style.display = 'flex';
+});
+
+document.getElementById('snap-toggle').addEventListener('change', (e) => {
+    snapEnabled = e.target.checked;
+    updateSnap();
+});
+document.getElementById('snap-size').addEventListener('change', () => updateSnap());
+
+function updateSnap() {
+    if (snapEnabled) {
+        const s = parseFloat(document.getElementById('snap-size').value);
+        transformControls.setTranslationSnap(s);
+        transformControls.setRotationSnap(THREE.MathUtils.degToRad(15));
+        transformControls.setScaleSnap(0.1);
+    } else {
+        transformControls.setTranslationSnap(null);
+        transformControls.setRotationSnap(null);
+        transformControls.setScaleSnap(null);
+    }
+}
+
+// Transform input fields
+['tf-px','tf-py','tf-pz','tf-rx','tf-ry','tf-rz','tf-sx','tf-sy','tf-sz'].forEach(id => {
+    document.getElementById(id).addEventListener('change', applyTransformInput);
+    document.getElementById(id).addEventListener('keydown', (e) => { if (e.key === 'Enter') applyTransformInput(); });
+});
+
+// ═══════════════════ KEYBOARD SHORTCUTS ═══════════════════
+window.addEventListener('keydown', (e) => {
+    // Don't capture if typing in input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    if (e.key === 'w' || e.key === 'W') setGizmoMode('translate');
+    if (e.key === 'e' || e.key === 'E') setGizmoMode('rotate');
+    if (e.key === 'r' || e.key === 'R') setGizmoMode('scale');
+    if (e.key === 'q' || e.key === 'Q') {
+        gizmoSpace = gizmoSpace === 'world' ? 'local' : 'world';
+        transformControls.setSpace(gizmoSpace);
+        document.getElementById('btn-world-local').textContent = gizmoSpace === 'world' ? '🌍 World' : '📍 Local';
+    }
+    if (e.key === 'g' || e.key === 'G') {
+        snapEnabled = !snapEnabled;
+        document.getElementById('snap-toggle').checked = snapEnabled;
+        updateSnap();
+    }
+    if (e.key === 'h' || e.key === 'H') {
+        const h = document.getElementById('help-overlay');
+        h.style.display = h.style.display === 'flex' ? 'none' : 'flex';
+    }
+    if (e.key === 'f' || e.key === 'F') {
+        if (selectedAsset) {
+            orbitControls.target.copy(selectedAsset.mesh.position);
+        }
+    }
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedAsset) removeAsset(selectedAsset);
+    }
+    if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (selectedAsset) duplicateAsset(selectedAsset);
+    }
+    if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        exportJSON();
+    }
+    if ((e.key === 'o' || e.key === 'O') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.getElementById('import-input').click();
+    }
+    // Escape to deselect
+    if (e.key === 'Escape') deselectAsset();
+});
+
+// ═══════════════════ VIEWPORT CLICK ═══════════════════
+renderer.domElement.addEventListener('click', onViewportClick);
+
+// ═══════════════════ RESIZE ═══════════════════
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+// ═══════════════════ RENDER LOOP ═══════════════════
+function animate() {
+    requestAnimationFrame(animate);
+    orbitControls.update();
+    renderer.render(scene, camera);
+}
+
+// ═══════════════════ INIT ═══════════════════
+async function init() {
+    try {
+        await Promise.all([loadTerrain(), loadBuildings()]);
+    } catch (e) {
+        console.error('Init error:', e);
+    }
+    document.getElementById('loading-overlay').style.display = 'none';
+    animate();
+}
+
+init();
+</script>
+</body>
+</html>
