@@ -188,7 +188,7 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
             _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset,
             playerView[o + 2]
         );
-        char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
+        char.model.rotation.set(0, -playerView[o + 4] + Math.PI, 0, 'YXZ');
 
         const speed = Math.hypot(playerView[o + 6], playerView[o + 8]);
         const jetting = playerView[o + 14] > 0.5;
