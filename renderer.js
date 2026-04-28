@@ -375,13 +375,14 @@ const DayNight = (() => {
     function _apply(t01) {
         // Sun elevation: sin curve, peak at t01=0.5 (noon), trough at t01=0.0 (midnight).
         const elevRad = Math.sin((t01 - 0.25) * Math.PI * 2);  // [-1, +1]
-        // R32.63.1: Sun arc east→west. Azimuth sweeps 180° (east at dawn, south at noon, west at dusk)
-        // instead of full 360° so the sun travels a visible arc across the sky.
-        // t01=0.25 (dawn) → azim = -π/2 (east), t01=0.5 (noon) → azim = 0 (south), t01=0.75 (dusk) → azim = +π/2 (west)
-        const dayFrac = (t01 - 0.25) * 2.0; // -0.5 at midnight, 0 at dawn, 0.5 at noon, 1.0 at dusk
-        const azimRad = dayFrac * Math.PI;   // -π/2 → 0 → +π/2
+        // R32.63.2: Sun arc oriented along base axis (team0 → team1 ≈ +Z → -Z).
+        // Sun rises from team0 direction, arcs overhead, sets toward team1.
+        // dayFrac: 0 at dawn, 0.5 at noon, 1.0 at dusk
+        const dayFrac = (t01 - 0.25);  // -0.25 at midnight, 0 at dawn, 0.25 at noon, 0.5 at dusk
+        const azimRad = dayFrac * Math.PI * 2;  // full semicircle from east to west
         const r = Math.sqrt(Math.max(0.0, 1 - elevRad * elevRad));
-        sunPos.set(Math.sin(azimRad) * r, elevRad, -Math.cos(azimRad) * r);
+        // Orient so sun travels along Z axis (base-to-base)
+        sunPos.set(r * 0.3 * Math.cos(azimRad), elevRad, -r * Math.sin(azimRad));
 
         // Brightness curve: full at noon, zero at horizon and below.
         // Smooth night transition over 30deg below horizon so dusk fades gracefully.
@@ -393,17 +394,17 @@ const DayNight = (() => {
         const sunCol = lerpColors(palette.nightSun, palette.dawnSun, palette.noonSun, palette.duskSun, t01);
         if (typeof sunLight !== 'undefined' && sunLight) {
             sunLight.color.copy(sunCol);
-            // R32.63.1: Sun intensity reduced from 1.8 to 1.2 (ground was too bright)
-            sunLight.intensity = 1.2 * dayMix;
+            // R32.63.2: sun 0.9 at noon (was 1.2, too washed)
+            sunLight.intensity = 0.9 * dayMix;
             sunLight.castShadow = sunLight.intensity > 0.05;
         }
 
-        // R32.60: Moonlight — positioned opposite the sun, cool blue.
+        // Moonlight
         if (typeof moonLight !== 'undefined' && moonLight) {
             moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
             moonLight.target.position.set(0, 0, 0);
             moonLight.color.setHex(0x6688cc);
-            moonLight.intensity = 0.6 * nightMix; // R32.63.1: 1.0→0.6 (was too bright at night)
+            moonLight.intensity = 0.3 * nightMix; // R32.63.2: 0.6→0.3 (dimmer moonlight)
         }
 
         // Hemisphere fill
@@ -411,8 +412,8 @@ const DayNight = (() => {
         if (typeof hemiLight !== 'undefined' && hemiLight) {
             hemiLight.color.copy(hemiCol);
             hemiLight.groundColor.copy(palette.hemiGround);
-            // R32.63.1: hemi 0.40 night → 1.20 noon (was 0.80→1.50, too bright)
-            hemiLight.intensity = 0.40 + 0.80 * dayMix;
+            // R32.63.2: 0.25 night → 0.90 noon (was 0.40→1.20)
+            hemiLight.intensity = 0.25 + 0.65 * dayMix;
         }
 
         // Fog
@@ -421,15 +422,14 @@ const DayNight = (() => {
             scene.fog.color.copy(fogCol);
         }
 
-        // R32.63.1: Tone-mapping exposure + env intensity.
-        // Environment dims moderately at night (not killed — ground stays visible).
+        // R32.63.2: exposure + env intensity. Night should feel genuinely dark.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.80 + 0.35 * dayMix;  // 0.80 night → 1.15 noon
+            renderer.toneMappingExposure = 0.55 + 0.60 * dayMix;  // 0.55 night → 1.15 noon
         }
         if (typeof scene !== 'undefined') {
-            // R32.63.1: env 0.50 at night → 1.20 at noon (was fixed 1.45, too bright)
+            // R32.63.2: env 0.25 at night → 0.90 at noon (was 0.50→1.20)
             if (scene.environmentIntensity !== undefined) {
-                scene.environmentIntensity = 0.50 + 0.70 * dayMix;
+                scene.environmentIntensity = 0.25 + 0.65 * dayMix;
             }
         }
 

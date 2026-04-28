@@ -64,24 +64,41 @@ const SkyDomeShader = {
             vec3 groundColor = mix(vec3(0.01, 0.01, 0.02), vec3(0.15, 0.18, 0.15), uDayMix);
             sky = mix(groundColor, sky, horizonMask);
 
-            // Sun disc — R32.63.1: brighter, whiter, cleaner
+            // Sun disc — R32.63.2: warm yellow-white, dominant glow to prevent blue bleed
             float sunDot = dot(dir, uSunDir);
-            float sunDisc = smoothstep(0.9993, 0.9998, sunDot); // bright core
-            float sunGlow = pow(max(sunDot, 0.0), 512.0) * 0.6; // tight bright glow
-            float sunHalo = pow(max(sunDot, 0.0), 48.0) * 0.12; // warm halo
-            vec3 sunColor = vec3(1.0, 0.98, 0.92); // warm white
+            float sunDisc = smoothstep(0.9993, 0.9999, sunDot); // tight bright core
+            float sunGlow = pow(max(sunDot, 0.0), 800.0) * 0.8; // tight inner glow
+            float sunHalo = pow(max(sunDot, 0.0), 64.0) * 0.25; // warm halo overpowers sky blue
+            vec3 sunColor = vec3(1.0, 0.95, 0.80); // warm yellow-white
             float sunAbove = smoothstep(-0.02, 0.05, uSunDir.y);
-            sky += sunColor * (sunDisc * 3.0 + sunGlow + sunHalo) * sunAbove;
+            sky += sunColor * (sunDisc * 5.0 + sunGlow + sunHalo) * sunAbove;
+            // Warm the sky around the sun so it doesn't read as blue near the disc
+            float sunWarm = pow(max(sunDot, 0.0), 8.0) * 0.20 * sunAbove;
+            sky = mix(sky, sky + vec3(0.3, 0.15, 0.0), sunWarm);
 
-            // Moon disc — opposite the sun
+            // Moon disc — R32.63.2: textured with crater noise, not a flat circle
             vec3 moonDir = normalize(vec3(-uSunDir.x, max(0.15, -uSunDir.y), -uSunDir.z));
             float moonDot = dot(dir, moonDir);
-            float moonDisc = smoothstep(0.9990, 0.9995, moonDot);
-            float moonGlow = pow(max(moonDot, 0.0), 128.0) * 0.08;
-            vec3 moonColor = vec3(0.85, 0.88, 1.0);
+            float moonMask = smoothstep(0.9985, 0.9992, moonDot); // moon disc area
+            float moonGlow = pow(max(moonDot, 0.0), 200.0) * 0.06;
+            // Crater noise — project onto moon face for texture
+            vec3 moonLocal = dir - moonDir * moonDot;
+            float cx = dot(moonLocal, vec3(1.0, 0.0, 0.0)) * 800.0;
+            float cy = dot(moonLocal, vec3(0.0, 1.0, 0.0)) * 800.0;
+            float crater1 = smoothstep(0.3, 0.0, length(vec2(cx - 2.0, cy + 1.5)));
+            float crater2 = smoothstep(0.25, 0.0, length(vec2(cx + 1.0, cy - 2.0)));
+            float crater3 = smoothstep(0.20, 0.0, length(vec2(cx + 2.5, cy + 0.5)));
+            float crater4 = smoothstep(0.35, 0.0, length(vec2(cx - 0.5, cy + 3.0)));
+            float crater5 = smoothstep(0.15, 0.0, length(vec2(cx + 1.8, cy + 2.2)));
+            float craters = (crater1 + crater2 + crater3 + crater4 + crater5) * 0.12;
+            // Moon surface: bright silvery with dark mare patches
+            vec3 moonBase = vec3(0.85, 0.87, 0.92);
+            vec3 moonDark = vec3(0.55, 0.56, 0.62);
+            vec3 moonSurf = mix(moonBase, moonDark, craters);
             float moonVis = 1.0 - uDayMix; // visible at night
             float moonAbove = smoothstep(-0.02, 0.10, moonDir.y);
-            sky += moonColor * (moonDisc * 0.7 + moonGlow) * moonVis * moonAbove;
+            sky += moonSurf * moonMask * 0.8 * moonVis * moonAbove;
+            sky += vec3(0.7, 0.75, 0.9) * moonGlow * moonVis * moonAbove;
 
             // Horizon glow at sunset/sunrise
             float horizGlow = pow(max(1.0 - abs(upness), 0.0), 4.0);
@@ -195,13 +212,15 @@ const StarsShader = {
         uniform vec3 uSunDir;
         varying vec3 vColor;
         varying float vAlpha;
-        varying float vSunProx;
         void main() {
             vColor = aColor;
             vec3 worldDir = normalize(position);
-            // Suppress stars near sun to prevent blue-purple bleeding
+            // Suppress stars near sun AND moon to prevent bleed
             float sunDot = dot(worldDir, uSunDir);
-            vSunProx = smoothstep(0.90, 0.97, sunDot); // 1.0 = near sun, suppress
+            float sunSuppress = smoothstep(0.80, 0.95, sunDot); // wider suppression zone
+            vec3 moonDir2 = normalize(vec3(-uSunDir.x, max(0.15, -uSunDir.y), -uSunDir.z));
+            float moonSuppress = smoothstep(0.90, 0.97, dot(worldDir, moonDir2));
+            float suppress = max(sunSuppress, moonSuppress);
 
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             float twinkle = sin(uTime * aFreq + aPhase) * 0.3 + 0.7;
@@ -209,7 +228,7 @@ const StarsShader = {
             vec4 pos = projectionMatrix * mvPosition;
             pos.z = pos.w * 0.999999;
             gl_Position = pos;
-            vAlpha = twinkle * uOpacity * (1.0 - vSunProx);
+            vAlpha = twinkle * uOpacity * (1.0 - suppress);
         }
     `,
     fragmentShader: `
@@ -264,9 +283,9 @@ export function updateCustomSky(t, dayMix, sunDir, cameraPos) {
         if (cameraPos) _cloudDome.position.copy(cameraPos);
     }
 
-    // Stars fade in at dusk
-    const starTarget = Math.max(0, 1.0 - dayMix * 2.5);
-    _starOpacity += (starTarget - _starOpacity) * 0.03;
+    // Stars: completely hidden during day, fade in only at deep dusk
+    const starTarget = dayMix < 0.15 ? (1.0 - dayMix / 0.15) : 0.0;
+    _starOpacity += (starTarget - _starOpacity) * 0.05;
     if (_starPoints) {
         _starPoints.material.uniforms.uTime.value = t;
         _starPoints.material.uniforms.uOpacity.value = _starOpacity;
