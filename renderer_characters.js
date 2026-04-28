@@ -124,7 +124,48 @@ function _createInstance() {
 
     // Ski particles handled in renderer.js (same pipeline as jet exhaust)
 
-    return { model, mixer, clips, activeClip: null, activeAction: null };
+    // R32.137: Jet flame cones — two small cones on upper back, visible when jetting
+    const flameMat = new THREE.MeshBasicMaterial({
+        color: 0xff8822,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+    });
+    const flameGeo = new THREE.ConeGeometry(0.06, 0.5, 6);
+    flameGeo.rotateX(Math.PI); // point downward
+    const flameL = new THREE.Mesh(flameGeo, flameMat);
+    const flameR = new THREE.Mesh(flameGeo, flameMat.clone());
+    // Position in model-local space (cm, since armature scale is 0.01)
+    // Upper back: x ±12cm, y ~120cm (back height), z -25cm (behind)
+    flameL.position.set(-12, 100, 25);
+    flameR.position.set(12, 100, 25);
+    flameL.scale.set(1, 1, 1);
+    flameR.scale.set(1, 1, 1);
+    flameL.visible = false;
+    flameR.visible = false;
+    model.add(flameL);
+    model.add(flameR);
+
+    // R32.137: Ski energy board — flat glowing rectangle under feet
+    const boardMat = new THREE.MeshBasicMaterial({
+        color: 0x44aaff,
+        transparent: true,
+        opacity: 0.7,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+    });
+    const boardGeo = new THREE.PlaneGeometry(30, 80); // width, length in cm
+    boardGeo.rotateX(-Math.PI / 2); // lay flat
+    const skiBoard = new THREE.Mesh(boardGeo, boardMat);
+    skiBoard.position.set(0, 2, 0); // just above feet (2cm)
+    skiBoard.visible = false;
+    model.add(skiBoard);
+
+    return { model, mixer, clips, activeClip: null, activeAction: null,
+             flameL, flameR, skiBoard };
 }
 
 function _playClip(inst, name, opts = {}) {
@@ -209,6 +250,21 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         _playClip(char, clip, { once: clip === 'death' });
         char.mixer.update(dt);
+
+        // R32.137: Toggle jet flames and ski board
+        if (char.flameL) {
+            char.flameL.visible = jetting;
+            char.flameR.visible = jetting;
+            if (jetting) {
+                // Animate flame scale for flickering
+                const flicker = 0.8 + Math.random() * 0.4;
+                char.flameL.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
+                char.flameR.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
+            }
+        }
+        if (char.skiBoard) {
+            char.skiBoard.visible = skiing;
+        }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
