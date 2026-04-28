@@ -67,15 +67,7 @@
           <svg width="100%" height="100%" viewBox="0 0 100 100"
                preserveAspectRatio="xMidYMid meet"
                style="position:absolute;inset:0;">
-            <defs>
-              <radialGradient id="zoom-vignette" cx="50%" cy="50%" r="55%">
-                <stop offset="60%" stop-color="rgba(0,0,0,0)"/>
-                <stop offset="92%" stop-color="rgba(0,0,0,0.55)"/>
-                <stop offset="100%" stop-color="rgba(0,0,0,0.85)"/>
-              </radialGradient>
-            </defs>
-            <!-- vignette darkens the periphery to read like a scope -->
-            <rect width="100" height="100" fill="url(#zoom-vignette)"/>
+            <!-- no vignette — clean zoom without darkened edges -->
             <!-- center crosshair: thin -->
             <g stroke="#FFC850" stroke-width="0.12" fill="none" opacity="0.9">
               <line x1="50" y1="42" x2="50" y2="48"/>

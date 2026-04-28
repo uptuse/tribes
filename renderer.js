@@ -2142,7 +2142,8 @@ function initCustomModels() {
         // Face toward the base
         model.rotation.z = Math.PI * 0.75;
 
-        // Enable shadows
+        // Collect emissive materials for pulsing animation
+        const emissiveMats = [];
         model.traverse((child) => {
             if (child.isMesh) {
                 child.castShadow = true;
@@ -2150,13 +2151,21 @@ function initCustomModels() {
                 // Tag to skip toonify
                 if (child.material) {
                     const mats = Array.isArray(child.material) ? child.material : [child.material];
-                    mats.forEach(m => { m.userData.isInterior = true; });
+                    mats.forEach(m => {
+                        m.userData.isInterior = true;
+                        // Track materials with emissive maps for pulsing
+                        if (m.emissiveMap) emissiveMats.push(m);
+                    });
                 }
             }
         });
 
+        // Store for render-loop animation
+        model.userData.emissiveMats = emissiveMats;
+        model.userData.kind = 'wolfSentinel';
+
         scene.add(model);
-        console.log(`[R32.57] Wolf Sentinel loaded at (${wolfX}, ${wolfY.toFixed(1)}, ${wolfZ}), scale=${scale}`);
+        console.log(`[R32.57] Wolf Sentinel loaded at (${wolfX}, ${wolfY.toFixed(1)}, ${wolfZ}), scale=${scale}, emissive materials: ${emissiveMats.length}`);
     }, undefined, (err) => {
         console.error('[R32.57] Failed to load wolf_sentinel.glb', err);
     });
@@ -3857,6 +3866,16 @@ function syncCanonicalAnims(t) {
                 const i = 0.30 + 0.15 * Math.sin(t * 1.0 + teamPhase);
                 if (ud.center.material) ud.center.material.emissiveIntensity = i;
             }
+        }
+    }
+
+    // R32.59: Wolf Sentinel emissive pulse — neon lines breathe in and out
+    const wolfObj = scene.getObjectByName('WolfSentinel');
+    if (wolfObj && wolfObj.userData.emissiveMats) {
+        // Slow breathing pulse: 0.4 → 1.6 over ~3 seconds
+        const pulse = 0.4 + 1.2 * (0.5 + 0.5 * Math.sin(t * 1.2));
+        for (const m of wolfObj.userData.emissiveMats) {
+            m.emissiveIntensity = pulse;
         }
     }
 }
