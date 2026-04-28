@@ -333,16 +333,16 @@ const DayNight = (() => {
 
     // Color palette (Color.lerp targets). Matches typical sky tones.
     const palette = {
-        nightSun:   new THREE.Color(0x0a0e1a),  // sun "off"
+        nightSun:   new THREE.Color(0x121828),  // R32.87: slight moonlight (was 0x0a0e1a)
         dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
         noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
         duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
-        nightHemi:  new THREE.Color(0x0a1020),  // R32.63.6: much darker night ambient (was 0x2a3a5a)
+        nightHemi:  new THREE.Color(0x182838),  // R32.87: brighter night ambient (was 0x0a1020)
         dawnHemi:   new THREE.Color(0xc89878),  // warm peach fill
         noonHemi:   new THREE.Color(0xb8c4d8),  // slightly blue-white (was grey 0xc0c8d0)
         duskHemi:   new THREE.Color(0x4a3858),  // R32.63.7: cool purple dusk (was warm 0xb07858)
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x020408),  // R32.63.6: near-black night fog
+        nightFog:   new THREE.Color(0x060a12),  // R32.87: slightly lifted night fog (was 0x020408)
         dawnFog:    new THREE.Color(0xd0a080),  // warm pink-orange haze
         noonFog:    new THREE.Color(0xa8b8c8),  // R32.63.6: slight blue haze (was flat grey)
         duskFog:    new THREE.Color(0x1a1828),  // R32.63.7: deep blue-purple dusk (was brown 0xb86848)
@@ -4748,14 +4748,11 @@ function initNightFairies() {
     const params    = new Float32Array(N * 4);
     const colors    = new Float32Array(N * 3);
 
-    // position.xy = world-space XZ tile offset (within one diameter tile)
-    // position.y = altitude offset above terrain (will be added to terrain height in shader)
+    // Distribute in a SQUARE tile (not circular) so toroidal wrap tiles seamlessly
     for (let i = 0; i < N; i++) {
-        const angle = Math.random() * Math.PI * 2;
-        const dist  = Math.sqrt(Math.random()) * R;
-        positions[i*3]   = Math.cos(angle) * dist;            // tile offset X
-        positions[i*3+1] = NIGHT_FAIRY_ALT_ABOVE + Math.random() * NIGHT_FAIRY_ALT_RANGE; // alt above terrain
-        positions[i*3+2] = Math.sin(angle) * dist;            // tile offset Z
+        positions[i*3]   = (Math.random() - 0.5) * R * 2;     // square tile X [-R, R]
+        positions[i*3+1] = NIGHT_FAIRY_ALT_ABOVE + Math.random() * NIGHT_FAIRY_ALT_RANGE;
+        positions[i*3+2] = (Math.random() - 0.5) * R * 2;     // square tile Z [-R, R]
         params[i*4]   = Math.random() * Math.PI * 2;          // phase
         params[i*4+1] = 0.2 + Math.random() * 0.6;           // speed
         params[i*4+2] = Math.random() * Math.PI * 2;          // drift angle
@@ -4842,12 +4839,10 @@ function initNightFairies() {
                 float terrainH = sampleTerrain(wx, wz);
                 float wy = terrainH + position.y + sin(uTime * 0.4 + phase) * 3.0;
 
-                // Twinkle + edge fade
+                // Twinkle (no edge fade needed — square tile wraps seamlessly)
                 float pulse = 0.4 + 0.6 * sin(uTime * 0.8 + phase * 3.0);
-                float edgeDist = length(vec2(dx, dz)) / uRadius;
-                float edgeFade = 1.0 - smoothstep(0.7, 1.0, edgeDist);
 
-                vAlpha = uOpacity * pulse * edgeFade;
+                vAlpha = uOpacity * pulse;
                 vColor = aColor;
 
                 vec4 mv = viewMatrix * vec4(wx, wy, wz, 1.0);
