@@ -121,11 +121,14 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// playerY is at feet level (same as procedural mesh origin).
-// _footOffset = realMinY * _modelScale (negative when feet are below model origin).
-// So model.position.y = playerY - _footOffset shifts model UP so feet land at playerY.
+// WASM pos.y is NOT terrain-level. The ground clamp is:
+//   local player: pos.y = terrainHeight + 1.8  (capsule bottom offset)
+//   bots:         pos.y = terrainHeight + 1.0
+// The procedural mesh has no legs so this didn't matter, but the GLB model
+// has actual feet at y=0, so we must subtract the capsule offset.
+const GROUND_OFFSET = 1.8; // matches wasm_main.cpp line 2133: th+1.8f
 function _groundY(playerY) {
-    return playerY - _footOffset;
+    return playerY - GROUND_OFFSET;
 }
 
 // ── Local player sync ───────────────────────────────────────
