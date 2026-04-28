@@ -138,17 +138,14 @@ function _playClip(inst, name, opts = {}) {
 const CAPSULE_OFFSET = 1.8; // wasm_main.cpp line 2133
 function _groundY(playerX, playerY, playerZ) {
     const sample = window._sampleTerrainH;
-    if (!sample) return playerY - CAPSULE_OFFSET; // fallback
+    if (!sample) return playerY - CAPSULE_OFFSET;
     const terrainH = sample(playerX, playerZ);
-    // How far above ground is the player? (0 when standing, positive when airborne)
-    const airDist = Math.max(0, playerY - terrainH - CAPSULE_OFFSET);
-    const result = terrainH + airDist;
-    // R32.120: throttled diagnostic — log every 60 frames
-    if (!_groundY._fc) _groundY._fc = 0;
-    if (++_groundY._fc % 60 === 0) {
-        console.log(`[GROUND] wasmY=${playerY.toFixed(2)} terrainH=${terrainH.toFixed(2)} offset=${CAPSULE_OFFSET} airDist=${airDist.toFixed(2)} → modelY=${result.toFixed(2)}`);
-    }
-    return result;
+    // WASM/JS terrain samplers have ~0.2m interpolation gap.
+    // When near ground (rawAir < 0.5), snap feet to JS terrain exactly.
+    // When airborne, offset from terrain by the air distance.
+    const rawAir = playerY - terrainH - CAPSULE_OFFSET;
+    if (rawAir < 0.5) return terrainH; // on/near ground — snap
+    return terrainH + rawAir;           // airborne
 }
 
 // ── Local player sync ───────────────────────────────────────
@@ -176,15 +173,6 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
             _groundY(playerView[o], playerView[o + 1], playerView[o + 2]),
             playerView[o + 2]
         );
-        // R32.119: one-time position diagnostic
-        if (!char._logged) {
-            char._logged = true;
-            console.log('[R32.119] Character world pos:', 
-                char.model.position.x.toFixed(1), char.model.position.y.toFixed(1), char.model.position.z.toFixed(1),
-                '| playerY:', playerView[o + 1].toFixed(1),
-                '| groundY:', _groundY(playerView[o], playerView[o + 1], playerView[o + 2]).toFixed(1),
-                '| footOffset:', _footOffset.toFixed(4));
-        }
         char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
 
         const speed = Math.hypot(playerView[o + 6], playerView[o + 8]);
