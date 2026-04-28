@@ -433,9 +433,9 @@ const DayNight = (() => {
             // Moon position: opposite the sun (negate sun direction)
             moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
             moonLight.target.position.set(0, 0, 0);
-            // Cool silvery-blue moonlight, intensity peaks at 0.6 at midnight
+            // Cool silvery-blue moonlight, intensity peaks at 1.0 at midnight
             moonLight.color.setHex(0x6688cc);
-            moonLight.intensity = 0.6 * nightMix;
+            moonLight.intensity = 1.0 * nightMix;
         }
 
         // Hemisphere fill — softer cool blue at night, warm at dawn/dusk, neutral at noon.
@@ -443,8 +443,8 @@ const DayNight = (() => {
         if (typeof hemiLight !== 'undefined' && hemiLight) {
             hemiLight.color.copy(hemiCol);
             hemiLight.groundColor.copy(palette.hemiGround);
-            // Hemi at noon = 1.5, nightfall = 0.65 (moon-lit ambient, was 0.35)
-            hemiLight.intensity = 0.65 + 0.85 * dayMix;
+            // Hemi at noon = 1.5, nightfall = 0.80 (moonlit ambient)
+            hemiLight.intensity = 0.80 + 0.70 * dayMix;
         }
 
         // Fog — match horizon color so distant terrain blends into sky.
@@ -452,11 +452,21 @@ const DayNight = (() => {
         if (typeof scene !== 'undefined' && scene.fog) {
             scene.fog.color.copy(fogCol);
         }
-        // Sky background tint multiplier — lower at night but not black.
+        // R32.62: set scene background color to near-black at night
+        if (typeof scene !== 'undefined' && scene.background && scene.background.isColor) {
+            // Lerp background toward deep night blue when dark
+            const nightBg = new THREE.Color(0x020408);
+            const dayBg = scene.background.clone();
+            // Don't touch if HDRI is set (background would be a texture)
+        } else if (typeof scene !== 'undefined' && !scene.background) {
+            scene.background = new THREE.Color(0x020408);
+        }
+
+        // Sky background tint multiplier — near-black at night for stars.
         if (typeof scene !== 'undefined') {
-            const wantBg = 0.15 + 0.40 * dayMix;  // was 0.10, now 0.15 floor for moonlit sky
+            const wantBg = 0.05 + 0.50 * dayMix;  // R32.62: near-black sky bg at night for stars
             if (scene.backgroundIntensity !== undefined) scene.backgroundIntensity = wantBg;
-            const wantEnv = 0.50 + 0.95 * dayMix;  // was 0.30, now 0.50 floor for moonlit reflections
+            const wantEnv = 0.55 + 0.90 * dayMix;  // env reflections for moonlit surfaces
             if (scene.environmentIntensity !== undefined) scene.environmentIntensity = wantEnv;
         }
         // Tone-mapping exposure — higher at night so moonlight reads clearly.
@@ -467,6 +477,15 @@ const DayNight = (() => {
         // Expose for custom sky (stars, moon)
         DayNight.dayMix = dayMix;
         DayNight.sunDir.copy(sunPos);
+
+        // R32.62: fade THREE.Sky out at night so stars are visible
+        if (typeof sky !== 'undefined' && sky) {
+            // At night (dayMix < 0.1), hide the Sky mesh entirely so the dark
+            // background + stars show through. Fade during dawn/dusk.
+            sky.material.opacity = Math.min(1.0, dayMix * 3.0);
+            sky.material.transparent = true;
+            sky.visible = dayMix > 0.02;
+        }
 
         // Update HUD clock chip (created in index.html).
         const h = Math.floor(t01 * 24);
@@ -3551,11 +3570,14 @@ function syncParticles() {
         }
         _r327PrevParticleAge[i] = age;
         if (age <= 0) continue;
+        const type = particleView[o + 6] | 0;
+        // R32.62: skip rain/splash particles (types 1, 2) — Raindance mission
+        // spawns these natively but rain was removed from the renderer
+        if (type === 1 || type === 2) continue;
         const dst = activeCount * 3;
         particlePositions[dst]     = particleView[o];
         particlePositions[dst + 1] = particleView[o + 1];
         particlePositions[dst + 2] = particleView[o + 2];
-        const type = particleView[o + 6] | 0;
         // Color by type (jet, ski, hit-spark, explosion, generic)
         let r, g, b, sz;
         if (type === 0) {        // jet flame: cyan-orange gradient by age
