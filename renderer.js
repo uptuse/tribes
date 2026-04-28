@@ -1950,18 +1950,36 @@ async function initInteriorShapes() {
             console.log('[R32.70] PBR textures ready:', loaded, 'maps across', _pbrTextures.size, 'categories');
         });
 
-        function buildMaterialArray(fileName) {
-            if (matArrayCache.has(fileName)) return matArrayCache.get(fileName);
+        // R32.71: Team color definitions for building accents
+        // Team 0 = Blood Eagle (red), Team 1 = Diamond Sword (blue)
+        const _TEAM_EMBLEM_COLORS = {
+            0: { color: [0.78, 0.19, 0.17], emissive: [0.43, 0.09, 0.07] },  // Blood Eagle red
+            1: { color: [0.17, 0.35, 0.78], emissive: [0.07, 0.15, 0.43] },  // Diamond Sword blue
+        };
+
+        function buildMaterialArray(fileName, teamIdx) {
+            const cacheKey = teamIdx >= 0 ? fileName + ':t' + teamIdx : fileName;
+            if (matArrayCache.has(cacheKey)) return matArrayCache.get(cacheKey);
             const matNames = meshMaterialNames.get(fileName) || [];
             const mats = matNames.map(texName => {
                 const entry = lookupPalette(texName);
-                const [cr, cg, cb] = entry.color;
+                let [cr, cg, cb] = entry.color;
                 const category = _classifyMaterial(texName);
+
+                // R32.71: Override emblem colors based on building team ownership
+                const isTeamEmblem = category === 'team_emblem';
+                if (isTeamEmblem && teamIdx >= 0 && _TEAM_EMBLEM_COLORS[teamIdx]) {
+                    [cr, cg, cb] = _TEAM_EMBLEM_COLORS[teamIdx].color;
+                }
+
                 const pbrMaps = _pbrTextures.get(category);
                 const usePBR = pbrMaps && pbrMaps.albedo && category !== 'emissive' && category !== 'team_emblem';
 
                 // R32.70: Use PBR albedo when available, procedural as fallback
-                const albedoTex = usePBR ? pbrMaps.albedo : _genProceduralTex(texName, entry.color);
+                const albedoTex = usePBR ? pbrMaps.albedo : _genProceduralTex(
+                    isTeamEmblem && teamIdx >= 0 ? texName + '_t' + teamIdx : texName,
+                    [cr, cg, cb]
+                );
 
                 const mat = new THREE.MeshStandardMaterial({
                     ..._matProps,
@@ -1969,7 +1987,7 @@ async function initInteriorShapes() {
                     color: usePBR ? new THREE.Color(cr, cg, cb) : new THREE.Color(1, 1, 1),
                     map: albedoTex,
                     roughness: entry.roughness,
-                    metalness: entry.metalness,
+                    metalness: isTeamEmblem ? 0.4 : entry.metalness,  // R32.71: slightly more metallic emblems
                     envMapIntensity: 0.35,
                 });
 
@@ -1985,7 +2003,12 @@ async function initInteriorShapes() {
                 }
 
                 mat.userData.isInterior = true; // R32.53: skip toonification — toon step-lighting makes back-faces pure black
-                if (entry.emissive) {
+                // R32.71: Team emblem emissive glow for visibility
+                if (isTeamEmblem && teamIdx >= 0 && _TEAM_EMBLEM_COLORS[teamIdx]) {
+                    const te = _TEAM_EMBLEM_COLORS[teamIdx].emissive;
+                    mat.emissive = new THREE.Color(te[0], te[1], te[2]);
+                    mat.emissiveIntensity = 0.55;
+                } else if (entry.emissive) {
                     mat.emissive = new THREE.Color(entry.emissive[0], entry.emissive[1], entry.emissive[2]);
                     mat.emissiveIntensity = 0.65;
                 } else {
@@ -2006,7 +2029,7 @@ async function initInteriorShapes() {
                 emissiveIntensity: 0.30,
             });
             fallback.userData.isInterior = true; // R32.53: skip toonification
-            matArrayCache.set(fileName, { mats, fallback });
+            matArrayCache.set(cacheKey, { mats, fallback });
             return { mats, fallback };
         }
 
@@ -2143,14 +2166,31 @@ async function initInteriorShapes() {
         // Place every neutral_interior_shapes instance.
         // Use a Group-wrapper-per-instance so we can apply yaw (around world Y)
         // INDEPENDENTLY from the local Tribes-z-up to Three-y-up rotation.
+        // R32.71: Determine team ownership per shape by proximity to team generators.
+        let _teamMidY = 318; // default midpoint
+        try {
+            const t0gens = (canon.team0?.static_shapes || []).filter(s => s.datablock === 'Generator');
+            const t1gens = (canon.team1?.static_shapes || []).filter(s => s.datablock === 'Generator');
+            if (t0gens.length && t1gens.length) {
+                _teamMidY = (t0gens[0].position[1] + t1gens[0].position[1]) / 2;
+            }
+        } catch (e) { /* keep default */ }
+
         let placed = 0, missed = 0;
         const items = (canon.neutral_interior_shapes || []);
         for (const item of items) {
             const geom = getGeom(item.fileName);
             if (!geom) { missed++; continue; }
 
-            // R32.48: build material array for this mesh
-            const { mats, fallback } = buildMaterialArray(item.fileName);
+            // R32.71: Assign team by Y position (Tribes coords).
+            // Rocks and midfield structures get -1 (neutral, no team coloring).
+            const isRock = item.fileName.toLowerCase().startsWith('lrock');
+            const isMidfield = item.fileName.toLowerCase().startsWith('mis_ob') ||
+                               item.fileName.toLowerCase().startsWith('expbridge');
+            const shapeTeamIdx = (isRock || isMidfield) ? -1 : (item.position[1] < _teamMidY ? 0 : 1);
+
+            // R32.48: build material array for this mesh, with team coloring
+            const { mats, fallback } = buildMaterialArray(item.fileName, shapeTeamIdx);
             // Create material array indexed by material slot.
             // Geometry groups reference matIdx (the DML material index).
             // Build a sparse array: slot i = mats[i] if exists, else fallback.
@@ -2186,11 +2226,21 @@ async function initInteriorShapes() {
                 outer.quaternion.copy(qz.multiply(qy).multiply(qx));
             }
             outer.add(mesh);
-            outer.userData = { fileName: item.fileName, isInterior: true };
+            outer.userData = { fileName: item.fileName, isInterior: true, teamIdx: shapeTeamIdx };
             interiorShapesGroup.add(outer);
             placed++;
         }
         console.log('[R32.48] Interior shapes placed:', placed, '(missed', missed, ')');
+        // R32.71: Log team assignment summary
+        const t0count = items.filter(i => !i.fileName.toLowerCase().startsWith('lrock') &&
+            !i.fileName.toLowerCase().startsWith('mis_ob') &&
+            !i.fileName.toLowerCase().startsWith('expbridge') &&
+            i.position[1] < _teamMidY).length;
+        const t1count = items.filter(i => !i.fileName.toLowerCase().startsWith('lrock') &&
+            !i.fileName.toLowerCase().startsWith('mis_ob') &&
+            !i.fileName.toLowerCase().startsWith('expbridge') &&
+            i.position[1] >= _teamMidY).length;
+        console.log('[R32.71] Team-colored accents: team0(BE)=' + t0count + ' team1(DS)=' + t1count + ' neutral=' + (items.length - t0count - t1count));
         console.log('[R32.48] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
             _enhancedCount, 'unique meshes (crease normals + rock subdivision + material palette)');
 
