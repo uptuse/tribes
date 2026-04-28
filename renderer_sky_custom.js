@@ -64,15 +64,14 @@ const SkyDomeShader = {
             vec3 groundColor = mix(vec3(0.01, 0.01, 0.02), vec3(0.15, 0.18, 0.15), uDayMix);
             sky = mix(groundColor, sky, horizonMask);
 
-            // Sun disc
+            // Sun disc — R32.63.1: brighter, whiter, cleaner
             float sunDot = dot(dir, uSunDir);
-            float sunDisc = smoothstep(0.9994, 0.9998, sunDot); // tight bright disc
-            float sunGlow = pow(max(sunDot, 0.0), 256.0) * 0.4; // soft glow around sun
-            float sunHalo = pow(max(sunDot, 0.0), 32.0) * 0.15; // wide warm halo
-            vec3 sunColor = vec3(1.0, 0.95, 0.85);
-            // Sun only visible when above horizon
+            float sunDisc = smoothstep(0.9993, 0.9998, sunDot); // bright core
+            float sunGlow = pow(max(sunDot, 0.0), 512.0) * 0.6; // tight bright glow
+            float sunHalo = pow(max(sunDot, 0.0), 48.0) * 0.12; // warm halo
+            vec3 sunColor = vec3(1.0, 0.98, 0.92); // warm white
             float sunAbove = smoothstep(-0.02, 0.05, uSunDir.y);
-            sky += sunColor * (sunDisc + sunGlow + sunHalo) * sunAbove;
+            sky += sunColor * (sunDisc * 3.0 + sunGlow + sunHalo) * sunAbove;
 
             // Moon disc — opposite the sun
             vec3 moonDir = normalize(vec3(-uSunDir.x, max(0.15, -uSunDir.y), -uSunDir.z));
@@ -193,17 +192,24 @@ const StarsShader = {
         attribute float aFreq;
         uniform float uTime;
         uniform float uOpacity;
+        uniform vec3 uSunDir;
         varying vec3 vColor;
         varying float vAlpha;
+        varying float vSunProx;
         void main() {
             vColor = aColor;
+            vec3 worldDir = normalize(position);
+            // Suppress stars near sun to prevent blue-purple bleeding
+            float sunDot = dot(worldDir, uSunDir);
+            vSunProx = smoothstep(0.90, 0.97, sunDot); // 1.0 = near sun, suppress
+
             vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
             float twinkle = sin(uTime * aFreq + aPhase) * 0.3 + 0.7;
             gl_PointSize = aSize * twinkle;
             vec4 pos = projectionMatrix * mvPosition;
             pos.z = pos.w * 0.999999;
             gl_Position = pos;
-            vAlpha = twinkle * uOpacity;
+            vAlpha = twinkle * uOpacity * (1.0 - vSunProx);
         }
     `,
     fragmentShader: `
@@ -264,6 +270,7 @@ export function updateCustomSky(t, dayMix, sunDir, cameraPos) {
     if (_starPoints) {
         _starPoints.material.uniforms.uTime.value = t;
         _starPoints.material.uniforms.uOpacity.value = _starOpacity;
+        _starPoints.material.uniforms.uSunDir.value.copy(sunDir);
         if (cameraPos) _starPoints.position.copy(cameraPos);
         _starPoints.visible = _starOpacity > 0.01;
     }
@@ -357,7 +364,7 @@ function _createStarField(scene) {
     geom.setAttribute('aFreq', new THREE.BufferAttribute(freqs, 1));
 
     const mat = new THREE.ShaderMaterial({
-        uniforms: { uTime: { value: 0.0 }, uOpacity: { value: 0.0 } },
+        uniforms: { uTime: { value: 0.0 }, uOpacity: { value: 0.0 }, uSunDir: { value: new THREE.Vector3(0, 1, 0) } },
         vertexShader: StarsShader.vertexShader,
         fragmentShader: StarsShader.fragmentShader,
         transparent: true,
