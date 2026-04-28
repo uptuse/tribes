@@ -15,7 +15,7 @@
   --track5: #aa8822; --track6: #2288aa;
 }
 html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; }
-#app { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 1fr 260px; width: 100%; height: 100%; }
+#app { display: grid; grid-template-columns: 220px 1fr 200px; grid-template-rows: 1fr 260px; width: 100%; height: 100%; }
 
 /* === CLIP LIBRARY (left sidebar) === */
 #library { grid-row: 1/3; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
@@ -45,7 +45,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 @keyframes spin { to { transform: rotate(360deg); } }
 
 /* === TIMELINE === */
-#timeline { background: var(--bg2); border-top: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+#timeline { background: var(--bg2); border-top: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; grid-column: 2 / 4; }
 
 /* Transport bar */
 #transport { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--bg3); border-bottom: 1px solid var(--border); min-height: 34px; flex-shrink: 0; }
@@ -121,6 +121,28 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 
 /* Drag ghost */
 .drag-ghost { position: fixed; padding: 4px 10px; background: var(--accent2); color: #fff; border-radius: 4px; font-size: 11px; pointer-events: none; z-index: 9999; opacity: 0.85; }
+
+/* === BONE PANEL (right sidebar) === */
+#bone-panel { grid-column: 3; grid-row: 1; background: var(--bg2); border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+#bone-panel-header { padding: 10px 12px; background: var(--bg3); border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); display: flex; justify-content: space-between; align-items: center; }
+#bone-panel-info { padding: 6px 10px; background: var(--bg3); border-bottom: 1px solid var(--border); font-size: 11px; color: var(--yellow); min-height: 28px; display: flex; align-items: center; gap: 6px; }
+#bone-tree { flex: 1; overflow-y: auto; padding: 4px 0; font-size: 11px; }
+.bone-item { padding: 3px 8px; cursor: pointer; display: flex; align-items: center; gap: 4px; white-space: nowrap; transition: background 0.1s; }
+.bone-item:hover { background: var(--bg4); }
+.bone-item.selected { background: var(--accent-dim); color: var(--accent); font-weight: 600; }
+.bone-item .bone-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text2); flex-shrink: 0; }
+.bone-item .bone-dot.has-kf { background: var(--yellow); }
+.bone-item .bone-indent { display: inline-block; }
+.bone-item .bone-toggle { width: 12px; text-align: center; color: var(--text2); font-size: 9px; cursor: pointer; }
+
+/* Keyframe markers on timeline ruler */
+.kf-diamond { position: absolute; width: 8px; height: 8px; background: var(--yellow); transform: rotate(45deg); top: 6px; margin-left: -4px; cursor: pointer; z-index: 25; border: 1px solid rgba(0,0,0,0.4); }
+.kf-diamond:hover { background: #fff; }
+.kf-diamond.selected { background: var(--warn); box-shadow: 0 0 4px var(--warn); }
+
+/* Keyframe transport button */
+#btn-keyframe { background: var(--yellow) !important; color: #000 !important; font-weight: bold; }
+#btn-keyframe:hover { background: #ffe8a0 !important; }
 </style>
 </head>
 <body>
@@ -151,6 +173,16 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
     <div id="loading"><div class="spinner"></div></div>
   </div>
 
+  <!-- BONE PANEL -->
+  <div id="bone-panel">
+    <div id="bone-panel-header">
+      <span>🦴 Bones</span>
+      <span id="bone-count" style="color:var(--text2);font-weight:normal;">0</span>
+    </div>
+    <div id="bone-panel-info">No bone selected</div>
+    <div id="bone-tree"></div>
+  </div>
+
   <!-- TIMELINE -->
   <div id="timeline">
     <div id="transport">
@@ -165,6 +197,11 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
       <div class="tool-group">
         <button id="btn-razor" title="Razor (split clip at playhead)">✂️</button>
         <button id="btn-delete" title="Delete selected clip">🗑</button>
+      </div>
+      <div class="sep"></div>
+      <div class="tool-group">
+        <button id="btn-keyframe" title="Set Keyframe (K)">◆ K</button>
+        <button id="btn-del-keyframe" title="Delete Keyframe at playhead">◇ ✕</button>
       </div>
       <div class="sep"></div>
       <span class="time-display" id="time-display">00:00.000 | F:0</span>
@@ -214,6 +251,7 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg);
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { TransformControls } from 'three/addons/controls/TransformControls.js';
 
 // ─── CONFIG ───────────────────────────────────────────────────
 const MODEL_PATH = './crimson_sentinel_rigged.glb';
@@ -253,6 +291,23 @@ let scene, camera, renderer3d, controls, clock;
 // Bone name mapping: sanitized (no colons) -> bone object
 let upperBodyBones = new Set();
 let lowerBodyBones = new Set();
+
+// ─── BONE EDITING STATE ──────────────────────────────────────
+let skeletonHelper = null;
+let boneSpheres = [];        // [{mesh, bone}] — invisible pick targets
+let boneSpheresGroup = null;
+let selectedBone = null;     // THREE.Bone or null
+let transformCtrl = null;    // TransformControls
+let raycaster = new THREE.Raycaster();
+let mouse = new THREE.Vector2();
+
+// Keyframes: array of {time, boneName, quaternion: {x,y,z,w}}
+let keyframes = [];
+let selectedKeyframeIdx = -1;
+// Custom clip built from keyframes
+let customClip = null;
+// Pending manual bone edits (bone rotated via gizmo, not yet keyframed)
+let pendingBoneEdits = {}; // sanitizedBoneName -> THREE.Quaternion
 
 // ─── THREE.JS SETUP ──────────────────────────────────────────
 function initThree() {
@@ -306,6 +361,253 @@ function resizeViewport() {
   camera.aspect = w / h;
   camera.updateProjectionMatrix();
   renderer3d.setSize(w, h);
+}
+
+// ─── BONE VISUALIZATION & SELECTION ──────────────────────────
+function initBoneEditing() {
+  if (!skeleton || !model) return;
+
+  // SkeletonHelper — colorful bone lines
+  skeletonHelper = new THREE.SkeletonHelper(model);
+  skeletonHelper.material.linewidth = 2;
+  scene.add(skeletonHelper);
+
+  // Small spheres at each bone for raycasting (invisible but pickable)
+  boneSpheresGroup = new THREE.Group();
+  boneSpheresGroup.name = 'boneSpheres';
+  const sphereGeo = new THREE.SphereGeometry(0.025, 8, 8);
+  const sphereMat = new THREE.MeshBasicMaterial({ color: 0x00b4ff, transparent: true, opacity: 0.35, depthTest: false });
+  const sphereMatHover = new THREE.MeshBasicMaterial({ color: 0xffd479, transparent: true, opacity: 0.6, depthTest: false });
+
+  for (const bone of skeleton.bones) {
+    const sphere = new THREE.Mesh(sphereGeo, sphereMat.clone());
+    sphere.renderOrder = 999;
+    sphere.userData.bone = bone;
+    sphere.userData.defaultMat = sphere.material;
+    sphere.userData.hoverMat = sphereMatHover;
+    boneSpheresGroup.add(sphere);
+    boneSpheres.push({ mesh: sphere, bone });
+  }
+  scene.add(boneSpheresGroup);
+
+  // TransformControls — rotation mode
+  transformCtrl = new TransformControls(camera, renderer3d.domElement);
+  transformCtrl.setMode('rotate');
+  transformCtrl.setSize(0.6);
+  transformCtrl.visible = false;
+  transformCtrl.enabled = false;
+  scene.add(transformCtrl.getHelper());
+
+  // Disable orbit while dragging gizmo
+  transformCtrl.addEventListener('dragging-changed', (e) => {
+    controls.enabled = !e.value;
+  });
+
+  // Capture manual bone edits when gizmo is used
+  transformCtrl.addEventListener('objectChange', () => {
+    if (selectedBone) {
+      pendingBoneEdits[sanitize(selectedBone.name)] = selectedBone.quaternion.clone();
+    }
+  });
+
+  // Click to select bone
+  renderer3d.domElement.addEventListener('click', onViewportClick);
+
+  // Build the bone tree panel
+  renderBonePanel();
+  document.getElementById('bone-count').textContent = skeleton.bones.length;
+}
+
+function updateBoneSpheres() {
+  // Sync sphere positions to bone world positions each frame
+  for (const { mesh, bone } of boneSpheres) {
+    const wp = new THREE.Vector3();
+    bone.getWorldPosition(wp);
+    mesh.position.copy(wp);
+    // Highlight selected
+    if (bone === selectedBone) {
+      mesh.material = mesh.userData.hoverMat;
+      mesh.scale.setScalar(2.0);
+    } else {
+      mesh.material = mesh.userData.defaultMat;
+      mesh.scale.setScalar(1.0);
+    }
+  }
+}
+
+function onViewportClick(e) {
+  const rect = renderer3d.domElement.getBoundingClientRect();
+  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const targets = boneSpheres.map(b => b.mesh);
+  const hits = raycaster.intersectObjects(targets);
+
+  if (hits.length > 0) {
+    selectBone(hits[0].object.userData.bone);
+  } else {
+    selectBone(null);
+  }
+}
+
+function selectBone(bone) {
+  selectedBone = bone;
+  if (bone) {
+    transformCtrl.visible = true;
+    transformCtrl.enabled = true;
+    transformCtrl.attach(bone);
+    document.getElementById('bone-panel-info').innerHTML =
+      `<span style="color:var(--accent);">●</span> ${bone.name}`;
+  } else {
+    transformCtrl.visible = false;
+    transformCtrl.enabled = false;
+    transformCtrl.detach();
+    document.getElementById('bone-panel-info').textContent = 'No bone selected';
+  }
+  // Update bone tree selection highlight
+  document.querySelectorAll('.bone-item').forEach(el => {
+    el.classList.toggle('selected', el.dataset.boneName === (bone?.name || ''));
+  });
+}
+
+// ─── BONE TREE PANEL ─────────────────────────────────────────
+function renderBonePanel() {
+  const container = document.getElementById('bone-tree');
+  container.innerHTML = '';
+  if (!skeleton) return;
+
+  function sanitize(name) { return name.replace(/[\[\].:\/]/g, ''); }
+
+  // Find root bone(s)
+  const roots = skeleton.bones.filter(b => !b.parent || !b.parent.isBone);
+
+  function renderBoneNode(bone, depth) {
+    const sName = sanitize(bone.name);
+    const hasKF = keyframes.some(kf => kf.boneName === sName);
+    const el = document.createElement('div');
+    el.className = 'bone-item' + (bone === selectedBone ? ' selected' : '');
+    el.dataset.boneName = bone.name;
+    el.style.paddingLeft = (8 + depth * 12) + 'px';
+    el.innerHTML = `<span class="bone-dot${hasKF ? ' has-kf' : ''}"></span>${bone.name}`;
+    el.addEventListener('click', () => selectBone(bone));
+    container.appendChild(el);
+
+    // Recurse children
+    for (const child of bone.children) {
+      if (child.isBone) renderBoneNode(child, depth + 1);
+    }
+  }
+
+  for (const root of roots) {
+    renderBoneNode(root, 0);
+  }
+}
+
+// ─── KEYFRAME SYSTEM ─────────────────────────────────────────
+function sanitize(name) { return name.replace(/[\[\].:\/]/g, ''); }
+
+function addKeyframe() {
+  if (!selectedBone) return;
+  const sName = sanitize(selectedBone.name);
+  const t = Math.round(currentTime * fps) / fps; // snap to frame
+
+  // Remove existing keyframe for this bone at this time
+  keyframes = keyframes.filter(kf => !(kf.boneName === sName && Math.abs(kf.time - t) < 0.001));
+
+  keyframes.push({
+    time: t,
+    boneName: sName,
+    quaternion: {
+      x: selectedBone.quaternion.x,
+      y: selectedBone.quaternion.y,
+      z: selectedBone.quaternion.z,
+      w: selectedBone.quaternion.w
+    }
+  });
+
+  // Clear pending edit for this bone since it's now keyframed
+  delete pendingBoneEdits[sName];
+
+  keyframes.sort((a, b) => a.time - b.time || a.boneName.localeCompare(b.boneName));
+  rebuildCustomClip();
+  renderBonePanel();
+  renderTimeline();
+  console.log(`[NLE] Keyframe set: ${sName} @ ${t.toFixed(3)}s`);
+}
+
+function deleteKeyframeAtPlayhead() {
+  if (!selectedBone) return;
+  const sName = sanitize(selectedBone.name);
+  const t = Math.round(currentTime * fps) / fps;
+  const before = keyframes.length;
+  keyframes = keyframes.filter(kf => !(kf.boneName === sName && Math.abs(kf.time - t) < 0.001));
+  if (keyframes.length < before) {
+    rebuildCustomClip();
+    renderBonePanel();
+    renderTimeline();
+    console.log(`[NLE] Keyframe deleted: ${sName} @ ${t.toFixed(3)}s`);
+  }
+}
+
+function deleteKeyframeByIndex(idx) {
+  if (idx >= 0 && idx < keyframes.length) {
+    keyframes.splice(idx, 1);
+    rebuildCustomClip();
+    renderBonePanel();
+    renderTimeline();
+  }
+}
+
+function rebuildCustomClip() {
+  // Group keyframes by bone
+  const byBone = {};
+  for (const kf of keyframes) {
+    if (!byBone[kf.boneName]) byBone[kf.boneName] = [];
+    byBone[kf.boneName].push(kf);
+  }
+
+  const tracks = [];
+  for (const boneName in byBone) {
+    const boneKFs = byBone[boneName];
+    if (boneKFs.length === 0) continue;
+    boneKFs.sort((a, b) => a.time - b.time);
+
+    const times = [];
+    const values = [];
+    for (const kf of boneKFs) {
+      times.push(kf.time);
+      values.push(kf.quaternion.x, kf.quaternion.y, kf.quaternion.z, kf.quaternion.w);
+    }
+    tracks.push(new THREE.QuaternionKeyframeTrack(
+      boneName + '.quaternion',
+      times,
+      values
+    ));
+  }
+
+  if (tracks.length === 0) {
+    customClip = null;
+    // Remove from clip library
+    delete allClips['Custom Animation'];
+    clipList = clipList.filter(c => c.name !== 'Custom Animation');
+    buildLibrary();
+    return;
+  }
+
+  const maxTime = Math.max(...keyframes.map(kf => kf.time), 0.1);
+  customClip = new THREE.AnimationClip('Custom Animation', maxTime, tracks);
+
+  // Add to clip library
+  allClips['Custom Animation'] = customClip;
+  if (!clipList.find(c => c.name === 'Custom Animation')) {
+    clipList.push({ name: 'Custom Animation', duration: maxTime });
+    clipList.sort((a, b) => a.name.localeCompare(b.name));
+  } else {
+    const entry = clipList.find(c => c.name === 'Custom Animation');
+    entry.duration = maxTime;
+  }
+  buildLibrary();
 }
 
 // ─── LOAD MODEL ──────────────────────────────────────────────
@@ -677,6 +979,21 @@ function renderRuler() {
     ctx.beginPath(); ctx.moveTo(x, 8); ctx.lineTo(x, 22); ctx.stroke();
     ctx.fillText(formatTime(t), x + 3, 7);
   }
+
+  // Keyframe diamonds (drawn on canvas)
+  if (keyframes.length > 0) {
+    const sBone = selectedBone ? sanitize(selectedBone.name) : null;
+    for (let i = 0; i < keyframes.length; i++) {
+      const kf = keyframes[i];
+      const kx = kf.time * pixelsPerSecond;
+      ctx.save();
+      ctx.translate(kx, 11);
+      ctx.rotate(Math.PI / 4);
+      ctx.fillStyle = (sBone && kf.boneName === sBone) ? '#FFD479' : '#aa8822';
+      ctx.fillRect(-3, -3, 6, 6);
+      ctx.restore();
+    }
+  }
 }
 
 function updatePlayhead() {
@@ -905,6 +1222,18 @@ function animate() {
   // Evaluate timeline and apply to skeleton
   evaluateTimeline();
 
+  // Re-apply pending manual bone edits (gizmo rotations not yet keyframed)
+  if (!playing) {
+    for (const sName in pendingBoneEdits) {
+      const bone = boneMap[sName];
+      if (bone) bone.quaternion.copy(pendingBoneEdits[sName]);
+    }
+  }
+
+  // Update bone visualization each frame
+  if (boneSpheresGroup) updateBoneSpheres();
+  if (skeletonHelper) skeletonHelper.update();
+
   renderer3d.render(scene, camera);
 }
 
@@ -951,6 +1280,7 @@ function initRulerScrub() {
 function initTransport() {
   document.getElementById('btn-play').addEventListener('click', () => {
     playing = !playing;
+    if (playing) pendingBoneEdits = {}; // clear manual edits on play
     document.getElementById('btn-play').textContent = playing ? '⏸' : '▶';
     document.getElementById('btn-play').classList.toggle('active', playing);
   });
@@ -1003,6 +1333,10 @@ function initTransport() {
   // Add track
   document.getElementById('btn-add-track').addEventListener('click', () => addTrack());
 
+  // Keyframe buttons
+  document.getElementById('btn-keyframe').addEventListener('click', () => addKeyframe());
+  document.getElementById('btn-del-keyframe').addEventListener('click', () => deleteKeyframeAtPlayhead());
+
   // Keyboard shortcuts
   window.addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
@@ -1013,7 +1347,8 @@ function initTransport() {
       case 'Home': document.getElementById('btn-start').click(); break;
       case 'End': document.getElementById('btn-end').click(); break;
       case 'Delete': case 'Backspace':
-        if (selectedClipId !== null) { e.preventDefault(); removeTimelineClip(selectedClipId); }
+        if (selectedBone) { e.preventDefault(); deleteKeyframeAtPlayhead(); }
+        else if (selectedClipId !== null) { e.preventDefault(); removeTimelineClip(selectedClipId); }
         break;
       case 'c': case 'C':
         if (activeTool === 'razor') { activeTool = 'select'; }
@@ -1021,6 +1356,14 @@ function initTransport() {
         document.getElementById('btn-razor').classList.toggle('active', activeTool === 'razor');
         document.body.style.cursor = activeTool === 'razor' ? 'crosshair' : '';
         break;
+      case 'k': case 'K':
+        e.preventDefault(); addKeyframe(); break;
+      case 'r': case 'R':
+        if (transformCtrl) transformCtrl.setMode('rotate'); break;
+      case 'g': case 'G':
+        if (transformCtrl) transformCtrl.setMode('translate'); break;
+      case 'Escape':
+        selectBone(null); break;
     }
   });
 }
@@ -1041,6 +1384,17 @@ function buildExportConfig() {
         trimEnd: +c.trimEnd.toFixed(4),
         duration: +c.duration.toFixed(4)
       }))
+    })),
+    // Bone keyframes for custom animation
+    keyframes: keyframes.map(kf => ({
+      time: +kf.time.toFixed(4),
+      boneName: kf.boneName,
+      quaternion: {
+        x: +kf.quaternion.x.toFixed(6),
+        y: +kf.quaternion.y.toFixed(6),
+        z: +kf.quaternion.z.toFixed(6),
+        w: +kf.quaternion.w.toFixed(6)
+      }
     }))
   };
   return JSON.stringify(config, null, 2);
@@ -1091,6 +1445,7 @@ async function main() {
     await loadModel();
     captureBindPose();
     buildLibrary();
+    initBoneEditing();
 
     // Create default tracks
     addTrack('Base');
