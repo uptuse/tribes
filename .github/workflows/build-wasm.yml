@@ -11,6 +11,9 @@ on:
       - '.github/workflows/build-wasm.yml'
   workflow_dispatch:   # allow manual trigger from GitHub Actions UI
 
+permissions:
+  contents: write   # push artifacts back to master; nothing else
+
 jobs:
   build:
     runs-on: ubuntu-latest
