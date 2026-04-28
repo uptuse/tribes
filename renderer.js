@@ -26,6 +26,7 @@ import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 // R32.7 — additive polish module. Single import; ?polish=off gracefully
 // disables the entire pack at runtime. Effects stack on top of the existing
 // renderer pipeline without modifying any existing materials or meshes.
@@ -3057,6 +3058,9 @@ function initPostProcessing() {
     // Was: (res, 0.4 strength, 0.6 radius, 0.85 threshold)
     bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.30, 0.45, 0.92);
     composer.addPass(bloomPass);
+    // R32.64.2: SMAA — smooths terrain triangle edges and all geometry seams
+    const smaaPass = new SMAAPass(window.innerWidth * (tier.pixelRatio || 1), window.innerHeight * (tier.pixelRatio || 1));
+    composer.addPass(smaaPass);
     if (tier.postProcess === 'full') {
         gradePass = new ShaderPass(makeVignetteAndGradeShader());
         composer.addPass(gradePass);
