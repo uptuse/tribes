@@ -4618,6 +4618,7 @@ function initDustLayer() {
             varying vec3  vColor;
             varying float vBrightness;
             varying float vFade;
+            varying float vLifeFade;
             void main() {
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 gl_Position = projectionMatrix * mv;
@@ -4629,6 +4630,10 @@ function initDustLayer() {
                 // Distance opacity fade: fade between 120-350 m
                 vFade = 1.0 - smoothstep(120.0, 350.0, dist);
                 vBrightness = 0.85 + 0.15 * sin(uTime * 2.5 + aPhase);
+                // R32.59: firefly fade-in/fade-out cycle (~6-10s per fairy,
+                // staggered by phase so they don't all blink in unison)
+                float cycle = sin(uTime * 0.4 + aPhase * 2.7) * 0.5 + 0.5;
+                vLifeFade = smoothstep(0.0, 0.25, cycle) * (1.0 - smoothstep(0.75, 1.0, cycle));
                 vColor = aColor;
             }
         `,
@@ -4638,6 +4643,7 @@ function initDustLayer() {
             varying vec3 vColor;
             varying float vBrightness;
             varying float vFade;
+            varying float vLifeFade;
             void main() {
                 vec2 uv = gl_PointCoord - 0.5;
                 float d2 = dot(uv, uv);
@@ -4645,7 +4651,7 @@ function initDustLayer() {
                 float core = smoothstep(0.04, 0.0, d2);
                 float halo = smoothstep(0.16, 0.0, d2);
                 vec3 col = vColor * vBrightness * (0.7 + core * 0.6);
-                gl_FragColor = vec4(col, halo * uOpacity * vFade);
+                gl_FragColor = vec4(col, halo * uOpacity * vFade * vLifeFade);
             }
         `,
         transparent: true,
