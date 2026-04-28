@@ -1647,44 +1647,7 @@
 
     var lastWpn=-1;
     var lastHpForFlash=-1, _flashTimeout=null;
-    // R32.63.4: GOD MODE — bots can't be killed at WASM level, so suppress ALL damage/death effects
-    function triggerDamageFlash(){ return; /* no-op: god mode */ }
-      var df=document.getElementById('damage-flash');if(!df)return;
-      df.classList.add('hit');
-      if(_flashTimeout)clearTimeout(_flashTimeout);
-      _flashTimeout=setTimeout(function(){df.classList.remove('hit');},60);
-      // R22: also fire damage arc toward nearest visible enemy
-      // R29.3: Module.calledRun guard
-      if(Module && Module.calledRun && Module._getPlayerStatePtr && Module._getLocalPlayerIdx){
-        var ptr = Module._getPlayerStatePtr();
-        var stride = Module._getPlayerStateStride();
-        var count = Module._getPlayerStateCount();
-        var localIdx = Module._getLocalPlayerIdx();
-        var view = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
-        var lo = localIdx * stride;
-        var lx = view[lo], lz = view[lo+2], lyaw = view[lo+4];
-        var localTeam = view[lo+11];
-        var bestDist=Infinity, bestAng=0;
-        for(var ii=0; ii<count; ii++){
-          if(ii===localIdx) continue;
-          var oo = ii*stride;
-          if(view[oo+18]<0.5 || view[oo+13]<0.5) continue; // visible+alive
-          if(view[oo+11]===localTeam) continue;
-          var dx = view[oo]-lx, dz = view[oo+2]-lz;
-          var d = Math.hypot(dx,dz);
-          if(d < bestDist){
-            bestDist = d;
-            // World-bearing - localYaw → screen-relative angle (0=front, +=right)
-            var wb = Math.atan2(dx, -dz);
-            bestAng = wb - lyaw;
-            while(bestAng>Math.PI) bestAng -= 2*Math.PI;
-            while(bestAng<-Math.PI) bestAng += 2*Math.PI;
-          }
-        }
-        // R32.14: pass the actual damage amount so arc thickness/opacity scale.
-        if(bestDist<Infinity && window.showDamageArc) window.showDamageArc(bestAng, _lastDmgAmount || 10);
-      }
-    }
+    function triggerDamageFlash(){ /* no-op: god mode R32.63.5 */ }
     // R32.14: track most recent damage amount so the bearing-fallback arc and
     // the C++-supplied onDamageSource can both render scaled visuals.
     var _lastDmgAmount = 0;
