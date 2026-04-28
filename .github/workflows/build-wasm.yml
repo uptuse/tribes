@@ -1,0 +1,70 @@
+name: Build WASM
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - 'program/code/**'
+      - 'shell.html'
+      - 'assets/**'
+      - 'build.sh'
+      - '.github/workflows/build-wasm.yml'
+  workflow_dispatch:   # allow manual trigger from GitHub Actions UI
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Emscripten 5.0.6
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: '5.0.6'
+          actions-cache-folder: 'emsdk-cache'
+
+      - name: Verify emcc version
+        run: emcc --version
+
+      - name: Build WASM
+        run: |
+          # build.sh has a macOS-specific PATH export at the top; run emcc directly
+          # to avoid that, but keep all flags identical to the local build.
+          mkdir -p build
+          emcc program/code/wasm_main.cpp -o build/tribes.html \
+            -std=c++14 -I program/code \
+            -s USE_WEBGL2=1 -s FULL_ES3=1 \
+            -s ALLOW_MEMORY_GROWTH=0 -s INITIAL_MEMORY=67108864 -s MAXIMUM_MEMORY=67108864 \
+            --shell-file shell.html \
+            --preload-file assets/chaingun.DTS@/assets/tribes/chaingun.DTS \
+            --preload-file assets/discb.DTS@/assets/tribes/discb.DTS \
+            --preload-file assets/grenade.DTS@/assets/tribes/grenade.DTS \
+            --preload-file assets/harmor.DTS@/assets/tribes/harmor.DTS \
+            --preload-file assets/larmor.dts@/assets/tribes/larmor.dts \
+            --preload-file assets/marmor.dts@/assets/tribes/marmor.dts \
+            --preload-file assets/tower.DTS@/assets/tribes/tower.DTS \
+            --preload-file assets/hdri@/assets/tribes/hdri \
+            --preload-file assets/maps@/assets/tribes/maps \
+            -O0 -g0 -Wno-format \
+            -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_setLocalPlayerNetCorrection","_setMapBuildings","_malloc","_free","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick","_getPlayerSkiing","_getPlayerSpeed","_getPlayerSlopeDeg","_getThirdPerson","_setLocalAimPoint3P","_appendInteriorShapeAABBs","_appendInteriorMeshTris"]' \
+            -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
+
+      - name: Deploy to repo root
+        run: |
+          cp build/tribes.html index.html
+          cp build/tribes.js   tribes.js
+          cp build/tribes.wasm tribes.wasm
+          cp build/tribes.data tribes.data
+
+      - name: Commit & push artifacts
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add index.html tribes.js tribes.wasm tribes.data
+          # Only commit if something actually changed
+          git diff --cached --quiet || \
+            git commit -m "build(CI): rebuild WASM [skip ci] — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          git push
