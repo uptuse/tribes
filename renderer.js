@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=120b'; // R32.116: cache bust
+import * as Characters from './renderer_characters.js?v=120c'; // R32.116: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -97,6 +97,7 @@ function sampleTerrainH(worldX, worldZ) {
          + _htData[(iz+1) * _htSize + ix] * (1-fx)*fz
          + _htData[(iz+1) * _htSize + (ix+1)] * fx*fz;
 }
+window._sampleTerrainH = sampleTerrainH; // R32.120: expose for renderer_characters.js
 
 // ============================================================
 // Graphics quality tier (driven by settings menu)

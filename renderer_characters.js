@@ -132,14 +132,17 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// WASM pos.y is NOT terrain-level. The ground clamp is:
-//   local player: pos.y = terrainHeight + 1.8  (capsule bottom offset)
-//   bots:         pos.y = terrainHeight + 1.0
-// The procedural mesh has no legs so this didn't matter, but the GLB model
-// has actual feet at y=0, so we must subtract the capsule offset.
-const GROUND_OFFSET = 1.8; // matches wasm_main.cpp line 2133: th+1.8f
-function _groundY(playerY) {
-    return playerY - GROUND_OFFSET;
+// Use the actual Three.js terrain height at the player's XZ position.
+// WASM pos.y = wasm_terrainH + 1.8 (capsule offset). Instead of guessing
+// the offset, we sample the JS terrain directly and compute air distance.
+const CAPSULE_OFFSET = 1.8; // wasm_main.cpp line 2133
+function _groundY(playerX, playerY, playerZ) {
+    const sample = window._sampleTerrainH;
+    if (!sample) return playerY - CAPSULE_OFFSET; // fallback
+    const terrainH = sample(playerX, playerZ);
+    // How far above ground is the player? (0 when standing, positive when airborne)
+    const airDist = Math.max(0, playerY - terrainH - CAPSULE_OFFSET);
+    return terrainH + airDist;
 }
 
 // ── Local player sync ───────────────────────────────────────
@@ -164,7 +167,7 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         char.model.position.set(
             playerView[o],
-            _groundY(playerView[o + 1]),
+            _groundY(playerView[o], playerView[o + 1], playerView[o + 2]),
             playerView[o + 2]
         );
         // R32.119: one-time position diagnostic
@@ -173,7 +176,7 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
             console.log('[R32.119] Character world pos:', 
                 char.model.position.x.toFixed(1), char.model.position.y.toFixed(1), char.model.position.z.toFixed(1),
                 '| playerY:', playerView[o + 1].toFixed(1),
-                '| groundY:', _groundY(playerView[o + 1]).toFixed(1),
+                '| groundY:', _groundY(playerView[o], playerView[o + 1], playerView[o + 2]).toFixed(1),
                 '| footOffset:', _footOffset.toFixed(4));
         }
         char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
@@ -207,7 +210,7 @@ function _spawnDemo(playerView, playerStride, localIdx) {
 
     const yaw = playerView[o + 4];
     _demo.baseX = playerView[o] + Math.sin(yaw) * 8;
-    _demo.baseY = _groundY(playerView[o + 1]);
+    _demo.baseY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]);
     _demo.baseZ = playerView[o + 2] + Math.cos(yaw) * 8;
     _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     _demo.time = 0;
