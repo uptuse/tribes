@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=140'; // R32.116: cache bust
+import * as Characters from './renderer_characters.js?v=141'; // R32.116: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -179,7 +179,9 @@ export async function start() {
     initFlags();
     initParticles();
     initWeaponViewmodel();
-    try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
+    // R32.141: Old jet exhaust particles disabled — replaced by mesh flame cones on character model
+    // try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
+    try { initSkiParticles(); } catch (e) { console.warn('[R32.141] initSkiParticles failed:', e); }
     try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
     try { initExplosionFX(); } catch (e) { console.warn('[R32.74] initExplosionFX failed:', e); }
     try { initNightFairies(); } catch (e) { console.warn('[R32.74] initNightFairies failed:', e); }
@@ -1138,25 +1140,33 @@ async function initTerrain() {
     console.log('[R32.42] Terrain: 3 array textures (color+normal+AO), roughness enabled, POM disabled');
 }
 
-// R32.140: Carve terrain under interior shapes (not WASM AABBs)
-// Uses actual placed mesh bounding boxes — much tighter than building AABBs.
-// Skips rocks. Depresses terrain vertices inside each shape's XZ footprint.
+// R32.141: Carve terrain under BASE buildings only (not all interior shapes)
+// Only carve shapes that are actually embedded in the terrain (hobbit-holed).
+// Skip rocks, cubes, floating pads, bridges, observation towers, and small objects.
 function _carveTerrainUnderBuildings() {
     if (!terrainMesh || !interiorShapesGroup) return;
 
     const geo = terrainMesh.geometry;
     const pos = geo.attributes.position;
     const size = _htSize;
-    const scale = _htScale;
 
-    // Collect world-space AABBs from interior shapes (skip rocks)
+    // Only carve for shapes that are actual base buildings embedded in hillsides
+    const carvePatterns = ['bunker', 'esmall', 'betower', 'dss', 'swsfloating'];
     const boxes = [];
     interiorShapesGroup.children.forEach(outer => {
         if (!outer.userData) return;
         const fn = (outer.userData.fileName || '').toLowerCase();
-        if (fn.startsWith('lrock')) return; // skip rocks
+        // Only carve for base buildings
+        const shouldCarve = carvePatterns.some(p => fn.startsWith(p));
+        if (!shouldCarve) return;
         const box = new THREE.Box3().setFromObject(outer);
         if (box.isEmpty()) return;
+        // Extra check: only carve if shape is near/below terrain level
+        const terrainAtShape = sampleTerrainH(
+            (box.min.x + box.max.x) / 2,
+            (box.min.z + box.max.z) / 2
+        );
+        if (box.min.y > terrainAtShape + 5.0) return; // floating above terrain, skip
         boxes.push(box);
     });
     if (!boxes.length) return;
@@ -1168,16 +1178,14 @@ function _carveTerrainUnderBuildings() {
         const wz = pos.getZ(vi);
 
         for (const box of boxes) {
-            // Check XZ footprint with margin for doorway clearance
-            const margin = 3.0;
+            const margin = 2.0;
             if (wx >= box.min.x - margin && wx <= box.max.x + margin &&
                 wz >= box.min.z - margin && wz <= box.max.z + margin) {
-                // Depress to below building bottom
-                const targetY = box.min.y - 2.0;
+                const targetY = box.min.y - 1.5;
                 if (wy > targetY) {
                     pos.setY(vi, targetY);
                     carved++;
-                    break; // only need to depress once per vertex
+                    break;
                 }
             }
         }
@@ -1186,7 +1194,6 @@ function _carveTerrainUnderBuildings() {
     if (carved > 0) {
         pos.needsUpdate = true;
         geo.computeVertexNormals();
-        // Update heightmap sample data to match
         for (let vi = 0; vi < pos.count; vi++) {
             const j = Math.floor(vi / size);
             const i = vi % size;
@@ -1194,7 +1201,7 @@ function _carveTerrainUnderBuildings() {
                 _htData[j * size + i] = pos.getY(vi);
             }
         }
-        console.log(`[R32.140] Terrain carved: ${carved} vertices depressed under ${boxes.length} interior shapes`);
+        console.log(`[R32.141] Terrain carved: ${carved} vertices under ${boxes.length} base buildings`);
     }
 }
 
@@ -4492,6 +4499,133 @@ function initJetExhaust() {
 }
 
 // ============================================================
+// R32.141: Ski surfboard particles — cloned from jet exhaust (proven working)
+// Blue-white energy sparks from feet when skiing
+// ============================================================
+const SKI_MAX = 256;
+const SKI_LIFETIME = 0.45;
+const SKI_SPEED = 2.0;
+
+let _skiPoints = null;
+let _skiPos, _skiAge, _skiVel, _skiAlpha;
+let _skiNextSlot = 0;
+
+function initSkiParticles() {
+    _skiPos   = new Float32Array(SKI_MAX * 3);
+    _skiAge   = new Float32Array(SKI_MAX);
+    _skiVel   = new Float32Array(SKI_MAX * 3);
+    _skiAlpha = new Float32Array(SKI_MAX);
+
+    for (let i = 0; i < SKI_MAX; i++) {
+        _skiPos[i * 3 + 1] = -9999;
+        _skiAlpha[i] = 0;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+
+    // Cloned from jet exhaust shader — changed color to blue-white
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: `
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aAlpha * 120.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.2, 0.5, r);
+                vec3 col = mix(vec3(0.8, 0.95, 1.0), vec3(0.3, 0.6, 1.0), r * 2.0);
+                gl_FragColor = vec4(col, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _skiPoints = new THREE.Points(geo, mat);
+    _skiPoints.frustumCulled = false;
+    _skiPoints.renderOrder = 100;
+    scene.add(_skiPoints);
+    console.log('[R32.141] Ski surfboard particles: pool=' + SKI_MAX);
+}
+
+function _skiEmit(wx, wy, wz, vx, vy, vz) {
+    for (let t = 0; t < 16; t++) {
+        if (_skiAge[_skiNextSlot] <= 0) break;
+        _skiNextSlot = (_skiNextSlot + 1) % SKI_MAX;
+    }
+    const i = _skiNextSlot;
+    _skiPos[i*3]   = wx;
+    _skiPos[i*3+1] = wy;
+    _skiPos[i*3+2] = wz;
+    _skiVel[i*3]   = vx;
+    _skiVel[i*3+1] = vy;
+    _skiVel[i*3+2] = vz;
+    _skiAge[i]     = SKI_LIFETIME;
+    _skiAlpha[i]   = 0.7 + Math.random() * 0.3;
+    _skiNextSlot   = (_skiNextSlot + 1) % SKI_MAX;
+}
+
+function updateSkiParticles(dt) {
+    if (!_skiPoints || !playerView) return;
+
+    // Age + move — identical pattern to jet exhaust
+    for (let i = 0; i < SKI_MAX; i++) {
+        if (_skiAge[i] <= 0) continue;
+        _skiAge[i] -= dt;
+        if (_skiAge[i] <= 0) {
+            _skiAge[i] = 0;
+            _skiPos[i*3+1] = -9999;
+            _skiAlpha[i] = 0;
+            continue;
+        }
+        _skiPos[i*3]   += _skiVel[i*3]   * dt;
+        _skiPos[i*3+1] += _skiVel[i*3+1] * dt;
+        _skiPos[i*3+2] += _skiVel[i*3+2] * dt;
+        _skiVel[i*3+1] -= 3.0 * dt; // light gravity
+        _skiVel[i*3]   *= 0.96;
+        _skiVel[i*3+2] *= 0.96;
+        const life = _skiAge[i] / SKI_LIFETIME;
+        _skiAlpha[i] = life < 0.6 ? life / 0.6 : 1.0;
+    }
+
+    // Emit from skiing players — same loop structure as jet exhaust
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+        const o = p * playerStride;
+        if (playerView[o + 18] < 0.5) continue; // not visible
+        if (playerView[o + 13] < 0.5) continue; // not alive
+        if (playerView[o + 15] < 0.5) continue; // not skiing
+        const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
+        const footY = py - 1.75; // near ground level
+        // 3 particles per frame from feet area
+        for (let e = 0; e < 3; e++) {
+            _skiEmit(
+                px + (Math.random()-0.5)*0.3,
+                footY + Math.random()*0.08,
+                pz + (Math.random()-0.5)*0.3,
+                (Math.random()-0.5)*SKI_SPEED,
+                Math.random()*1.5 + 0.3,
+                (Math.random()-0.5)*SKI_SPEED
+            );
+        }
+    }
+
+    _skiPoints.geometry.attributes.position.needsUpdate = true;
+    _skiPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ============================================================
 // R32.73: Projectile trails — glowing particle trail behind each projectile
 // ============================================================
 const TRAIL_MAX = 512;       // max trail particles
@@ -5173,7 +5307,9 @@ function loop() {
     syncTurretBarrels(t);
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
-    try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    // R32.141: Old jet exhaust disabled — mesh flames on character model instead
+    // try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateSkiParticles(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateNightFairies(1/60, t); } catch (e) { console.error('[R32.84] sky fairy error:', e); }
