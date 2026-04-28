@@ -422,6 +422,13 @@ const DayNight = (() => {
             hemiLight.intensity = 0.08 + 0.27 * dayMix;
         }
 
+        // R32.91: Night ambient — ramps up as sun goes down, lifts terrain out of black
+        if (window.__nightAmbient) {
+            const nightFactor = 1.0 - dayMix; // 0 at noon, 1 at midnight
+            window.__nightAmbient.intensity = nightFactor * 0.6;
+            window.__nightAmbient.color.setHex(0x304060);
+        }
+
         // Fog
         const fogCol = lerpColors(palette.nightFog, palette.dawnFog, palette.noonFog, palette.duskFog, t01);
         if (typeof scene !== 'undefined' && scene.fog) {
@@ -534,6 +541,11 @@ function initLights() {
     // Tone-mapping exposure 0.8 -> 1.0 below (toneMapping is set in initRenderer).
     hemiLight = new THREE.HemisphereLight(0xC0C8D0, 0x4D473B, 1.5);
     scene.add(hemiLight);
+
+    // R32.91: Night ambient light — flat fill so terrain isn't pitch black
+    const nightAmbient = new THREE.AmbientLight(0x3040608, 0);
+    scene.add(nightAmbient);
+    window.__nightAmbient = nightAmbient;
 
     // R32.0: Sun — azimuth -90°, incidence 54°. R32.37.5: intensity 1.4 -> 1.8.
     sunLight = new THREE.DirectionalLight(0x999999, 1.8);
