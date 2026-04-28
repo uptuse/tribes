@@ -1537,7 +1537,7 @@
         if (n >= 0 && n <= 2) setTimeout(function(){ selectArmor(n); }, 0);
       }
     } catch (e) {}
-    function setBotCount(n){gameSettings.botCount=n;}
+    function setBotCount(n){gameSettings.botCount=0;} // R32.63.4: always 0, bots disabled
     function setScoreLimit(n){gameSettings.scoreLimit=n;}
     function setTimeLimit(n){gameSettings.timeLimit=n;}
     // R25: map picker — selectedMapId flows into the WS query string at lobby creation.
@@ -1883,6 +1883,8 @@
     function restartGame(){
       document.getElementById('victoryscreen').classList.remove('active');
       if(Module._restartGame)Module._restartGame();
+      // R32.63.4: force 0 bots on restart too
+      if(Module._setGameSettings)Module._setGameSettings(selectedTeam,selectedArmor,0,gameSettings.scoreLimit,gameSettings.timeLimit);
       gameStarted=true;canvas.requestPointerLock();
     }
     function toMainMenu(){
@@ -4185,6 +4187,8 @@
           // (network/replay/tier modules) re-opens it.
           var _autoStart = function(){
             try {
+              // R32.63.4: force 0 bots BEFORE quickStart
+              if(Module._setGameSettings) Module._setGameSettings(0, 0, 0, 5, 600);
               if(!gameStarted) quickStart();
               // Belt-and-braces: nuke any overlay that snuck back in.
               var mm = document.getElementById('mainmenu');

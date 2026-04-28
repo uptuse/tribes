@@ -3290,6 +3290,13 @@ function syncPlayers(t) {
                 shield.visible = false;
             }
         }
+        // R32.63.4: hide ALL non-local players (bots disabled)
+        if (i !== localIdx) {
+            mesh.visible = false;
+            if (nameplateSprites[i]) nameplateSprites[i].visible = false;
+            if (shield) shield.visible = false;
+            continue;
+        }
         // R31.4: in 1P, skip local player (no self-model). In 3P, fall through
         // and render local player like any bot — nameplate still suppressed.
         if (i === localIdx && !is3P) {
