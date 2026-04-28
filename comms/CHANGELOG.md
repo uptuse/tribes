@@ -252,3 +252,17 @@
   - Sinusoidal drift orbits + vertical bob + twinkling
   - Warm golden-white glow, visible only at night (DayNight.dayMix)
   - Phase 2 (Effects) COMPLETE
+
+## R32.75 — Interior building lighting
+- PointLight at each Generator, InventoryStation, AmmoStation, CommandStation
+- Generator lights team-tinted (red for Blood Eagle, blue for Diamond Sword)
+- Station lights warm white (0xFFE0B0)
+- DayNight modulation: 40% intensity at noon, 100% at night
+- Range 10-14m with physical quadratic decay, no shadow casting
+
+## R32.76 — WASM verification + Bot AI research (Phase 3 complete)
+- **WASM air control verified:** Emscripten 3.1.6 keydown/keyup callbacks → keys[256], WASD builds moveDir, airborne branch at 50% maxFwdSpeed capped at maxJetFwdVel, T1 jet-split formula, skiing slope gravity + mogul timer
+- **Station interaction verified:** F-key at 4m radius, auto-close at 6m, generator-online gating
+- **Generator destructibility verified:** 800HP, projectile AABB damage, cascade to turrets, auto-repair 5HP/s, visual+audio feedback
+- **Bot AI research:** Evaluated 5 libraries (recast-navigation-js, navcat, Yuka.js, three-pathfinding, octree 3D). Recommended hybrid waypoint graph — ground A* + interior waypoints + flight edges. ~160 lines C++, no external deps. Full report in `docs/bot-ai-research.md`
+- Phase 3 (Gameplay) COMPLETE
