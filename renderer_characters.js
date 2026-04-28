@@ -29,15 +29,19 @@ export function init(targetScene) {
         _gltf = gltf;
         _loaded = true;
 
-        // R32.114: Simple approach — no auto-scaling. The Mixamo armature already
-        // has a 0.01 scale that converts cm→m, giving a ~2m model natively.
-        // Just measure the world-space bounding box to find the foot offset.
+        // R32.118: Measure world-space bounding box for diagnostics.
+        // Mixamo armature has 0.01 scale (cm→m). Model origin should be at feet.
         gltf.scene.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(gltf.scene);
-        _modelScale = 1.0; // native scale is fine (~2m)
-        _footOffset = box.min.y; // negative = feet below origin
-        console.log('[R32.114] Model bbox Y:', box.min.y.toFixed(3), '→', box.max.y.toFixed(3),
-            'height:', (box.max.y - box.min.y).toFixed(2) + 'm', 'footOffset:', _footOffset.toFixed(3));
+        const rawOffset = box.min.y;
+        const height = box.max.y - box.min.y;
+        // If feet are at origin in model space, box.min.y ≈ 0 and no offset needed.
+        // If box.min.y is significantly negative, feet are below origin → shift up.
+        // Threshold: only apply offset if feet are >0.05m away from origin.
+        _footOffset = Math.abs(rawOffset) > 0.05 ? rawOffset : 0;
+        console.log('[R32.118] Model bbox Y:', box.min.y.toFixed(4), '→', box.max.y.toFixed(4),
+            'height:', height.toFixed(2) + 'm', 'rawOffset:', rawOffset.toFixed(4),
+            'appliedOffset:', _footOffset.toFixed(4));
 
         console.log('[R32.113] Character loaded:', gltf.animations.length, 'clips');
         for (const clip of gltf.animations) {
