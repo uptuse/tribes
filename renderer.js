@@ -3566,6 +3566,19 @@ function initStateViews() {
     // R30.2: build the environment map AFTER renderer + sky are both ready
     buildEnvironmentFromSky();
 
+    // R32.77: Minimap radar init
+    if (window.Minimap) {
+        window.Minimap.init({
+            getPlayerView: () => ({
+                view: playerView, stride: playerStride,
+                count: playerView ? Math.floor(playerView.length / playerStride) : 0,
+            }),
+            getLocalIdx: () => Module._getLocalPlayerIdx(),
+            getFlagView: () => ({ view: flagView, stride: flagStride }),
+            getBuildings: () => buildingMeshes,
+        });
+    }
+
     console.log('[R18] State views: player(' + playerStride + ') proj(' + projectileStride +
                 ') part(' + particleStride + ') flag(' + flagStride + ')');
 }
@@ -4966,6 +4979,8 @@ function loop() {
         _updateViewmodelSway(dt);
         // R32.17-manus: command map full-screen tactical overlay (toggled with C)
         if (window.CommandMap && window.CommandMap.update) window.CommandMap.update();
+        // R32.77: Minimap radar per-frame update
+        if (window.Minimap && window.Minimap.update) window.Minimap.update();
     }
 
     // R32.22: tick gradePass time uniform so the cinematic film grain animates.
