@@ -90,7 +90,7 @@ export function installPolish(ctx) {
     safeInit('lensflare', _initLensflare);
     safeInit('lightning', _initLightning);
     safeInit('decals',    _initDecals);
-    safeInit('rainSplashes', _initRainSplashes);
+    // safeInit('rainSplashes', _initRainSplashes); // R32.59.2: removed — rain was removed, splashes were leftover artifact
     safeInit('smokeStacks',  _initSmokeStacks);
     safeInit('coilRings',    _initCoilRings);
     safeInit('missileClusters', _initMissileClusters);
@@ -150,7 +150,7 @@ function tick(dt, t) {
     if (_lightning) _tickLightning(dt, t);
     if (_shake) _tickCameraShake(dt);
     if (_fovPunch) _tickFOVPunch(dt);
-    if (_splashGroup) _tickRainSplashes(dt, t);
+    // if (_splashGroup) _tickRainSplashes(dt, t); // R32.59.2: removed
     if (_smokeStacks.length) _tickSmokeStacks(dt, t);
     if (_telemetry) _tickTelemetry(t);
     if (_hudRing) _tickHUDRing(t);
