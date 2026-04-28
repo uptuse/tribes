@@ -141,6 +141,7 @@ export async function start() {
     initParticles();
     initWeaponViewmodel();
     try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
+    try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
     // R32.36.3-manus: rain disabled by default per user request "Turn off rain
     // please so I can see them". The Raindance map's signature rain streaks
     // were competing visually with the new fairies. Opt back in via ?rain=on.
@@ -4330,6 +4331,132 @@ function initJetExhaust() {
     console.log('[R32.72] Jet exhaust particles: pool=' + JET_MAX);
 }
 
+// ============================================================
+// R32.73: Projectile trails — glowing particle trail behind each projectile
+// ============================================================
+const TRAIL_MAX = 512;       // max trail particles
+const TRAIL_LIFETIME = 0.25; // seconds — short trail that fades fast
+let _trailPoints = null;
+let _trailPos, _trailAge, _trailAlpha, _trailColor;
+let _trailNextSlot = 0;
+
+function initProjectileTrails() {
+    _trailPos   = new Float32Array(TRAIL_MAX * 3);
+    _trailAge   = new Float32Array(TRAIL_MAX);
+    _trailAlpha = new Float32Array(TRAIL_MAX);
+    _trailColor = new Float32Array(TRAIL_MAX * 3); // per-particle RGB
+
+    for (let i = 0; i < TRAIL_MAX; i++) {
+        _trailPos[i * 3 + 1] = -9999;
+        _trailAlpha[i] = 0;
+        _trailColor[i * 3] = 1; _trailColor[i * 3 + 1] = 1; _trailColor[i * 3 + 2] = 1;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_trailPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_trailAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aColor',   new THREE.Float32BufferAttribute(_trailColor, 3).setUsage(THREE.DynamicDrawUsage));
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: `
+            attribute float aAlpha;
+            attribute vec3 aColor;
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                vAlpha = aAlpha;
+                vColor = aColor;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aAlpha * 180.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.15, 0.5, r);
+                gl_FragColor = vec4(vColor, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _trailPoints = new THREE.Points(geo, mat);
+    _trailPoints.frustumCulled = false;
+    _trailPoints.renderOrder = 101;
+    scene.add(_trailPoints);
+    console.log('[R32.73] Projectile trails: pool=' + TRAIL_MAX);
+}
+
+// Color lookup matching PROJ_COLORS but as normalized RGB
+const _TRAIL_RGB = [
+    [1.0, 1.0, 1.0],   // 0 blaster (white)
+    [1.0, 0.93, 0.25],  // 1 chaingun (yellow)
+    [0.7, 0.85, 1.0],   // 2 disc (blueish white)
+    [0.3, 0.5, 0.19],   // 3 grenade (green)
+    [1.0, 0.38, 0.13],  // 4 plasma (orange)
+    [1.0, 0.63, 0.25],  // 5 mortar (warm orange)
+    [1.0, 0.25, 0.25],  // 6
+    [0.5, 0.63, 1.0],   // 7
+    [0.25, 1.0, 0.5],   // 8
+];
+
+function _trailEmit(wx, wy, wz, type) {
+    for (let t = 0; t < 16; t++) {
+        if (_trailAge[_trailNextSlot] <= 0) break;
+        _trailNextSlot = (_trailNextSlot + 1) % TRAIL_MAX;
+    }
+    const i = _trailNextSlot;
+    _trailPos[i*3]   = wx + (Math.random()-0.5)*0.05;
+    _trailPos[i*3+1] = wy + (Math.random()-0.5)*0.05;
+    _trailPos[i*3+2] = wz + (Math.random()-0.5)*0.05;
+    _trailAge[i]     = TRAIL_LIFETIME;
+    _trailAlpha[i]   = 0.8 + Math.random() * 0.2;
+    const rgb = _TRAIL_RGB[type] || _TRAIL_RGB[0];
+    _trailColor[i*3]   = rgb[0];
+    _trailColor[i*3+1] = rgb[1];
+    _trailColor[i*3+2] = rgb[2];
+    _trailNextSlot = (_trailNextSlot + 1) % TRAIL_MAX;
+}
+
+function updateProjectileTrails(dt) {
+    if (!_trailPoints || !projectileView) return;
+
+    // Age existing trail particles
+    for (let i = 0; i < TRAIL_MAX; i++) {
+        if (_trailAge[i] <= 0) continue;
+        _trailAge[i] -= dt;
+        if (_trailAge[i] <= 0) {
+            _trailAge[i] = 0;
+            _trailPos[i*3+1] = -9999;
+            _trailAlpha[i] = 0;
+            continue;
+        }
+        // Smooth fade-out
+        _trailAlpha[i] = (_trailAge[i] / TRAIL_LIFETIME);
+    }
+
+    // Emit trail particles at each active projectile
+    const count = Module._getProjectileStateCount ? Module._getProjectileStateCount() : 0;
+    for (let p = 0; p < count && p < MAX_PROJECTILES; p++) {
+        const o = p * projectileStride;
+        if (projectileView[o + 9] < 0.5) continue; // not alive
+        const type = projectileView[o + 6] | 0;
+        // Emit 1 trail particle per projectile per frame
+        _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
+    }
+
+    _trailPoints.geometry.attributes.position.needsUpdate = true;
+    _trailPoints.geometry.attributes.aAlpha.needsUpdate = true;
+    _trailPoints.geometry.attributes.aColor.needsUpdate = true;
+}
+
 function _jetEmit(wx, wy, wz, vx, vy, vz) {
     // Circular scan for dead slot
     for (let t = 0; t < 16; t++) {
@@ -4431,6 +4558,7 @@ function loop() {
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
     try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
