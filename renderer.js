@@ -2291,88 +2291,13 @@ async function initInteriorShapes() {
             }
         }
 
-        // R32.68: Send per-triangle collision data to C++ instead of whole-building AABBs.
-        // This enables building entry through doorways and eliminates the "force field" effect.
-        // For each placed interior shape instance, transform all triangles to world space
-        // and send them along with the world-space AABB for broadphase.
-        if (typeof Module !== 'undefined' && Module._appendInteriorMeshTris && Module._malloc && Module.HEAPF32) {
-            for (const item of items) {
-                const meshData = meshes.get(item.fileName);
-                if (!meshData) continue;
-                const bd = info.meshes.find(m => m.fileName === item.fileName);
-                if (!bd) continue;
-
-                const w = toWorld(item.position);
-                // R32.69: Full 3-axis rotation for collision (matches rendering transform).
-                const _crx = item.rotation?.[0] || 0;
-                const _cry = item.rotation?.[1] || 0;
-                const _crz = item.rotation?.[2] || 0;
-                let _rm00, _rm01, _rm02, _rm10, _rm11, _rm12, _rm20, _rm21, _rm22;
-                if (_crx === 0 && _cry === 0) {
-                    // Yaw-only fast path: Ry(-rz) matrix
-                    const c = Math.cos(_crz), s = Math.sin(_crz);
-                    _rm00 = c;  _rm01 = 0; _rm02 = -s;
-                    _rm10 = 0;  _rm11 = 1; _rm12 = 0;
-                    _rm20 = s;  _rm21 = 0; _rm22 = c;
-                } else {
-                    // Full rotation via quaternion → 3x3 matrix
-                    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -_crx);
-                    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), -_cry);
-                    const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -_crz);
-                    const rm = new THREE.Matrix4().makeRotationFromQuaternion(qz.multiply(qy).multiply(qx));
-                    const e = rm.elements;
-                    _rm00 = e[0]; _rm01 = e[4]; _rm02 = e[8];
-                    _rm10 = e[1]; _rm11 = e[5]; _rm12 = e[9];
-                    _rm20 = e[2]; _rm21 = e[6]; _rm22 = e[10];
-                }
-
-                // Transform: DIS local → world space
-                // Step 1: Rx(-π/2): (lx,ly,lz) → (lx, lz, -ly)
-                // Step 2: Apply full rotation matrix
-                // Step 3: Translate to world position
-                function xform(lx, ly, lz) {
-                    const ax = lx, ay = lz, az = -ly;
-                    return [
-                        _rm00*ax + _rm01*ay + _rm02*az + w.x,
-                        _rm10*ax + _rm11*ay + _rm12*az + w.y,
-                        _rm20*ax + _rm21*ay + _rm22*az + w.z
-                    ];
-                }
-
-                const { positions, indices } = meshData;
-                const numTris = indices.length / 3;
-                if (numTris === 0) continue;
-
-                // Build world-space triangle array (9 floats per tri: v0x,v0y,v0z, v1x,v1y,v1z, v2x,v2y,v2z)
-                const triData = new Float32Array(numTris * 9);
-                let mnX = Infinity, mnY = Infinity, mnZ = Infinity;
-                let mxX = -Infinity, mxY = -Infinity, mxZ = -Infinity;
-
-                for (let t = 0; t < numTris; t++) {
-                    const i0 = indices[t * 3], i1 = indices[t * 3 + 1], i2 = indices[t * 3 + 2];
-                    const [x0, y0, z0] = xform(positions[i0*3], positions[i0*3+1], positions[i0*3+2]);
-                    const [x1, y1, z1] = xform(positions[i1*3], positions[i1*3+1], positions[i1*3+2]);
-                    const [x2, y2, z2] = xform(positions[i2*3], positions[i2*3+1], positions[i2*3+2]);
-                    triData[t*9+0] = x0; triData[t*9+1] = y0; triData[t*9+2] = z0;
-                    triData[t*9+3] = x1; triData[t*9+4] = y1; triData[t*9+5] = z1;
-                    triData[t*9+6] = x2; triData[t*9+7] = y2; triData[t*9+8] = z2;
-                    // Update AABB
-                    mnX = Math.min(mnX, x0, x1, x2); mxX = Math.max(mxX, x0, x1, x2);
-                    mnY = Math.min(mnY, y0, y1, y2); mxY = Math.max(mxY, y0, y1, y2);
-                    mnZ = Math.min(mnZ, z0, z1, z2); mxZ = Math.max(mxZ, z0, z1, z2);
-                }
-
-                // Send to WASM
-                const bytes = triData.length * 4;
-                const ptr = Module._malloc(bytes);
-                if (ptr) {
-                    Module.HEAPF32.set(triData, ptr / 4);
-                    Module._appendInteriorMeshTris(numTris, ptr, mnX, mnY, mnZ, mxX, mxY, mxZ);
-                    Module._free(ptr);
-                }
-            }
-            console.log('[R32.68] Per-triangle collision data sent to WASM');
-        }
+        // R32.99: Unified collision — use registerModelCollision() for all geometry.
+        // The Three.js meshes already have correct world transforms via parent chain:
+        // scene → interiorShapesGroup → outer(worldPos+rot) → mesh(-90°X)
+        // Force matrixWorld update since collision registers before first render.
+        interiorShapesGroup.updateMatrixWorld(true);
+        const colInfo = registerModelCollision(interiorShapesGroup);
+        console.log('[R32.99] Interior collision via registerModelCollision:', colInfo);
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);
     }
