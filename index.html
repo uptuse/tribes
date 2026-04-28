@@ -4253,7 +4253,7 @@
           __toonScr.onerror = function(e){ console.error('[R32.20] renderer_toonify.js FAILED to load', e); };
           document.head.appendChild(__toonScr);
 
-          import('./renderer.js').then(function(m){
+          import('./renderer.js?v=' + __cacheVer).then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
             if(typeof m.start === 'function'){
               m.start();
