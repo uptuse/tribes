@@ -31,6 +31,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 // renderer pipeline without modifying any existing materials or meshes.
 import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -130,6 +131,7 @@ export async function start() {
     await initTerrain();
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
+    initCustomModels(); // R32.57: load custom GLB models
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
     initProjectiles();
@@ -2062,6 +2064,53 @@ async function initInteriorShapes() {
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);
     }
+}
+
+// ============================================================
+// R32.57: Custom GLB model loader — places imported models in the scene.
+// Currently: Neon Wolf Sentinel near team 0 base.
+// ============================================================
+function initCustomModels() {
+    const loader = new GLTFLoader();
+    // Team 0 spawn: Tribes [-256.5, -10.3552, 35.7834]
+    // toWorld: x = -256.5, y = 35.7834, z = -(-10.3552) = 10.3552
+    // Place wolf slightly offset from base so it's visible
+    const wolfX = -250;  // slightly east of base
+    const wolfZ = 15;    // slightly south
+    const wolfY = sampleTerrainH(wolfX, wolfZ);
+
+    loader.load('./assets/models/wolf_sentinel.glb', (gltf) => {
+        const model = gltf.scene;
+        model.name = 'WolfSentinel';
+
+        // Model is ~2 units tall; scale to ~15 units (imposing sentinel)
+        const scale = 15;
+        model.scale.set(scale, scale, scale);
+
+        // Position on terrain
+        model.position.set(wolfX, wolfY, wolfZ);
+
+        // Face toward the base
+        model.rotation.y = Math.PI * 0.75;
+
+        // Enable shadows
+        model.traverse((child) => {
+            if (child.isMesh) {
+                child.castShadow = true;
+                child.receiveShadow = true;
+                // Tag to skip toonify
+                if (child.material) {
+                    const mats = Array.isArray(child.material) ? child.material : [child.material];
+                    mats.forEach(m => { m.userData.isInterior = true; });
+                }
+            }
+        });
+
+        scene.add(model);
+        console.log(`[R32.57] Wolf Sentinel loaded at (${wolfX}, ${wolfY.toFixed(1)}, ${wolfZ}), scale=${scale}`);
+    }, undefined, (err) => {
+        console.error('[R32.57] Failed to load wolf_sentinel.glb', err);
+    });
 }
 
 // ============================================================
