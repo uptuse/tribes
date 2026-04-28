@@ -577,7 +577,8 @@ static bool sphereVsTriangle(Vec3 center, float radius, const ColTri& tri,
 // R32.100: Floor surfaces treated like terrain (snap Y, preserve horizontal vel).
 // Returns true if any collision was resolved.
 static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
-                                            float playerRadius, float playerHeight) {
+                                            float playerRadius, float playerHeight,
+                                            bool skiing = false) {
     if (g_numColMeshes == 0) return false;
     bool anyHit = false;
     const float PAD = 0.5f; // broadphase padding
@@ -633,12 +634,14 @@ static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
 
         bool hitThisIter = false;
 
-        // Resolve floor pushes — treat like terrain: snap Y, preserve horizontal
+        // Resolve floor pushes — treat like terrain: snap Y, preserve horizontal, apply friction
         if (floorDepth > 0.001f) {
             // Snap upward only — like terrain clamp
             pos.y += floorDepth + 0.002f;
             // Zero downward velocity only (same as terrain)
             if (vel.y < 0) vel.y = 0;
+            // Ground friction — same as terrain (0.9 per tick), skip if skiing
+            if (!skiing) { vel.x *= 0.9f; vel.z *= 0.9f; }
             hitThisIter = true;
         }
 
@@ -1548,7 +1551,7 @@ static void updateBot(int pi,float dt){
     th=getH(p.pos.x,p.pos.z);
     if(p.pos.y<th+1){p.pos.y=th+1;if(p.vel.y<0)p.vel.y=0;}
     resolvePlayerBuildingCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
-    resolvePlayerInteriorCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
+    resolvePlayerInteriorCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH,p.skiing);
     p.speed=sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z);
 
     // ------- ENGAGEMENT (with LOS gating) -------
@@ -2245,7 +2248,18 @@ extern "C" void mainLoop(){
             if(!me.skiing){me.vel.x*=0.9f;me.vel.z*=0.9f;}
         }
         resolvePlayerBuildingCollision(me.pos, me.vel, ad.hitW, ad.hitH);
-        resolvePlayerInteriorCollision(me.pos, me.vel, ad.hitW, ad.hitH);
+        resolvePlayerInteriorCollision(me.pos, me.vel, ad.hitW, ad.hitH, me.skiing);
+        // R32.101: If interior floor collision pushed us up, treat as grounded
+        // so next frame's movement code uses walking (not air control)
+        if (me.pos.y - th > 2.2f) {
+            // Above terrain — check if interior collision is supporting us
+            // Re-test: are we sitting on an interior floor right now?
+            Vec3 testPos = me.pos; testPos.y -= 0.1f;
+            Vec3 dummyVel = {0,0,0};
+            if (resolvePlayerInteriorCollision(testPos, dummyVel, ad.hitW, ad.hitH, me.skiing)) {
+                me.onGround = true;
+            }
+        }
         float we=TSIZE*TSCALE*0.48f; // ~985m from center
         me.pos.x=fmaxf(-we,fminf(we,me.pos.x));
         me.pos.z=fmaxf(-we,fminf(we,me.pos.z));
