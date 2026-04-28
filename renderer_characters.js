@@ -132,40 +132,17 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// Raycast straight down from player position onto the terrain mesh.
-// This is the visual ground truth — no offset math, no two-system mismatch.
-let _terrainMesh = null;
-const _downRay = new THREE.Raycaster();
-_downRay.far = 500;
-const _downDir = new THREE.Vector3(0, -1, 0);
-const _rayOrigin = new THREE.Vector3();
-
+// Use JS terrain sampler with corrected offset.
+// Console data: wasmY=23.16, terrainH=21.16 → gap is 2.0 (not 1.8).
+// WASM/JS terrain interpolation differs by ~0.2m.
+const CAPSULE_OFFSET = 2.0; // empirical from console diagnostics
 function _groundY(playerX, playerY, playerZ) {
-    // Find terrain mesh once (lazy lookup)
-    if (!_terrainMesh && _scene) {
-        _scene.traverse(child => {
-            if (!_terrainMesh && child.isMesh && child.geometry &&
-                child.geometry.attributes.position &&
-                child.geometry.attributes.position.count > 10000) {
-                // Terrain is the largest mesh in the scene
-                _terrainMesh = child;
-            }
-        });
-    }
-    if (!_terrainMesh) return playerY - CAPSULE_OFFSET; // fallback before terrain loads
-
-    // Cast ray from well above the player straight down
-    _rayOrigin.set(playerX, playerY + 50, playerZ);
-    _downRay.set(_rayOrigin, _downDir);
-    const hits = _downRay.intersectObject(_terrainMesh, false);
-    if (hits.length > 0) {
-        const terrainY = hits[0].point.y;
-        // How far above ground? When on ground, WASM pos.y ≈ terrainY + ~2
-        const airDist = Math.max(0, playerY - terrainY - CAPSULE_OFFSET);
-        if (airDist < 0.5) return terrainY; // on/near ground — snap to exact hit
-        return terrainY + airDist;           // airborne
-    }
-    return playerY - CAPSULE_OFFSET; // fallback if ray misses
+    const sample = window._sampleTerrainH;
+    if (!sample) return playerY - CAPSULE_OFFSET;
+    const terrainH = sample(playerX, playerZ);
+    const rawAir = playerY - terrainH - CAPSULE_OFFSET;
+    if (rawAir < 0.3) return terrainH; // on/near ground — snap
+    return terrainH + rawAir;           // airborne
 }
 
 // ── Local player sync ───────────────────────────────────────
