@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Wolf Sentinel Rig Viewer</title>
+<style>
+  body { margin: 0; background: #1a1a2e; overflow: hidden; font-family: monospace; }
+  canvas { display: block; }
+  #controls { position: absolute; top: 10px; left: 10px; color: #fff; z-index: 10; }
+  #controls button { 
+    background: #333; color: #0ff; border: 1px solid #0ff; padding: 8px 16px; 
+    margin: 4px; cursor: pointer; font-family: monospace; font-size: 14px;
+    border-radius: 4px;
+  }
+  #controls button:hover { background: #0ff; color: #000; }
+  #controls button.active { background: #0ff; color: #000; }
+  #info { position: absolute; bottom: 10px; left: 10px; color: #888; font-size: 12px; }
+  #skeleton-toggle { position: absolute; top: 10px; right: 10px; color: #fff; z-index: 10; }
+  #skeleton-toggle label { cursor: pointer; font-size: 14px; }
+</style>
+</head>
+<body>
+<div id="controls">
+  <div style="margin-bottom: 8px; color: #0ff; font-size: 16px;">🐺 Wolf Sentinel — Rig Test</div>
+  <button onclick="playAnim('idle')" id="btn-idle">Idle</button>
+  <button onclick="playAnim('run_fwd')" id="btn-run_fwd">Run</button>
+  <button onclick="playAnim('ski')" id="btn-ski">Ski</button>
+  <button onclick="playAnim('jet')" id="btn-jet">Jet</button>
+  <button onclick="playAnim('fall')" id="btn-fall">Fall</button>
+</div>
+<div id="skeleton-toggle">
+  <label><input type="checkbox" id="show-skeleton" onchange="toggleSkeleton()"> Show Skeleton</label>
+</div>
+<div id="info">Loading model...</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.01, 100);
+camera.position.set(0, 1.2, 3);
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0.9, 0);
+controls.update();
+
+// Lights
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dir = new THREE.DirectionalLight(0xffffff, 1.5);
+dir.position.set(3, 5, 3);
+scene.add(dir);
+const dir2 = new THREE.DirectionalLight(0x4488ff, 0.5);
+dir2.position.set(-3, 2, -3);
+scene.add(dir2);
+
+// Grid
+const grid = new THREE.GridHelper(10, 20, 0x333355, 0x222244);
+scene.add(grid);
+
+let mixer, animations = {}, currentAnim = null, skeletonHelper = null, model = null;
+
+const loader = new GLTFLoader();
+loader.load('./wolf_sentinel_rigged.glb', (gltf) => {
+  model = gltf.scene;
+  
+  // Center and scale
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const center = box.getCenter(new THREE.Vector3());
+  
+  // Scale to ~1.8m tall
+  const scale = 1.8 / size.y;
+  model.scale.setScalar(scale);
+  
+  // Recalculate after scale
+  const box2 = new THREE.Box3().setFromObject(model);
+  const center2 = box2.getCenter(new THREE.Vector3());
+  model.position.sub(center2);
+  model.position.y = -box2.min.y;
+  
+  scene.add(model);
+  
+  // Skeleton helper
+  model.traverse(child => {
+    if (child.isSkinnedMesh) {
+      skeletonHelper = new THREE.SkeletonHelper(child);
+      skeletonHelper.visible = false;
+      scene.add(skeletonHelper);
+    }
+  });
+  
+  // Animations
+  mixer = new THREE.AnimationMixer(model);
+  gltf.animations.forEach(clip => {
+    animations[clip.name] = clip;
+    console.log(`Animation: ${clip.name}, duration: ${clip.duration.toFixed(2)}s, tracks: ${clip.tracks.length}`);
+  });
+  
+  document.getElementById('info').textContent = 
+    `Verts: ${countVerts(model)} | Anims: ${Object.keys(animations).join(', ')} | Height: ${(size.y * scale).toFixed(2)}m`;
+  
+  // Auto-play idle
+  window.playAnim('idle');
+  
+}, undefined, (err) => {
+  document.getElementById('info').textContent = 'Error loading model: ' + err.message;
+});
+
+function countVerts(obj) {
+  let total = 0;
+  obj.traverse(child => {
+    if (child.isMesh && child.geometry) {
+      total += child.geometry.attributes.position.count;
+    }
+  });
+  return total;
+}
+
+window.playAnim = function(name) {
+  if (!mixer || !animations[name]) return;
+  
+  // Update button states
+  document.querySelectorAll('#controls button').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById('btn-' + name);
+  if (btn) btn.classList.add('active');
+  
+  mixer.stopAllAction();
+  const action = mixer.clipAction(animations[name]);
+  action.reset().play();
+  currentAnim = name;
+};
+
+window.toggleSkeleton = function() {
+  if (skeletonHelper) {
+    skeletonHelper.visible = document.getElementById('show-skeleton').checked;
+  }
+};
+
+const clock = new THREE.Clock();
+function animate() {
+  requestAnimationFrame(animate);
+  if (mixer) mixer.update(clock.getDelta());
+  controls.update();
+  renderer.render(scene, camera);
+}
+animate();
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+</script>
+</body>
+</html>
