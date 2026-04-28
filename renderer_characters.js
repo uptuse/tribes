@@ -36,9 +36,15 @@ export function init(targetScene) {
         for (const clip of gltf.animations) {
             clip.tracks = clip.tracks.filter(track => {
                 // Track names are like "mixamorigHips.position", "mixamorigHips.quaternion"
+                // Strip only horizontal (X,Z) root motion — keep Y so the hips stay at standing height.
                 if (track.name.endsWith('.position') && track.name.includes('Hips')) {
-                    console.log(`  [R32.120] Stripped root motion: ${track.name} from ${clip.name}`);
-                    return false; // remove this track
+                    const vals = track.values;
+                    // values are [x0,y0,z0, x1,y1,z1, ...] — zero X and Z, keep Y
+                    for (let i = 0; i < vals.length; i += 3) {
+                        vals[i]     = 0; // X → 0
+                        vals[i + 2] = 0; // Z → 0
+                    }
+                    console.log(`  [R32.125] Zeroed XZ root motion (kept Y): ${track.name} from ${clip.name}`);
                 }
                 return true; // keep all other tracks
             });
