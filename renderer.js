@@ -1764,7 +1764,7 @@ async function initInteriorShapes() {
         // Each unique material index gets its own PBR material (color, roughness, metalness, emissive).
         // R32.48.1: polygonOffset prevents z-fighting on thin/coplanar surfaces with DoubleSide.
         const _matProps = {
-            side: THREE.FrontSide, flatShading: false, vertexColors: true,
+            side: THREE.FrontSide, flatShading: false, vertexColors: false,
             polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1,
         };
 
