@@ -1976,6 +1976,25 @@ async function initInteriorShapes() {
         console.log('[R32.48] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
             _enhancedCount, 'unique meshes (crease normals + rock subdivision + material palette)');
 
+        // R32.54 DIAGNOSTIC: ?basicInterior → replace all interior materials with bright unlit MeshBasicMaterial
+        // If the black rectangle disappears with this, the issue is PBR lighting.
+        // If it stays, the issue is geometry/pipeline.
+        {
+            const _dp = new URLSearchParams(window.location.search);
+            if (_dp.has('basicInterior')) {
+                console.log('[R32.54-DIAG] basicInterior: replacing interior materials with MeshBasicMaterial');
+                interiorShapesGroup.traverse(obj => {
+                    if (!obj.isMesh) return;
+                    const bright = new THREE.MeshBasicMaterial({ color: 0xff4444, side: THREE.DoubleSide });
+                    if (Array.isArray(obj.material)) {
+                        obj.material = obj.material.map(() => bright);
+                    } else {
+                        obj.material = bright;
+                    }
+                });
+            }
+        }
+
         // R32.1 O1 (corrected R32.1.1): push world-space AABBs to C++ for collision.
         // Manus R32.1.1 changed rotation architecture: inner mesh Rx(-PI/2), outer Group Ry(rotZ).
         //   Step 1: inner mesh rotation.x = -PI/2: DIS (lx,ly,lz_up) → (lx, lz, -ly)
@@ -2900,6 +2919,13 @@ function initParticles() {
 // ============================================================
 function initPostProcessing() {
     const tier = readQualityFromSettings();
+    // R32.54 DIAGNOSTIC: ?nopost → skip EffectComposer entirely, render direct
+    const _dp = new URLSearchParams(window.location.search);
+    if (_dp.has('nopost')) {
+        console.log('[R32.54-DIAG] nopost: EffectComposer disabled, direct render');
+        composer = null;
+        return;
+    }
     if (!tier.postProcess) {
         composer = null;
         return;
