@@ -150,17 +150,17 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// Use JS terrain sampler with corrected offset.
-// Console data: wasmY=23.16, terrainH=21.16 → gap is 2.0 (not 1.8).
-// WASM/JS terrain interpolation differs by ~0.2m.
-const CAPSULE_OFFSET = 2.0; // empirical from console diagnostics
+// WASM: pos.y = getH(x,z) + 1.8 when on ground.
+// JS terrain sampler is ~0.2m lower than WASM/visual terrain.
+// Use the difference (playerY - terrainH - 1.8) as air distance — 
+// this naturally compensates for the sampler gap when on ground.
+const CAPSULE_OFFSET = 1.8;
 function _groundY(playerX, playerY, playerZ) {
     const sample = window._sampleTerrainH;
     if (!sample) return playerY - CAPSULE_OFFSET;
     const terrainH = sample(playerX, playerZ);
-    const rawAir = playerY - terrainH - CAPSULE_OFFSET;
-    if (rawAir < 0.3) return terrainH; // on/near ground — snap
-    return terrainH + rawAir;           // airborne
+    const airDist = Math.max(0, playerY - terrainH - CAPSULE_OFFSET);
+    return terrainH + airDist;
 }
 
 // ── Local player sync ───────────────────────────────────────
