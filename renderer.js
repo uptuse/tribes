@@ -4734,7 +4734,7 @@ function updateExplosionFX(dt) {
 // R32.86: Sky fairy particles — GPU-driven, world-anchored, terrain-aware
 // ============================================================
 const NIGHT_FAIRY_COUNT = 64000;
-const NIGHT_FAIRY_RADIUS = 200;
+const NIGHT_FAIRY_RADIUS = 400;
 const NIGHT_FAIRY_ALT_ABOVE = 20;   // min metres above terrain
 const NIGHT_FAIRY_ALT_RANGE = 90;   // additional random altitude spread
 let _nfPoints = null;
