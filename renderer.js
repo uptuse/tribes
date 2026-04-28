@@ -34,6 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
+import * as Characters from './renderer_characters.js'; // R32.109: rigged GLB character models
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -167,6 +168,7 @@ export async function start() {
     initCustomModels(); // R32.57: load custom GLB models
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
+    try { Characters.init(scene); } catch(e) { console.warn('[R32.109] Characters init failed:', e); } // R32.109: rigged GLB characters
     initProjectiles();
     initFlags();
     initParticles();
@@ -5094,6 +5096,9 @@ function loop() {
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
+    // R32.109: Rigged GLB character sync — overlays Mixamo-rigged models on
+    // top of procedural player meshes for local 3P + demo character.
+    try { Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes); } catch(e) { /* keep loop alive */ }
     syncProjectiles();
     syncFlags(t);
     syncParticles();
