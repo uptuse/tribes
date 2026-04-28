@@ -206,3 +206,32 @@
 - Broadphase: per-mesh world-space AABB. Narrowphase: closest-point-on-triangle
 - Buildings now have doorway-accurate collision — no more force field, no more walk-through
 - Player can enter buildings through doorways and navigate interior corridors
+
+## R32.69 — Full 3D rotation for interior shapes (Phase 0 complete)
+- 5 rock meshes had full [rx, ry, rz] rotations that were being ignored (only rz yaw applied)
+- Quaternion composition: Tribes axis→Three.js axis mapping with negated angles
+- Visual: outer.quaternion.copy(qz.multiply(qy).multiply(qx)) for tilted shapes
+- Collision: quaternion→Matrix4→3x3 for world-space triangle transform
+- Fast path preserved for yaw-only shapes (27 of 32 shapes) — identical to prior code
+- Position verification: all 32 shapes match canonical.json exactly
+- Phase 0 (Foundation) is now COMPLETE
+
+## R32.70 — Real PBR textures on interior shapes
+- CC0 textures from Poly Haven: 8 categories (heavy_metal, light_metal, grey_exterior, warm_panel, cold_panel, rock, interior_detail, accent)
+- Albedo + normal + roughness maps at 256×256 PNG in assets/textures/buildings/
+- `_classifyMaterial()` maps texture names to PBR categories
+- Async loading with procedural fallback
+- Normal maps at 0.8 scale, roughness maps override palette
+- Palette colors used as tint multiplier on PBR albedo
+
+## R32.71 — Team-colored building accents
+- Blood Eagle red vs Diamond Sword blue on emblem materials
+- Team ownership determined by proximity to team generators (Y midpoint)
+- Rocks and midfield structures stay neutral
+
+## R32.72 — Jet exhaust particles + Phase 2 research
+- docs/particle-research.md: evaluated three.quarks, Three-VFX, three-nebula, TrailRendererJS, custom
+- Chose custom ShaderMaterial approach — zero deps, max perf control
+- 384-particle pool, additive blending, hot white-yellow→orange gradient
+- Soft circular falloff, 0.35s lifetime, 4.5 m/s downward drift
+- Emits from two thruster nozzles per jetting player, single draw call
