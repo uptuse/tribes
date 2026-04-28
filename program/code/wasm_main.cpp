@@ -436,40 +436,9 @@ static void initBuildings() {
     printf("[Buildings] Initialized %d collision volumes from mission data\n", numBuildings);
 }
 
+// R32.103: building collision now handled by Rapier in JS
 static bool resolvePlayerBuildingCollision(Vec3& pos, Vec3& vel, float playerRadius, float playerHeight) {
-    bool hit = false;
-    for (int i = 0; i < numBuildings; i++) {
-        if (buildings[i].isRock) continue;
-        const Building& bld = buildings[i];
-        float px = bld.halfSize.x + playerRadius;
-        float py = bld.halfSize.y;
-        float pz = bld.halfSize.z + playerRadius;
-        float dx = pos.x - bld.pos.x;
-        float dy = pos.y - bld.pos.y;
-        float dz = pos.z - bld.pos.z;
-
-        if (fabsf(dx) < px && dy > -py && dy < py + playerHeight && fabsf(dz) < pz) {
-            float exitX = px - fabsf(dx);
-            float exitZ = pz - fabsf(dz);
-            float exitYTop = py + playerHeight - dy;
-            float exitYBottom = dy + py;
-
-            float minExit = exitX;
-            int axis = 0;
-            if (exitZ < minExit) { minExit = exitZ; axis = 2; }
-            if (exitYTop < minExit) { minExit = exitYTop; axis = 3; }
-            if (exitYBottom < minExit && exitYBottom > 0) { minExit = exitYBottom; axis = 1; }
-
-            switch (axis) {
-                case 0: pos.x = bld.pos.x + (dx > 0 ? px : -px); vel.x = 0; break;
-                case 1: pos.y = bld.pos.y + py; if (vel.y < 0) vel.y = 0; break;
-                case 2: pos.z = bld.pos.z + (dz > 0 ? pz : -pz); vel.z = 0; break;
-                case 3: pos.y = bld.pos.y - py - playerHeight; if (vel.y > 0) vel.y = 0; break;
-            }
-            hit = true;
-        }
-    }
-    return hit;
+    return false;
 }
 
 static bool projectileHitsInterior(Vec3 pos); // forward declaration
@@ -577,95 +546,11 @@ static bool sphereVsTriangle(Vec3 center, float radius, const ColTri& tri,
 //   Upper sphere center: (pos.x, pos.y + playerHeight - radius, pos.z)
 // R32.100: Floor surfaces treated like terrain (snap Y, preserve horizontal vel).
 // Returns true if any collision was resolved.
+// R32.103: interior collision now handled by Rapier in JS
 static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
                                             float playerRadius, float playerHeight,
                                             bool skiing = false) {
-    if (g_numColMeshes == 0) return false;
-    bool anyHit = false;
-    g_onInteriorFloor = false;  // reset each call
-    const float PAD = 0.5f; // broadphase padding
-
-    // Iterate up to 6 times for convergence
-    for (int iter = 0; iter < 6; iter++) {
-        Vec3 loCenter = {pos.x, pos.y + playerRadius, pos.z};
-        Vec3 hiCenter = {pos.x, pos.y + playerHeight - playerRadius, pos.z};
-        if (hiCenter.y < loCenter.y) hiCenter.y = loCenter.y;
-
-        // Accumulate all pushes this iteration, separated by type
-        Vec3 floorPush = {0,0,0};   // mostly-upward pushes (floor)
-        float floorDepth = 0;
-        Vec3 wallPush = {0,0,0};    // lateral pushes (walls/ceiling)
-        float wallDepth = 0;
-
-        for (int mi = 0; mi < g_numColMeshes; mi++) {
-            const ColMesh& m = g_colMeshes[mi];
-            // Broadphase: player AABB vs mesh AABB
-            if (pos.x + playerRadius + PAD < m.aabbMin.x || pos.x - playerRadius - PAD > m.aabbMax.x ||
-                pos.y + playerHeight + PAD < m.aabbMin.y || pos.y - PAD > m.aabbMax.y ||
-                pos.z + playerRadius + PAD < m.aabbMin.z || pos.z - playerRadius - PAD > m.aabbMax.z) continue;
-
-            // Narrowphase: test each triangle
-            for (int ti = m.triStart; ti < m.triStart + m.triCount; ti++) {
-                const ColTri& tri = g_colTris[ti];
-                Vec3 pushDir; float pushDepth;
-
-                // Test lower sphere
-                if (sphereVsTriangle(loCenter, playerRadius, tri, pushDir, pushDepth)) {
-                    if (pushDir.y > 0.7f) {
-                        // Floor surface — track deepest floor push
-                        if (pushDepth > floorDepth) { floorDepth = pushDepth; floorPush = pushDir; }
-                    } else {
-                        // Wall/ceiling — track deepest wall push
-                        if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
-                    }
-                }
-                // Test upper sphere
-                if (hiCenter.y != loCenter.y) {
-                    if (sphereVsTriangle(hiCenter, playerRadius, tri, pushDir, pushDepth)) {
-                        if (pushDir.y < -0.7f) {
-                            // Ceiling — just zero upward vel, push down
-                            if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
-                        } else if (pushDir.y <= 0.7f) {
-                            // Wall on upper body
-                            if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
-                        }
-                    }
-                }
-            }
-        }
-
-        bool hitThisIter = false;
-
-        // Resolve floor pushes — treat like terrain: snap Y, preserve horizontal, apply friction
-        if (floorDepth > 0.001f) {
-            // Snap upward only — like terrain clamp
-            pos.y += floorDepth + 0.002f;
-            // Zero downward velocity only (same as terrain)
-            if (vel.y < 0) vel.y = 0;
-            // Ground friction — same as terrain (0.9 per tick), skip if skiing
-            if (!skiing) { vel.x *= 0.9f; vel.z *= 0.9f; }
-            g_onInteriorFloor = true;  // signal movement code
-            hitThisIter = true;
-        }
-
-        // Resolve wall/ceiling pushes — slide velocity along surface
-        if (wallDepth > 0.001f) {
-            pos = v3add(pos, v3scale(wallPush, wallDepth + 0.002f));
-            // Slide: remove velocity into the wall
-            float velDot = v3dot(vel, wallPush);
-            if (velDot < 0) {
-                vel = v3sub(vel, v3scale(wallPush, velDot));
-            }
-            // Ceiling: zero upward vel
-            if (wallPush.y < -0.5f && vel.y > 0) vel.y = 0;
-            hitThisIter = true;
-        }
-
-        if (!hitThisIter) break;
-        anyHit = true;
-    }
-
-    return anyHit;
+    return false;
 }
 
 // Also check projectile vs interior triangles (for explosions hitting buildings)
@@ -1553,6 +1438,7 @@ static void updateBot(int pi,float dt){
     p.pos+=p.vel*dt;
     th=getH(p.pos.x,p.pos.z);
     if(p.pos.y<th+1){p.pos.y=th+1;if(p.vel.y<0)p.vel.y=0;}
+    // R32.103: collision now handled by Rapier in JS
     resolvePlayerBuildingCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH);
     resolvePlayerInteriorCollision(p.pos,p.vel,armors[p.armor].hitW,armors[p.armor].hitH,p.skiing);
     p.speed=sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z);
@@ -1992,6 +1878,11 @@ extern "C" {
                g_numColMeshes - 1, added, g_numColTris, g_numColMeshes);
     }
 
+    // R32.103: Rapier reports grounded state from JS
+    void setRapierGrounded(int grounded) {
+        g_onInteriorFloor = (grounded != 0);
+    }
+
     // D1: Ski HUD exports — queried every frame by index.html ski HUD widget
     int    getPlayerSkiing()   { return players[localPlayer].skiing ? 1 : 0; }
     float  getPlayerSpeed()    { Player&p=players[localPlayer]; return sqrtf(p.vel.x*p.vel.x+p.vel.z*p.vel.z); }
@@ -2113,7 +2004,7 @@ extern "C" void mainLoop(){
 
         float th=getH(me.pos.x,me.pos.z);
         float groundDist=me.pos.y-th;
-        me.onGround=groundDist<2.2f || g_onInteriorFloor;  // R32.102: also grounded on interior floors
+        me.onGround=groundDist<2.2f;  // R32.103: interior floor grounding now via Rapier in JS
         // F2: persist ski state 0.25 s after leaving ground (mogul bounce resilience)
         if(keys[16]){
             if(me.onGround){ me.skiing=true; me.airSkiTimer=0.25f; }
@@ -2250,8 +2141,9 @@ extern "C" void mainLoop(){
             if(me.vel.y<0)me.vel.y=0;  // F0: ALWAYS zero downward vel; skiing guard caused tunnel-through
             if(!me.skiing){me.vel.x*=0.9f;me.vel.z*=0.9f;}
         }
-        resolvePlayerBuildingCollision(me.pos, me.vel, ad.hitW, ad.hitH);
-        resolvePlayerInteriorCollision(me.pos, me.vel, ad.hitW, ad.hitH, me.skiing);
+        // R32.103: collision now handled by Rapier in JS-side post-tick
+        // resolvePlayerBuildingCollision(me.pos, me.vel, ad.hitW, ad.hitH);
+        // resolvePlayerInteriorCollision(me.pos, me.vel, ad.hitW, ad.hitH, me.skiing);
         float we=TSIZE*TSCALE*0.48f; // ~985m from center
         me.pos.x=fmaxf(-we,fminf(we,me.pos.x));
         me.pos.z=fmaxf(-we,fminf(we,me.pos.z));

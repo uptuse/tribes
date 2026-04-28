@@ -131,8 +131,39 @@ export async function start() {
     loadHDRISky();   // async — sets scene.environment for PBR; sky dome handles visuals
     initCustomSky(scene); // R32.63: procedural sky dome + stars + clouds
     await initTerrain();
+    // R32.104: Initialize Rapier physics (async — loads WASM). Starts early so it's
+    // ready by the time we need to create building/interior colliders.
+    let _rapierReady = false;
+    if (window.RapierPhysics) {
+        try {
+            await window.RapierPhysics.initRapierPhysics();
+            _rapierReady = true;
+            console.log('[R32.104] Rapier physics world ready');
+            // Create terrain heightfield collider from raw WASM heightmap (257-cell, scale 8.0)
+            // Must match WASM's own getH() — NOT the upscaled _htData (513-cell bicubic)
+            {
+                const rawPtr = Module._getHeightmapPtr();
+                const rawSize = Module._getHeightmapSize();
+                const rawScale = Module._getHeightmapWorldScale();
+                const rawHeights = new Float32Array(Module.HEAPF32.buffer, rawPtr, rawSize * rawSize);
+                window.RapierPhysics.createTerrainCollider(rawHeights, rawSize, rawScale);
+            }
+        } catch (e) {
+            console.error('[R32.104] Rapier init failed, falling back to WASM collision:', e);
+        }
+    } else {
+        console.warn('[R32.104] RapierPhysics not loaded — using WASM collision fallback');
+    }
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
+    // R32.104: Create Rapier cuboid colliders for buildings
+    if (_rapierReady && window.RapierPhysics) {
+        try { window.RapierPhysics.createBuildingColliders(); } catch (e) {
+            console.error('[R32.104] Building collider creation failed:', e);
+        }
+    }
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
+    // R32.104: Interior mesh colliders are created inside registerModelCollision()
+    // which is now redirected to Rapier (see below)
     initCustomModels(); // R32.57: load custom GLB models
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
@@ -2313,8 +2344,13 @@ async function initInteriorShapes() {
 // Handles indexed & non-indexed BufferGeometry.
 // ============================================================
 function registerModelCollision(root, worldMatrix) {
+    // R32.104: Delegate to Rapier physics if available
+    if (window.RapierPhysics && window.RapierPhysics.registerModelCollision) {
+        return window.RapierPhysics.registerModelCollision(root, worldMatrix);
+    }
+    // Fallback: WASM-based collision (legacy path)
     if (!Module._appendInteriorMeshTris || !Module._malloc || !Module.HEAPF32) {
-        console.warn('[registerModelCollision] WASM collision API not available');
+        console.warn('[registerModelCollision] No collision backend available');
         return { meshCount: 0, triCount: 0 };
     }
 
@@ -5025,6 +5061,23 @@ function loop() {
     }
     const t = performance.now() * 0.001;
     Module._tick();
+    // R32.104: Rapier collision resolution — runs after WASM tick() which has already
+    // computed velocity, applied gravity/skiing/jetting, and done pos += vel*dt + terrain clamp.
+    // Rapier resolves building/interior collisions and writes corrected pos back to WASM.
+    try {
+        if (window.RapierPhysics && playerView && playerStride) {
+            const localIdx = Module._getLocalPlayerIdx();
+            if (localIdx >= 0) {
+                const rapierResult = window.RapierPhysics.stepPlayerCollision(
+                    playerView, playerStride, localIdx, 1/60
+                );
+                // Signal grounded-on-interior state back to WASM for next frame's onGround
+                if (Module._setRapierGrounded) {
+                    Module._setRapierGrounded(rapierResult.grounded ? 1 : 0);
+                }
+            }
+        }
+    } catch (e) { /* keep loop alive — collision failure shouldn't crash render */ }
     // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
