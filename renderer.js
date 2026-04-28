@@ -32,6 +32,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
+import { initCustomSky, updateCustomSky } from './renderer_sky_custom.js'; // R32.61: stars + moon
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -132,6 +133,7 @@ export async function start() {
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
     initCustomModels(); // R32.57: load custom GLB models
+    initCustomSky(scene); // R32.61: stars + moon skybox
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
     initProjectiles();
@@ -462,6 +464,10 @@ const DayNight = (() => {
             renderer.toneMappingExposure = 0.70 + 0.45 * dayMix;  // was 0.55 floor, now 0.70
         }
 
+        // Expose for custom sky (stars, moon)
+        DayNight.dayMix = dayMix;
+        DayNight.sunDir.copy(sunPos);
+
         // Update HUD clock chip (created in index.html).
         const h = Math.floor(t01 * 24);
         const m = Math.floor(((t01 * 24) - h) * 60);
@@ -476,7 +482,7 @@ const DayNight = (() => {
         }
     }
 
-    return { update, _apply, freeze: function(h) { this._frozen = h; }, unfreeze: function() { this._frozen = null; }, _frozen: null };
+    return { update, _apply, freeze: function(h) { this._frozen = h; }, unfreeze: function() { this._frozen = null; }, _frozen: null, dayMix: 1.0, sunDir: new THREE.Vector3(0, 1, 0) };
 })();
 try { window.DayNight = DayNight; } catch(e) {}
 
@@ -4000,6 +4006,7 @@ function loop() {
     // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
+    try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
     syncProjectiles();
     syncFlags(t);
