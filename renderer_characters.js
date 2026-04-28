@@ -142,7 +142,13 @@ function _groundY(playerX, playerY, playerZ) {
     const terrainH = sample(playerX, playerZ);
     // How far above ground is the player? (0 when standing, positive when airborne)
     const airDist = Math.max(0, playerY - terrainH - CAPSULE_OFFSET);
-    return terrainH + airDist;
+    const result = terrainH + airDist;
+    // R32.120: throttled diagnostic — log every 60 frames
+    if (!_groundY._fc) _groundY._fc = 0;
+    if (++_groundY._fc % 60 === 0) {
+        console.log(`[GROUND] wasmY=${playerY.toFixed(2)} terrainH=${terrainH.toFixed(2)} offset=${CAPSULE_OFFSET} airDist=${airDist.toFixed(2)} → modelY=${result.toFixed(2)}`);
+    }
+    return result;
 }
 
 // ── Local player sync ───────────────────────────────────────
