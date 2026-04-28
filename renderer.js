@@ -333,16 +333,16 @@ const DayNight = (() => {
 
     // Color palette (Color.lerp targets). Matches typical sky tones.
     const palette = {
-        nightSun:   new THREE.Color(0x121828),  // R32.87: slight moonlight (was 0x0a0e1a)
+        nightSun:   new THREE.Color(0x1a2438),  // R32.89: more moonlight (was 0x121828)
         dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
         noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
         duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
-        nightHemi:  new THREE.Color(0x182838),  // R32.87: brighter night ambient (was 0x0a1020)
+        nightHemi:  new THREE.Color(0x283848),  // R32.89: brighter night ambient (was 0x182838)
         dawnHemi:   new THREE.Color(0xc89878),  // warm peach fill
         noonHemi:   new THREE.Color(0xb8c4d8),  // slightly blue-white (was grey 0xc0c8d0)
         duskHemi:   new THREE.Color(0x4a3858),  // R32.63.7: cool purple dusk (was warm 0xb07858)
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x060a12),  // R32.87: slightly lifted night fog (was 0x020408)
+        nightFog:   new THREE.Color(0x0c1420),  // R32.89: lifted night fog (was 0x060a12)
         dawnFog:    new THREE.Color(0xd0a080),  // warm pink-orange haze
         noonFog:    new THREE.Color(0xa8b8c8),  // R32.63.6: slight blue haze (was flat grey)
         duskFog:    new THREE.Color(0x1a1828),  // R32.63.7: deep blue-purple dusk (was brown 0xb86848)
