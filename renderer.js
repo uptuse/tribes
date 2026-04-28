@@ -36,7 +36,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: cust
 // --- Module state ---
 let scene, camera, renderer, composer;
 let bloomPass, gradePass;
-let sunLight, hemiLight, sky;
+let sunLight, hemiLight, moonLight, sky;
 let polish = null; // R32.7 polish module handle
 let _lastTickTime = 0; // R32.7 dt source for polish.tick
 let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
@@ -357,12 +357,12 @@ const DayNight = (() => {
         dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
         noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
         duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
-        nightHemi:  new THREE.Color(0x1a2235),  // deep cool blue fill
+        nightHemi:  new THREE.Color(0x2a3a5a),  // moonlit blue fill (was 0x1a2235)
         dawnHemi:   new THREE.Color(0xb88a78),  // warm peach fill
         noonHemi:   new THREE.Color(0xc0c8d0),  // pale overcast (current)
         duskHemi:   new THREE.Color(0x9a6a5a),  // warm dusk fill
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x0a1024),  // deep night blue
+        nightFog:   new THREE.Color(0x141e38),  // moonlit night blue (was 0x0a1024)
         dawnFog:    new THREE.Color(0xc89880),  // pink-orange haze
         noonFog:    new THREE.Color(0xc0c8d0),  // current overcast
         duskFog:    new THREE.Color(0xa86048),  // warm dusty horizon
@@ -413,6 +413,7 @@ const DayNight = (() => {
         // Brightness curve: full at noon, zero at horizon and below.
         // Smooth night transition over 30deg below horizon so dusk fades gracefully.
         const dayMix = Math.max(0, Math.min(1, (elevRad + 0.05) / 0.40));   // 0 below -3deg, 1 above +20deg
+        const nightMix = 1.0 - dayMix; // inverse: 1 at midnight, 0 at noon
         const dawnDuskMix = Math.max(0, 1 - Math.abs(elevRad) / 0.30);     // 1 near horizon, 0 high
 
         // Lerp sun color across a 4-stop palette tied to t01.
@@ -424,13 +425,24 @@ const DayNight = (() => {
             sunLight.castShadow = sunLight.intensity > 0.05;
         }
 
+        // R32.60: Moonlight — positioned opposite the sun, cool blue.
+        // Intensity ramps up as sun goes down, peaks at midnight.
+        if (typeof moonLight !== 'undefined' && moonLight) {
+            // Moon position: opposite the sun (negate sun direction)
+            moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
+            moonLight.target.position.set(0, 0, 0);
+            // Cool silvery-blue moonlight, intensity peaks at 0.6 at midnight
+            moonLight.color.setHex(0x6688cc);
+            moonLight.intensity = 0.6 * nightMix;
+        }
+
         // Hemisphere fill — softer cool blue at night, warm at dawn/dusk, neutral at noon.
         const hemiCol = lerpColors(palette.nightHemi, palette.dawnHemi, palette.noonHemi, palette.duskHemi, t01);
         if (typeof hemiLight !== 'undefined' && hemiLight) {
             hemiLight.color.copy(hemiCol);
             hemiLight.groundColor.copy(palette.hemiGround);
-            // Hemi at noon = 1.5 (current); nightfall = 0.35 (still readable)
-            hemiLight.intensity = 0.35 + 1.15 * dayMix;
+            // Hemi at noon = 1.5, nightfall = 0.65 (moon-lit ambient, was 0.35)
+            hemiLight.intensity = 0.65 + 0.85 * dayMix;
         }
 
         // Fog — match horizon color so distant terrain blends into sky.
@@ -438,16 +450,16 @@ const DayNight = (() => {
         if (typeof scene !== 'undefined' && scene.fog) {
             scene.fog.color.copy(fogCol);
         }
-        // Sky background tint multiplier — lower at night so HDRI doesn't dominate.
+        // Sky background tint multiplier — lower at night but not black.
         if (typeof scene !== 'undefined') {
-            const wantBg = 0.10 + 0.45 * dayMix;
+            const wantBg = 0.15 + 0.40 * dayMix;  // was 0.10, now 0.15 floor for moonlit sky
             if (scene.backgroundIntensity !== undefined) scene.backgroundIntensity = wantBg;
-            const wantEnv = 0.30 + 1.15 * dayMix;
+            const wantEnv = 0.50 + 0.95 * dayMix;  // was 0.30, now 0.50 floor for moonlit reflections
             if (scene.environmentIntensity !== undefined) scene.environmentIntensity = wantEnv;
         }
-        // Tone-mapping exposure — slightly down at night so contrast holds.
+        // Tone-mapping exposure — higher at night so moonlight reads clearly.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.55 + 0.60 * dayMix;
+            renderer.toneMappingExposure = 0.70 + 0.45 * dayMix;  // was 0.55 floor, now 0.70
         }
 
         // Update HUD clock chip (created in index.html).
@@ -573,6 +585,14 @@ function initLights() {
     }
     scene.add(sunLight);
     scene.add(sunLight.target);
+
+    // R32.60: Moonlight — cool blue directional light opposite the sun.
+    // Provides terrain illumination at night so the landscape doesn't go
+    // pitch black. Intensity driven by DayNight cycle (inverse of dayMix).
+    moonLight = new THREE.DirectionalLight(0x4466aa, 0.0);
+    moonLight.castShadow = false; // moon shadows would fight sun shadows
+    scene.add(moonLight);
+    scene.add(moonLight.target);
 }
 
 // R32.9 — splat data still exposed (for any code that wants to read terrain classification)
