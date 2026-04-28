@@ -175,6 +175,7 @@ export async function start() {
     initParticles();
     initWeaponViewmodel();
     try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
+    try { initSkiSpray(); } catch (e) { console.warn('[R32.136] initSkiSpray failed:', e); }
     try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
     try { initExplosionFX(); } catch (e) { console.warn('[R32.74] initExplosionFX failed:', e); }
     try { initNightFairies(); } catch (e) { console.warn('[R32.74] initNightFairies failed:', e); }
@@ -4427,6 +4428,132 @@ function initJetExhaust() {
 }
 
 // ============================================================
+// R32.136: Ski spray particles — energy sparks from feet when skiing
+// Same architecture as jet exhaust (proven working)
+// ============================================================
+const SKI_MAX = 192;
+const SKI_LIFETIME = 0.5;
+let _skiPoints = null;
+let _skiPos, _skiAge, _skiVel, _skiAlpha;
+let _skiNextSlot = 0;
+
+function initSkiSpray() {
+    _skiPos   = new Float32Array(SKI_MAX * 3);
+    _skiAge   = new Float32Array(SKI_MAX);
+    _skiVel   = new Float32Array(SKI_MAX * 3);
+    _skiAlpha = new Float32Array(SKI_MAX);
+
+    for (let i = 0; i < SKI_MAX; i++) {
+        _skiPos[i * 3 + 1] = -9999;
+        _skiAlpha[i] = 0;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: `
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aAlpha * 80.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.15, 0.5, r);
+                // Cool blue-white energy sparks
+                vec3 col = mix(vec3(0.7, 0.9, 1.0), vec3(0.3, 0.6, 1.0), r * 2.0);
+                gl_FragColor = vec4(col, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _skiPoints = new THREE.Points(geo, mat);
+    _skiPoints.frustumCulled = false;
+    _skiPoints.renderOrder = 100;
+    scene.add(_skiPoints);
+    console.log('[R32.136] Ski spray particles: pool=' + SKI_MAX);
+}
+
+function _skiEmit(wx, wy, wz, vx, vy, vz) {
+    for (let t = 0; t < 16; t++) {
+        if (_skiAge[_skiNextSlot] <= 0) break;
+        _skiNextSlot = (_skiNextSlot + 1) % SKI_MAX;
+    }
+    const i = _skiNextSlot;
+    _skiPos[i*3]   = wx;
+    _skiPos[i*3+1] = wy;
+    _skiPos[i*3+2] = wz;
+    _skiVel[i*3]   = vx;
+    _skiVel[i*3+1] = vy;
+    _skiVel[i*3+2] = vz;
+    _skiAge[i]     = SKI_LIFETIME;
+    _skiAlpha[i]   = 0.7 + Math.random() * 0.3;
+    _skiNextSlot   = (_skiNextSlot + 1) % SKI_MAX;
+}
+
+function updateSkiSpray(dt) {
+    if (!_skiPoints || !playerView) return;
+
+    // Age + move existing particles
+    for (let i = 0; i < SKI_MAX; i++) {
+        if (_skiAge[i] <= 0) continue;
+        _skiAge[i] -= dt;
+        if (_skiAge[i] <= 0) {
+            _skiAge[i] = 0;
+            _skiPos[i*3+1] = -9999;
+            _skiAlpha[i] = 0;
+            continue;
+        }
+        _skiPos[i*3]   += _skiVel[i*3]   * dt;
+        _skiPos[i*3+1] += _skiVel[i*3+1] * dt;
+        _skiPos[i*3+2] += _skiVel[i*3+2] * dt;
+        _skiVel[i*3+1] -= 4.0 * dt; // gravity pulls sparks down
+        _skiVel[i*3]   *= 0.96;
+        _skiVel[i*3+2] *= 0.96;
+        const life = _skiAge[i] / SKI_LIFETIME;
+        _skiAlpha[i] = life < 0.6 ? life / 0.6 : 1.0;
+    }
+
+    // Emit from skiing players
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+        const o = p * playerStride;
+        if (playerView[o + 18] < 0.5) continue; // not visible
+        if (playerView[o + 13] < 0.5) continue; // not alive
+        if (playerView[o + 15] < 0.5) continue; // not skiing
+        const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
+        // Feet position — use py directly (WASM pos), offset down from capsule
+        const footY = py - 1.7; // slightly above ground
+        // Emit 3 particles per frame — kicked up behind and to the sides
+        for (let e = 0; e < 3; e++) {
+            _skiEmit(
+                px + (Math.random()-0.5)*0.3,
+                footY + Math.random()*0.1,
+                pz + (Math.random()-0.5)*0.3,
+                (Math.random()-0.5)*2.0,
+                Math.random()*2.5 + 0.5,
+                (Math.random()-0.5)*2.0
+            );
+        }
+    }
+
+    _skiPoints.geometry.attributes.position.needsUpdate = true;
+    _skiPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ============================================================
 // R32.73: Projectile trails — glowing particle trail behind each projectile
 // ============================================================
 const TRAIL_MAX = 512;       // max trail particles
@@ -5109,6 +5236,7 @@ function loop() {
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
     try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateSkiSpray(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateNightFairies(1/60, t); } catch (e) { console.error('[R32.84] sky fairy error:', e); }
