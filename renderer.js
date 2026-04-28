@@ -478,13 +478,10 @@ const DayNight = (() => {
         DayNight.dayMix = dayMix;
         DayNight.sunDir.copy(sunPos);
 
-        // R32.62: fade THREE.Sky out at night so stars are visible
+        // R32.62: hide THREE.Sky at night so stars show through.
+        // Sky is a ShaderMaterial — can't use opacity, just toggle visibility.
         if (typeof sky !== 'undefined' && sky) {
-            // At night (dayMix < 0.1), hide the Sky mesh entirely so the dark
-            // background + stars show through. Fade during dawn/dusk.
-            sky.material.opacity = Math.min(1.0, dayMix * 3.0);
-            sky.material.transparent = true;
-            sky.visible = dayMix > 0.02;
+            sky.visible = dayMix > 0.05;
         }
 
         // Update HUD clock chip (created in index.html).
