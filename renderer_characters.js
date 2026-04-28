@@ -122,22 +122,58 @@ function _createInstance() {
 
     _scene.add(model);
 
-    // R32.132: Hoverboard — glowing silver surfboard for skiing
-    const boardGeo = new THREE.BoxGeometry(0.35, 0.04, 1.0);  // width, height, length
-    // Round the edges slightly with a bevel-ish shape
-    const boardMat = new THREE.MeshStandardMaterial({
-        color: 0xc0d0e0,
-        metalness: 0.95,
-        roughness: 0.15,
-        emissive: 0x4488cc,
-        emissiveIntensity: 0.6,
-    });
-    const board = new THREE.Mesh(boardGeo, boardMat);
-    board.visible = false;
-    // Position at feet level — will be updated each frame relative to model
-    _scene.add(board);
+    // R32.132: Ski particles — energy spray under feet when skiing
+    // Uses a small particle pool with custom ShaderMaterial
+    const SKI_PARTICLE_COUNT = 64;
+    const skiGeo = new THREE.BufferGeometry();
+    const skiPositions = new Float32Array(SKI_PARTICLE_COUNT * 3);
+    const skiAlphas = new Float32Array(SKI_PARTICLE_COUNT);
+    const skiSizes = new Float32Array(SKI_PARTICLE_COUNT);
+    skiGeo.setAttribute('position', new THREE.BufferAttribute(skiPositions, 3));
+    skiGeo.setAttribute('alpha', new THREE.BufferAttribute(skiAlphas, 1));
+    skiGeo.setAttribute('size', new THREE.BufferAttribute(skiSizes, 1));
 
-    return { model, mixer, clips, activeClip: null, activeAction: null, board };
+    const skiMat = new THREE.ShaderMaterial({
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+        uniforms: {},
+        vertexShader: `
+            attribute float alpha;
+            attribute float size;
+            varying float vAlpha;
+            void main() {
+                vAlpha = alpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = size * (200.0 / -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            void main() {
+                float d = length(gl_PointCoord - 0.5) * 2.0;
+                if (d > 1.0) discard;
+                float glow = 1.0 - d * d;
+                gl_FragColor = vec4(0.5, 0.8, 1.0, vAlpha * glow * 0.8);
+            }
+        `
+    });
+    const skiParticles = new THREE.Points(skiGeo, skiMat);
+    skiParticles.frustumCulled = false;
+    _scene.add(skiParticles);
+
+    // Particle state arrays
+    const skiVx = new Float32Array(SKI_PARTICLE_COUNT);
+    const skiVy = new Float32Array(SKI_PARTICLE_COUNT);
+    const skiVz = new Float32Array(SKI_PARTICLE_COUNT);
+    const skiLife = new Float32Array(SKI_PARTICLE_COUNT); // 0 = dead
+    let skiHead = 0;
+
+    return { model, mixer, clips, activeClip: null, activeAction: null,
+             skiParticles, skiPositions, skiAlphas, skiSizes,
+             skiVx, skiVy, skiVz, skiLife, skiHead: { v: 0 },
+             SKI_PARTICLE_COUNT };
 }
 
 function _playClip(inst, name, opts = {}) {
@@ -223,18 +259,47 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         _playClip(char, clip, { once: clip === 'death' });
         char.mixer.update(dt);
 
-        // R32.132: Hoverboard — visible when skiing, positioned at feet
-        if (char.board) {
-            char.board.visible = skiing;
-            if (skiing) {
-                const groundY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]);
-                char.board.position.set(
-                    playerView[o],
-                    groundY + 0.02, // just above terrain
-                    playerView[o + 2]
-                );
-                char.board.rotation.set(0, -playerView[o + 4] + Math.PI, 0, 'YXZ');
+        // R32.134: Ski particle spray — emit from feet when skiing
+        if (char.skiParticles) {
+            const N = char.SKI_PARTICLE_COUNT;
+            const pos = char.skiPositions;
+            const alp = char.skiAlphas;
+            const siz = char.skiSizes;
+
+            // Emit new particles when skiing
+            if (skiing && speed > 1.0) {
+                const footY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + 0.05;
+                const emitCount = Math.min(4, Math.floor(speed / 5));
+                for (let e = 0; e < emitCount; e++) {
+                    const idx = char.skiHead.v;
+                    char.skiHead.v = (char.skiHead.v + 1) % N;
+                    const i3 = idx * 3;
+                    pos[i3]     = playerView[o] + (Math.random() - 0.5) * 0.4;
+                    pos[i3 + 1] = footY;
+                    pos[i3 + 2] = playerView[o + 2] + (Math.random() - 0.5) * 0.4;
+                    char.skiVx[idx] = (Math.random() - 0.5) * 1.5;
+                    char.skiVy[idx] = Math.random() * 2.0 + 0.5;
+                    char.skiVz[idx] = (Math.random() - 0.5) * 1.5;
+                    char.skiLife[idx] = 0.4 + Math.random() * 0.3; // 0.4-0.7s
+                    siz[idx] = 0.15 + Math.random() * 0.15;
+                }
             }
+
+            // Update all particles
+            for (let i = 0; i < N; i++) {
+                if (char.skiLife[i] <= 0) { alp[i] = 0; continue; }
+                char.skiLife[i] -= dt;
+                const i3 = i * 3;
+                pos[i3]     += char.skiVx[i] * dt;
+                pos[i3 + 1] += char.skiVy[i] * dt;
+                pos[i3 + 2] += char.skiVz[i] * dt;
+                char.skiVy[i] -= 3.0 * dt; // gravity
+                alp[i] = Math.max(0, char.skiLife[i] / 0.5);
+            }
+
+            char.skiParticles.geometry.attributes.position.needsUpdate = true;
+            char.skiParticles.geometry.attributes.alpha.needsUpdate = true;
+            char.skiParticles.geometry.attributes.size.needsUpdate = true;
         }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
