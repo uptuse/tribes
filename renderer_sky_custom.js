@@ -385,7 +385,7 @@ function _createStarField(scene) {
         fragmentShader: StarsShader.fragmentShader,
         transparent: true,
         depthWrite: false,
-        depthTest: false,
+        depthTest: true,  // R32.63.5: stars occluded by terrain/buildings (no bleed through hills)
         blending: THREE.AdditiveBlending,
     });
 

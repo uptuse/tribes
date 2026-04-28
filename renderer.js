@@ -336,7 +336,7 @@ const DayNight = (() => {
         noonHemi:   new THREE.Color(0xc0c8d0),  // pale overcast (current)
         duskHemi:   new THREE.Color(0x9a6a5a),  // warm dusk fill
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x141e38),  // moonlit night blue (was 0x0a1024)
+        nightFog:   new THREE.Color(0x050810),  // R32.63.5: much darker night fog (was 0x141e38)
         dawnFog:    new THREE.Color(0xc89880),  // pink-orange haze
         noonFog:    new THREE.Color(0xc0c8d0),  // current overcast
         duskFog:    new THREE.Color(0xa86048),  // warm dusty horizon

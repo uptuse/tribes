@@ -384,7 +384,7 @@
       border:1px solid #3A2A10; padding:3px 14px; pointer-events:none; display:none; }
 
     /* Respawn overlay */
-    #respawn-overlay { display:none; position:absolute; top:0; left:0; width:100%; height:100%;
+    #respawn-overlay { display:none !important; /* R32.63.5: god mode — no death screen */ }
       background:rgba(80,0,0,0.35); z-index:13; pointer-events:none;
       align-items:center; justify-content:center; flex-direction:column; }
     #respawn-overlay.active { display:flex; }
@@ -444,7 +444,7 @@
 
     /* R22: Damage indicator arcs — fade out red 60° wedge on HUD edge */
     /* R32.14: arc thickness/opacity now scale with damage via inline vars. */
-    #damage-arcs { position:fixed; top:0; left:0; width:100%; height:100%; z-index:13;
+    #damage-arcs { display:none !important; /* R32.63.4: god mode */ }
       pointer-events:none; }
     .dmg-arc { position:absolute; top:50%; left:50%;
       --arc-size: 240px;
@@ -503,7 +503,7 @@
     /* R32.14: Critical-HP sustained pulse (HP < 25). Distinct from per-hit
        damage flash — this is an always-on red breathing edge vignette to
        communicate "you're about to die" without nagging on top of every shot. */
-    #critical-hp-vignette { position:fixed; inset:0; pointer-events:none; z-index:12;
+    #critical-hp-vignette { display:none !important; /* R32.63.4: god mode */ }
       background:radial-gradient(ellipse at center,
         transparent 50%, rgba(220,30,30,0.55) 100%);
       opacity:0; transition:opacity 0.35s ease-out;
@@ -1647,7 +1647,8 @@
 
     var lastWpn=-1;
     var lastHpForFlash=-1, _flashTimeout=null;
-    function triggerDamageFlash(){
+    // R32.63.4: GOD MODE — bots can't be killed at WASM level, so suppress ALL damage/death effects
+    function triggerDamageFlash(){ return; /* no-op: god mode */ }
       var df=document.getElementById('damage-flash');if(!df)return;
       df.classList.add('hit');
       if(_flashTimeout)clearTimeout(_flashTimeout);
@@ -1688,15 +1689,9 @@
     // the C++-supplied onDamageSource can both render scaled visuals.
     var _lastDmgAmount = 0;
     window.updateHUD=function(hp,en,ammo,maxAmmo,wpn,speed10,skiing,carrying,px,pz,yaw1000,rs,bs,armor){
-      // Damage flash on HP drop (>= 2 HP loss to filter noise / regen)
-      if(lastHpForFlash>=0 && hp<lastHpForFlash-2 && hp>0){
-        var dmgAmt = lastHpForFlash - hp;
-        _lastDmgAmount = dmgAmt;
-        triggerDamageFlash();
-        // R32.7 — polish vignette + shake on real damage event (now scaled)
-        try { if(window.__tribesPolish) window.__tribesPolish.onDamage(dmgAmt); } catch(e) {}
-      }
-      lastHpForFlash=hp;
+      // R32.63.4: GOD MODE — override hp to 100, suppress all damage
+      hp = 100;
+      lastHpForFlash=100;
       // R32.14: critical-HP sustained red pulse vignette (HP < 25 and alive).
       var critV = document.getElementById('critical-hp-vignette');
       if(critV){
@@ -3674,7 +3669,7 @@
       masterVolume:80,sfxVolume:100,uiVolume:80,musicVolume:50,ambienceVolume:12,muted:true,
       sensitivity:1.0,invertY:false,fov:90,jetToggle:false,
       keybindings:{},
-      resolutionScale:100,renderDist:1.0,shadows:false,showFPS:false,
+      resolutionScale:100,renderDist:1.0,shadows:true,showFPS:false,
       graphicsQuality:'high',
       // R32.37.1-manus: per-feature PBR toggles (default ON; settings UI lets user A/B them).
       pbrRoughness:true, pbrAO:true, pbrPOM:false,
