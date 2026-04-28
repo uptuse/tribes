@@ -346,6 +346,31 @@ async function loadModel() {
       // Create mixer
       mixer = new THREE.AnimationMixer(model);
 
+      // R32.127: Compute foot offset — origin is at hips, not feet.
+      // Play one frame of idle to pose the skeleton, find lowest bone Y.
+      {
+        const idleClip = allClips['idle'] || g.animations[0];
+        if (idleClip) {
+          const tmpAction = mixer.clipAction(idleClip);
+          tmpAction.play();
+          mixer.update(1 / 60);
+          model.updateWorldMatrix(true, true);
+          let lowestY = Infinity;
+          model.traverse(child => {
+            if (child.isBone) {
+              const wp = new THREE.Vector3();
+              child.getWorldPosition(wp);
+              if (wp.y < lowestY) lowestY = wp.y;
+            }
+          });
+          const footOffset = lowestY < 0 ? -lowestY : 0;
+          model.position.y = footOffset;
+          tmpAction.stop();
+          mixer.setTime(0);
+          console.log(`[NLE] Foot offset: ${footOffset.toFixed(4)}m`);
+        }
+      }
+
       document.getElementById('loading').style.display = 'none';
       resolve();
     }, undefined, reject);
