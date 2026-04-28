@@ -331,15 +331,15 @@ const DayNight = (() => {
         dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
         noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
         duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
-        nightHemi:  new THREE.Color(0x2a3a5a),  // moonlit blue fill (was 0x1a2235)
-        dawnHemi:   new THREE.Color(0xb88a78),  // warm peach fill
-        noonHemi:   new THREE.Color(0xc0c8d0),  // pale overcast (current)
-        duskHemi:   new THREE.Color(0x9a6a5a),  // warm dusk fill
+        nightHemi:  new THREE.Color(0x0a1020),  // R32.63.6: much darker night ambient (was 0x2a3a5a)
+        dawnHemi:   new THREE.Color(0xc89878),  // warm peach fill
+        noonHemi:   new THREE.Color(0xb8c4d8),  // slightly blue-white (was grey 0xc0c8d0)
+        duskHemi:   new THREE.Color(0xb07858),  // warm dusk fill
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x050810),  // R32.63.5: much darker night fog (was 0x141e38)
-        dawnFog:    new THREE.Color(0xc89880),  // pink-orange haze
-        noonFog:    new THREE.Color(0xc0c8d0),  // current overcast
-        duskFog:    new THREE.Color(0xa86048),  // warm dusty horizon
+        nightFog:   new THREE.Color(0x020408),  // R32.63.6: near-black night fog
+        dawnFog:    new THREE.Color(0xd0a080),  // warm pink-orange haze
+        noonFog:    new THREE.Color(0xa8b8c8),  // R32.63.6: slight blue haze (was flat grey)
+        duskFog:    new THREE.Color(0xb86848),  // warm dusty horizon
     };
     const _tmpA = new THREE.Color();
     const _tmpB = new THREE.Color();
@@ -404,7 +404,7 @@ const DayNight = (() => {
             moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
             moonLight.target.position.set(0, 0, 0);
             moonLight.color.setHex(0x6688cc);
-            moonLight.intensity = 0.3 * nightMix;
+            moonLight.intensity = 0.12 * nightMix;  // R32.63.6: subtle (was 0.3)
         }
 
         // Hemisphere fill — lowered to let directional sun dominate (shadow contrast)
@@ -412,24 +412,27 @@ const DayNight = (() => {
         if (typeof hemiLight !== 'undefined' && hemiLight) {
             hemiLight.color.copy(hemiCol);
             hemiLight.groundColor.copy(palette.hemiGround);
-            // R32.63.4: 0.20 night → 0.50 noon (was 0.25→0.90, too much fill = no shadows)
-            hemiLight.intensity = 0.20 + 0.30 * dayMix;
+            // R32.63.6: 0.08 night → 0.35 noon (was 0.20→0.50, too much fill)
+            hemiLight.intensity = 0.08 + 0.27 * dayMix;
         }
 
         // Fog
         const fogCol = lerpColors(palette.nightFog, palette.dawnFog, palette.noonFog, palette.duskFog, t01);
         if (typeof scene !== 'undefined' && scene.fog) {
             scene.fog.color.copy(fogCol);
+            // R32.63.6: fog density varies — thick at night (hide distant mountains),
+            // lighter during day for depth/atmosphere
+            scene.fog.density = 0.0016 + 0.0030 * nightMix;  // day 0.0016, night 0.0046
         }
 
-        // R32.63.4: env intensity lowered so directional sun creates visible shadows.
+        // R32.63.6: env intensity lowered further — night near-zero, day moderate.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.50 + 0.65 * dayMix;  // 0.50 night → 1.15 noon
+            renderer.toneMappingExposure = 0.35 + 0.75 * dayMix;  // 0.35 night → 1.10 noon
         }
         if (typeof scene !== 'undefined') {
-            // R32.63.4: env 0.15 at night → 0.55 at noon (low ambient = shadow contrast)
+            // R32.63.6: env 0.05 at night → 0.45 at noon (was 0.15→0.55)
             if (scene.environmentIntensity !== undefined) {
-                scene.environmentIntensity = 0.15 + 0.40 * dayMix;
+                scene.environmentIntensity = 0.05 + 0.40 * dayMix;
             }
         }
 
