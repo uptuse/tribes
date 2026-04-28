@@ -2379,6 +2379,95 @@ async function initInteriorShapes() {
 }
 
 // ============================================================
+// R32.98: Generic model collision registration.
+// Walks any Object3D scene graph, extracts world-space triangles,
+// and sends them to WASM via appendInteriorMeshTris().
+// Convention: meshes named *_collision or *_col are physics-only.
+//   If any collision meshes exist, ONLY those are used.
+//   Otherwise ALL visual meshes are used.
+// Handles indexed & non-indexed BufferGeometry.
+// ============================================================
+function registerModelCollision(root, worldMatrix) {
+    if (!Module._appendInteriorMeshTris || !Module._malloc || !Module.HEAPF32) {
+        console.warn('[registerModelCollision] WASM collision API not available');
+        return { meshCount: 0, triCount: 0 };
+    }
+
+    // Collect meshes, separating collision-tagged from visual
+    const colMeshes = [];
+    const visMeshes = [];
+    root.traverse(child => {
+        if (!child.isMesh) return;
+        const name = (child.name || '').toLowerCase();
+        if (name.endsWith('_collision') || name.endsWith('_col')) {
+            colMeshes.push(child);
+        } else {
+            visMeshes.push(child);
+        }
+    });
+
+    // Use collision meshes if any exist; otherwise fall back to visual
+    const sources = colMeshes.length > 0 ? colMeshes : visMeshes;
+
+    // Hide collision-only meshes from rendering
+    for (const m of colMeshes) m.visible = false;
+
+    let totalMeshes = 0, totalTris = 0;
+    const _mat = new THREE.Matrix4();
+    const _v = new THREE.Vector3();
+
+    for (const mesh of sources) {
+        const geo = mesh.geometry;
+        if (!geo || !geo.attributes.position) continue;
+
+        // Compute effective world matrix for this mesh
+        mesh.updateWorldMatrix(true, false);
+        if (worldMatrix) {
+            _mat.multiplyMatrices(worldMatrix, mesh.matrixWorld);
+        } else {
+            _mat.copy(mesh.matrixWorld);
+        }
+
+        const pos = geo.attributes.position;
+        const idx = geo.index;
+        const numTris = idx ? (idx.count / 3) | 0 : (pos.count / 3) | 0;
+        if (numTris === 0) continue;
+
+        const triData = new Float32Array(numTris * 9);
+        let mnX = Infinity, mnY = Infinity, mnZ = Infinity;
+        let mxX = -Infinity, mxY = -Infinity, mxZ = -Infinity;
+
+        for (let t = 0; t < numTris; t++) {
+            for (let v = 0; v < 3; v++) {
+                const vi = idx ? idx.getX(t * 3 + v) : t * 3 + v;
+                _v.fromBufferAttribute(pos, vi).applyMatrix4(_mat);
+                const off = t * 9 + v * 3;
+                triData[off]     = _v.x;
+                triData[off + 1] = _v.y;
+                triData[off + 2] = _v.z;
+                mnX = Math.min(mnX, _v.x); mxX = Math.max(mxX, _v.x);
+                mnY = Math.min(mnY, _v.y); mxY = Math.max(mxY, _v.y);
+                mnZ = Math.min(mnZ, _v.z); mxZ = Math.max(mxZ, _v.z);
+            }
+        }
+
+        const bytes = triData.length * 4;
+        const ptr = Module._malloc(bytes);
+        if (ptr) {
+            Module.HEAPF32.set(triData, ptr / 4);
+            Module._appendInteriorMeshTris(numTris, ptr, mnX, mnY, mnZ, mxX, mxY, mxZ);
+            Module._free(ptr);
+            totalMeshes++;
+            totalTris += numTris;
+        }
+    }
+
+    console.log(`[R32.98] registerModelCollision: ${totalMeshes} meshes, ${totalTris} tris`);
+    return { meshCount: totalMeshes, triCount: totalTris };
+}
+window.registerModelCollision = registerModelCollision;
+
+// ============================================================
 // R32.58: Release stuck keys on window blur / Meta key release.
 // macOS screenshot (Cmd+Shift+4) fires Shift keydown, then macOS grabs
 // focus so the browser never gets keyup → player keeps sliding.
