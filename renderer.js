@@ -1151,7 +1151,7 @@ function _carveTerrainUnderBuildings() {
     const size = _htSize;
 
     // Only carve for shapes that are actual base buildings embedded in hillsides
-    const carvePatterns = ['bunker', 'esmall', 'betower', 'dss', 'swsfloating'];
+    const carvePatterns = ['bunker', 'esmall'];
     const boxes = [];
     interiorShapesGroup.children.forEach(outer => {
         if (!outer.userData) return;
@@ -4606,6 +4606,7 @@ function updateSkiParticles(dt) {
         if (playerView[o + 18] < 0.5) continue; // not visible
         if (playerView[o + 13] < 0.5) continue; // not alive
         if (playerView[o + 15] < 0.5) continue; // not skiing
+        if (!updateSkiParticles._dbg) { console.log('[R32.142] Ski emitting p='+p+' skiing='+playerView[o+15]); updateSkiParticles._dbg=true; }
         const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
         const footY = py - 1.75; // near ground level
         // 3 particles per frame from feet area
