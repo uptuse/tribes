@@ -140,6 +140,7 @@ export async function start() {
     initFlags();
     initParticles();
     initWeaponViewmodel();
+    try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
     // R32.36.3-manus: rain disabled by default per user request "Turn off rain
     // please so I can see them". The Raindance map's signature rain streaks
     // were competing visually with the new fairies. Opt back in via ?rain=on.
@@ -4268,6 +4269,147 @@ function _runFirstFrameDiagnostic() {
 }
 
 // ============================================================
+// R32.72: Jet exhaust particles — lightweight GPU particle system
+// ============================================================
+const JET_MAX = 384;       // max particles (16 players × 2 nozzles × ~12 particles each)
+const JET_LIFETIME = 0.35; // seconds
+const JET_SPEED = 4.5;     // m/s downward drift
+
+let _jetPoints = null;
+let _jetPos, _jetAge, _jetVel, _jetAlpha;
+let _jetNextSlot = 0;
+
+function initJetExhaust() {
+    _jetPos   = new Float32Array(JET_MAX * 3);
+    _jetAge   = new Float32Array(JET_MAX);  // remaining life (0 = dead)
+    _jetVel   = new Float32Array(JET_MAX * 3);
+    _jetAlpha = new Float32Array(JET_MAX);
+
+    // Move all dead particles far away so they don't render visibly
+    for (let i = 0; i < JET_MAX; i++) {
+        _jetPos[i * 3 + 1] = -9999;
+        _jetAlpha[i] = 0;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_jetPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_jetAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {},
+        vertexShader: `
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aAlpha * 280.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.2, 0.5, r);
+                // Hot core (white-yellow) → outer edge (orange)
+                vec3 col = mix(vec3(1.0, 0.85, 0.4), vec3(1.0, 0.45, 0.1), r * 2.0);
+                gl_FragColor = vec4(col, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _jetPoints = new THREE.Points(geo, mat);
+    _jetPoints.frustumCulled = false;
+    _jetPoints.renderOrder = 100; // render after opaque
+    scene.add(_jetPoints);
+    console.log('[R32.72] Jet exhaust particles: pool=' + JET_MAX);
+}
+
+function _jetEmit(wx, wy, wz, vx, vy, vz) {
+    // Circular scan for dead slot
+    for (let t = 0; t < 16; t++) {
+        if (_jetAge[_jetNextSlot] <= 0) break;
+        _jetNextSlot = (_jetNextSlot + 1) % JET_MAX;
+    }
+    const i = _jetNextSlot;
+    _jetPos[i*3]   = wx;
+    _jetPos[i*3+1] = wy;
+    _jetPos[i*3+2] = wz;
+    _jetVel[i*3]   = vx;
+    _jetVel[i*3+1] = vy;
+    _jetVel[i*3+2] = vz;
+    _jetAge[i]     = JET_LIFETIME;
+    _jetAlpha[i]   = 0.85 + Math.random() * 0.15;
+    _jetNextSlot   = (_jetNextSlot + 1) % JET_MAX;
+}
+
+function updateJetExhaust(dt) {
+    if (!_jetPoints || !playerView) return;
+
+    // Age + move existing particles
+    for (let i = 0; i < JET_MAX; i++) {
+        if (_jetAge[i] <= 0) continue;
+        _jetAge[i] -= dt;
+        if (_jetAge[i] <= 0) {
+            _jetAge[i] = 0;
+            _jetPos[i*3+1] = -9999; // hide
+            _jetAlpha[i] = 0;
+            continue;
+        }
+        _jetPos[i*3]   += _jetVel[i*3]   * dt;
+        _jetPos[i*3+1] += _jetVel[i*3+1] * dt;
+        _jetPos[i*3+2] += _jetVel[i*3+2] * dt;
+        // Decelerate slightly (air drag)
+        _jetVel[i*3]   *= 0.97;
+        _jetVel[i*3+1] *= 0.97;
+        _jetVel[i*3+2] *= 0.97;
+        // Fade: full opacity first 30%, then linear fade
+        const life = _jetAge[i] / JET_LIFETIME;
+        _jetAlpha[i] = life < 0.7 ? life / 0.7 : 1.0;
+    }
+
+    // Emit from jetting players
+    for (let p = 0; p < MAX_PLAYERS; p++) {
+        const o = p * playerStride;
+        if (playerView[o + 18] < 0.5) continue; // not visible
+        if (playerView[o + 13] < 0.5) continue; // not alive
+        if (playerView[o + 14] < 0.5) continue; // not jetting
+        const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
+        const yaw = -playerView[o + 4];
+        const cy = Math.cos(yaw), sy = Math.sin(yaw);
+
+        // Two thruster nozzles (offset behind + below player center)
+        const nozzles = [[-0.16, 0.70, -0.50], [0.16, 0.70, -0.50]];
+        for (const [lx, ly, lz] of nozzles) {
+            const wx = px + lx * cy - lz * sy;
+            const wy = py + ly;
+            const wz = pz + lx * sy + lz * cy;
+            // Emit 2 particles per nozzle per frame
+            for (let e = 0; e < 2; e++) {
+                const spread = 0.4;
+                _jetEmit(
+                    wx + (Math.random()-0.5)*0.06,
+                    wy + (Math.random()-0.5)*0.06,
+                    wz + (Math.random()-0.5)*0.06,
+                    (Math.random()-0.5)*spread,
+                    -JET_SPEED + (Math.random()-0.5)*0.8,
+                    (Math.random()-0.5)*spread
+                );
+            }
+        }
+    }
+
+    // Upload to GPU
+    _jetPoints.geometry.attributes.position.needsUpdate = true;
+    _jetPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ============================================================
 // Render loop
 // ============================================================
 function loop() {
@@ -4288,6 +4430,7 @@ function loop() {
     syncTurretBarrels(t);
     syncCamera();
     updateRain(1 / 60, camera.position); // R32.0 rain tick
+    try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
