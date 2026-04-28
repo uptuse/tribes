@@ -29,19 +29,14 @@ export function init(targetScene) {
         _gltf = gltf;
         _loaded = true;
 
-        // R32.118: Measure world-space bounding box for diagnostics.
-        // Mixamo armature has 0.01 scale (cm→m). Model origin should be at feet.
+        // R32.119: Mixamo origin is at feet (Y=0). No offset needed.
+        // Just log bbox for diagnostics.
         gltf.scene.updateWorldMatrix(true, true);
         const box = new THREE.Box3().setFromObject(gltf.scene);
-        const rawOffset = box.min.y;
-        const height = box.max.y - box.min.y;
-        // If feet are at origin in model space, box.min.y ≈ 0 and no offset needed.
-        // If box.min.y is significantly negative, feet are below origin → shift up.
-        // Threshold: only apply offset if feet are >0.05m away from origin.
-        _footOffset = Math.abs(rawOffset) > 0.05 ? rawOffset : 0;
-        console.log('[R32.118] Model bbox Y:', box.min.y.toFixed(4), '→', box.max.y.toFixed(4),
-            'height:', height.toFixed(2) + 'm', 'rawOffset:', rawOffset.toFixed(4),
-            'appliedOffset:', _footOffset.toFixed(4));
+        _footOffset = 0; // Mixamo models have origin at feet — no shift needed
+        console.log('[R32.119] Model bbox Y:', box.min.y.toFixed(4), '→', box.max.y.toFixed(4),
+            'height:', (box.max.y - box.min.y).toFixed(2) + 'm',
+            'footOffset: 0 (hardcoded — Mixamo origin at feet)');
 
         console.log('[R32.113] Character loaded:', gltf.animations.length, 'clips');
         for (const clip of gltf.animations) {
@@ -158,6 +153,15 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
             _groundY(playerView[o + 1]),
             playerView[o + 2]
         );
+        // R32.119: one-time position diagnostic
+        if (!char._logged) {
+            char._logged = true;
+            console.log('[R32.119] Character world pos:', 
+                char.model.position.x.toFixed(1), char.model.position.y.toFixed(1), char.model.position.z.toFixed(1),
+                '| playerY:', playerView[o + 1].toFixed(1),
+                '| groundY:', _groundY(playerView[o + 1]).toFixed(1),
+                '| footOffset:', _footOffset.toFixed(4));
+        }
         char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
 
         const speed = Math.hypot(playerView[o + 6], playerView[o + 8]);
