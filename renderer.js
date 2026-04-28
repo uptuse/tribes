@@ -4468,10 +4468,9 @@ let _dustPoints = null;
 let _dustState = null;
 
 function initDustLayer() {
-    if (typeof location !== 'undefined' && /[?&]dust=off\b/.test(location.search)) {
-        console.log('[R32.36] Fairy layer disabled via ?dust=off');
-        return;
-    }
+    // R32.63.3: fairies disabled — pink rings bleed through sky, user requested removal
+    console.log('[R32.63.3] Fairy/dust layer disabled');
+    return;
     if (_htSize < 2) {
         console.warn('[R32.36] initDustLayer aborted: heightmap not ready');
         return;

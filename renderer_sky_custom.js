@@ -64,17 +64,14 @@ const SkyDomeShader = {
             vec3 groundColor = mix(vec3(0.01, 0.01, 0.02), vec3(0.15, 0.18, 0.15), uDayMix);
             sky = mix(groundColor, sky, horizonMask);
 
-            // Sun disc — R32.63.2: warm yellow-white, dominant glow to prevent blue bleed
+            // Sun disc — R32.63.3: small, natural sun. NOT a supernova.
             float sunDot = dot(dir, uSunDir);
-            float sunDisc = smoothstep(0.9993, 0.9999, sunDot); // tight bright core
-            float sunGlow = pow(max(sunDot, 0.0), 800.0) * 0.8; // tight inner glow
-            float sunHalo = pow(max(sunDot, 0.0), 64.0) * 0.25; // warm halo overpowers sky blue
-            vec3 sunColor = vec3(1.0, 0.95, 0.80); // warm yellow-white
+            float sunDisc = smoothstep(0.9997, 0.99995, sunDot); // tiny bright core
+            float sunGlow = pow(max(sunDot, 0.0), 2000.0) * 0.3; // very tight glow
+            float sunHalo = pow(max(sunDot, 0.0), 128.0) * 0.08; // subtle warm haze
+            vec3 sunColor = vec3(1.0, 0.95, 0.85);
             float sunAbove = smoothstep(-0.02, 0.05, uSunDir.y);
-            sky += sunColor * (sunDisc * 5.0 + sunGlow + sunHalo) * sunAbove;
-            // Warm the sky around the sun so it doesn't read as blue near the disc
-            float sunWarm = pow(max(sunDot, 0.0), 8.0) * 0.20 * sunAbove;
-            sky = mix(sky, sky + vec3(0.3, 0.15, 0.0), sunWarm);
+            sky += sunColor * (sunDisc * 2.0 + sunGlow + sunHalo) * sunAbove;
 
             // Moon disc — R32.63.2: textured with crater noise, not a flat circle
             vec3 moonDir = normalize(vec3(-uSunDir.x, max(0.15, -uSunDir.y), -uSunDir.z));
