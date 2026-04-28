@@ -2067,29 +2067,49 @@ async function initInteriorShapes() {
 }
 
 // ============================================================
-// R32.58: Release stuck keys on window blur / visibility change.
+// R32.58: Release stuck keys on window blur / Meta key release.
 // macOS screenshot (Cmd+Shift+4) fires Shift keydown, then macOS grabs
 // focus so the browser never gets keyup → player keeps sliding.
-// Fix: dispatch synthetic keyup for all common game keys on blur.
+// Also: macOS Chrome doesn't fire keyup for keys released while Cmd is held.
+// Fix: track pressed keys and release them on blur, visibilitychange,
+// or Meta keyup. Synthetic events carry full key properties for WASM.
 // ============================================================
 (function initBlurKeyReset() {
-    const GAME_KEYS = [
-        'ShiftLeft','ShiftRight','KeyW','KeyA','KeyS','KeyD',
-        'Space','ControlLeft','ControlRight','KeyE','KeyR','KeyG',
-        'MetaLeft','MetaRight','AltLeft','AltRight',
-        'ArrowUp','ArrowDown','ArrowLeft','ArrowRight',
-        'Tab','KeyQ','KeyF','KeyZ','KeyX','KeyC'
-    ];
+    const _pressed = new Map(); // code → {key, keyCode, which, code}
+
+    window.addEventListener('keydown', (e) => {
+        if (e.code && !e.repeat) {
+            _pressed.set(e.code, {
+                key: e.key, keyCode: e.keyCode, which: e.which, code: e.code
+            });
+        }
+    }, true);
+
+    window.addEventListener('keyup', (e) => {
+        if (e.code) _pressed.delete(e.code);
+    }, true);
+
     function releaseAll() {
-        for (const code of GAME_KEYS) {
+        for (const [code, info] of _pressed) {
             window.dispatchEvent(new KeyboardEvent('keyup', {
-                code, key: '', bubbles: true, cancelable: true
+                code: info.code, key: info.key,
+                keyCode: info.keyCode, which: info.which,
+                bubbles: true, cancelable: true
             }));
         }
+        _pressed.clear();
     }
+
+    // Release all when window loses focus
     window.addEventListener('blur', releaseAll);
     document.addEventListener('visibilitychange', () => {
         if (document.hidden) releaseAll();
+    });
+
+    // macOS: when Meta (Cmd) is released, release everything else too —
+    // Chrome/Safari don't fire keyup for keys released while Cmd was held
+    window.addEventListener('keyup', (e) => {
+        if (e.key === 'Meta') releaseAll();
     });
 })();
 
