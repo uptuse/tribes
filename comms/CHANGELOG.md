@@ -235,3 +235,20 @@
 - 384-particle pool, additive blending, hot white-yellow→orange gradient
 - Soft circular falloff, 0.35s lifetime, 4.5 m/s downward drift
 - Emits from two thruster nozzles per jetting player, single draw call
+
+## R32.73 — Projectile trails
+- 512-particle trail pool with per-projectile-type coloring
+- Disc: cyan-white, Plasma: orange, Mortar: yellow-orange, Grenade: green, Blaster: white
+- Chaingun skipped (already has tracer)
+- 0.3s lifetime, slight random jitter, additive blending
+- Single draw call for all active trails
+
+## R32.74 — Explosion particles + Night fairy particles
+- Explosion burst: 384-particle pool, 24-32 particles per explosion
+  - Radial velocity, gravity, drag, hot white→orange gradient
+  - Triggered on WASM explosion detection alongside existing shockwave
+- Night fairies: 200 luminous motes floating in the AIR (8-45m up)
+  - Camera-relative positioning, 80m radius
+  - Sinusoidal drift orbits + vertical bob + twinkling
+  - Warm golden-white glow, visible only at night (DayNight.dayMix)
+  - Phase 2 (Effects) COMPLETE

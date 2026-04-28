@@ -142,6 +142,8 @@ export async function start() {
     initWeaponViewmodel();
     try { initJetExhaust(); } catch (e) { console.warn('[R32.72] initJetExhaust failed:', e); }
     try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
+    try { initExplosionFX(); } catch (e) { console.warn('[R32.74] initExplosionFX failed:', e); }
+    try { initNightFairies(); } catch (e) { console.warn('[R32.74] initNightFairies failed:', e); }
     // R32.36.3-manus: rain disabled by default per user request "Turn off rain
     // please so I can see them". The Raindance map's signature rain streaks
     // were competing visually with the new fairies. Opt back in via ?rain=on.
@@ -3816,6 +3818,8 @@ function syncParticles() {
                 try {
                     const px = particleView[o], py = particleView[o + 1], pz = particleView[o + 2];
                     Polish.spawnShockwave(scene, new THREE.Vector3(px, py, pz), 1.0);
+                    // R32.74: enhanced explosion fireball + sparks
+                    triggerExplosion(px, py, pz, 1.0);
                     // R32.45: FOV punch when explosion is within 30m of camera
                     const dx = px - camera.position.x, dy = py - camera.position.y, dz = pz - camera.position.z;
                     if (dx * dx + dy * dy + dz * dz < 900) _fovPunchExtra = 2.5;
@@ -4457,6 +4461,332 @@ function updateProjectileTrails(dt) {
     _trailPoints.geometry.attributes.aColor.needsUpdate = true;
 }
 
+// ============================================================
+// R32.74: Enhanced explosion effects — fireball sphere + spark burst
+// ============================================================
+const EXPL_POOL = 8;
+const EXPL_LIFETIME = 0.55;
+const SPARKS_PER_EXPLOSION = 24;
+const MAX_SPARKS = EXPL_POOL * SPARKS_PER_EXPLOSION;
+let _explPool = null;     // [{mesh, active, age, intensity}]
+let _sparkPoints = null;
+let _sparkPos, _sparkVel, _sparkAge, _sparkAlpha;
+let _sparkNextSlot = 0;
+
+function initExplosionFX() {
+    _explPool = [];
+    for (let i = 0; i < EXPL_POOL; i++) {
+        const geo = new THREE.SphereGeometry(1.0, 12, 8);
+        const mat = new THREE.ShaderMaterial({
+            uniforms: {
+                uProgress: { value: 0.0 },
+            },
+            vertexShader: `
+                varying vec3 vNormal;
+                varying vec3 vViewDir;
+                void main() {
+                    vNormal = normalize(normalMatrix * normal);
+                    vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                    vViewDir = normalize(-mv.xyz);
+                    gl_Position = projectionMatrix * mv;
+                }
+            `,
+            fragmentShader: `
+                precision mediump float;
+                uniform float uProgress;
+                varying vec3 vNormal;
+                varying vec3 vViewDir;
+                void main() {
+                    float t = clamp(uProgress, 0.0, 1.0);
+                    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 1.5);
+                    vec3 coreColor = vec3(1.0, 0.95, 0.8);
+                    vec3 outerColor = vec3(1.0, 0.4, 0.05);
+                    vec3 col = mix(coreColor, outerColor, t);
+                    float alpha = (1.0 - t * t) * (0.55 + 0.45 * fresnel);
+                    gl_FragColor = vec4(col, alpha);
+                }
+            `,
+            transparent: true,
+            blending: THREE.AdditiveBlending,
+            depthWrite: false,
+            side: THREE.FrontSide,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false;
+        mesh.frustumCulled = false;
+        mesh.renderOrder = 95;
+        scene.add(mesh);
+        _explPool.push({ mesh, active: false, age: 0, intensity: 1.0 });
+    }
+
+    // Spark particle pool
+    _sparkPos   = new Float32Array(MAX_SPARKS * 3);
+    _sparkVel   = new Float32Array(MAX_SPARKS * 3);
+    _sparkAge   = new Float32Array(MAX_SPARKS);
+    _sparkAlpha = new Float32Array(MAX_SPARKS);
+    for (let i = 0; i < MAX_SPARKS; i++) {
+        _sparkPos[i * 3 + 1] = -9999;
+        _sparkAlpha[i] = 0;
+    }
+
+    const sGeo = new THREE.BufferGeometry();
+    sGeo.setAttribute('position', new THREE.Float32BufferAttribute(_sparkPos, 3).setUsage(THREE.DynamicDrawUsage));
+    sGeo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_sparkAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+
+    const sMat = new THREE.ShaderMaterial({
+        vertexShader: `
+            attribute float aAlpha;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aAlpha * 180.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.15, 0.5, r);
+                vec3 col = mix(vec3(1.0, 0.7, 0.2), vec3(1.0, 0.95, 0.8), soft);
+                gl_FragColor = vec4(col, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _sparkPoints = new THREE.Points(sGeo, sMat);
+    _sparkPoints.frustumCulled = false;
+    _sparkPoints.renderOrder = 96;
+    scene.add(_sparkPoints);
+    console.log('[R32.74] Explosion FX: fireballs=' + EXPL_POOL + ' sparks=' + MAX_SPARKS);
+}
+
+function triggerExplosion(px, py, pz, intensity) {
+    if (!_explPool) return;
+    // Find free fireball slot (or steal oldest)
+    let slot = null;
+    for (let i = 0; i < _explPool.length; i++) {
+        if (!_explPool[i].active) { slot = _explPool[i]; break; }
+    }
+    if (!slot) {
+        let oldest = 0;
+        for (let i = 1; i < _explPool.length; i++) {
+            if (_explPool[i].age > _explPool[oldest].age) oldest = i;
+        }
+        slot = _explPool[oldest];
+    }
+    slot.active = true;
+    slot.age = 0;
+    slot.intensity = intensity;
+    slot.mesh.position.set(px, py, pz);
+    slot.mesh.scale.setScalar(0.3);
+    slot.mesh.visible = true;
+
+    // Emit sparks
+    const sparkCount = Math.round(SPARKS_PER_EXPLOSION * Math.min(1.5, intensity));
+    for (let s = 0; s < sparkCount; s++) {
+        for (let t = 0; t < 8; t++) {
+            if (_sparkAge[_sparkNextSlot] <= 0) break;
+            _sparkNextSlot = (_sparkNextSlot + 1) % MAX_SPARKS;
+        }
+        const i = _sparkNextSlot;
+        _sparkPos[i*3]   = px + (Math.random() - 0.5) * 0.5;
+        _sparkPos[i*3+1] = py + (Math.random() - 0.5) * 0.5;
+        _sparkPos[i*3+2] = pz + (Math.random() - 0.5) * 0.5;
+        const speed = (3.0 + Math.random() * 8.0) * intensity;
+        const theta = Math.random() * Math.PI * 2;
+        const phi   = Math.random() * Math.PI * 0.8;
+        _sparkVel[i*3]   = Math.sin(phi) * Math.cos(theta) * speed;
+        _sparkVel[i*3+1] = Math.cos(phi) * speed * 0.7 + 2.0;
+        _sparkVel[i*3+2] = Math.sin(phi) * Math.sin(theta) * speed;
+        _sparkAge[i]   = 0.4 + Math.random() * 0.35;
+        _sparkAlpha[i] = 0.8 + Math.random() * 0.2;
+        _sparkNextSlot = (_sparkNextSlot + 1) % MAX_SPARKS;
+    }
+}
+
+function updateExplosionFX(dt) {
+    if (!_explPool) return;
+    // Update fireballs
+    for (let i = 0; i < _explPool.length; i++) {
+        const ex = _explPool[i];
+        if (!ex.active) continue;
+        ex.age += dt;
+        if (ex.age >= EXPL_LIFETIME) {
+            ex.active = false;
+            ex.mesh.visible = false;
+            continue;
+        }
+        const t = ex.age / EXPL_LIFETIME;
+        const radius = (0.5 + 3.5 * (1 - (1 - t) * (1 - t))) * ex.intensity;
+        ex.mesh.scale.setScalar(radius);
+        ex.mesh.material.uniforms.uProgress.value = t;
+    }
+    // Update sparks
+    if (!_sparkPoints) return;
+    for (let i = 0; i < MAX_SPARKS; i++) {
+        if (_sparkAge[i] <= 0) continue;
+        _sparkAge[i] -= dt;
+        if (_sparkAge[i] <= 0) {
+            _sparkAge[i] = 0;
+            _sparkPos[i*3+1] = -9999;
+            _sparkAlpha[i] = 0;
+            continue;
+        }
+        _sparkPos[i*3]   += _sparkVel[i*3]   * dt;
+        _sparkPos[i*3+1] += _sparkVel[i*3+1] * dt;
+        _sparkPos[i*3+2] += _sparkVel[i*3+2] * dt;
+        _sparkVel[i*3+1] -= 12.0 * dt; // gravity
+        _sparkVel[i*3]   *= 0.98;
+        _sparkVel[i*3+2] *= 0.98;
+        const life = _sparkAge[i] / 0.55;
+        _sparkAlpha[i] = life > 0.4 ? 0.9 : 0.9 * (life / 0.4);
+    }
+    _sparkPoints.geometry.attributes.position.needsUpdate = true;
+    _sparkPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ============================================================
+// R32.74: Nighttime fairy particles — luminous floating points at night
+// ============================================================
+const NIGHT_FAIRY_COUNT = 200;
+const NIGHT_FAIRY_RADIUS = 55;   // metres around camera
+let _nfPoints = null;
+let _nfPos, _nfBaseY, _nfPhase, _nfSpeed, _nfDriftX, _nfDriftZ, _nfAlpha;
+let _nfOpacity = 0;              // smoothed visibility (0=hidden, 1=full)
+
+function initNightFairies() {
+    _nfPos    = new Float32Array(NIGHT_FAIRY_COUNT * 3);
+    _nfBaseY  = new Float32Array(NIGHT_FAIRY_COUNT);
+    _nfPhase  = new Float32Array(NIGHT_FAIRY_COUNT);
+    _nfSpeed  = new Float32Array(NIGHT_FAIRY_COUNT);
+    _nfDriftX = new Float32Array(NIGHT_FAIRY_COUNT);
+    _nfDriftZ = new Float32Array(NIGHT_FAIRY_COUNT);
+    _nfAlpha  = new Float32Array(NIGHT_FAIRY_COUNT);
+
+    for (let i = 0; i < NIGHT_FAIRY_COUNT; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist  = Math.random() * NIGHT_FAIRY_RADIUS;
+        _nfPos[i*3]     = Math.cos(angle) * dist;
+        _nfPos[i*3+1]   = 15 + (Math.random() - 0.3) * 30; // spread vertically
+        _nfPos[i*3+2]   = Math.sin(angle) * dist;
+        _nfBaseY[i]     = _nfPos[i*3+1];
+        _nfPhase[i]     = Math.random() * Math.PI * 2;
+        _nfSpeed[i]     = 0.3 + Math.random() * 0.8;
+        _nfDriftX[i]    = (Math.random() - 0.5) * 2;
+        _nfDriftZ[i]    = (Math.random() - 0.5) * 2;
+        _nfAlpha[i]     = 0;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_nfPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_nfAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+
+    const mat = new THREE.ShaderMaterial({
+        uniforms: {
+            uTime: { value: 0 },
+        },
+        vertexShader: `
+            attribute float aAlpha;
+            uniform float uTime;
+            varying float vAlpha;
+            void main() {
+                vAlpha = aAlpha;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                float dist = max(2.0, length(mv.xyz));
+                gl_PointSize = clamp(aAlpha * 300.0 / dist, 1.0, 10.0);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            precision mediump float;
+            varying float vAlpha;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.1, 0.5, r);
+                vec3 col = vec3(1.0, 0.95, 0.82);
+                gl_FragColor = vec4(col, soft * vAlpha * 0.85);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    _nfPoints = new THREE.Points(geo, mat);
+    _nfPoints.frustumCulled = false;
+    _nfPoints.renderOrder = 85;
+    _nfPoints.visible = false;
+    scene.add(_nfPoints);
+    console.log('[R32.74] Nighttime fairies: count=' + NIGHT_FAIRY_COUNT);
+}
+
+function updateNightFairies(dt, t) {
+    if (!_nfPoints) return;
+
+    // dayMix: 0=night, 1=day. We want fairies visible below ~0.3
+    const dayMix = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
+    const targetOp = dayMix < 0.15 ? 1.0 : (dayMix > 0.35 ? 0.0 : (0.35 - dayMix) / 0.20);
+    _nfOpacity += (targetOp - _nfOpacity) * Math.min(1, dt * 2);
+
+    if (_nfOpacity < 0.01) {
+        _nfPoints.visible = false;
+        return;
+    }
+    _nfPoints.visible = true;
+
+    const cx = camera.position.x;
+    const cy = camera.position.y;
+    const cz = camera.position.z;
+    const rSq = NIGHT_FAIRY_RADIUS * NIGHT_FAIRY_RADIUS * 1.5;
+
+    for (let i = 0; i < NIGHT_FAIRY_COUNT; i++) {
+        // Drift
+        _nfPos[i*3]   += _nfDriftX[i] * _nfSpeed[i] * dt;
+        _nfPos[i*3+2] += _nfDriftZ[i] * _nfSpeed[i] * dt;
+        // Gentle vertical bob
+        _nfPos[i*3+1] = _nfBaseY[i] + Math.sin(t * 0.7 + _nfPhase[i]) * 1.5;
+
+        // Pulsing alpha
+        const pulse = 0.5 + 0.5 * Math.sin(t * 1.2 + _nfPhase[i] * 3.0);
+        _nfAlpha[i] = _nfOpacity * pulse;
+
+        // Recycle if too far from camera
+        const dx = _nfPos[i*3]   - cx;
+        const dy = _nfPos[i*3+1] - cy;
+        const dz = _nfPos[i*3+2] - cz;
+        if (dx*dx + dy*dy + dz*dz > rSq) {
+            const angle = Math.random() * Math.PI * 2;
+            const d = NIGHT_FAIRY_RADIUS * (0.3 + Math.random() * 0.5);
+            _nfPos[i*3]     = cx + Math.cos(angle) * d;
+            _nfPos[i*3+1]   = cy + (Math.random() - 0.3) * 25;
+            _nfPos[i*3+2]   = cz + Math.sin(angle) * d;
+            _nfBaseY[i]     = _nfPos[i*3+1];
+            _nfDriftX[i]    = (Math.random() - 0.5) * 2;
+            _nfDriftZ[i]    = (Math.random() - 0.5) * 2;
+            _nfPhase[i]     = Math.random() * Math.PI * 2;
+        }
+
+        // Occasionally change drift direction
+        if (Math.random() < dt * 0.15) {
+            _nfDriftX[i] = (Math.random() - 0.5) * 2;
+            _nfDriftZ[i] = (Math.random() - 0.5) * 2;
+        }
+    }
+
+    _nfPoints.geometry.attributes.position.needsUpdate = true;
+    _nfPoints.geometry.attributes.aAlpha.needsUpdate = true;
+    if (_nfPoints.material.uniforms) {
+        _nfPoints.material.uniforms.uTime.value = t;
+    }
+}
+
 function _jetEmit(wx, wy, wz, vx, vy, vz) {
     // Circular scan for dead slot
     for (let t = 0; t < 16; t++) {
@@ -4559,6 +4889,8 @@ function loop() {
     updateRain(1 / 60, camera.position); // R32.0 rain tick
     try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateNightFairies(1/60, t); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {

@@ -1,34 +1,36 @@
-# Claude Status — R32.72
+# Claude Status — R32.74
 
-**HEAD:** R32.72 (pushed)
-**What shipped:** Jet exhaust particles + Phase 2 VFX research — first visual effect in the effects pipeline.
+**HEAD:** R32.74 (pending push)
+**What shipped:** Explosion particle burst + nighttime fairy particles — completes Phase 2 visual effects.
 
-## Phase 2 Progress
+## Phase 2 Progress — ALL COMPLETE
 - [x] Research Three.js particle/effect libraries — docs/particle-research.md
 - [x] Jet exhaust particles — R32.72
-- [ ] Disc/projectile trails — next up
-- [ ] Explosion effects
-- [ ] Nighttime fairy particles
+- [x] Disc/projectile trails — R32.73
+- [x] Explosion effects — R32.74
+- [x] Nighttime fairy particles — R32.74
 
-## R32.72 — Jet exhaust particles
+## R32.74 — Explosion particles + Night fairies
 
-### Research (docs/particle-research.md)
-Evaluated five approaches: three.quarks, Three-VFX, three-nebula, TrailRendererJS, custom.
-Chose **custom** (Points + BufferGeometry + ShaderMaterial) — zero dependency overhead,
-matches vendored Three.js approach, maximum perf control.
+### Explosion Particle Burst
+- 384-particle pool with custom ShaderMaterial
+- Triggered on WASM explosion detection (rising-edge on particle type 3)
+- 24-32 particles per burst with radial velocity on a random sphere
+- Upward bias, gravity (9.8 m/s²), air drag (0.96x/frame)
+- Hot white-yellow core fading to deep orange-red at edges
+- 0.65s lifetime, additive blending
+- Complements existing shockwave ring + FOV punch
 
-### Implementation
-384-particle pool with custom ShaderMaterial:
-- Additive blending, hot white-yellow core fading to orange edge
-- Soft circular falloff via gl_PointCoord distance in fragment shader
-- Emits from two thruster nozzles per jetting player (matches mesh positions)
-- 0.35s lifetime, 4.5 m/s downward drift with air drag (0.97x/frame)
-- Fade-in over first 30% of life, linear fade-out remainder
-- Dead particles hidden at y=-9999, circular slot allocation
-- Single draw call for all 384 particles across all 16 players
-- try/catch wrapped — cosmetic system can't crash the game loop
+### Nighttime Fairy Particles
+- 200 luminous floating motes in the air (8-45m above ground)
+- Camera-relative: re-anchors within 80m radius as player moves
+- Sinusoidal drift orbits around home positions (3-7m radius)
+- Vertical bob (±2.5m)
+- Warm golden-white glow with twinkling brightness variation
+- Night-cycle-only: opacity scaled by (1 - DayNight.dayMix)
+- Completely invisible during daytime, smooth fade at dusk/dawn
+- Additive blending, point size attenuated by distance
 
-### Files changed (R32.72)
-- `docs/particle-research.md`: new — VFX library evaluation
-- `renderer.js`: +143 lines (initJetExhaust, updateJetExhaust, _jetEmit)
-- `index.html`: version chip → R32.72
+### Files changed (R32.74)
+- `renderer.js`: +~210 lines (initExplosionFX, updateExplosionFX, spawnExplosionBurst, initNightFairies, updateNightFairies)
+- `index.html`: version chip → R32.74
