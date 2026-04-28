@@ -89,8 +89,8 @@ function _createInstance() {
         }
     });
 
-    // Apply computed scale
-    model.scale.setScalar(_modelScale);
+    // Do NOT set model.scale — the GLB armature already has the correct
+    // 0.01 scale (Mixamo cm→m). setScalar(1.0) would OVERWRITE it.
 
     _scene.add(model);
 
