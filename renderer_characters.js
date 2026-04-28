@@ -122,7 +122,22 @@ function _createInstance() {
 
     _scene.add(model);
 
-    return { model, mixer, clips, activeClip: null, activeAction: null };
+    // R32.132: Hoverboard — glowing silver surfboard for skiing
+    const boardGeo = new THREE.BoxGeometry(0.35, 0.04, 1.0);  // width, height, length
+    // Round the edges slightly with a bevel-ish shape
+    const boardMat = new THREE.MeshStandardMaterial({
+        color: 0xc0d0e0,
+        metalness: 0.95,
+        roughness: 0.15,
+        emissive: 0x4488cc,
+        emissiveIntensity: 0.6,
+    });
+    const board = new THREE.Mesh(boardGeo, boardMat);
+    board.visible = false;
+    // Position at feet level — will be updated each frame relative to model
+    _scene.add(board);
+
+    return { model, mixer, clips, activeClip: null, activeAction: null, board };
 }
 
 function _playClip(inst, name, opts = {}) {
@@ -207,6 +222,20 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         _playClip(char, clip, { once: clip === 'death' });
         char.mixer.update(dt);
+
+        // R32.132: Hoverboard — visible when skiing, positioned at feet
+        if (char.board) {
+            char.board.visible = skiing;
+            if (skiing) {
+                const groundY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]);
+                char.board.position.set(
+                    playerView[o],
+                    groundY + 0.02, // just above terrain
+                    playerView[o + 2]
+                );
+                char.board.rotation.set(0, -playerView[o + 4] + Math.PI, 0, 'YXZ');
+            }
+        }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
