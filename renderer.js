@@ -1976,15 +1976,18 @@ async function initInteriorShapes() {
         console.log('[R32.48] Geometry enhancement:', (performance.now() - _t0).toFixed(1) + 'ms for',
             _enhancedCount, 'unique meshes (crease normals + rock subdivision + material palette)');
 
-        // R32.54 DIAGNOSTIC: ?basicInterior → replace all interior materials with bright unlit MeshBasicMaterial
-        // If the black rectangle disappears with this, the issue is PBR lighting.
-        // If it stays, the issue is geometry/pipeline.
+        // R32.54 DIAGNOSTIC URL params — no console commands needed
         {
             const _dp = new URLSearchParams(window.location.search);
+            if (_dp.has('hideInterior')) {
+                console.log('[R32.54-DIAG] hideInterior: RaindanceInteriorShapes.visible = false');
+                interiorShapesGroup.visible = false;
+            }
             if (_dp.has('basicInterior')) {
-                console.log('[R32.54-DIAG] basicInterior: replacing interior materials with MeshBasicMaterial');
+                let meshCount = 0;
                 interiorShapesGroup.traverse(obj => {
                     if (!obj.isMesh) return;
+                    meshCount++;
                     const bright = new THREE.MeshBasicMaterial({ color: 0xff4444, side: THREE.DoubleSide });
                     if (Array.isArray(obj.material)) {
                         obj.material = obj.material.map(() => bright);
@@ -1992,6 +1995,7 @@ async function initInteriorShapes() {
                         obj.material = bright;
                     }
                 });
+                console.log('[R32.54-DIAG] basicInterior: replaced', meshCount, 'meshes with red MeshBasicMaterial');
             }
         }
 
