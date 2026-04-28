@@ -2093,8 +2093,21 @@ async function initInteriorShapes() {
             const outer = new THREE.Group();
             const w = toWorld(item.position);
             outer.position.set(w.x, w.y, w.z);
-            const rotZ = (item.rotation && item.rotation[2]) ? -item.rotation[2] : 0;
-            outer.rotation.y = rotZ;
+            // R32.69: Full 3-axis rotation from MIS data.
+            // Tribes uses Z-up left-handed rotation convention.
+            // Convert: Tribes axis (X,Y,Z) → Three.js axis (X,-Z,Y), negate angles for LH→RH.
+            const _rx = item.rotation?.[0] || 0;
+            const _ry = item.rotation?.[1] || 0;
+            const _rz = item.rotation?.[2] || 0;
+            if (_rx === 0 && _ry === 0) {
+                outer.rotation.y = -_rz;  // Fast path: yaw-only shapes (most buildings)
+            } else {
+                // Full 3-axis rotation for tilted shapes (rocks, etc.)
+                const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -_rx);
+                const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), -_ry);
+                const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -_rz);
+                outer.quaternion.copy(qz.multiply(qy).multiply(qx));
+            }
             outer.add(mesh);
             outer.userData = { fileName: item.fileName, isInterior: true };
             interiorShapesGroup.add(outer);
@@ -2139,19 +2152,39 @@ async function initInteriorShapes() {
                 if (!bd) continue;
 
                 const w = toWorld(item.position);
-                const meshRotZ = -(item.rotation?.[2] ?? 0);
-                const cosR = Math.cos(meshRotZ), sinR = Math.sin(meshRotZ);
+                // R32.69: Full 3-axis rotation for collision (matches rendering transform).
+                const _crx = item.rotation?.[0] || 0;
+                const _cry = item.rotation?.[1] || 0;
+                const _crz = item.rotation?.[2] || 0;
+                let _rm00, _rm01, _rm02, _rm10, _rm11, _rm12, _rm20, _rm21, _rm22;
+                if (_crx === 0 && _cry === 0) {
+                    // Yaw-only fast path: Ry(-rz) matrix
+                    const c = Math.cos(_crz), s = Math.sin(_crz);
+                    _rm00 = c;  _rm01 = 0; _rm02 = -s;
+                    _rm10 = 0;  _rm11 = 1; _rm12 = 0;
+                    _rm20 = s;  _rm21 = 0; _rm22 = c;
+                } else {
+                    // Full rotation via quaternion → 3x3 matrix
+                    const qx = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), -_crx);
+                    const qy = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, -1), -_cry);
+                    const qz = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -_crz);
+                    const rm = new THREE.Matrix4().makeRotationFromQuaternion(qz.multiply(qy).multiply(qx));
+                    const e = rm.elements;
+                    _rm00 = e[0]; _rm01 = e[4]; _rm02 = e[8];
+                    _rm10 = e[1]; _rm11 = e[5]; _rm12 = e[9];
+                    _rm20 = e[2]; _rm21 = e[6]; _rm22 = e[10];
+                }
 
-                // Transform function: DIS local → world space
-                // Step 1: inner Rx(-PI/2): (lx,ly,lz) → (lx, lz, -ly)
-                // Step 2: outer Ry(rotZ): wx=ax*cos+az*sin, wy=ay, wz=-ax*sin+az*cos
-                // Step 3: translate by world position
+                // Transform: DIS local → world space
+                // Step 1: Rx(-π/2): (lx,ly,lz) → (lx, lz, -ly)
+                // Step 2: Apply full rotation matrix
+                // Step 3: Translate to world position
                 function xform(lx, ly, lz) {
                     const ax = lx, ay = lz, az = -ly;
                     return [
-                        ax * cosR + az * sinR + w.x,
-                        ay + w.y,
-                        -ax * sinR + az * cosR + w.z
+                        _rm00*ax + _rm01*ay + _rm02*az + w.x,
+                        _rm10*ax + _rm11*ay + _rm12*az + w.y,
+                        _rm20*ax + _rm21*ay + _rm22*az + w.z
                     ];
                 }
 
