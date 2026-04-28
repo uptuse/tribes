@@ -3,389 +3,205 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Tribes — Animation Editor</title>
+<title>Tribes Animation NLE</title>
 <style>
-  /* ── Reset & Base ─────────────────────────────────────────── */
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  html, body { height: 100%; overflow: hidden; }
-  body {
-    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
-    background: #0a0c10;
-    color: #c8ccd4;
-    display: flex;
-  }
+* { margin: 0; padding: 0; box-sizing: border-box; }
+:root {
+  --bg: #0a0c10; --bg2: #12151c; --bg3: #1a1e28; --bg4: #242a38;
+  --border: #2a3040; --text: #c8ccd4; --text2: #8890a0;
+  --accent: #00b4ff; --accent2: #0080cc; --accent-dim: rgba(0,180,255,0.15);
+  --warn: #ff6644; --green: #44cc66; --yellow: #FFD479;
+  --track1: #2255aa; --track2: #aa4422; --track3: #22aa55; --track4: #aa22aa;
+  --track5: #aa8822; --track6: #2288aa;
+}
+html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; }
+#app { display: grid; grid-template-columns: 220px 1fr; grid-template-rows: 1fr 260px; width: 100%; height: 100%; }
 
-  /* ── Sidebar ──────────────────────────────────────────────── */
-  #sidebar {
-    width: 340px;
-    min-width: 340px;
-    background: #12151c;
-    border-right: 1px solid #1e2330;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  #sidebar-header {
-    padding: 16px;
-    border-bottom: 1px solid #1e2330;
-    background: linear-gradient(135deg, #141824, #1a1e2e);
-  }
-  #sidebar-header h1 {
-    font-size: 16px;
-    font-weight: 700;
-    color: #FFD479;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-bottom: 4px;
-  }
-  #sidebar-header .subtitle {
-    font-size: 11px;
-    color: #667;
-    letter-spacing: 0.5px;
-  }
+/* === CLIP LIBRARY (left sidebar) === */
+#library { grid-row: 1/3; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+#library-header { padding: 10px 12px; background: var(--bg3); border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: var(--accent); display: flex; justify-content: space-between; align-items: center; }
+#library-clips { flex: 1; overflow-y: auto; padding: 6px; }
+.lib-clip { padding: 7px 10px; margin: 2px 0; background: var(--bg3); border: 1px solid var(--border); border-radius: 4px; cursor: grab; font-size: 12px; display: flex; justify-content: space-between; align-items: center; transition: background 0.15s; user-select: none; }
+.lib-clip:hover { background: var(--bg4); border-color: var(--accent2); }
+.lib-clip:active { cursor: grabbing; }
+.lib-clip .dur { color: var(--text2); font-size: 10px; font-family: 'Roboto Mono', monospace; }
+.lib-clip .preview-btn { background: none; border: none; color: var(--accent); cursor: pointer; font-size: 14px; padding: 0 4px; }
+.lib-clip .preview-btn:hover { color: #fff; }
 
-  /* Tabs */
-  .tab-bar {
-    display: flex;
-    border-bottom: 1px solid #1e2330;
-    background: #10131a;
-  }
-  .tab-btn {
-    flex: 1;
-    padding: 10px 8px;
-    background: none;
-    border: none;
-    color: #556;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    cursor: pointer;
-    border-bottom: 2px solid transparent;
-    transition: all 0.2s;
-  }
-  .tab-btn:hover { color: #99a; }
-  .tab-btn.active { color: #FFD479; border-bottom-color: #FFD479; }
+/* Library sections */
+.lib-section { padding: 8px 10px 4px; font-size: 10px; color: var(--text2); text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid var(--border); margin-top: 4px; }
 
-  .tab-panel {
-    display: none;
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-  }
-  .tab-panel.active { display: block; }
+/* === VIEWPORT === */
+#viewport { background: #000; position: relative; overflow: hidden; }
+#viewport canvas { width: 100% !important; height: 100% !important; }
+#viewport-overlay { position: absolute; top: 0; left: 0; right: 0; padding: 8px 12px; display: flex; justify-content: space-between; pointer-events: none; z-index: 10; }
+#viewport-overlay > * { pointer-events: auto; }
+#frame-info { font-family: 'Roboto Mono', monospace; font-size: 11px; color: var(--yellow); background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 3px; }
+#viewport-controls { display: flex; gap: 4px; align-items: center; }
+#viewport-controls select, #viewport-controls button { background: rgba(0,0,0,0.6); border: 1px solid var(--border); color: var(--text); padding: 3px 6px; border-radius: 3px; font-size: 11px; cursor: pointer; }
+#viewport-controls button:hover { background: var(--accent2); }
+#loading { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--bg); z-index: 100; }
+#loading .spinner { width: 40px; height: 40px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
 
-  /* Scrollbar */
-  .tab-panel::-webkit-scrollbar { width: 6px; }
-  .tab-panel::-webkit-scrollbar-track { background: transparent; }
-  .tab-panel::-webkit-scrollbar-thumb { background: #2a2e3a; border-radius: 3px; }
+/* === TIMELINE === */
+#timeline { background: var(--bg2); border-top: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
 
-  /* ── Clip List (Clips tab) ────────────────────────────────── */
-  .clip-item {
-    display: flex;
-    align-items: center;
-    padding: 8px 10px;
-    margin-bottom: 4px;
-    border-radius: 6px;
-    background: #181c26;
-    border: 1px solid #1e2330;
-    cursor: pointer;
-    transition: all 0.15s;
-  }
-  .clip-item:hover { background: #1e2230; border-color: #2a3040; }
-  .clip-item.playing { background: #1a2230; border-color: #FFD47944; }
-  .clip-item .clip-icon {
-    width: 28px; height: 28px;
-    border-radius: 50%;
-    background: #222840;
-    display: flex; align-items: center; justify-content: center;
-    margin-right: 10px;
-    font-size: 12px;
-    flex-shrink: 0;
-  }
-  .clip-item.playing .clip-icon { background: #FFD47930; color: #FFD479; }
-  .clip-item .clip-name {
-    flex: 1;
-    font-size: 12px;
-    font-weight: 500;
-    color: #bbc;
-  }
-  .clip-item.playing .clip-name { color: #FFD479; }
-  .clip-item .clip-dur {
-    font-size: 10px;
-    color: #556;
-    font-family: 'Roboto Mono', monospace;
-  }
+/* Transport bar */
+#transport { display: flex; align-items: center; gap: 6px; padding: 4px 10px; background: var(--bg3); border-bottom: 1px solid var(--border); min-height: 34px; flex-shrink: 0; }
+#transport button { background: var(--bg4); border: 1px solid var(--border); color: var(--text); width: 28px; height: 24px; border-radius: 3px; cursor: pointer; font-size: 13px; display: flex; align-items: center; justify-content: center; }
+#transport button:hover { background: var(--accent2); border-color: var(--accent); }
+#transport button.active { background: var(--accent2); border-color: var(--accent); color: #fff; }
+#transport .sep { width: 1px; height: 18px; background: var(--border); }
+#transport label { font-size: 10px; color: var(--text2); text-transform: uppercase; }
+#transport select, #transport input { background: var(--bg); border: 1px solid var(--border); color: var(--text); padding: 2px 6px; border-radius: 3px; font-size: 11px; }
+#transport .time-display { font-family: 'Roboto Mono', monospace; font-size: 12px; color: var(--yellow); min-width: 120px; }
+.tool-group { display: flex; gap: 2px; }
 
-  /* ── Mapping tab ──────────────────────────────────────────── */
-  .mapping-row {
-    display: flex;
-    align-items: center;
-    margin-bottom: 8px;
-    gap: 8px;
-  }
-  .mapping-row label {
-    width: 110px;
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    color: #889;
-    flex-shrink: 0;
-  }
-  .mapping-row select {
-    flex: 1;
-    padding: 6px 8px;
-    background: #181c26;
-    border: 1px solid #2a2e3a;
-    border-radius: 4px;
-    color: #bbc;
-    font-size: 12px;
-    cursor: pointer;
-    outline: none;
-  }
-  .mapping-row select:focus { border-color: #FFD47966; }
-  .mapping-row .loop-toggle {
-    width: 24px; height: 24px;
-    background: #181c26;
-    border: 1px solid #2a2e3a;
-    border-radius: 4px;
-    color: #556;
-    font-size: 14px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .mapping-row .loop-toggle.active { color: #FFD479; border-color: #FFD47966; }
-  .mapping-row .preview-btn {
-    width: 24px; height: 24px;
-    background: #181c26;
-    border: 1px solid #2a2e3a;
-    border-radius: 4px;
-    color: #556;
-    font-size: 11px;
-    cursor: pointer;
-    display: flex; align-items: center; justify-content: center;
-    flex-shrink: 0;
-  }
-  .mapping-row .preview-btn:hover { color: #FFD479; border-color: #FFD47966; }
+/* Track header + track area */
+#timeline-body { flex: 1; display: flex; overflow: hidden; }
+#track-headers { width: 140px; flex-shrink: 0; border-right: 1px solid var(--border); overflow-y: auto; }
+.track-header { height: 50px; border-bottom: 1px solid var(--border); padding: 4px 8px; display: flex; flex-direction: column; justify-content: center; background: var(--bg3); }
+.track-header .track-name { font-size: 11px; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 4px; }
+.track-header .track-name .color-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.track-header .track-controls { display: flex; align-items: center; gap: 4px; margin-top: 3px; }
+.track-header .track-controls label { font-size: 9px; color: var(--text2); }
+.track-header .track-controls input[type="range"] { width: 50px; height: 12px; }
+.track-header .track-controls button { background: none; border: none; color: var(--text2); font-size: 11px; cursor: pointer; padding: 0 2px; }
+.track-header .track-controls button:hover { color: var(--warn); }
+.track-header .mask-select { font-size: 9px; background: var(--bg); border: 1px solid var(--border); color: var(--text2); border-radius: 2px; padding: 0 2px; }
 
-  .section-heading {
-    font-size: 10px;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    color: #556;
-    margin: 16px 0 8px;
-    padding-bottom: 4px;
-    border-bottom: 1px solid #1e2330;
-  }
-  .section-heading:first-child { margin-top: 0; }
+/* Timeline canvas area */
+#timeline-scroll { flex: 1; overflow: auto; position: relative; }
+#timeline-canvas { position: relative; min-height: 100%; }
 
-  /* ── Blend controls ───────────────────────────────────────── */
-  .slider-row {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .slider-row label {
-    width: 110px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #889;
-    flex-shrink: 0;
-  }
-  .slider-row input[type="range"] {
-    flex: 1;
-    accent-color: #FFD479;
-    height: 4px;
-  }
-  .slider-row .val {
-    width: 40px;
-    font-size: 11px;
-    color: #FFD479;
-    text-align: right;
-    font-family: 'Roboto Mono', monospace;
-  }
+/* Ruler */
+#ruler { height: 22px; position: sticky; top: 0; z-index: 20; background: var(--bg3); border-bottom: 1px solid var(--border); cursor: pointer; }
 
-  /* ── Export section ───────────────────────────────────────── */
-  .export-btn {
-    width: 100%;
-    padding: 10px;
-    margin-top: 12px;
-    background: linear-gradient(135deg, #FFD47920, #FFD47910);
-    border: 1px solid #FFD47944;
-    border-radius: 6px;
-    color: #FFD479;
-    font-size: 12px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    cursor: pointer;
-    transition: all 0.2s;
-  }
-  .export-btn:hover { background: linear-gradient(135deg, #FFD47935, #FFD47920); }
+/* Track lanes */
+.track-lane { height: 50px; border-bottom: 1px solid var(--border); position: relative; }
+.track-lane:nth-child(odd) { background: rgba(255,255,255,0.01); }
+.track-lane.drop-hover { background: var(--accent-dim); }
 
-  .json-preview {
-    margin-top: 10px;
-    padding: 10px;
-    background: #0d1018;
-    border: 1px solid #1e2330;
-    border-radius: 6px;
-    font-family: 'Roboto Mono', monospace;
-    font-size: 10px;
-    color: #8a8;
-    white-space: pre-wrap;
-    word-break: break-all;
-    max-height: 200px;
-    overflow-y: auto;
-    display: none;
-  }
+/* Clips on timeline */
+.timeline-clip { position: absolute; top: 4px; height: 42px; border-radius: 4px; cursor: grab; display: flex; align-items: center; overflow: hidden; border: 1px solid rgba(255,255,255,0.2); font-size: 10px; color: #fff; user-select: none; min-width: 20px; }
+.timeline-clip:hover { border-color: var(--accent); z-index: 5; }
+.timeline-clip.selected { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent), 0 0 8px rgba(0,180,255,0.3); z-index: 10; }
+.timeline-clip .clip-label { padding: 0 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+.timeline-clip .clip-handle { position: absolute; top: 0; width: 6px; height: 100%; cursor: ew-resize; z-index: 5; }
+.timeline-clip .clip-handle.left { left: 0; border-left: 2px solid rgba(255,255,255,0.5); }
+.timeline-clip .clip-handle.right { right: 0; border-right: 2px solid rgba(255,255,255,0.5); }
+.timeline-clip .clip-handle:hover { background: rgba(255,255,255,0.15); }
 
-  /* ── Viewport ─────────────────────────────────────────────── */
-  #viewport {
-    flex: 1;
-    position: relative;
-    background: #0a0c10;
-  }
-  #viewport canvas { display: block; }
+/* Waveform-like decoration inside clips */
+.timeline-clip .clip-waves { position: absolute; inset: 0; opacity: 0.15; pointer-events: none; }
 
-  /* ── Info bar ─────────────────────────────────────────────── */
-  #info-bar {
-    position: absolute;
-    bottom: 0; left: 0; right: 0;
-    height: 36px;
-    background: linear-gradient(0deg, #0a0c10ee, #0a0c10aa);
-    display: flex;
-    align-items: center;
-    padding: 0 16px;
-    gap: 20px;
-    font-size: 11px;
-    font-family: 'Roboto Mono', monospace;
-    color: #667;
-    pointer-events: none;
-  }
-  #info-bar .info-label { color: #445; }
-  #info-bar .info-value { color: #FFD479; }
-  #info-bar .info-value.idle-val { color: #7a8a9a; }
+/* Playhead */
+#playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--warn); z-index: 30; pointer-events: none; }
+#playhead::before { content: ''; position: absolute; top: 0; left: -5px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 8px solid var(--warn); }
 
-  /* ── Progress bar ─────────────────────────────────────────── */
-  #progress-track {
-    position: absolute;
-    bottom: 36px; left: 0; right: 0;
-    height: 3px;
-    background: #1a1e28;
-  }
-  #progress-fill {
-    height: 100%;
-    background: #FFD479;
-    width: 0%;
-    transition: width 0.05s linear;
-  }
+/* Add track button */
+#add-track-btn { margin: 4px 8px; padding: 4px; background: var(--bg3); border: 1px dashed var(--border); border-radius: 3px; color: var(--text2); font-size: 11px; cursor: pointer; text-align: center; }
+#add-track-btn:hover { border-color: var(--accent); color: var(--accent); }
 
-  /* ── Loading overlay ──────────────────────────────────────── */
-  #loading {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    background: #0a0c10;
-    z-index: 100;
-    color: #FFD479;
-    font-size: 14px;
-    letter-spacing: 1px;
-  }
-  #loading .spinner {
-    width: 40px; height: 40px;
-    border: 3px solid #1e2330;
-    border-top-color: #FFD479;
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-    margin-bottom: 16px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+/* Export panel */
+#export-panel { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: var(--bg2); border: 1px solid var(--accent); border-radius: 8px; padding: 20px; z-index: 1000; min-width: 400px; }
+#export-panel h3 { color: var(--accent); margin-bottom: 10px; }
+#export-panel textarea { width: 100%; height: 200px; background: var(--bg); border: 1px solid var(--border); color: var(--text); font-family: 'Roboto Mono', monospace; font-size: 11px; padding: 8px; border-radius: 4px; }
+#export-panel .btn-row { margin-top: 10px; display: flex; gap: 8px; }
+#export-panel button { padding: 6px 16px; background: var(--accent2); border: none; color: #fff; border-radius: 4px; cursor: pointer; }
+#export-panel button:hover { background: var(--accent); }
+#export-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 999; }
 
-  /* ── Timeline scrubber ────────────────────────────────────── */
-  #scrubber {
-    position: absolute;
-    bottom: 39px; left: 0; right: 0;
-    height: 20px;
-    cursor: pointer;
-    z-index: 10;
-  }
+/* Scrollbar styling */
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #3a4050; }
+
+/* Drag ghost */
+.drag-ghost { position: fixed; padding: 4px 10px; background: var(--accent2); color: #fff; border-radius: 4px; font-size: 11px; pointer-events: none; z-index: 9999; opacity: 0.85; }
 </style>
 </head>
 <body>
-
-<!-- ── Sidebar ────────────────────────────────────────────── -->
-<div id="sidebar">
-  <div id="sidebar-header">
-    <h1>⚔ Anim Editor</h1>
-    <div class="subtitle">Tribes Character Animation Tool</div>
-  </div>
-
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="clips">Clips</button>
-    <button class="tab-btn" data-tab="mapping">Mapping</button>
-    <button class="tab-btn" data-tab="export">Export</button>
-  </div>
-
-  <!-- Clips tab -->
-  <div id="tab-clips" class="tab-panel active">
-    <div id="clip-list"></div>
-  </div>
-
-  <!-- Mapping tab -->
-  <div id="tab-mapping" class="tab-panel">
-    <div class="section-heading">Game State → Animation Clip</div>
-    <div id="mapping-list"></div>
-
-    <div class="section-heading">Blend Settings</div>
-    <div class="slider-row">
-      <label>Crossfade</label>
-      <input type="range" id="crossfade-slider" min="0" max="1" step="0.05" value="0.25">
-      <span class="val" id="crossfade-val">0.25s</span>
+<div id="app">
+  <!-- CLIP LIBRARY -->
+  <div id="library">
+    <div id="library-header">
+      <span>📚 Clip Library</span>
+      <span id="clip-count" style="color:var(--text2);font-weight:normal;">0 clips</span>
     </div>
-    <div class="slider-row">
-      <label>Playback Rate</label>
-      <input type="range" id="speed-slider" min="0.1" max="3" step="0.1" value="1.0">
-      <span class="val" id="speed-val">1.0x</span>
-    </div>
+    <div id="library-clips"></div>
   </div>
 
-  <!-- Export tab -->
-  <div id="tab-export" class="tab-panel">
-    <div class="section-heading">Export Animation Config</div>
-    <p style="font-size:11px;color:#667;margin-bottom:12px;line-height:1.5;">
-      Export the current game-state→clip mapping as JSON for use in <code style="color:#8a8;">renderer_characters.js</code>.
-    </p>
-    <button class="export-btn" id="btn-export-json">📋 Copy JSON to Clipboard</button>
-    <button class="export-btn" id="btn-download-json" style="margin-top:6px;">💾 Download JSON</button>
-    <div class="json-preview" id="json-preview"></div>
+  <!-- VIEWPORT -->
+  <div id="viewport">
+    <div id="viewport-overlay">
+      <div id="frame-info">Frame 0 / 0 | 0.000s</div>
+      <div id="viewport-controls">
+        <label style="font-size:10px;color:var(--text2);">FPS:</label>
+        <select id="fps-select">
+          <option value="24">24</option>
+          <option value="30" selected>30</option>
+          <option value="60">60</option>
+        </select>
+        <button id="btn-export" title="Export JSON">📦</button>
+      </div>
+    </div>
+    <div id="loading"><div class="spinner"></div></div>
+  </div>
+
+  <!-- TIMELINE -->
+  <div id="timeline">
+    <div id="transport">
+      <div class="tool-group">
+        <button id="btn-start" title="Go to start">⏮</button>
+        <button id="btn-prev" title="Previous frame">◀</button>
+        <button id="btn-play" title="Play/Pause">▶</button>
+        <button id="btn-next" title="Next frame">▶</button>
+        <button id="btn-end" title="Go to end">⏭</button>
+      </div>
+      <div class="sep"></div>
+      <div class="tool-group">
+        <button id="btn-razor" title="Razor (split clip at playhead)">✂️</button>
+        <button id="btn-delete" title="Delete selected clip">🗑</button>
+      </div>
+      <div class="sep"></div>
+      <span class="time-display" id="time-display">00:00.000 | F:0</span>
+      <div class="sep"></div>
+      <label>Zoom:</label>
+      <input type="range" id="zoom-slider" min="10" max="500" value="100" style="width:80px;">
+      <div class="sep"></div>
+      <label>Duration:</label>
+      <input type="number" id="timeline-duration" value="10" min="1" max="120" step="1" style="width:50px;"> s
+      <div style="flex:1;"></div>
+      <button id="btn-add-track" title="Add Track" style="width:auto;padding:0 8px;">+ Track</button>
+    </div>
+    <div id="timeline-body">
+      <div id="track-headers"></div>
+      <div id="timeline-scroll">
+        <div id="timeline-canvas">
+          <canvas id="ruler"></canvas>
+          <div id="track-lanes"></div>
+          <div id="playhead" style="left:0px;"></div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
-<!-- ── Viewport ───────────────────────────────────────────── -->
-<div id="viewport">
-  <div id="loading">
-    <div class="spinner"></div>
-    Loading character model…
-  </div>
-  <div id="scrubber"></div>
-  <div id="progress-track"><div id="progress-fill"></div></div>
-  <div id="info-bar">
-    <span><span class="info-label">CLIP </span><span class="info-value idle-val" id="info-clip">—</span></span>
-    <span><span class="info-label">TIME </span><span class="info-value" id="info-time">0.00</span><span class="info-label">s</span></span>
-    <span><span class="info-label">DUR </span><span class="info-value" id="info-dur">0.00</span><span class="info-label">s</span></span>
-    <span><span class="info-label">LOOP </span><span class="info-value" id="info-loop">—</span></span>
-    <span><span class="info-label">BONES </span><span class="info-value" id="info-bones">—</span></span>
+<!-- Export Panel -->
+<div id="export-overlay"></div>
+<div id="export-panel">
+  <h3>Export Animation Config</h3>
+  <textarea id="export-json" readonly></textarea>
+  <div class="btn-row">
+    <button id="btn-copy-json">📋 Copy to Clipboard</button>
+    <button id="btn-download-json">💾 Download JSON</button>
+    <button id="btn-close-export">Close</button>
   </div>
 </div>
 
-<!-- ── Three.js ───────────────────────────────────────────── -->
 <script type="importmap">
 {
   "imports": {
@@ -399,438 +215,878 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-// ── Constants ────────────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────────
 const MODEL_PATH = './crimson_sentinel_rigged.glb';
+const TRACK_COLORS = ['#2255aa','#aa4422','#22aa55','#aa22aa','#aa8822','#2288aa','#5533aa','#33aa88'];
+const BONE_SPLIT = 'mixamorigSpine2'; // sanitized name (Three.js strips colons from track names)
 
-const GAME_STATES = [
-  { id: 'idle',          label: 'Idle',          defaultClip: 'idle',       loop: true  },
-  { id: 'run',           label: 'Run',           defaultClip: 'run',        loop: true  },
-  { id: 'run_backward',  label: 'Run Backward',  defaultClip: 'run_backward', loop: true },
-  { id: 'strafe_left',   label: 'Strafe Left',   defaultClip: 'strafe',     loop: true  },
-  { id: 'strafe_right',  label: 'Strafe Right',  defaultClip: 'strafe',     loop: true  },
-  { id: 'jump',          label: 'Jump',          defaultClip: 'jump',       loop: false },
-  { id: 'jet',           label: 'Jetting',       defaultClip: 'jet',        loop: true  },
-  { id: 'ski',           label: 'Skiing',         defaultClip: 'ski',        loop: true  },
-  { id: 'fire',          label: 'Fire Weapon',   defaultClip: 'fire_rifle', loop: false },
-  { id: 'hard_landing',  label: 'Hard Landing',  defaultClip: 'hard_landing', loop: false },
-  { id: 'fall',          label: 'Falling',       defaultClip: 'fall',       loop: true  },
-  { id: 'death',         label: 'Death',         defaultClip: 'death',      loop: false },
-];
+// ─── STATE ────────────────────────────────────────────────────
+let gltf = null, model = null, mixer = null, skeleton = null;
+let allClips = {};     // name -> THREE.AnimationClip
+let clipList = [];     // [{name, duration}]
 
-// ── State ────────────────────────────────────────────────────
-let scene, camera, renderer, controls, clock, mixer;
-let model, clips = {};
-let activeAction = null, activeClipName = null;
-let crossfadeDuration = 0.25;
-let playbackRate = 1.0;
+// Bone name mapping: sanitized (no colons) -> bone object
+let boneMap = {};      // sanitizedName -> THREE.Bone
+let upperBodyBonesSanitized = new Set();
+let lowerBodyBonesSanitized = new Set();
 
-// Mapping state: gameState → { clip, loop }
-const mapping = {};
-GAME_STATES.forEach(gs => {
-  mapping[gs.id] = { clip: gs.defaultClip, loop: gs.loop };
-});
+// Timeline state
+let tracks = [];       // [{id, name, color, weight, mask, clips:[]}]
+let trackIdCounter = 0;
+let timelineClips = []; // [{id, trackId, clipName, startTime, trimStart, trimEnd, duration}]
+let clipIdCounter = 0;
+let selectedClipId = null;
 
-// ── Init Three.js ────────────────────────────────────────────
-function initScene() {
-  const vp = document.getElementById('viewport');
-  const w = vp.clientWidth, h = vp.clientHeight;
+// Playback
+let playing = false;
+let currentTime = 0;
+let timelineDuration = 10; // seconds
+let fps = 30;
+let pixelsPerSecond = 100;
+let activeTool = 'select'; // 'select' | 'razor'
 
+// Drag state
+let dragState = null; // {type, clipId, startX, startTime, ...}
+
+// Three.js
+let scene, camera, renderer3d, controls, clock;
+// Bone name mapping: sanitized (no colons) -> bone object
+let upperBodyBones = new Set();
+let lowerBodyBones = new Set();
+
+// ─── THREE.JS SETUP ──────────────────────────────────────────
+function initThree() {
+  const container = document.getElementById('viewport');
   scene = new THREE.Scene();
   scene.background = new THREE.Color(0x0a0c10);
-  scene.fog = new THREE.Fog(0x0a0c10, 20, 60);
 
-  camera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
-  camera.position.set(0, 1.2, 4);
+  camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+  camera.position.set(0, 1.2, 3.5);
 
-  renderer = new THREE.WebGLRenderer({ antialias: true });
-  renderer.setSize(w, h);
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  renderer.toneMappingExposure = 1.2;
-  renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-  vp.insertBefore(renderer.domElement, vp.firstChild);
+  renderer3d = new THREE.WebGLRenderer({ antialias: true });
+  renderer3d.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer3d.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer3d.toneMappingExposure = 1.0;
+  container.appendChild(renderer3d.domElement);
 
-  controls = new OrbitControls(camera, renderer.domElement);
+  controls = new OrbitControls(camera, renderer3d.domElement);
   controls.target.set(0, 0.9, 0);
   controls.enableDamping = true;
-  controls.dampingFactor = 0.08;
-  controls.maxDistance = 15;
-  controls.minDistance = 1;
+  controls.dampingFactor = 0.1;
   controls.update();
 
-  clock = new THREE.Clock();
-
-  // Lighting
-  const ambientLight = new THREE.AmbientLight(0x445566, 0.6);
-  scene.add(ambientLight);
-
-  const dirLight = new THREE.DirectionalLight(0xffeedd, 1.8);
-  dirLight.position.set(5, 8, 4);
-  dirLight.castShadow = true;
-  dirLight.shadow.mapSize.set(1024, 1024);
-  dirLight.shadow.camera.near = 0.5;
-  dirLight.shadow.camera.far = 25;
-  dirLight.shadow.camera.left = -5;
-  dirLight.shadow.camera.right = 5;
-  dirLight.shadow.camera.top = 5;
-  dirLight.shadow.camera.bottom = -5;
-  scene.add(dirLight);
-
-  const fillLight = new THREE.DirectionalLight(0x8899bb, 0.4);
-  fillLight.position.set(-3, 2, -2);
-  scene.add(fillLight);
-
-  const rimLight = new THREE.DirectionalLight(0xFFD479, 0.3);
-  rimLight.position.set(-1, 3, -4);
-  scene.add(rimLight);
+  // Lights
+  const dir = new THREE.DirectionalLight(0xffffff, 2.0);
+  dir.position.set(3, 5, 4);
+  dir.castShadow = true;
+  scene.add(dir);
+  scene.add(new THREE.HemisphereLight(0x8899bb, 0x223344, 0.8));
+  scene.add(new THREE.AmbientLight(0x404060, 0.3));
 
   // Ground grid
-  const gridHelper = new THREE.GridHelper(20, 40, 0x1a2030, 0x141822);
-  scene.add(gridHelper);
+  const grid = new THREE.GridHelper(10, 20, 0x333344, 0x222233);
+  scene.add(grid);
 
-  // Ground plane for shadows
-  const groundGeo = new THREE.PlaneGeometry(20, 20);
-  const groundMat = new THREE.ShadowMaterial({ opacity: 0.3 });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
+  // Ground plane for shadow reference
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(10, 10),
+    new THREE.MeshStandardMaterial({ color: 0x15181f, roughness: 0.9 })
+  );
   ground.rotation.x = -Math.PI / 2;
-  ground.receiveShadow = true;
+  ground.position.y = -0.01;
   scene.add(ground);
 
-  // Resize
-  window.addEventListener('resize', () => {
-    const w2 = vp.clientWidth, h2 = vp.clientHeight;
-    camera.aspect = w2 / h2;
-    camera.updateProjectionMatrix();
-    renderer.setSize(w2, h2);
+  clock = new THREE.Clock();
+  resizeViewport();
+}
+
+function resizeViewport() {
+  const container = document.getElementById('viewport');
+  const w = container.clientWidth, h = container.clientHeight;
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+  renderer3d.setSize(w, h);
+}
+
+// ─── LOAD MODEL ──────────────────────────────────────────────
+async function loadModel() {
+  return new Promise((resolve, reject) => {
+    new GLTFLoader().load(MODEL_PATH, (g) => {
+      gltf = g;
+      model = g.scene;
+      scene.add(model);
+
+      // Gather clips
+      for (const clip of g.animations) {
+        allClips[clip.name] = clip;
+        clipList.push({ name: clip.name, duration: clip.duration });
+      }
+      clipList.sort((a, b) => a.name.localeCompare(b.name));
+
+      // Material tuning
+      model.traverse(child => {
+        if (child.isMesh) {
+          child.castShadow = true;
+          child.receiveShadow = true;
+          if (child.material) {
+            child.material.envMapIntensity = 0.25;
+            child.material.roughness = Math.max(child.material.roughness, 0.55);
+            child.material.metalness = Math.min(child.material.metalness, 0.15);
+            child.material.needsUpdate = true;
+          }
+        }
+        if (child.isSkinnedMesh && child.skeleton) {
+          skeleton = child.skeleton;
+        }
+      });
+
+      // Build bone sets for masking
+      if (skeleton) buildBoneSets();
+
+      // Create mixer
+      mixer = new THREE.AnimationMixer(model);
+
+      document.getElementById('loading').style.display = 'none';
+      resolve();
+    }, undefined, reject);
   });
 }
 
-// ── Load Model ───────────────────────────────────────────────
-async function loadModel() {
-  const loader = new GLTFLoader();
-  const gltf = await new Promise((resolve, reject) => {
-    loader.load(MODEL_PATH, resolve, undefined, reject);
+function buildBoneSets() {
+  if (!skeleton) return;
+
+  // Build sanitized name -> bone mapping
+  // Three.js sanitizeNodeName strips colons, brackets, dots, slashes
+  function sanitize(name) { return name.replace(/[\[\].:\/]/g, ''); }
+
+  for (const bone of skeleton.bones) {
+    boneMap[sanitize(bone.name)] = bone;
+  }
+
+  // Find the split bone
+  const splitBoneSanitized = BONE_SPLIT;
+  const splitBone = boneMap[splitBoneSanitized];
+  if (!splitBone) {
+    console.warn('[NLE] Split bone not found:', splitBoneSanitized, 'Available:', Object.keys(boneMap).slice(0, 5));
+    return;
+  }
+
+  // Walk descendants of split bone → upper body (using sanitized names)
+  function collectDescendants(bone, set) {
+    set.add(sanitize(bone.name));
+    for (const child of bone.children) {
+      if (child.isBone) collectDescendants(child, set);
+    }
+  }
+  collectDescendants(splitBone, upperBodyBonesSanitized);
+
+  // Everything else is lower body
+  for (const bone of skeleton.bones) {
+    const sName = sanitize(bone.name);
+    if (!upperBodyBonesSanitized.has(sName)) {
+      lowerBodyBonesSanitized.add(sName);
+    }
+  }
+  console.log('[NLE] Bone split:', upperBodyBonesSanitized.size, 'upper,', lowerBodyBonesSanitized.size, 'lower');
+}
+
+// ─── CLIP LIBRARY UI ─────────────────────────────────────────
+function buildLibrary() {
+  const container = document.getElementById('library-clips');
+  container.innerHTML = '';
+  document.getElementById('clip-count').textContent = `${clipList.length} clips`;
+
+  for (const clip of clipList) {
+    const el = document.createElement('div');
+    el.className = 'lib-clip';
+    el.draggable = true;
+    el.dataset.clipName = clip.name;
+    el.innerHTML = `
+      <span>${clip.name}</span>
+      <span class="dur">${clip.duration.toFixed(2)}s</span>
+    `;
+    // Drag from library
+    el.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('text/plain', clip.name);
+      e.dataTransfer.effectAllowed = 'copy';
+      // Custom ghost
+      const ghost = document.createElement('div');
+      ghost.className = 'drag-ghost';
+      ghost.textContent = clip.name;
+      document.body.appendChild(ghost);
+      e.dataTransfer.setDragImage(ghost, 0, 0);
+      setTimeout(() => ghost.remove(), 0);
+    });
+    container.appendChild(el);
+  }
+}
+
+// ─── TRACK MANAGEMENT ────────────────────────────────────────
+function addTrack(name) {
+  const id = trackIdCounter++;
+  const color = TRACK_COLORS[id % TRACK_COLORS.length];
+  const track = { id, name: name || `Track ${id + 1}`, color, weight: 1.0, mask: 'full', clips: [] };
+  tracks.push(track);
+  renderTimeline();
+  return track;
+}
+
+function removeTrack(id) {
+  timelineClips = timelineClips.filter(c => c.trackId !== id);
+  tracks = tracks.filter(t => t.id !== id);
+  renderTimeline();
+}
+
+// ─── TIMELINE CLIP MANAGEMENT ────────────────────────────────
+function addTimelineClip(trackId, clipName, startTime) {
+  const srcClip = allClips[clipName];
+  if (!srcClip) return null;
+  const id = clipIdCounter++;
+  const tc = {
+    id,
+    trackId,
+    clipName,
+    startTime: startTime || 0,
+    trimStart: 0,                  // seconds trimmed from beginning
+    trimEnd: 0,                    // seconds trimmed from end
+    fullDuration: srcClip.duration, // original clip duration
+    get duration() { return this.fullDuration - this.trimStart - this.trimEnd; },
+    get endTime() { return this.startTime + this.duration; }
+  };
+  timelineClips.push(tc);
+  renderTimeline();
+  return tc;
+}
+
+function removeTimelineClip(id) {
+  timelineClips = timelineClips.filter(c => c.id !== id);
+  if (selectedClipId === id) selectedClipId = null;
+  renderTimeline();
+}
+
+function splitClipAtTime(id, time) {
+  const clip = timelineClips.find(c => c.id === id);
+  if (!clip) return;
+  const localTime = time - clip.startTime;
+  if (localTime <= 0.01 || localTime >= clip.duration - 0.01) return;
+
+  // Create second half
+  const id2 = clipIdCounter++;
+  const secondStart = clip.trimStart + localTime;
+  const tc2 = {
+    id: id2,
+    trackId: clip.trackId,
+    clipName: clip.clipName,
+    startTime: time,
+    trimStart: secondStart,
+    trimEnd: clip.trimEnd,
+    fullDuration: clip.fullDuration,
+    get duration() { return this.fullDuration - this.trimStart - this.trimEnd; },
+    get endTime() { return this.startTime + this.duration; }
+  };
+  timelineClips.push(tc2);
+
+  // Trim first half
+  clip.trimEnd = clip.fullDuration - secondStart;
+  renderTimeline();
+}
+
+// ─── TIMELINE RENDERING ──────────────────────────────────────
+function renderTimeline() {
+  renderTrackHeaders();
+  renderTrackLanes();
+  renderRuler();
+  updatePlayhead();
+}
+
+function renderTrackHeaders() {
+  const container = document.getElementById('track-headers');
+  container.innerHTML = '';
+  for (const track of tracks) {
+    const el = document.createElement('div');
+    el.className = 'track-header';
+    el.innerHTML = `
+      <div class="track-name">
+        <span class="color-dot" style="background:${track.color};"></span>
+        ${track.name}
+      </div>
+      <div class="track-controls">
+        <label>W:</label>
+        <input type="range" min="0" max="1" step="0.05" value="${track.weight}" data-track="${track.id}" class="weight-slider">
+        <select class="mask-select" data-track="${track.id}">
+          <option value="full" ${track.mask==='full'?'selected':''}>Full</option>
+          <option value="upper" ${track.mask==='upper'?'selected':''}>Upper</option>
+          <option value="lower" ${track.mask==='lower'?'selected':''}>Lower</option>
+        </select>
+        <button class="track-del" data-track="${track.id}" title="Delete track">✕</button>
+      </div>
+    `;
+    container.appendChild(el);
+  }
+  // Event listeners
+  container.querySelectorAll('.weight-slider').forEach(sl => {
+    sl.addEventListener('input', (e) => {
+      const t = tracks.find(t => t.id === +e.target.dataset.track);
+      if (t) t.weight = +e.target.value;
+    });
   });
+  container.querySelectorAll('.mask-select').forEach(sel => {
+    sel.addEventListener('change', (e) => {
+      const t = tracks.find(t => t.id === +e.target.dataset.track);
+      if (t) t.mask = e.target.value;
+    });
+  });
+  container.querySelectorAll('.track-del').forEach(btn => {
+    btn.addEventListener('click', (e) => removeTrack(+e.target.dataset.track));
+  });
+}
 
-  model = gltf.scene;
-  model.updateWorldMatrix(true, true);
+function renderTrackLanes() {
+  const container = document.getElementById('track-lanes');
+  container.innerHTML = '';
+  const totalWidth = timelineDuration * pixelsPerSecond;
 
-  // Compute foot offset
-  const box = new THREE.Box3().setFromObject(model);
-  const footOffset = box.min.y;
-  model.position.y = -footOffset; // feet on ground
+  for (const track of tracks) {
+    const lane = document.createElement('div');
+    lane.className = 'track-lane';
+    lane.style.width = totalWidth + 'px';
+    lane.dataset.trackId = track.id;
 
-  // Materials: tone down for viewport
-  model.traverse(child => {
-    if (child.isMesh) {
-      child.castShadow = true;
-      child.receiveShadow = true;
-      if (child.material) {
-        child.material.envMapIntensity = 0.3;
-        child.material.roughness = Math.max(child.material.roughness, 0.5);
-        child.material.metalness = Math.min(child.material.metalness, 0.2);
-        child.material.needsUpdate = true;
+    // Drop zone
+    lane.addEventListener('dragover', (e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; lane.classList.add('drop-hover'); });
+    lane.addEventListener('dragleave', () => lane.classList.remove('drop-hover'));
+    lane.addEventListener('drop', (e) => {
+      e.preventDefault();
+      lane.classList.remove('drop-hover');
+      const clipName = e.dataTransfer.getData('text/plain');
+      if (!clipName || !allClips[clipName]) return;
+      const rect = lane.getBoundingClientRect();
+      const scrollLeft = document.getElementById('timeline-scroll').scrollLeft;
+      const x = e.clientX - rect.left + scrollLeft;
+      const startTime = Math.max(0, x / pixelsPerSecond);
+      addTimelineClip(track.id, clipName, startTime);
+    });
+
+    // Render clips on this track
+    const trackClips = timelineClips.filter(c => c.trackId === track.id);
+    for (const tc of trackClips) {
+      const clipEl = document.createElement('div');
+      clipEl.className = 'timeline-clip' + (tc.id === selectedClipId ? ' selected' : '');
+      const left = tc.startTime * pixelsPerSecond;
+      const width = tc.duration * pixelsPerSecond;
+      clipEl.style.left = left + 'px';
+      clipEl.style.width = Math.max(width, 20) + 'px';
+      clipEl.style.background = track.color;
+      clipEl.dataset.clipId = tc.id;
+
+      // Waveform decoration
+      clipEl.innerHTML = `
+        <div class="clip-handle left"></div>
+        <div class="clip-label">${tc.clipName}${tc.trimStart > 0 || tc.trimEnd > 0 ? ' ✂' : ''}</div>
+        <div class="clip-handle right"></div>
+      `;
+
+      // Click to select or razor
+      clipEl.addEventListener('mousedown', (e) => {
+        if (e.target.classList.contains('clip-handle')) {
+          // Handle trim drag
+          const side = e.target.classList.contains('left') ? 'trimLeft' : 'trimRight';
+          startTrimDrag(e, tc, side);
+          return;
+        }
+        if (activeTool === 'razor') {
+          const rect = lane.getBoundingClientRect();
+          const scrollLeft = document.getElementById('timeline-scroll').scrollLeft;
+          const x = e.clientX - rect.left + scrollLeft;
+          const time = x / pixelsPerSecond;
+          splitClipAtTime(tc.id, time);
+          return;
+        }
+        // Select + start move drag
+        selectedClipId = tc.id;
+        renderTimeline();
+        startMoveDrag(e, tc);
+      });
+
+      lane.appendChild(clipEl);
+    }
+
+    container.appendChild(lane);
+  }
+
+  // Set canvas width
+  document.getElementById('timeline-canvas').style.width = totalWidth + 'px';
+}
+
+function renderRuler() {
+  const canvas = document.getElementById('ruler');
+  const totalWidth = timelineDuration * pixelsPerSecond;
+  canvas.width = totalWidth;
+  canvas.height = 22;
+  canvas.style.width = totalWidth + 'px';
+
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Determine tick intervals based on zoom
+  let majorInterval, minorInterval;
+  if (pixelsPerSecond >= 200) { majorInterval = 0.5; minorInterval = 1/fps; }
+  else if (pixelsPerSecond >= 80) { majorInterval = 1; minorInterval = 0.5; }
+  else if (pixelsPerSecond >= 30) { majorInterval = 2; minorInterval = 1; }
+  else { majorInterval = 5; minorInterval = 1; }
+
+  // Minor ticks
+  ctx.strokeStyle = '#2a3040';
+  ctx.lineWidth = 1;
+  for (let t = 0; t <= timelineDuration; t += minorInterval) {
+    const x = Math.round(t * pixelsPerSecond) + 0.5;
+    ctx.beginPath(); ctx.moveTo(x, 16); ctx.lineTo(x, 22); ctx.stroke();
+  }
+
+  // Major ticks + labels
+  ctx.strokeStyle = '#556';
+  ctx.fillStyle = '#8890a0';
+  ctx.font = '9px monospace';
+  for (let t = 0; t <= timelineDuration; t += majorInterval) {
+    const x = Math.round(t * pixelsPerSecond) + 0.5;
+    ctx.beginPath(); ctx.moveTo(x, 8); ctx.lineTo(x, 22); ctx.stroke();
+    ctx.fillText(formatTime(t), x + 3, 7);
+  }
+}
+
+function updatePlayhead() {
+  const ph = document.getElementById('playhead');
+  ph.style.left = (currentTime * pixelsPerSecond) + 'px';
+
+  const frame = Math.floor(currentTime * fps);
+  const totalFrames = Math.floor(timelineDuration * fps);
+  document.getElementById('frame-info').textContent =
+    `Frame ${frame} / ${totalFrames} | ${currentTime.toFixed(3)}s`;
+  document.getElementById('time-display').textContent =
+    `${formatTime(currentTime)} | F:${frame}`;
+}
+
+function formatTime(t) {
+  const m = Math.floor(t / 60);
+  const s = t % 60;
+  return `${m.toString().padStart(2,'0')}:${s.toFixed(s < 10 ? 2 : 1).padStart(5,'0')}`;
+}
+
+// ─── DRAG OPERATIONS ─────────────────────────────────────────
+function startMoveDrag(e, clip) {
+  const startX = e.clientX;
+  const origStartTime = clip.startTime;
+  const origTrackId = clip.trackId;
+
+  function onMove(e2) {
+    const dx = e2.clientX - startX;
+    clip.startTime = Math.max(0, origStartTime + dx / pixelsPerSecond);
+    // Snap to frame
+    clip.startTime = Math.round(clip.startTime * fps) / fps;
+
+    // Check if mouse is over a different track lane
+    const lanes = document.querySelectorAll('.track-lane');
+    for (const lane of lanes) {
+      const rect = lane.getBoundingClientRect();
+      if (e2.clientY >= rect.top && e2.clientY <= rect.bottom) {
+        clip.trackId = +lane.dataset.trackId;
+        break;
       }
     }
-  });
-
-  scene.add(model);
-
-  // Skeleton info
-  let boneCount = 0;
-  model.traverse(c => { if (c.isBone) boneCount++; });
-  document.getElementById('info-bones').textContent = boneCount;
-
-  // Animation
-  mixer = new THREE.AnimationMixer(model);
-  for (const clip of gltf.animations) {
-    clips[clip.name] = clip;
+    renderTimeline();
   }
-
-  // Hide loading
-  document.getElementById('loading').style.display = 'none';
-
-  return Object.keys(clips);
-}
-
-// ── Play Clip ────────────────────────────────────────────────
-function playClip(name, loop = true, fade = null) {
-  if (!clips[name] || !mixer) return;
-  if (fade === null) fade = crossfadeDuration;
-
-  const clip = clips[name];
-  const newAction = mixer.clipAction(clip);
-  newAction.setLoop(loop ? THREE.LoopRepeat : THREE.LoopOnce, loop ? Infinity : 1);
-  newAction.clampWhenFinished = !loop;
-  newAction.timeScale = playbackRate;
-
-  if (activeAction && activeAction !== newAction) {
-    activeAction.fadeOut(fade);
+  function onUp() {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
   }
-
-  newAction.reset().fadeIn(fade).play();
-  activeAction = newAction;
-  activeClipName = name;
-
-  // Update UI
-  updateClipListHighlight(name);
-  updateInfoBar();
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
 }
 
-function stopAll() {
-  if (mixer) mixer.stopAllAction();
-  activeAction = null;
-  activeClipName = null;
-  updateClipListHighlight(null);
-  updateInfoBar();
+function startTrimDrag(e, clip, side) {
+  e.stopPropagation();
+  const startX = e.clientX;
+  const origTrimStart = clip.trimStart;
+  const origTrimEnd = clip.trimEnd;
+  const origStartTime = clip.startTime;
+
+  function onMove(e2) {
+    const dx = e2.clientX - startX;
+    const dt = dx / pixelsPerSecond;
+    if (side === 'trimLeft') {
+      const newTrim = Math.max(0, Math.min(clip.fullDuration - clip.trimEnd - 0.03, origTrimStart + dt));
+      const trimDelta = newTrim - origTrimStart;
+      clip.trimStart = newTrim;
+      clip.startTime = origStartTime + trimDelta;
+    } else {
+      clip.trimEnd = Math.max(0, Math.min(clip.fullDuration - clip.trimStart - 0.03, origTrimEnd - dt));
+    }
+    // Snap
+    clip.trimStart = Math.round(clip.trimStart * fps) / fps;
+    clip.trimEnd = Math.round(clip.trimEnd * fps) / fps;
+    clip.startTime = Math.round(clip.startTime * fps) / fps;
+    renderTimeline();
+  }
+  function onUp() {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', onUp);
+  }
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', onUp);
 }
 
-// ── UI: Clip List ────────────────────────────────────────────
-function buildClipList(clipNames) {
-  const container = document.getElementById('clip-list');
-  container.innerHTML = '';
+// ─── PLAYBACK / ANIMATION EVALUATION ─────────────────────────
+// Instead of using AnimationMixer's built-in system (which doesn't support
+// multi-track weighted blending with masks easily), we manually sample
+// clip tracks and apply them to bones.
+//
+// Each frame:
+// 1. Reset all bones to bind pose
+// 2. For each track (bottom to top), for each clip active at currentTime:
+//    - Sample the clip at the local time
+//    - Apply to bones with track weight and mask
 
-  clipNames.sort().forEach(name => {
-    const clip = clips[name];
-    const item = document.createElement('div');
-    item.className = 'clip-item';
-    item.dataset.clip = name;
-    item.innerHTML = `
-      <div class="clip-icon">▶</div>
-      <div class="clip-name">${name}</div>
-      <div class="clip-dur">${clip.duration.toFixed(2)}s</div>
-    `;
-    item.addEventListener('click', () => {
-      if (activeClipName === name) {
-        stopAll();
-      } else {
-        playClip(name, true);
-      }
-    });
-    container.appendChild(item);
-  });
-}
+let bindPose = {}; // sanitizedBoneName -> {pos, quat, scale}
 
-function updateClipListHighlight(activeName) {
-  document.querySelectorAll('.clip-item').forEach(el => {
-    el.classList.toggle('playing', el.dataset.clip === activeName);
-  });
-}
-
-// ── UI: Mapping ──────────────────────────────────────────────
-function buildMappingPanel(clipNames) {
-  const container = document.getElementById('mapping-list');
-  container.innerHTML = '';
-
-  GAME_STATES.forEach(gs => {
-    const row = document.createElement('div');
-    row.className = 'mapping-row';
-
-    // Label
-    const label = document.createElement('label');
-    label.textContent = gs.label;
-
-    // Dropdown
-    const select = document.createElement('select');
-    select.dataset.state = gs.id;
-    const sorted = [...clipNames].sort();
-    sorted.forEach(cn => {
-      const opt = document.createElement('option');
-      opt.value = cn;
-      opt.textContent = cn;
-      if (cn === mapping[gs.id].clip) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener('change', () => {
-      mapping[gs.id].clip = select.value;
-    });
-
-    // Loop toggle
-    const loopBtn = document.createElement('button');
-    loopBtn.className = 'loop-toggle' + (mapping[gs.id].loop ? ' active' : '');
-    loopBtn.textContent = '↻';
-    loopBtn.title = 'Toggle looping';
-    loopBtn.addEventListener('click', () => {
-      mapping[gs.id].loop = !mapping[gs.id].loop;
-      loopBtn.classList.toggle('active', mapping[gs.id].loop);
-    });
-
-    // Preview button
-    const previewBtn = document.createElement('button');
-    previewBtn.className = 'preview-btn';
-    previewBtn.textContent = '▶';
-    previewBtn.title = 'Preview this mapping';
-    previewBtn.addEventListener('click', () => {
-      playClip(mapping[gs.id].clip, mapping[gs.id].loop);
-    });
-
-    row.appendChild(label);
-    row.appendChild(select);
-    row.appendChild(loopBtn);
-    row.appendChild(previewBtn);
-    container.appendChild(row);
-  });
-}
-
-// ── UI: Blend Controls ───────────────────────────────────────
-function initBlendControls() {
-  const cfSlider = document.getElementById('crossfade-slider');
-  const cfVal = document.getElementById('crossfade-val');
-  cfSlider.addEventListener('input', () => {
-    crossfadeDuration = parseFloat(cfSlider.value);
-    cfVal.textContent = crossfadeDuration.toFixed(2) + 's';
-  });
-
-  const spSlider = document.getElementById('speed-slider');
-  const spVal = document.getElementById('speed-val');
-  spSlider.addEventListener('input', () => {
-    playbackRate = parseFloat(spSlider.value);
-    spVal.textContent = playbackRate.toFixed(1) + 'x';
-    if (activeAction) activeAction.timeScale = playbackRate;
-  });
-}
-
-// ── UI: Tabs ─────────────────────────────────────────────────
-function initTabs() {
-  document.querySelectorAll('.tab-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-      document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
-      btn.classList.add('active');
-      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
-    });
-  });
-}
-
-// ── UI: Export ───────────────────────────────────────────────
-function getExportJSON() {
-  const config = {
-    _comment: 'Generated by Tribes Animation Editor',
-    crossfadeDuration,
-    states: {}
-  };
-  GAME_STATES.forEach(gs => {
-    config.states[gs.id] = {
-      clip: mapping[gs.id].clip,
-      loop: mapping[gs.id].loop
+function captureBindPose() {
+  if (!skeleton) return;
+  function sanitize(name) { return name.replace(/[\[\].:\/]/g, ''); }
+  for (const bone of skeleton.bones) {
+    bindPose[sanitize(bone.name)] = {
+      pos: bone.position.clone(),
+      quat: bone.quaternion.clone(),
+      scale: bone.scale.clone()
     };
+  }
+}
+
+function resetToBindPose() {
+  if (!skeleton) return;
+  for (const sName in bindPose) {
+    const bone = boneMap[sName];
+    const bp = bindPose[sName];
+    if (bone && bp) {
+      bone.position.copy(bp.pos);
+      bone.quaternion.copy(bp.quat);
+      bone.scale.copy(bp.scale);
+    }
+  }
+}
+
+// Sample a clip at a given time and return bone transforms
+// Cache interpolants to avoid recreating them every frame
+const _interpCache = new Map(); // "clipName:trackIdx" -> interpolant
+
+function sampleClip(clipName, localTime) {
+  const clip = allClips[clipName];
+  if (!clip) return null;
+  const result = {};
+  for (let i = 0; i < clip.tracks.length; i++) {
+    const track = clip.tracks[i];
+    // Parse track name: "sanitizedBoneName.property"
+    const dotIdx = track.name.lastIndexOf('.');
+    if (dotIdx < 0) continue;
+    const boneName = track.name.substring(0, dotIdx);
+    const prop = track.name.substring(dotIdx + 1);
+    // Clamp time to clip range
+    const t = Math.max(0, Math.min(localTime, clip.duration));
+    // Get or create interpolant
+    const cacheKey = clipName + ':' + i;
+    let interp = _interpCache.get(cacheKey);
+    if (!interp) {
+      interp = track.createInterpolant();
+      _interpCache.set(cacheKey, interp);
+    }
+    interp.evaluate(t);
+    const sampled = Array.from(interp.resultBuffer);
+    if (!result[boneName]) result[boneName] = {};
+    result[boneName][prop] = sampled;
+  }
+  return result;
+}
+
+function evaluateTimeline() {
+  if (!skeleton || tracks.length === 0) return;
+  resetToBindPose();
+
+  // Accumulation buffers
+  const boneWeights = {}; // sanitizedBoneName -> total weight applied
+
+  for (const track of tracks) {
+    if (track.weight <= 0) continue;
+    const trackClips = timelineClips.filter(c => c.trackId === track.id);
+
+    for (const tc of trackClips) {
+      // Check if clip is active at currentTime
+      if (currentTime < tc.startTime || currentTime >= tc.endTime) continue;
+
+      const localTime = (currentTime - tc.startTime) + tc.trimStart;
+      const sampled = sampleClip(tc.clipName, localTime);
+      if (!sampled) continue;
+
+      // Apply to bones (boneName here is already sanitized from track parsing)
+      for (const boneName in sampled) {
+        // Mask check using sanitized names
+        if (track.mask === 'upper' && !upperBodyBonesSanitized.has(boneName)) continue;
+        if (track.mask === 'lower' && !lowerBodyBonesSanitized.has(boneName)) continue;
+
+        const bone = boneMap[boneName];
+        if (!bone) continue;
+
+        const data = sampled[boneName];
+        const w = track.weight;
+        if (!boneWeights[boneName]) boneWeights[boneName] = 0;
+        const existingW = boneWeights[boneName];
+        const blendW = (existingW + w) > 0 ? w / (existingW + w) : 1;
+
+        if (data.quaternion) {
+          const q = new THREE.Quaternion(data.quaternion[0], data.quaternion[1], data.quaternion[2], data.quaternion[3]);
+          bone.quaternion.slerp(q, blendW);
+        }
+        if (data.position) {
+          const p = new THREE.Vector3(data.position[0], data.position[1], data.position[2]);
+          bone.position.lerp(p, blendW);
+        }
+        if (data.scale) {
+          const s = new THREE.Vector3(data.scale[0], data.scale[1], data.scale[2]);
+          bone.scale.lerp(s, blendW);
+        }
+        boneWeights[boneName] = existingW + w;
+      }
+    }
+  }
+}
+
+// ─── RENDER LOOP ─────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+  controls.update();
+
+  if (playing) {
+    currentTime += delta;
+    if (currentTime >= timelineDuration) {
+      currentTime = 0; // loop
+    }
+    updatePlayhead();
+    // Auto-scroll playhead into view
+    const scroll = document.getElementById('timeline-scroll');
+    const phX = currentTime * pixelsPerSecond;
+    if (phX > scroll.scrollLeft + scroll.clientWidth - 40 || phX < scroll.scrollLeft) {
+      scroll.scrollLeft = phX - 60;
+    }
+  }
+
+  // Evaluate timeline and apply to skeleton
+  evaluateTimeline();
+
+  renderer3d.render(scene, camera);
+}
+
+// ─── RULER CLICK → SCRUB ────────────────────────────────────
+function initRulerScrub() {
+  const ruler = document.getElementById('ruler');
+  const scroll = document.getElementById('timeline-scroll');
+
+  function scrub(e) {
+    const rect = ruler.getBoundingClientRect();
+    const x = e.clientX - rect.left + scroll.scrollLeft;
+    currentTime = Math.max(0, Math.min(timelineDuration, x / pixelsPerSecond));
+    currentTime = Math.round(currentTime * fps) / fps;
+    updatePlayhead();
+  }
+
+  ruler.addEventListener('mousedown', (e) => {
+    scrub(e);
+    function onMove(e2) { scrub(e2); }
+    function onUp() {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
   });
+
+  // Also allow clicking on the track area to scrub
+  document.getElementById('track-lanes').addEventListener('mousedown', (e) => {
+    // Only if clicking empty space (not a clip)
+    if (e.target.classList.contains('track-lane')) {
+      const rect = e.target.getBoundingClientRect();
+      const x = e.clientX - rect.left + scroll.scrollLeft;
+      currentTime = Math.max(0, Math.min(timelineDuration, x / pixelsPerSecond));
+      currentTime = Math.round(currentTime * fps) / fps;
+      selectedClipId = null;
+      updatePlayhead();
+      renderTimeline();
+    }
+  });
+}
+
+// ─── TRANSPORT CONTROLS ──────────────────────────────────────
+function initTransport() {
+  document.getElementById('btn-play').addEventListener('click', () => {
+    playing = !playing;
+    document.getElementById('btn-play').textContent = playing ? '⏸' : '▶';
+    document.getElementById('btn-play').classList.toggle('active', playing);
+  });
+  document.getElementById('btn-start').addEventListener('click', () => {
+    currentTime = 0; updatePlayhead();
+  });
+  document.getElementById('btn-end').addEventListener('click', () => {
+    currentTime = timelineDuration; updatePlayhead();
+  });
+  document.getElementById('btn-prev').addEventListener('click', () => {
+    currentTime = Math.max(0, currentTime - 1/fps);
+    currentTime = Math.round(currentTime * fps) / fps;
+    updatePlayhead();
+  });
+  document.getElementById('btn-next').addEventListener('click', () => {
+    currentTime = Math.min(timelineDuration, currentTime + 1/fps);
+    currentTime = Math.round(currentTime * fps) / fps;
+    updatePlayhead();
+  });
+
+  // Razor tool
+  document.getElementById('btn-razor').addEventListener('click', () => {
+    activeTool = activeTool === 'razor' ? 'select' : 'razor';
+    document.getElementById('btn-razor').classList.toggle('active', activeTool === 'razor');
+    document.body.style.cursor = activeTool === 'razor' ? 'crosshair' : '';
+  });
+
+  // Delete
+  document.getElementById('btn-delete').addEventListener('click', () => {
+    if (selectedClipId !== null) removeTimelineClip(selectedClipId);
+  });
+
+  // Zoom
+  document.getElementById('zoom-slider').addEventListener('input', (e) => {
+    pixelsPerSecond = +e.target.value;
+    renderTimeline();
+  });
+
+  // Duration
+  document.getElementById('timeline-duration').addEventListener('change', (e) => {
+    timelineDuration = Math.max(1, +e.target.value);
+    renderTimeline();
+  });
+
+  // FPS
+  document.getElementById('fps-select').addEventListener('change', (e) => {
+    fps = +e.target.value;
+  });
+
+  // Add track
+  document.getElementById('btn-add-track').addEventListener('click', () => addTrack());
+
+  // Keyboard shortcuts
+  window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+    switch(e.key) {
+      case ' ': e.preventDefault(); document.getElementById('btn-play').click(); break;
+      case 'ArrowLeft': document.getElementById('btn-prev').click(); break;
+      case 'ArrowRight': document.getElementById('btn-next').click(); break;
+      case 'Home': document.getElementById('btn-start').click(); break;
+      case 'End': document.getElementById('btn-end').click(); break;
+      case 'Delete': case 'Backspace':
+        if (selectedClipId !== null) { e.preventDefault(); removeTimelineClip(selectedClipId); }
+        break;
+      case 'c': case 'C':
+        if (activeTool === 'razor') { activeTool = 'select'; }
+        else { activeTool = 'razor'; }
+        document.getElementById('btn-razor').classList.toggle('active', activeTool === 'razor');
+        document.body.style.cursor = activeTool === 'razor' ? 'crosshair' : '';
+        break;
+    }
+  });
+}
+
+// ─── EXPORT ──────────────────────────────────────────────────
+function buildExportConfig() {
+  const config = {
+    fps,
+    duration: timelineDuration,
+    tracks: tracks.map(t => ({
+      name: t.name,
+      weight: t.weight,
+      mask: t.mask,
+      clips: timelineClips.filter(c => c.trackId === t.id).map(c => ({
+        clipName: c.clipName,
+        startTime: +c.startTime.toFixed(4),
+        trimStart: +c.trimStart.toFixed(4),
+        trimEnd: +c.trimEnd.toFixed(4),
+        duration: +c.duration.toFixed(4)
+      }))
+    }))
+  };
   return JSON.stringify(config, null, 2);
 }
 
 function initExport() {
-  const preview = document.getElementById('json-preview');
+  const panel = document.getElementById('export-panel');
+  const overlay = document.getElementById('export-overlay');
 
-  document.getElementById('btn-export-json').addEventListener('click', () => {
-    const json = getExportJSON();
-    navigator.clipboard.writeText(json).then(() => {
-      const btn = document.getElementById('btn-export-json');
-      btn.textContent = '✓ Copied!';
-      setTimeout(() => btn.textContent = '📋 Copy JSON to Clipboard', 1500);
-    });
-    preview.textContent = json;
-    preview.style.display = 'block';
+  document.getElementById('btn-export').addEventListener('click', () => {
+    document.getElementById('export-json').value = buildExportConfig();
+    panel.style.display = 'block';
+    overlay.style.display = 'block';
   });
-
+  document.getElementById('btn-close-export').addEventListener('click', () => {
+    panel.style.display = 'none';
+    overlay.style.display = 'none';
+  });
+  overlay.addEventListener('click', () => {
+    panel.style.display = 'none';
+    overlay.style.display = 'none';
+  });
+  document.getElementById('btn-copy-json').addEventListener('click', () => {
+    const ta = document.getElementById('export-json');
+    navigator.clipboard.writeText(ta.value);
+    document.getElementById('btn-copy-json').textContent = '✅ Copied!';
+    setTimeout(() => document.getElementById('btn-copy-json').textContent = '📋 Copy to Clipboard', 1500);
+  });
   document.getElementById('btn-download-json').addEventListener('click', () => {
-    const json = getExportJSON();
-    const blob = new Blob([json], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
+    const blob = new Blob([document.getElementById('export-json').value], { type: 'application/json' });
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'animation_config.json';
+    a.href = URL.createObjectURL(blob);
+    a.download = 'animation_timeline.json';
     a.click();
-    URL.revokeObjectURL(url);
-    preview.textContent = json;
-    preview.style.display = 'block';
   });
 }
 
-// ── UI: Info Bar ─────────────────────────────────────────────
-function updateInfoBar() {
-  const clipEl = document.getElementById('info-clip');
-  const loopEl = document.getElementById('info-loop');
+// ─── RESIZE HANDLER ──────────────────────────────────────────
+window.addEventListener('resize', () => {
+  resizeViewport();
+  renderTimeline();
+});
 
-  if (activeClipName) {
-    clipEl.textContent = activeClipName;
-    clipEl.className = 'info-value';
-    const gs = Object.values(mapping).find(m => m.clip === activeClipName);
-    const isLoop = activeAction ? activeAction.loop === THREE.LoopRepeat : (gs ? gs.loop : true);
-    loopEl.textContent = isLoop ? 'ON' : 'OFF';
-  } else {
-    clipEl.textContent = '— stopped —';
-    clipEl.className = 'info-value idle-val';
-    loopEl.textContent = '—';
-  }
-}
-
-// ── Scrubber / Progress ──────────────────────────────────────
-function initScrubber() {
-  const scrubber = document.getElementById('scrubber');
-  let scrubbing = false;
-
-  function scrubTo(e) {
-    if (!activeAction || !activeClipName) return;
-    const rect = scrubber.getBoundingClientRect();
-    const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const dur = clips[activeClipName].duration;
-    activeAction.time = frac * dur;
-  }
-
-  scrubber.addEventListener('mousedown', (e) => {
-    scrubbing = true;
-    scrubTo(e);
-  });
-  window.addEventListener('mousemove', (e) => { if (scrubbing) scrubTo(e); });
-  window.addEventListener('mouseup', () => { scrubbing = false; });
-}
-
-// ── Render Loop ──────────────────────────────────────────────
-function animate() {
-  requestAnimationFrame(animate);
-
-  const dt = clock.getDelta();
-  if (mixer) mixer.update(dt);
-  controls.update();
-  renderer.render(scene, camera);
-
-  // Update time display
-  if (activeAction && activeClipName && clips[activeClipName]) {
-    const t = activeAction.time;
-    const dur = clips[activeClipName].duration;
-    document.getElementById('info-time').textContent = t.toFixed(2);
-    document.getElementById('info-dur').textContent = dur.toFixed(2);
-    document.getElementById('progress-fill').style.width = ((t / dur) * 100) + '%';
-  } else {
-    document.getElementById('info-time').textContent = '0.00';
-    document.getElementById('progress-fill').style.width = '0%';
-  }
-}
-
-// ── Boot ─────────────────────────────────────────────────────
+// ─── INIT ────────────────────────────────────────────────────
 async function main() {
-  initScene();
-  initTabs();
-  initBlendControls();
-  initExport();
-  initScrubber();
-
+  initThree();
   try {
-    const clipNames = await loadModel();
-    buildClipList(clipNames);
-    buildMappingPanel(clipNames);
+    await loadModel();
+    captureBindPose();
+    buildLibrary();
 
-    // Auto-play idle
-    if (clips['idle']) playClip('idle', true, 0);
+    // Create default tracks
+    addTrack('Base');
+    addTrack('Upper Body');
+    // Set second track to upper-body mask
+    if (tracks[1]) {
+      tracks[1].mask = 'upper';
+    }
+
+    initTransport();
+    initRulerScrub();
+    initExport();
+    renderTimeline();
+    animate();
+
+    console.log('[NLE] Animation editor loaded:', clipList.length, 'clips,', skeleton?.bones.length, 'bones');
   } catch (err) {
-    console.error('Failed to load model:', err);
+    console.error('[NLE] Failed to load:', err);
     document.getElementById('loading').innerHTML =
-      `<div style="color:#f66;font-size:14px;">Failed to load model</div>
-       <div style="color:#667;font-size:11px;margin-top:8px;">${err.message}</div>`;
+      `<div style="color:#f66;font-size:14px;">Failed to load model<br><small>${err.message}</small></div>`;
   }
-
-  animate();
 }
 
 main();
