@@ -150,12 +150,17 @@ function _playClip(inst, name, opts = {}) {
 }
 
 // ── Grounding helper ────────────────────────────────────────
-// WASM: pos.y = getH(x,z) + 1.8 when on ground.
-// JS terrain sampler is ~0.2m lower than WASM/visual terrain.
-// Use the difference (playerY - terrainH - 1.8) as air distance — 
-// this naturally compensates for the sampler gap when on ground.
+// Two physics systems, two conventions:
+//   WASM (terrain):  playerY = terrainH + 1.8  (capsule offset)
+//   Rapier (buildings): playerY = floorH        (no offset, feet on floor)
+// When Rapier reports grounded, skip the terrain offset.
 const CAPSULE_OFFSET = 1.8;
 function _groundY(playerX, playerY, playerZ) {
+    // Rapier-grounded = on a building floor, playerY IS the floor height
+    if (window._rapierGrounded) {
+        return playerY;
+    }
+    // On terrain: subtract WASM offset, compensated by JS sampler gap
     const sample = window._sampleTerrainH;
     if (!sample) return playerY - CAPSULE_OFFSET;
     const terrainH = sample(playerX, playerZ);

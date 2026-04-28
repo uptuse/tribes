@@ -5074,6 +5074,8 @@ function loop() {
                 const rapierResult = window.RapierPhysics.stepPlayerCollision(
                     playerView, playerStride, localIdx, 1/60
                 );
+                // R32.130: expose grounded state for character grounding
+                window._rapierGrounded = rapierResult.grounded;
                 // Signal grounded-on-interior state back to WASM for next frame's onGround
                 if (Module._setRapierGrounded) {
                     Module._setRapierGrounded(rapierResult.grounded ? 1 : 0);
