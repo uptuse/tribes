@@ -1927,14 +1927,10 @@ async function initInteriorShapes() {
             const creaseAngle = isRock ? 55 : 40;
             const enhanced = computeCreaseNormals(g, creaseAngle, materialColors);
 
-            // R32.55: Negate normals. The winding flip (i,j,k)→(i,k,j) reverses the
-            // cross product direction used by computeCreaseNormals, producing inward-
-            // facing normals. PBR lighting depends on outward normals — with inward
-            // normals, max(dot(N, L), 0) ≈ 0 for all lights → renders black.
-            // MeshBasicMaterial ignores normals entirely, which is why ?basicInterior
-            // showed correct red shapes while MeshStandardMaterial was black.
-            const _nrmArr = enhanced.getAttribute('normal').array;
-            for (let i = 0; i < _nrmArr.length; i++) _nrmArr[i] *= -1;
+            // R32.56.1: Normal attribute is unused — flatShading:true computes face
+            // normals from screen-space derivatives (dFdx/dFdy), bypassing the broken
+            // normals produced by computeCreaseNormals after the winding flip.
+            // The R32.55 negation is removed; it had no effect with flatShading.
 
             // R32.48: Apply geometry groups for multi-material rendering.
             // After crease normals, geometry is non-indexed: each triangle = 3 consecutive verts.
