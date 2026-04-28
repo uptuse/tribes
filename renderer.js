@@ -993,18 +993,26 @@ async function initTerrain() {
                      float w2 = f.y;
                      float wSum = w0 + w1 + w2 + 1e-4;
                      return (s0 * w0 + s1 * w1 + s2 * w2) / wSum;
+                 }
+                 // R32.65.3: distance LOD — stochastic close, plain far
+                 vec4 lodSampleArray(sampler2DArray tex, vec2 uv, float layer, float lodBlend) {
+                     if (lodBlend >= 0.99) return texture(tex, vec3(uv, layer));
+                     if (lodBlend <= 0.01) return stochasticSampleArray(tex, uv, layer);
+                     return mix(stochasticSampleArray(tex, uv, layer), texture(tex, vec3(uv, layer)), lodBlend);
                  }`)
             .replace('#include <map_fragment>',
-                `float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
+                `float camDist = length(vViewPosition);
+                 float lodBlend = smoothstep(80.0, 180.0, camDist);
+                 float wSum = max(1e-4, vSplat.r + vSplat.g + vSplat.b + vSplat.a);
                  vec4 splatW = vSplat / wSum;
                  vec2 tUv = vWorldXZ / uTileMeters;
                  float gMix = smoothstep(0.30, 0.70, vnoise(vWorldXZ * 0.0125));
-                 vec4 cG1 = stochasticSampleArray(uTerrainColor, tUv, 0.0);
-                 vec4 cG2 = stochasticSampleArray(uTerrainColor, tUv * 0.83 + vec2(13.7, 7.1), 1.0);
+                 vec4 cG1 = lodSampleArray(uTerrainColor, tUv, 0.0, lodBlend);
+                 vec4 cG2 = lodSampleArray(uTerrainColor, tUv * 0.83 + vec2(13.7, 7.1), 1.0, lodBlend);
                  vec4 cG  = mix(cG1, cG2, gMix);
-                 vec4 cR  = stochasticSampleArray(uTerrainColor, tUv, 2.0);
-                 vec4 cD  = stochasticSampleArray(uTerrainColor, tUv, 3.0);
-                 vec4 cS  = stochasticSampleArray(uTerrainColor, tUv, 4.0);
+                 vec4 cR  = lodSampleArray(uTerrainColor, tUv, 2.0, lodBlend);
+                 vec4 cD  = lodSampleArray(uTerrainColor, tUv, 3.0, lodBlend);
+                 vec4 cS  = lodSampleArray(uTerrainColor, tUv, 4.0, lodBlend);
                  vec4 sampledDiffuseColor = cG * splatW.r + cR * splatW.g + cD * splatW.b + cS * splatW.a;
                  float n1 = vnoise(vWorldXZ * 0.012);
                  float n2 = vnoise(vWorldXZ * 0.045 + vec2(31.7, 19.3));
@@ -1024,7 +1032,8 @@ async function initTerrain() {
                  sampledDiffuseColor.rgb *= wash;
                  sampledDiffuseColor.rgb *= pAO;
                  // R32.42: AO from array texture (layer indices match color layers)
-                 if (uUseAO > 0.5) {
+                 // R32.65.3: skip AO at distance — barely visible, saves 5 fetches
+                 if (uUseAO > 0.5 && lodBlend < 0.95) {
                      float aG1 = texture(uTerrainAO, vec3(tUv, 0.0)).r;
                      float aG2 = texture(uTerrainAO, vec3(tUv * 0.83 + vec2(13.7, 7.1), 1.0)).r;
                      float aG_ = mix(aG1, aG2, gMix);
@@ -1032,7 +1041,7 @@ async function initTerrain() {
                      float aD_ = texture(uTerrainAO, vec3(tUv, 3.0)).r;
                      float aS_ = texture(uTerrainAO, vec3(tUv, 4.0)).r;
                      float aoT = aG_*splatW.r + aR_*splatW.g + aD_*splatW.b + aS_*splatW.a;
-                     aoT = mix(1.0, aoT, 0.85);
+                     aoT = mix(1.0, aoT, 0.85 * (1.0 - lodBlend));
                      sampledDiffuseColor.rgb *= aoT;
                  }
                  {
@@ -1042,15 +1051,18 @@ async function initTerrain() {
                  diffuseColor *= sampledDiffuseColor;`)
             .replace('#include <normal_fragment_maps>',
                 `vec2 nUv = vWorldXZ / uTileMeters;
-                 vec3 nG1 = stochasticSampleArray(uTerrainNormal, nUv, 0.0).xyz * 2.0 - 1.0;
-                 vec3 nG2 = stochasticSampleArray(uTerrainNormal, nUv * 0.83 + vec2(13.7, 7.1), 1.0).xyz * 2.0 - 1.0;
-                 vec3 nG  = mix(nG1, nG2, gMix);
-                 vec3 nR = stochasticSampleArray(uTerrainNormal, nUv, 2.0).xyz * 2.0 - 1.0;
-                 vec3 nD = stochasticSampleArray(uTerrainNormal, nUv, 3.0).xyz * 2.0 - 1.0;
-                 vec3 nS = stochasticSampleArray(uTerrainNormal, nUv, 4.0).xyz * 2.0 - 1.0;
-                 vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
-                 mapN.xy *= normalScale;
-                 normal = normalize( tbn * mapN );`)
+                 // R32.65.3: skip normal maps at distance — use vertex normal only
+                 if (lodBlend < 0.95) {
+                     vec3 nG1 = lodSampleArray(uTerrainNormal, nUv, 0.0, lodBlend).xyz * 2.0 - 1.0;
+                     vec3 nG2 = lodSampleArray(uTerrainNormal, nUv * 0.83 + vec2(13.7, 7.1), 1.0, lodBlend).xyz * 2.0 - 1.0;
+                     vec3 nG  = mix(nG1, nG2, gMix);
+                     vec3 nR = lodSampleArray(uTerrainNormal, nUv, 2.0, lodBlend).xyz * 2.0 - 1.0;
+                     vec3 nD = lodSampleArray(uTerrainNormal, nUv, 3.0, lodBlend).xyz * 2.0 - 1.0;
+                     vec3 nS = lodSampleArray(uTerrainNormal, nUv, 4.0, lodBlend).xyz * 2.0 - 1.0;
+                     vec3 mapN = normalize(nG * splatW.r + nR * splatW.g + nD * splatW.b + nS * splatW.a);
+                     mapN.xy *= normalScale * (1.0 - lodBlend);
+                     normal = normalize( tbn * mapN );
+                 }`)
             // R32.42: luminance-derived roughness (now safe with only 3+internals sampler units)
             .replace('#include <roughnessmap_fragment>',
                 `float roughnessFactor = roughness;
