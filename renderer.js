@@ -798,12 +798,12 @@ async function initTerrain() {
     }
     geom.setAttribute('aSmoothNormal', new THREE.BufferAttribute(smoothNormals, 3));
 
-    // toNonIndexed() expands every shared vertex so each triangle has its own
-    // 3 verts; computeVertexNormals() produces face normals (flat shading).
-    // Both `normal` (face) and `aSmoothNormal` (per-original-vertex, copied to
-    // each triangle's 3 verts) are now available — we pick smooth in the shader.
-    const flatGeom = geom.toNonIndexed();
-    flatGeom.computeVertexNormals();
+    // R32.65: With 2× bicubic upscale, triangles are small enough that
+    // flat facets are invisible. Use indexed geometry (shared vertices)
+    // for ~6× less vertex processing vs toNonIndexed().
+    // Set the normal attribute to smoothNormals directly.
+    geom.setAttribute('normal', new THREE.BufferAttribute(smoothNormals, 3));
+    const finalGeom = geom;
 
     // ---- 5. R32.42: Texture Array architecture ----
     // Pack terrain textures into 3 sampler2DArray (color, normal, AO) instead
@@ -1061,7 +1061,7 @@ async function initTerrain() {
         mat.userData.shader = shader;
     };
 
-    terrainMesh = new THREE.Mesh(flatGeom, mat);
+    terrainMesh = new THREE.Mesh(finalGeom, mat);
     terrainMesh.receiveShadow = true;
     scene.add(terrainMesh);
     // R32.37.1-manus: live PBR toggle hook — index.html settings checkboxes
