@@ -4834,15 +4834,8 @@ function initNightFairies() {
 function updateNightFairies(dt, t) {
     if (!_nfPoints) return;
 
-    // dayMix: 0=night, 1=day. Fairies fade in starting at dusk (0.55) through night
-    const dayMix = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
-    const targetOp = dayMix < 0.2 ? 1.0 : (dayMix > 0.55 ? 0.0 : (0.55 - dayMix) / 0.35);
-    _nfOpacity += (targetOp - _nfOpacity) * Math.min(1, dt * 2);
-
-    if (_nfOpacity < 0.01) {
-        _nfPoints.visible = false;
-        return;
-    }
+    // R32.84: FORCE VISIBLE for debugging — remove dayMix gating
+    _nfOpacity = 1.0;
     _nfPoints.visible = true;
 
     const cx = camera.position.x;
@@ -5003,7 +4996,7 @@ function loop() {
     try { updateJetExhaust(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
-    try { updateNightFairies(1/60, t); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateNightFairies(1/60, t); } catch (e) { console.error('[R32.84] sky fairy error:', e); }
     try { updateInteriorLights(); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
