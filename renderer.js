@@ -4731,32 +4731,35 @@ function updateExplosionFX(dt) {
 }
 
 // ============================================================
-// R32.85: Sky fairy particles — GPU-driven, camera-relative
+// R32.86: Sky fairy particles — GPU-driven, world-anchored, terrain-aware
 // ============================================================
 const NIGHT_FAIRY_COUNT = 64000;
 const NIGHT_FAIRY_RADIUS = 200;
-const NIGHT_FAIRY_MIN_ALT = 40;
-const NIGHT_FAIRY_MAX_ALT = 130;
+const NIGHT_FAIRY_ALT_ABOVE = 20;   // min metres above terrain
+const NIGHT_FAIRY_ALT_RANGE = 90;   // additional random altitude spread
 let _nfPoints = null;
 let _nfOpacity = 0;
+let _nfHeightTex = null;
 
 function initNightFairies() {
     const N = NIGHT_FAIRY_COUNT;
     const R = NIGHT_FAIRY_RADIUS;
-    const offsets = new Float32Array(N * 3);
-    const params  = new Float32Array(N * 4);
-    const colors  = new Float32Array(N * 3);
+    const positions = new Float32Array(N * 3);
+    const params    = new Float32Array(N * 4);
+    const colors    = new Float32Array(N * 3);
 
+    // position.xy = world-space XZ tile offset (within one diameter tile)
+    // position.y = altitude offset above terrain (will be added to terrain height in shader)
     for (let i = 0; i < N; i++) {
         const angle = Math.random() * Math.PI * 2;
         const dist  = Math.sqrt(Math.random()) * R;
-        offsets[i*3]   = Math.cos(angle) * dist;
-        offsets[i*3+1] = NIGHT_FAIRY_MIN_ALT + Math.random() * (NIGHT_FAIRY_MAX_ALT - NIGHT_FAIRY_MIN_ALT);
-        offsets[i*3+2] = Math.sin(angle) * dist;
-        params[i*4]   = Math.random() * Math.PI * 2;
-        params[i*4+1] = 0.2 + Math.random() * 0.6;
-        params[i*4+2] = Math.random() * Math.PI * 2;
-        params[i*4+3] = Math.random();
+        positions[i*3]   = Math.cos(angle) * dist;            // tile offset X
+        positions[i*3+1] = NIGHT_FAIRY_ALT_ABOVE + Math.random() * NIGHT_FAIRY_ALT_RANGE; // alt above terrain
+        positions[i*3+2] = Math.sin(angle) * dist;            // tile offset Z
+        params[i*4]   = Math.random() * Math.PI * 2;          // phase
+        params[i*4+1] = 0.2 + Math.random() * 0.6;           // speed
+        params[i*4+2] = Math.random() * Math.PI * 2;          // drift angle
+        params[i*4+3] = Math.random();                         // hue
         const hue = params[i*4+3];
         const h6 = hue * 6;
         const f = h6 - Math.floor(h6);
@@ -4773,17 +4776,28 @@ function initNightFairies() {
         colors[i*3+2] = 0.6 + 0.4 * b;
     }
 
+    // Upload heightmap as a float texture for GPU terrain sampling
+    _nfHeightTex = _createHeightmapTexture();
+
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(offsets, 3));
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
     geo.setAttribute('aParams',  new THREE.Float32BufferAttribute(params, 4));
     geo.setAttribute('aColor',   new THREE.Float32BufferAttribute(colors, 3));
 
+    const htSize = _htSize || 256;
+    const htScale = _htScale || 1;
+    const htHalf = (htSize - 1) * htScale * 0.5;
+
     const mat = new THREE.ShaderMaterial({
         uniforms: {
-            uTime:    { value: 0 },
-            uCamPos:  { value: new THREE.Vector3() },
-            uRadius:  { value: R },
-            uOpacity: { value: 1.0 },
+            uTime:      { value: 0 },
+            uCamPos:    { value: new THREE.Vector3() },
+            uRadius:    { value: R },
+            uOpacity:   { value: 1.0 },
+            uHeightmap: { value: _nfHeightTex },
+            uHtSize:    { value: htSize },
+            uHtScale:   { value: htScale },
+            uHtHalf:    { value: htHalf },
         },
         vertexShader: `
             attribute vec4 aParams;
@@ -4792,14 +4806,30 @@ function initNightFairies() {
             uniform vec3 uCamPos;
             uniform float uRadius;
             uniform float uOpacity;
+            uniform sampler2D uHeightmap;
+            uniform float uHtSize;
+            uniform float uHtScale;
+            uniform float uHtHalf;
             varying float vAlpha;
             varying vec3 vColor;
+
+            float sampleTerrain(float wx, float wz) {
+                float gx = (wx + uHtHalf) / uHtScale;
+                float gz = (wz + uHtHalf) / uHtScale;
+                vec2 uv = vec2(gx, gz) / uHtSize;
+                return texture2D(uHeightmap, uv).r;
+            }
+
             void main() {
                 float phase = aParams.x;
                 float speed = aParams.y;
                 float driftAngle = aParams.z;
-                float wx = uCamPos.x + position.x + cos(driftAngle) * speed * uTime * 0.3;
-                float wz = uCamPos.z + position.z + sin(driftAngle) * speed * uTime * 0.3;
+
+                // World-space position: tile offset + slow drift (NOT camera-relative)
+                float wx = position.x + cos(driftAngle) * speed * uTime * 0.3;
+                float wz = position.z + sin(driftAngle) * speed * uTime * 0.3;
+
+                // Toroidal wrap relative to camera (keeps particles near player)
                 float dx = wx - uCamPos.x;
                 float dz = wz - uCamPos.z;
                 float diameter = uRadius * 2.0;
@@ -4807,12 +4837,19 @@ function initNightFairies() {
                 dz = dz - diameter * floor((dz + uRadius) / diameter);
                 wx = uCamPos.x + dx;
                 wz = uCamPos.z + dz;
-                float wy = position.y + sin(uTime * 0.4 + phase) * 3.0;
+
+                // Sample terrain height at this world XZ, add altitude above it
+                float terrainH = sampleTerrain(wx, wz);
+                float wy = terrainH + position.y + sin(uTime * 0.4 + phase) * 3.0;
+
+                // Twinkle + edge fade
                 float pulse = 0.4 + 0.6 * sin(uTime * 0.8 + phase * 3.0);
                 float edgeDist = length(vec2(dx, dz)) / uRadius;
                 float edgeFade = 1.0 - smoothstep(0.7, 1.0, edgeDist);
+
                 vAlpha = uOpacity * pulse * edgeFade;
                 vColor = aColor;
+
                 vec4 mv = viewMatrix * vec4(wx, wy, wz, 1.0);
                 float dist = max(2.0, length(mv.xyz));
                 gl_PointSize = clamp(vAlpha * 500.0 / dist, 1.5, 12.0);
@@ -4840,7 +4877,25 @@ function initNightFairies() {
     _nfPoints.renderOrder = 85;
     _nfPoints.visible = true;
     scene.add(_nfPoints);
-    console.log('[R32.85] Sky fairies (GPU): N=' + N + ' R=' + R + 'm alt=' + NIGHT_FAIRY_MIN_ALT + '-' + NIGHT_FAIRY_MAX_ALT + 'm');
+    console.log('[R32.86] Sky fairies (GPU, world-anchored): N=' + N + ' R=' + R + 'm terrain-aware');
+}
+
+function _createHeightmapTexture() {
+    if (!_htData || _htSize < 2) {
+        // Fallback: flat terrain at y=0
+        const d = new Float32Array(4);
+        const tex = new THREE.DataTexture(d, 2, 2, THREE.RedFormat, THREE.FloatType);
+        tex.needsUpdate = true;
+        return tex;
+    }
+    const tex = new THREE.DataTexture(_htData, _htSize, _htSize, THREE.RedFormat, THREE.FloatType);
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.wrapS = THREE.ClampToEdgeWrapping;
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    console.log('[R32.86] Heightmap texture uploaded: ' + _htSize + 'x' + _htSize);
+    return tex;
 }
 
 function updateNightFairies(dt, t) {
