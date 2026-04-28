@@ -429,6 +429,13 @@ const DayNight = (() => {
             window.__nightAmbient.color.setHex(0x304060);
         }
 
+        // R32.95: Terrain night emissive — self-lit moonlight glow, independent of exposure/sky
+        if (typeof terrainMesh !== 'undefined' && terrainMesh && terrainMesh.material) {
+            const nf = 1.0 - dayMix;
+            terrainMesh.material.emissive.setHex(0x1a2540);
+            terrainMesh.material.emissiveIntensity = nf * 0.35;
+        }
+
         // Fog
         const fogCol = lerpColors(palette.nightFog, palette.dawnFog, palette.noonFog, palette.duskFog, t01);
         if (typeof scene !== 'undefined' && scene.fog) {
@@ -440,7 +447,7 @@ const DayNight = (() => {
 
         // R32.63.6: env intensity lowered further — night near-zero, day moderate.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 2.0 - 1.0 * dayMix;  // R32.94: 2.0 night → 1.0 noon
+            renderer.toneMappingExposure = 0.80 + 0.20 * dayMix;  // R32.95: 0.80 night → 1.0 noon
         }
         if (typeof scene !== 'undefined') {
             // R32.63.6: env 0.05 at night → 0.45 at noon (was 0.15→0.55)
