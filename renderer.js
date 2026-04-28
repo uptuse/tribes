@@ -931,7 +931,8 @@ async function initTerrain() {
                  attribute vec3 aSmoothNormal;
                  varying vec4 vSplat;
                  varying vec2 vWorldXZ;
-                 varying float vWorldY;`)
+                 varying float vWorldY;
+                 varying vec3 vSmoothNormal;`)
             .replace('#include <beginnormal_vertex>',
                 `vec3 objectNormal = aSmoothNormal;
                  #ifdef USE_TANGENT
@@ -941,7 +942,8 @@ async function initTerrain() {
                 `#include <begin_vertex>
                  vSplat = aSplat;
                  vWorldXZ = position.xz;
-                 vWorldY = position.y;`);
+                 vWorldY = position.y;
+                 vSmoothNormal = normalize(normalMatrix * aSmoothNormal);`);
 
         // R32.42: Fragment shader — sampler2DArray for all terrain textures
         shader.fragmentShader = shader.fragmentShader
@@ -957,6 +959,7 @@ async function initTerrain() {
                  varying vec4 vSplat;
                  varying vec2 vWorldXZ;
                  varying float vWorldY;
+                 varying vec3 vSmoothNormal;
                  uniform float uTime;
                  uniform vec2 uWindDir;
                  uniform float uWindSpeed;
@@ -1012,8 +1015,10 @@ async function initTerrain() {
                  wash.r += (washCombo - 0.5) * 0.16 + (hN - 0.4) * 0.12;
                  wash.g += (washCombo - 0.5) * 0.10 + (hN - 0.4) * 0.05;
                  wash.b += (washCombo - 0.5) * 0.07 - (hN - 0.4) * 0.09;
-                 float dy = abs(dFdx(vWorldY)) + abs(dFdy(vWorldY));
-                 float slopeShade = 1.0 - smoothstep(0.05, 0.40, dy) * 0.35;
+                 // R32.65.1: slope from smooth normal (continuous across edges)
+                 // replaces dFdx/dFdy which was per-triangle and caused visible seams
+                 float slopeFromNormal = 1.0 - vSmoothNormal.y;  // 0=flat, 1=vertical
+                 float slopeShade = 1.0 - smoothstep(0.05, 0.40, slopeFromNormal) * 0.35;
                  float heightShade = 0.78 + 0.22 * hN;
                  float pAO = slopeShade * heightShade;
                  sampledDiffuseColor.rgb *= wash;
