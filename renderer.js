@@ -20,7 +20,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { Sky } from 'three/addons/objects/Sky.js';
+// R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky_custom.js
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -32,7 +32,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
-import { initCustomSky, updateCustomSky } from './renderer_sky_custom.js'; // R32.61: stars + moon
+import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -125,15 +125,14 @@ export async function start() {
     console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
     initScene();
     initLights();
-    // R31.2: HDRI replaces THREE.Sky. initSky() is kept as fallback in case
-    // the HDRI fetch fails; loadHDRISky() triggers that fallback via its error arm.
-    loadHDRISky();   // async — sky + env set when HDRI loads; Sky fallback on error
-    initSky();       // always runs for immediate Sky fallback, hidden if HDRI succeeds
+    // R32.63: HDRI for PBR environment lighting only (not background).
+    // Custom sky dome in renderer_sky_custom.js replaces THREE.Sky and HDRI background.
+    loadHDRISky();   // async — sets scene.environment for PBR; sky dome handles visuals
+    initCustomSky(scene); // R32.63: procedural sky dome + stars + clouds
     await initTerrain();
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
     await initInteriorShapes(); // R32.1: real Tribes 1 .dis-extracted meshes at canonical positions
     initCustomModels(); // R32.57: load custom GLB models
-    initCustomSky(scene); // R32.61: stars + moon skybox
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
     initProjectiles();
@@ -288,36 +287,9 @@ function initScene() {
 }
 
 // ============================================================
-// THREE.Sky atmospheric scattering + sun + lights
+// R32.63: THREE.Sky removed. Sun position now computed in DayNight cycle.
 // ============================================================
 let sunPos = new THREE.Vector3();
-
-function initSky() {
-    sky = new Sky();
-    sky.scale.setScalar(450000);
-    scene.add(sky);
-    const u = sky.material.uniforms;
-    // R30.2: rebalanced sky uniforms. Old values (turbidity=8, rayleigh=2.0)
-    // produced washed-out white sky with harsh banding because tone mapping
-    // was clipping the high luminance values. New values (turbidity=2,
-    // rayleigh=1.0, mieG=0.8) produce a more typical clear-blue sky with a
-    // visible sun disk and proper horizon haze.
-    // R31.1: sky uniforms tuned up from R30.2's over-muted values.
-    // turbidity=4 gives slight haze; rayleigh=2 recovers the deep blue zenith;
-    // mieG=0.85 sharpens the sun-disk halo. The key change is in initRenderer():
-    // exposure was 0.5 (too dim) → now 0.8 which brings out the dynamic range.
-    u.turbidity.value = 4;
-    u.rayleigh.value = 2.0;
-    u.mieCoefficient.value = 0.005;
-    u.mieDirectionalG.value = 0.85;
-
-    // R32.0: Raindance.MIS canonical sun — azimuth -90° (east), incidence 54°
-    const azimuth = -90 + 180, elevation = 54;  // Three.js: azimuth from south, elevation above horizon
-    const phi = THREE.MathUtils.degToRad(90 - elevation);
-    const theta = THREE.MathUtils.degToRad(azimuth - 180);
-    sunPos.setFromSphericalCoords(1, phi, theta);
-    u.sunPosition.value.copy(sunPos);
-}
 
 // ============================================================
 // R32.40-manus: Day/Night cycle. 30-min real-time loop = 24h game time
@@ -452,37 +424,16 @@ const DayNight = (() => {
         if (typeof scene !== 'undefined' && scene.fog) {
             scene.fog.color.copy(fogCol);
         }
-        // R32.62: set scene background color to near-black at night
-        if (typeof scene !== 'undefined' && scene.background && scene.background.isColor) {
-            // Lerp background toward deep night blue when dark
-            const nightBg = new THREE.Color(0x020408);
-            const dayBg = scene.background.clone();
-            // Don't touch if HDRI is set (background would be a texture)
-        } else if (typeof scene !== 'undefined' && !scene.background) {
-            scene.background = new THREE.Color(0x020408);
-        }
 
-        // Sky background tint multiplier — near-black at night for stars.
-        if (typeof scene !== 'undefined') {
-            const wantBg = 0.05 + 0.50 * dayMix;  // R32.62: near-black sky bg at night for stars
-            if (scene.backgroundIntensity !== undefined) scene.backgroundIntensity = wantBg;
-            const wantEnv = 0.55 + 0.90 * dayMix;  // env reflections for moonlit surfaces
-            if (scene.environmentIntensity !== undefined) scene.environmentIntensity = wantEnv;
-        }
-        // Tone-mapping exposure — higher at night so moonlight reads clearly.
+        // R32.63: Tone-mapping exposure — slight dip at night for mood,
+        // but NEVER kill environment intensity. Ground must stay lit.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.70 + 0.45 * dayMix;  // was 0.55 floor, now 0.70
+            renderer.toneMappingExposure = 0.90 + 0.25 * dayMix;  // 0.90 night → 1.15 noon
         }
 
-        // Expose for custom sky (stars, moon)
+        // Expose for custom sky dome (stars, moon, clouds)
         DayNight.dayMix = dayMix;
         DayNight.sunDir.copy(sunPos);
-
-        // R32.62: hide THREE.Sky at night so stars show through.
-        // Sky is a ShaderMaterial — can't use opacity, just toggle visibility.
-        if (typeof sky !== 'undefined' && sky) {
-            sky.visible = dayMix > 0.05;
-        }
 
         // Update HUD clock chip (created in index.html).
         const h = Math.floor(t01 * 24);
@@ -502,19 +453,9 @@ const DayNight = (() => {
 })();
 try { window.DayNight = DayNight; } catch(e) {}
 
-// R30.2: build a PMREM environment from the Sky shader so PBR materials
-// (MeshStandardMaterial used for buildings, soldiers, weapons, terrain)
-// receive proper image-based ambient lighting instead of looking flat or
-// dark when not directly hit by the sun. This is what makes the difference
-// between "unlit-looking PBR" and "properly grounded PBR".
-// R31.2: Real HDRI sky. Loads the vendored PolyHaven HDR, sets it as both
-// scene.background (visible sky) and scene.environment (PBR ambient env map).
-// If the fetch fails (CORS, missing asset, GitHub Pages path) the THREE.Sky
-// fallback is already initialised by initSky() and we log + continue.
+// R32.63: HDRI loads for PBR environment ONLY. The visible sky background
+// is handled by the custom sky dome. scene.background = null so the dome shows.
 function loadHDRISky() {
-    // R32.10: switched to overcast 'puresky' HDRI for moody Raindance valley feel.
-    // overcast_soil_puresky has no ground in the lower hemisphere so it works as
-    // a pure skybox over our terrain mesh. CC0 from polyhaven.com.
     const hdrPath = 'assets/hdri/overcast_soil_puresky_2k.hdr';
     const pmrem = new THREE.PMREMGenerator(renderer);
     pmrem.compileEquirectangularShader();
@@ -523,44 +464,38 @@ function loadHDRISky() {
         (hdrTex) => {
             hdrTex.mapping = THREE.EquirectangularReflectionMapping;
             const envRT = pmrem.fromEquirectangular(hdrTex);
-            scene.environment = envRT.texture;
-            scene.background  = envRT.texture;   // real HDRI as visible sky
+            scene.environment = envRT.texture;       // PBR lighting only
+            scene.background = null;                 // sky dome handles visuals
+            scene.environmentIntensity = 1.45;       // fixed — never dimmed by DayNight
             hdrTex.dispose();
             pmrem.dispose();
-            // Hide the THREE.Sky procedural dome — it would double-draw behind HDRI
-            if (sky) sky.visible = false;
-            // R32.11.2: re-tuned exposure. R32.10.1 set exposure=0.6 because
-            // flat-shaded faceted terrain had high local contrast that needed
-            // dimming. Now (R32.11.1+) lighting is smooth-shaded so the scene
-            // reads more uniformly — 0.6 is too dim, bumping to 0.95.
-            // Background still dimmed (sky was the originally-bright issue).
-            // Environment intensity bumped 1.0→1.25 to lift PBR fill on the
-            // armor + props without over-brightening the sky dome.
-            scene.backgroundIntensity = 0.55;       // was 0.45 — slightly less dim
-            scene.environmentIntensity = 1.45;      // R32.37.5: 1.25 -> 1.45 lift PBR fill more
-            if (renderer) renderer.toneMappingExposure = 1.15;  // R32.37.5: 0.95 -> 1.15 brighter
-            console.log('[R32.37.5] HDRI sky loaded — exposure 1.15, bg 0.55, env 1.45');
+            // Remove old THREE.Sky if it exists
+            if (sky) {
+                removeOldSky(scene, sky);
+                sky = null;
+            }
+            if (renderer) renderer.toneMappingExposure = 1.15;
+            console.log('[R32.63] HDRI env loaded (PBR only) — sky dome handles background');
         },
-        undefined,  // progress not needed
+        undefined,
         (err) => {
-            // Graceful fallback: THREE.Sky remains visible (initSky already ran)
             pmrem.dispose();
-            console.warn('[R31.2] HDRI load failed — falling back to THREE.Sky procedural:', err.message || err);
+            scene.background = null; // still let sky dome show
+            console.warn('[R32.63] HDRI load failed — sky dome active, no PBR env:', err.message || err);
         }
     );
 }
 
 function buildEnvironmentFromSky() {
+    // R32.63: kept as emergency fallback but sky object may be null now
     if (!sky || !renderer) return;
     try {
         const pmrem = new THREE.PMREMGenerator(renderer);
         pmrem.compileEquirectangularShader();
-        // Render the sky shader into a small offscreen scene
         const skyScene = new THREE.Scene();
         skyScene.add(sky.clone(false));
         const envRT = pmrem.fromScene(skyScene, 0, 0.1, 100000);
         scene.environment = envRT.texture;
-        // Re-add the original sky to the visible scene since we cloned a placeholder
         if (!scene.children.includes(sky)) scene.add(sky);
         pmrem.dispose();
         console.log('[R30.2] PMREM environment built from Sky shader; PBR materials now lit');
@@ -572,8 +507,8 @@ function buildEnvironmentFromSky() {
 function initLights() {
     const tier = readQualityFromSettings();
 
-    // R32.0: Raindance.MIS canonical atmosphere — overcast sky
-    scene.background = new THREE.Color(0xC0C8D0);
+    // R32.63: background = null — custom sky dome handles the visible sky
+    scene.background = null;
 
     if (renderer) {
         renderer.toneMapping = THREE.ACESFilmicToneMapping;
