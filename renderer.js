@@ -2082,15 +2082,18 @@ function initCustomModels() {
         const model = gltf.scene;
         model.name = 'WolfSentinel';
 
-        // Model is ~2 units tall; scale to ~50 units (very visible for testing)
-        const scale = 50;
+        // Model is ~2 units tall in Z; scale to ~20 units (guardian size)
+        const scale = 20;
         model.scale.set(scale, scale, scale);
 
-        // Position on terrain
-        model.position.set(wolfX, wolfY, wolfZ);
+        // Meshy exports Z-up; rotate to Three.js Y-up
+        model.rotation.x = -Math.PI / 2;
+
+        // Position on terrain, offset from base so it's not clipping
+        model.position.set(wolfX + 15, wolfY, wolfZ + 15);
 
         // Face toward the base
-        model.rotation.y = Math.PI * 0.75;
+        model.rotation.z = Math.PI * 0.75;
 
         // Enable shadows
         model.traverse((child) => {
