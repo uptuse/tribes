@@ -574,9 +574,45 @@ let _splatData = null;
 // Church painting instead of an indie procedural prototype.
 async function initTerrain() {
     const ptr = Module._getHeightmapPtr();
-    const size = Module._getHeightmapSize();
-    const worldScale = Module._getHeightmapWorldScale();
-    const heights = new Float32Array(Module.HEAPF32.buffer, ptr, size * size);
+    const rawSize = Module._getHeightmapSize();
+    const rawScale = Module._getHeightmapWorldScale();
+    const rawHeights = new Float32Array(Module.HEAPF32.buffer, ptr, rawSize * rawSize);
+
+    // R32.64.3: Bicubic 2× upscale — smooth mountain silhouettes from same Raindance data
+    const UPSCALE = 2;
+    const size = (rawSize - 1) * UPSCALE + 1;  // 257→513
+    const worldScale = rawScale / UPSCALE;
+    const heights = new Float32Array(size * size);
+
+    // Catmull-Rom interpolation for smooth curves through original height samples
+    function catmullRom(p0, p1, p2, p3, t) {
+        const t2 = t * t, t3 = t2 * t;
+        return 0.5 * ((2 * p1) + (-p0 + p2) * t + (2*p0 - 5*p1 + 4*p2 - p3) * t2 + (-p0 + 3*p1 - 3*p2 + p3) * t3);
+    }
+    function rawH(i, j) {
+        i = Math.max(0, Math.min(rawSize - 1, i));
+        j = Math.max(0, Math.min(rawSize - 1, j));
+        return rawHeights[j * rawSize + i];
+    }
+    for (let jOut = 0; jOut < size; jOut++) {
+        for (let iOut = 0; iOut < size; iOut++) {
+            const srcI = iOut / UPSCALE;
+            const srcJ = jOut / UPSCALE;
+            const i0 = Math.floor(srcI), j0 = Math.floor(srcJ);
+            const fi = srcI - i0, fj = srcJ - j0;
+            // Bicubic: interpolate 4 rows in i, then interpolate results in j
+            let colVals = [];
+            for (let dj = -1; dj <= 2; dj++) {
+                colVals.push(catmullRom(
+                    rawH(i0 - 1, j0 + dj), rawH(i0, j0 + dj),
+                    rawH(i0 + 1, j0 + dj), rawH(i0 + 2, j0 + dj), fi
+                ));
+            }
+            heights[jOut * size + iOut] = catmullRom(colVals[0], colVals[1], colVals[2], colVals[3], fj);
+        }
+    }
+    console.log('[R32.64.3] Terrain bicubic upscale: ' + rawSize + '→' + size + ' (' + (size*size) + ' verts, scale ' + worldScale.toFixed(2) + ')');
+
     _htSize = size; _htScale = worldScale;
     _htData = new Float32Array(heights);
 
