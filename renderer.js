@@ -144,6 +144,7 @@ export async function start() {
     try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
     try { initExplosionFX(); } catch (e) { console.warn('[R32.74] initExplosionFX failed:', e); }
     try { initNightFairies(); } catch (e) { console.warn('[R32.74] initNightFairies failed:', e); }
+    try { initInteriorLights(); } catch (e) { console.warn('[R32.75] initInteriorLights failed:', e); }
     // R32.36.3-manus: rain disabled by default per user request "Turn off rain
     // please so I can see them". The Raindance map's signature rain streaks
     // were competing visually with the new fairies. Opt back in via ?rain=on.
@@ -4462,6 +4463,56 @@ function updateProjectileTrails(dt) {
 }
 
 // ============================================================
+// R32.75: Interior lighting — warm point lights inside buildings
+// ============================================================
+let _interiorLights = [];
+
+function initInteriorLights() {
+    // Scan buildingMeshes for stations and generators that need interior lighting
+    const lightDefs = []; // { position, color, intensity, range, team }
+    for (const b of buildingMeshes) {
+        const canon = b.mesh.userData && b.mesh.userData.canon;
+        if (!canon) continue;
+        const db = canon.datablock;
+        const pos = b.mesh.position;
+        const teamIdx = canon.team != null ? canon.team : -1;
+        // Generator: team-tinted warm light + slightly brighter (the heart of the base)
+        if (db === 'Generator') {
+            const color = teamIdx === 0 ? 0xFF9060 : (teamIdx === 1 ? 0x6090FF : 0xFFE0B0);
+            lightDefs.push({ x: pos.x, y: pos.y + 3.0, z: pos.z, color, intensity: 1.4, range: 14, team: teamIdx });
+        }
+        // Inventory / Ammo / Command stations: warm interior light
+        if (db === 'InventoryStation' || db === 'AmmoStation' || db === 'CommandStation') {
+            lightDefs.push({ x: pos.x, y: pos.y + 2.5, z: pos.z, color: 0xFFE0B0, intensity: 0.9, range: 10, team: teamIdx });
+        }
+    }
+    if (lightDefs.length === 0) {
+        console.log('[R32.75] No buildings found for interior lighting');
+        return;
+    }
+    for (const def of lightDefs) {
+        const light = new THREE.PointLight(def.color, 0, def.range);
+        light.position.set(def.x, def.y, def.z);
+        light.castShadow = false; // performance: skip shadow casting for ambient interior lights
+        light.decay = 2; // physically realistic falloff
+        scene.add(light);
+        _interiorLights.push({ light, baseIntensity: def.intensity, team: def.team });
+    }
+    console.log('[R32.75] Interior lights placed:', _interiorLights.length);
+}
+
+function updateInteriorLights() {
+    if (_interiorLights.length === 0) return;
+    // DayNight modulation: interiors glow brighter at dusk/night for contrast
+    const dayMix = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
+    // Night boost: lights go from 40% during full day to 100% at night
+    const nightBoost = 0.4 + 0.6 * (1.0 - dayMix);
+    for (const il of _interiorLights) {
+        il.light.intensity = il.baseIntensity * nightBoost;
+    }
+}
+
+// ============================================================
 // R32.74: Enhanced explosion effects — fireball sphere + spark burst
 // ============================================================
 const EXPL_POOL = 8;
@@ -4891,6 +4942,7 @@ function loop() {
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateNightFairies(1/60, t); } catch (e) { /* cosmetic — keep loop alive */ }
+    try { updateInteriorLights(); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
