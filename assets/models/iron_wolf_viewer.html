@@ -141,6 +141,33 @@ window.updateLighting = function() {
   document.getElementById('val-exposure').textContent = e.toFixed(2);
 };
 
+// Environment map for metallic reflections
+const pmremGenerator = new THREE.PMREMGenerator(renderer);
+const envRT = pmremGenerator.fromScene(new THREE.Scene().add(
+  (() => {
+    // Create a simple gradient environment
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 128;
+    const ctx = canvas.getContext('2d');
+    const grad = ctx.createLinearGradient(0, 0, 0, 128);
+    grad.addColorStop(0, '#1a2040');
+    grad.addColorStop(0.3, '#2a3060');
+    grad.addColorStop(0.5, '#445080');
+    grad.addColorStop(0.7, '#2a3060');
+    grad.addColorStop(1, '#0a0a1a');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 256, 128);
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    const envMesh = new THREE.Mesh(
+      new THREE.SphereGeometry(50, 16, 8),
+      new THREE.MeshBasicMaterial({ map: tex, side: THREE.BackSide })
+    );
+    return envMesh;
+  })()
+));
+scene.environment = envRT.texture;
+
 // Ground plane
 const groundGeo = new THREE.PlaneGeometry(20, 20);
 const groundMat = new THREE.MeshStandardMaterial({ 
