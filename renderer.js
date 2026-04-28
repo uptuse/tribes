@@ -334,12 +334,12 @@ const DayNight = (() => {
         nightHemi:  new THREE.Color(0x0a1020),  // R32.63.6: much darker night ambient (was 0x2a3a5a)
         dawnHemi:   new THREE.Color(0xc89878),  // warm peach fill
         noonHemi:   new THREE.Color(0xb8c4d8),  // slightly blue-white (was grey 0xc0c8d0)
-        duskHemi:   new THREE.Color(0xb07858),  // warm dusk fill
+        duskHemi:   new THREE.Color(0x4a3858),  // R32.63.7: cool purple dusk (was warm 0xb07858)
         hemiGround: new THREE.Color(0x4d473b),  // unchanged
         nightFog:   new THREE.Color(0x020408),  // R32.63.6: near-black night fog
         dawnFog:    new THREE.Color(0xd0a080),  // warm pink-orange haze
         noonFog:    new THREE.Color(0xa8b8c8),  // R32.63.6: slight blue haze (was flat grey)
-        duskFog:    new THREE.Color(0xb86848),  // warm dusty horizon
+        duskFog:    new THREE.Color(0x1a1828),  // R32.63.7: deep blue-purple dusk (was brown 0xb86848)
     };
     const _tmpA = new THREE.Color();
     const _tmpB = new THREE.Color();
@@ -427,7 +427,7 @@ const DayNight = (() => {
 
         // R32.63.6: env intensity lowered further — night near-zero, day moderate.
         if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.35 + 0.75 * dayMix;  // 0.35 night → 1.10 noon
+            renderer.toneMappingExposure = 0.35 + 0.60 * dayMix;  // R32.63.7: 0.35 night → 0.95 noon (was 1.10)
         }
         if (typeof scene !== 'undefined') {
             // R32.63.6: env 0.05 at night → 0.45 at noon (was 0.15→0.55)
