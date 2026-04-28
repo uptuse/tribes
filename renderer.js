@@ -1892,21 +1892,98 @@ async function initInteriorShapes() {
         // Cache of material arrays per mesh filename (since multiple instances share geometry)
         const matArrayCache = new Map();
 
+        // R32.70: PBR texture system — CC0 textures from Poly Haven
+        // Classify a material name into its PBR texture category
+        function _classifyMaterial(texName) {
+            const key = texName.toLowerCase().replace(/\.bmp$/i, '');
+            if (key.startsWith('ext_iron') || key === 'itube' || key === 'ivent') return 'heavy_metal';
+            if (key.startsWith('metal_') || key === 'base_metal' || key === 'special_metal' || key === 'idkmetalstrip' || key === 'iltmetal' || key === 'greyrib') return 'light_metal';
+            if (key.startsWith('ext_grey')) return 'grey_exterior';
+            if (key.startsWith('base_warm') || key.startsWith('warm_') || key === 'special_warm') return 'warm_panel';
+            if (key.startsWith('cold_') || key === 'base_cold') return 'cold_panel';
+            if (key === 'base_rock' || key.startsWith('ext_stone') || key.startsWith('lrrrr') || key === 'lcccc') return 'rock';
+            if (key.startsWith('light_') || key === 'special_interface' || key === 'special_shield' || key === 'hdisplay_yellow' || key === 'redylight') return 'emissive';
+            if (key.startsWith('base.emblem')) return 'team_emblem';
+            if (key === 'carpet_base') return 'interior_detail';
+            return 'accent';
+        }
+
+        // Pre-load PBR texture maps per category
+        const _pbrTextures = new Map(); // category -> { albedo, normal, roughness }
+        const _pbrCategories = ['heavy_metal', 'light_metal', 'grey_exterior', 'warm_panel', 'cold_panel', 'rock', 'interior_detail', 'accent'];
+        const _pbrLoader = new THREE.TextureLoader();
+        const _pbrBasePath = 'assets/textures/buildings/';
+        let _pbrReady = false;
+
+        // Load all PBR textures (non-blocking, materials fall back to procedural until loaded)
+        const _pbrLoadPromises = [];
+        for (const cat of _pbrCategories) {
+            const catMaps = {};
+            for (const mapType of ['albedo', 'normal', 'roughness']) {
+                const url = _pbrBasePath + cat + '_' + mapType + '.png';
+                const p = new Promise(resolve => {
+                    _pbrLoader.load(url, tex => {
+                        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+                        tex.repeat.set(2, 2);
+                        tex.magFilter = THREE.LinearFilter;
+                        tex.minFilter = THREE.LinearMipmapLinearFilter;
+                        tex.generateMipmaps = true;
+                        tex.colorSpace = mapType === 'albedo' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+                        catMaps[mapType] = tex;
+                        resolve();
+                    }, undefined, () => {
+                        console.warn('[R32.70] Failed to load PBR texture:', url);
+                        resolve(); // resolve anyway — graceful fallback
+                    });
+                });
+                _pbrLoadPromises.push(p);
+            }
+            _pbrTextures.set(cat, catMaps);
+        }
+        Promise.all(_pbrLoadPromises).then(() => {
+            _pbrReady = true;
+            let loaded = 0;
+            for (const [cat, maps] of _pbrTextures) {
+                const count = Object.keys(maps).length;
+                loaded += count;
+            }
+            console.log('[R32.70] PBR textures ready:', loaded, 'maps across', _pbrTextures.size, 'categories');
+        });
+
         function buildMaterialArray(fileName) {
             if (matArrayCache.has(fileName)) return matArrayCache.get(fileName);
             const matNames = meshMaterialNames.get(fileName) || [];
             const mats = matNames.map(texName => {
                 const entry = lookupPalette(texName);
                 const [cr, cg, cb] = entry.color;
-                const procTex = _genProceduralTex(texName, entry.color);
+                const category = _classifyMaterial(texName);
+                const pbrMaps = _pbrTextures.get(category);
+                const usePBR = pbrMaps && pbrMaps.albedo && category !== 'emissive' && category !== 'team_emblem';
+
+                // R32.70: Use PBR albedo when available, procedural as fallback
+                const albedoTex = usePBR ? pbrMaps.albedo : _genProceduralTex(texName, entry.color);
+
                 const mat = new THREE.MeshStandardMaterial({
                     ..._matProps,
-                    color: new THREE.Color(1, 1, 1),
-                    map: procTex,
+                    // R32.70: Tint PBR albedo by palette color for variation; procedural textures already bake the color
+                    color: usePBR ? new THREE.Color(cr, cg, cb) : new THREE.Color(1, 1, 1),
+                    map: albedoTex,
                     roughness: entry.roughness,
                     metalness: entry.metalness,
                     envMapIntensity: 0.35,
                 });
+
+                // R32.70: Apply normal + roughness maps from PBR set
+                if (usePBR) {
+                    if (pbrMaps.normal) {
+                        mat.normalMap = pbrMaps.normal;
+                        mat.normalScale = new THREE.Vector2(0.8, 0.8); // slightly subdued — T1 geometry is low-poly
+                    }
+                    if (pbrMaps.roughness) {
+                        mat.roughnessMap = pbrMaps.roughness;
+                    }
+                }
+
                 mat.userData.isInterior = true; // R32.53: skip toonification — toon step-lighting makes back-faces pure black
                 if (entry.emissive) {
                     mat.emissive = new THREE.Color(entry.emissive[0], entry.emissive[1], entry.emissive[2]);
