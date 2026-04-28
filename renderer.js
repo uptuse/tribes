@@ -157,6 +157,11 @@ export async function start() {
         console.warn('[R32.104] RapierPhysics not loaded — using WASM collision fallback');
     }
     await initBuildings(); // R32.3: now async — loads canonical.json for per-datablock mesh classification
+
+    // R32.139: Terrain carving — depress terrain vertices under building footprints
+    // Buildings are hobbit-holed into hillsides; the original game carved terrain around them.
+    try { _carveTerrainUnderBuildings(); } catch (e) { console.warn('[R32.139] terrain carve failed:', e); }
+
     // R32.104: Create Rapier cuboid colliders for buildings
     if (_rapierReady && window.RapierPhysics) {
         try { window.RapierPhysics.createBuildingColliders(); } catch (e) {
@@ -1131,6 +1136,73 @@ async function initTerrain() {
         terrainMesh.material.needsUpdate = false; // uniform-only change, no recompile
     };
     console.log('[R32.42] Terrain: 3 array textures (color+normal+AO), roughness enabled, POM disabled');
+}
+
+// R32.139: Carve terrain under building footprints
+// Depress terrain vertices that fall inside building AABBs so terrain
+// doesn't poke through doorways/entrances (hobbit-hole effect).
+function _carveTerrainUnderBuildings() {
+    if (!terrainMesh || !Module._getBuildingPtr) return;
+
+    const ptr = Module._getBuildingPtr();
+    const count = Module._getBuildingCount();
+    const stride = Module._getBuildingStride();
+    const bView = new Float32Array(Module.HEAPF32.buffer, ptr, count * stride);
+
+    // Collect non-rock building AABBs
+    const buildings = [];
+    for (let b = 0; b < count; b++) {
+        const o = b * stride;
+        const type = bView[o + 6];
+        if (type === 5) continue; // skip rocks
+        buildings.push({
+            cx: bView[o], cy: bView[o + 1], cz: bView[o + 2],
+            hx: bView[o + 3], hy: bView[o + 4], hz: bView[o + 5]
+        });
+    }
+    if (!buildings.length) return;
+
+    const geo = terrainMesh.geometry;
+    const pos = geo.attributes.position;
+    const size = _htSize;
+    const scale = _htScale;
+    const half = (size - 1) * scale * 0.5;
+    let carved = 0;
+
+    for (let vi = 0; vi < pos.count; vi++) {
+        const wx = pos.getX(vi);
+        const wy = pos.getY(vi);
+        const wz = pos.getZ(vi);
+
+        for (const b of buildings) {
+            // Expand footprint by 2m margin for doorway clearance
+            const margin = 2.0;
+            if (wx >= b.cx - b.hx - margin && wx <= b.cx + b.hx + margin &&
+                wz >= b.cz - b.hz - margin && wz <= b.cz + b.hz + margin) {
+                // Building bottom = center Y minus half height
+                const buildingBottom = b.cy - b.hy;
+                // If terrain is above building bottom, push it down
+                if (wy > buildingBottom - 1.0) {
+                    pos.setY(vi, buildingBottom - 1.0);
+                    carved++;
+                }
+            }
+        }
+    }
+
+    if (carved > 0) {
+        pos.needsUpdate = true;
+        geo.computeVertexNormals();
+        // Also update the heightmap sample data
+        for (let vi = 0; vi < pos.count; vi++) {
+            const j = Math.floor(vi / size);
+            const i = vi % size;
+            if (j < size && i < size) {
+                _htData[j * size + i] = pos.getY(vi);
+            }
+        }
+        console.log(`[R32.139] Terrain carved: ${carved} vertices depressed under ${buildings.length} buildings`);
+    }
 }
 
 // ============================================================
