@@ -29,38 +29,15 @@ export function init(targetScene) {
         _gltf = gltf;
         _loaded = true;
 
-        // Force world matrix update so getWorldScale works
+        // R32.114: Simple approach — no auto-scaling. The Mixamo armature already
+        // has a 0.01 scale that converts cm→m, giving a ~2m model natively.
+        // Just measure the world-space bounding box to find the foot offset.
         gltf.scene.updateWorldMatrix(true, true);
-
-        // Find the skinned mesh to measure real dimensions
-        let sm = null;
-        gltf.scene.traverse(c => { if (c.isSkinnedMesh && !sm) sm = c; });
-
-        if (sm) {
-            sm.geometry.computeBoundingBox();
-            const bb = sm.geometry.boundingBox;
-            const ws = new THREE.Vector3();
-            sm.getWorldScale(ws);
-
-            // Geometry is in Mixamo cm space, armature scale ~0.01 converts to meters
-            const realMinY  = bb.min.y * ws.y;
-            const realMaxY  = bb.max.y * ws.y;
-            const realHeight = realMaxY - realMinY;
-
-            // Match procedural light armor height (~1.85m)
-            const TARGET_H = 1.85;
-            _modelScale = TARGET_H / Math.max(realHeight, 0.01);
-
-            // After model.scale.setScalar(_modelScale), feet are at:
-            //   model.position.y + realMinY * _modelScale
-            // We want feet at playerY, so:
-            //   model.position.y = playerY - realMinY * _modelScale
-            _footOffset = realMinY * _modelScale;
-
-            console.log('[R32.113] Char sizing — geoY:', bb.min.y.toFixed(0), '→', bb.max.y.toFixed(0),
-                'ws:', ws.y.toFixed(4), 'realH:', realHeight.toFixed(2) + 'm',
-                'scale:', _modelScale.toFixed(4), 'footOff:', _footOffset.toFixed(3));
-        }
+        const box = new THREE.Box3().setFromObject(gltf.scene);
+        _modelScale = 1.0; // native scale is fine (~2m)
+        _footOffset = box.min.y; // negative = feet below origin
+        console.log('[R32.114] Model bbox Y:', box.min.y.toFixed(3), '→', box.max.y.toFixed(3),
+            'height:', (box.max.y - box.min.y).toFixed(2) + 'm', 'footOffset:', _footOffset.toFixed(3));
 
         console.log('[R32.113] Character loaded:', gltf.animations.length, 'clips');
         for (const clip of gltf.animations) {
