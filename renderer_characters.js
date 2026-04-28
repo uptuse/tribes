@@ -56,11 +56,6 @@ export function sync(t, playerView, playerStride, localIdx, playerMeshes) {
     _lastT = t;
 
     _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshes);
-
-    if (!_demoSpawned && localIdx >= 0 && playerView && playerStride > 0) {
-        _spawnDemo(playerView, playerStride, localIdx);
-    }
-    if (_demo) _updateDemo(t, dt);
 }
 
 // ── Instance management ─────────────────────────────────────
