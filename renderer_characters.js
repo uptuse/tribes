@@ -29,31 +29,43 @@ export function init(targetScene) {
         _gltf = gltf;
         _loaded = true;
 
-        // R32.120: Strip root motion from all clips.
-        // Mixamo bakes Hips bone translation into movement anims (run, strafe, etc).
-        // In-game, position is controlled by WASM — root motion causes visual drift.
-        // Fix: remove .position tracks for the Hips bone (keep .quaternion + .scale).
+        // R32.125: Strip ALL Hips position (root motion). Position is WASM-driven.
+        // We'll compute the foot offset from the skeleton below.
         for (const clip of gltf.animations) {
             clip.tracks = clip.tracks.filter(track => {
-                // Track names are like "mixamorigHips.position", "mixamorigHips.quaternion"
-                // Strip only horizontal (X,Z) root motion — keep Y so the hips stay at standing height.
                 if (track.name.endsWith('.position') && track.name.includes('Hips')) {
-                    const vals = track.values;
-                    // values are [x0,y0,z0, x1,y1,z1, ...] — zero X and Z, keep Y
-                    for (let i = 0; i < vals.length; i += 3) {
-                        vals[i]     = 0; // X → 0
-                        vals[i + 2] = 0; // Z → 0
-                    }
-                    console.log(`  [R32.125] Zeroed XZ root motion (kept Y): ${track.name} from ${clip.name}`);
+                    return false; // remove entirely
                 }
-                return true; // keep all other tracks
+                return true;
             });
         }
 
-        // R32.119: Mixamo origin is at feet (Y=0). No offset needed.
-        gltf.scene.updateWorldMatrix(true, true);
-        const box = new THREE.Box3().setFromObject(gltf.scene);
-        _footOffset = 0;
+        // R32.126: Compute foot offset — play one frame of idle to find how far
+        // below the origin the feet actually are, then use that to lift the model.
+        {
+            const tmpModel = gltf.scene;
+            const tmpMixer = new THREE.AnimationMixer(tmpModel);
+            const idleClip = gltf.animations.find(c => c.name === 'idle') || gltf.animations[0];
+            if (idleClip) {
+                const action = tmpMixer.clipAction(idleClip);
+                action.play();
+                tmpMixer.update(1 / 60); // evaluate one frame
+                tmpModel.updateWorldMatrix(true, true);
+            }
+            // Find the lowest bone world position (should be a foot/toe bone)
+            let lowestY = Infinity;
+            tmpModel.traverse(child => {
+                if (child.isBone) {
+                    const wp = new THREE.Vector3();
+                    child.getWorldPosition(wp);
+                    if (wp.y < lowestY) lowestY = wp.y;
+                }
+            });
+            _footOffset = lowestY < 0 ? -lowestY : 0;
+            tmpMixer.stopAllAction();
+            tmpMixer.uncacheRoot(tmpModel);
+            console.log(`[R32.126] Foot offset from skeleton: ${_footOffset.toFixed(4)}m (lowest bone Y: ${lowestY.toFixed(4)})`);
+        }
 
         console.log('[R32.120] Character loaded:', gltf.animations.length, 'clips');
         for (const clip of gltf.animations) {
@@ -173,7 +185,7 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         char.model.position.set(
             playerView[o],
-            _groundY(playerView[o], playerView[o + 1], playerView[o + 2]),
+            _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset,
             playerView[o + 2]
         );
         char.model.rotation.set(0, -playerView[o + 4], 0, 'YXZ');
@@ -207,7 +219,7 @@ function _spawnDemo(playerView, playerStride, localIdx) {
 
     const yaw = playerView[o + 4];
     _demo.baseX = playerView[o] + Math.sin(yaw) * 8;
-    _demo.baseY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]);
+    _demo.baseY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset;
     _demo.baseZ = playerView[o + 2] + Math.cos(yaw) * 8;
     _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     _demo.time = 0;
