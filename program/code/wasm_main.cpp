@@ -574,6 +574,7 @@ static bool sphereVsTriangle(Vec3 center, float radius, const ColTri& tri,
 //   pos.y = feet. Player occupies [pos.y, pos.y + playerHeight].
 //   Lower sphere center: (pos.x, pos.y + radius, pos.z)
 //   Upper sphere center: (pos.x, pos.y + playerHeight - radius, pos.z)
+// R32.100: Floor surfaces treated like terrain (snap Y, preserve horizontal vel).
 // Returns true if any collision was resolved.
 static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
                                             float playerRadius, float playerHeight) {
@@ -581,36 +582,24 @@ static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
     bool anyHit = false;
     const float PAD = 0.5f; // broadphase padding
 
-    // Capsule spheres
-    float loY = pos.y + playerRadius;
-    float hiY = pos.y + playerHeight - playerRadius;
-    if (hiY < loY) hiY = loY; // degenerate: single sphere
-
-    Vec3 loCenter = {pos.x, loY, pos.z};
-    Vec3 hiCenter = {pos.x, hiY, pos.z};
-
-    // Iterate up to 4 times for convergence
-    for (int iter = 0; iter < 4; iter++) {
-        loCenter = {pos.x, pos.y + playerRadius, pos.z};
-        hiCenter = {pos.x, pos.y + playerHeight - playerRadius, pos.z};
+    // Iterate up to 6 times for convergence
+    for (int iter = 0; iter < 6; iter++) {
+        Vec3 loCenter = {pos.x, pos.y + playerRadius, pos.z};
+        Vec3 hiCenter = {pos.x, pos.y + playerHeight - playerRadius, pos.z};
         if (hiCenter.y < loCenter.y) hiCenter.y = loCenter.y;
 
-        Vec3 bestPush = {0,0,0};
-        float bestDepth = 0;
+        // Accumulate all pushes this iteration, separated by type
+        Vec3 floorPush = {0,0,0};   // mostly-upward pushes (floor)
+        float floorDepth = 0;
+        Vec3 wallPush = {0,0,0};    // lateral pushes (walls/ceiling)
+        float wallDepth = 0;
 
         for (int mi = 0; mi < g_numColMeshes; mi++) {
             const ColMesh& m = g_colMeshes[mi];
             // Broadphase: player AABB vs mesh AABB
-            float pMinX = pos.x - playerRadius - PAD;
-            float pMaxX = pos.x + playerRadius + PAD;
-            float pMinY = pos.y - PAD;
-            float pMaxY = pos.y + playerHeight + PAD;
-            float pMinZ = pos.z - playerRadius - PAD;
-            float pMaxZ = pos.z + playerRadius + PAD;
-
-            if (pMaxX < m.aabbMin.x || pMinX > m.aabbMax.x ||
-                pMaxY < m.aabbMin.y || pMinY > m.aabbMax.y ||
-                pMaxZ < m.aabbMin.z || pMinZ > m.aabbMax.z) continue;
+            if (pos.x + playerRadius + PAD < m.aabbMin.x || pos.x - playerRadius - PAD > m.aabbMax.x ||
+                pos.y + playerHeight + PAD < m.aabbMin.y || pos.y - PAD > m.aabbMax.y ||
+                pos.z + playerRadius + PAD < m.aabbMin.z || pos.z - playerRadius - PAD > m.aabbMax.z) continue;
 
             // Narrowphase: test each triangle
             for (int ti = m.triStart; ti < m.triStart + m.triCount; ti++) {
@@ -619,39 +608,54 @@ static bool resolvePlayerInteriorCollision(Vec3& pos, Vec3& vel,
 
                 // Test lower sphere
                 if (sphereVsTriangle(loCenter, playerRadius, tri, pushDir, pushDepth)) {
-                    if (pushDepth > bestDepth) {
-                        bestDepth = pushDepth;
-                        bestPush = pushDir;
+                    if (pushDir.y > 0.7f) {
+                        // Floor surface — track deepest floor push
+                        if (pushDepth > floorDepth) { floorDepth = pushDepth; floorPush = pushDir; }
+                    } else {
+                        // Wall/ceiling — track deepest wall push
+                        if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
                     }
                 }
                 // Test upper sphere
                 if (hiCenter.y != loCenter.y) {
                     if (sphereVsTriangle(hiCenter, playerRadius, tri, pushDir, pushDepth)) {
-                        if (pushDepth > bestDepth) {
-                            bestDepth = pushDepth;
-                            bestPush = pushDir;
+                        if (pushDir.y < -0.7f) {
+                            // Ceiling — just zero upward vel, push down
+                            if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
+                        } else if (pushDir.y <= 0.7f) {
+                            // Wall on upper body
+                            if (pushDepth > wallDepth) { wallDepth = pushDepth; wallPush = pushDir; }
                         }
                     }
                 }
             }
         }
 
-        if (bestDepth < 0.001f) break; // no collision this iteration
+        bool hitThisIter = false;
 
-        // Apply push-out
-        pos = v3add(pos, v3scale(bestPush, bestDepth + 0.001f));
-
-        // Slide velocity: remove component along push direction
-        float velDot = v3dot(vel, bestPush);
-        if (velDot < 0) { // only if moving INTO the surface
-            vel = v3sub(vel, v3scale(bestPush, velDot));
+        // Resolve floor pushes — treat like terrain: snap Y, preserve horizontal
+        if (floorDepth > 0.001f) {
+            // Snap upward only — like terrain clamp
+            pos.y += floorDepth + 0.002f;
+            // Zero downward velocity only (same as terrain)
+            if (vel.y < 0) vel.y = 0;
+            hitThisIter = true;
         }
 
-        // Floor detection: if push is mostly upward, zero downward vel
-        if (bestPush.y > 0.5f && vel.y < 0) vel.y = 0;
-        // Ceiling: if push is mostly downward, zero upward vel
-        if (bestPush.y < -0.5f && vel.y > 0) vel.y = 0;
+        // Resolve wall/ceiling pushes — slide velocity along surface
+        if (wallDepth > 0.001f) {
+            pos = v3add(pos, v3scale(wallPush, wallDepth + 0.002f));
+            // Slide: remove velocity into the wall
+            float velDot = v3dot(vel, wallPush);
+            if (velDot < 0) {
+                vel = v3sub(vel, v3scale(wallPush, velDot));
+            }
+            // Ceiling: zero upward vel
+            if (wallPush.y < -0.5f && vel.y > 0) vel.y = 0;
+            hitThisIter = true;
+        }
 
+        if (!hitThisIter) break;
         anyHit = true;
     }
 
