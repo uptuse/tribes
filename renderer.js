@@ -4731,12 +4731,14 @@ function updateExplosionFX(dt) {
 }
 
 // ============================================================
-// R32.74: Nighttime fairy particles — luminous floating points at night
+// R32.82: Sky fairy particles — luminous floating motes in the sky at dusk/night
 // ============================================================
-const NIGHT_FAIRY_COUNT = 200;
-const NIGHT_FAIRY_RADIUS = 55;   // metres around camera
+const NIGHT_FAIRY_COUNT = 500;
+const NIGHT_FAIRY_RADIUS = 200;  // metres around camera (XZ only)
+const NIGHT_FAIRY_MIN_ALT = 40;  // metres above terrain
+const NIGHT_FAIRY_MAX_ALT = 130; // metres above terrain
 let _nfPoints = null;
-let _nfPos, _nfBaseY, _nfPhase, _nfSpeed, _nfDriftX, _nfDriftZ, _nfAlpha;
+let _nfPos, _nfBaseY, _nfPhase, _nfSpeed, _nfDriftX, _nfDriftZ, _nfAlpha, _nfHue;
 let _nfOpacity = 0;              // smoothed visibility (0=hidden, 1=full)
 
 function initNightFairies() {
@@ -4748,23 +4750,43 @@ function initNightFairies() {
     _nfDriftZ = new Float32Array(NIGHT_FAIRY_COUNT);
     _nfAlpha  = new Float32Array(NIGHT_FAIRY_COUNT);
 
+    const colors = new Float32Array(NIGHT_FAIRY_COUNT * 3);
+
     for (let i = 0; i < NIGHT_FAIRY_COUNT; i++) {
         const angle = Math.random() * Math.PI * 2;
         const dist  = Math.random() * NIGHT_FAIRY_RADIUS;
         _nfPos[i*3]     = Math.cos(angle) * dist;
-        _nfPos[i*3+1]   = 15 + (Math.random() - 0.3) * 30; // spread vertically
+        _nfPos[i*3+1]   = NIGHT_FAIRY_MIN_ALT + Math.random() * (NIGHT_FAIRY_MAX_ALT - NIGHT_FAIRY_MIN_ALT);
         _nfPos[i*3+2]   = Math.sin(angle) * dist;
         _nfBaseY[i]     = _nfPos[i*3+1];
         _nfPhase[i]     = Math.random() * Math.PI * 2;
-        _nfSpeed[i]     = 0.3 + Math.random() * 0.8;
-        _nfDriftX[i]    = (Math.random() - 0.5) * 2;
-        _nfDriftZ[i]    = (Math.random() - 0.5) * 2;
+        _nfSpeed[i]     = 0.2 + Math.random() * 0.6;
+        _nfDriftX[i]    = (Math.random() - 0.5) * 1.5;
+        _nfDriftZ[i]    = (Math.random() - 0.5) * 1.5;
         _nfAlpha[i]     = 0;
+
+        // Rainbow hue distribution
+        const hue = Math.random();
+        const h6 = hue * 6;
+        const f = h6 - Math.floor(h6);
+        const sector = Math.floor(h6) % 6;
+        let r = 1, g = 1, b = 1;
+        if      (sector === 0) { g = f;     b = 0; }
+        else if (sector === 1) { r = 1 - f; b = 0; }
+        else if (sector === 2) { r = 0;     b = f; }
+        else if (sector === 3) { r = 0;     g = 1 - f; }
+        else if (sector === 4) { r = f;     g = 0; }
+        else                   { b = 1 - f; g = 0; }
+        // Desaturate slightly for a softer look
+        colors[i*3]   = 0.6 + 0.4 * r;
+        colors[i*3+1] = 0.6 + 0.4 * g;
+        colors[i*3+2] = 0.6 + 0.4 * b;
     }
 
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.Float32BufferAttribute(_nfPos, 3).setUsage(THREE.DynamicDrawUsage));
     geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_nfAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aColor',   new THREE.Float32BufferAttribute(colors, 3));
 
     const mat = new THREE.ShaderMaterial({
         uniforms: {
@@ -4772,25 +4794,28 @@ function initNightFairies() {
         },
         vertexShader: `
             attribute float aAlpha;
+            attribute vec3 aColor;
             uniform float uTime;
             varying float vAlpha;
+            varying vec3 vColor;
             void main() {
                 vAlpha = aAlpha;
+                vColor = aColor;
                 vec4 mv = modelViewMatrix * vec4(position, 1.0);
                 float dist = max(2.0, length(mv.xyz));
-                gl_PointSize = clamp(aAlpha * 300.0 / dist, 1.0, 10.0);
+                gl_PointSize = clamp(aAlpha * 500.0 / dist, 1.5, 12.0);
                 gl_Position = projectionMatrix * mv;
             }
         `,
         fragmentShader: `
             precision mediump float;
             varying float vAlpha;
+            varying vec3 vColor;
             void main() {
                 float r = length(gl_PointCoord - vec2(0.5));
                 if (r > 0.5) discard;
-                float soft = 1.0 - smoothstep(0.1, 0.5, r);
-                vec3 col = vec3(1.0, 0.95, 0.82);
-                gl_FragColor = vec4(col, soft * vAlpha * 0.85);
+                float soft = 1.0 - smoothstep(0.05, 0.5, r);
+                gl_FragColor = vec4(vColor, soft * vAlpha * 0.9);
             }
         `,
         transparent: true,
@@ -4803,15 +4828,15 @@ function initNightFairies() {
     _nfPoints.renderOrder = 85;
     _nfPoints.visible = false;
     scene.add(_nfPoints);
-    console.log('[R32.74] Nighttime fairies: count=' + NIGHT_FAIRY_COUNT);
+    console.log('[R32.82] Sky fairies: count=' + NIGHT_FAIRY_COUNT + ' radius=' + NIGHT_FAIRY_RADIUS + 'm alt=' + NIGHT_FAIRY_MIN_ALT + '-' + NIGHT_FAIRY_MAX_ALT + 'm');
 }
 
 function updateNightFairies(dt, t) {
     if (!_nfPoints) return;
 
-    // dayMix: 0=night, 1=day. We want fairies visible below ~0.3
+    // dayMix: 0=night, 1=day. Fairies fade in starting at dusk (0.55) through night
     const dayMix = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
-    const targetOp = dayMix < 0.15 ? 1.0 : (dayMix > 0.35 ? 0.0 : (0.35 - dayMix) / 0.20);
+    const targetOp = dayMix < 0.2 ? 1.0 : (dayMix > 0.55 ? 0.0 : (0.55 - dayMix) / 0.35);
     _nfOpacity += (targetOp - _nfOpacity) * Math.min(1, dt * 2);
 
     if (_nfOpacity < 0.01) {
@@ -4821,41 +4846,39 @@ function updateNightFairies(dt, t) {
     _nfPoints.visible = true;
 
     const cx = camera.position.x;
-    const cy = camera.position.y;
     const cz = camera.position.z;
-    const rSq = NIGHT_FAIRY_RADIUS * NIGHT_FAIRY_RADIUS * 1.5;
+    const rSq = NIGHT_FAIRY_RADIUS * NIGHT_FAIRY_RADIUS * 1.2;
 
     for (let i = 0; i < NIGHT_FAIRY_COUNT; i++) {
-        // Drift
+        // Drift horizontally
         _nfPos[i*3]   += _nfDriftX[i] * _nfSpeed[i] * dt;
         _nfPos[i*3+2] += _nfDriftZ[i] * _nfSpeed[i] * dt;
-        // Gentle vertical bob
-        _nfPos[i*3+1] = _nfBaseY[i] + Math.sin(t * 0.7 + _nfPhase[i]) * 1.5;
+        // Gentle vertical bob (slow, dreamy)
+        _nfPos[i*3+1] = _nfBaseY[i] + Math.sin(t * 0.4 + _nfPhase[i]) * 3.0;
 
-        // Pulsing alpha
-        const pulse = 0.5 + 0.5 * Math.sin(t * 1.2 + _nfPhase[i] * 3.0);
+        // Pulsing alpha — slow firefly-like twinkle
+        const pulse = 0.4 + 0.6 * Math.sin(t * 0.8 + _nfPhase[i] * 3.0);
         _nfAlpha[i] = _nfOpacity * pulse;
 
-        // Recycle if too far from camera
+        // Recycle if too far from camera (XZ distance only — they stay at sky altitude)
         const dx = _nfPos[i*3]   - cx;
-        const dy = _nfPos[i*3+1] - cy;
         const dz = _nfPos[i*3+2] - cz;
-        if (dx*dx + dy*dy + dz*dz > rSq) {
+        if (dx*dx + dz*dz > rSq) {
             const angle = Math.random() * Math.PI * 2;
             const d = NIGHT_FAIRY_RADIUS * (0.3 + Math.random() * 0.5);
             _nfPos[i*3]     = cx + Math.cos(angle) * d;
-            _nfPos[i*3+1]   = cy + (Math.random() - 0.3) * 25;
+            _nfPos[i*3+1]   = NIGHT_FAIRY_MIN_ALT + Math.random() * (NIGHT_FAIRY_MAX_ALT - NIGHT_FAIRY_MIN_ALT);
             _nfPos[i*3+2]   = cz + Math.sin(angle) * d;
             _nfBaseY[i]     = _nfPos[i*3+1];
-            _nfDriftX[i]    = (Math.random() - 0.5) * 2;
-            _nfDriftZ[i]    = (Math.random() - 0.5) * 2;
+            _nfDriftX[i]    = (Math.random() - 0.5) * 1.5;
+            _nfDriftZ[i]    = (Math.random() - 0.5) * 1.5;
             _nfPhase[i]     = Math.random() * Math.PI * 2;
         }
 
         // Occasionally change drift direction
-        if (Math.random() < dt * 0.15) {
-            _nfDriftX[i] = (Math.random() - 0.5) * 2;
-            _nfDriftZ[i] = (Math.random() - 0.5) * 2;
+        if (Math.random() < dt * 0.1) {
+            _nfDriftX[i] = (Math.random() - 0.5) * 1.5;
+            _nfDriftZ[i] = (Math.random() - 0.5) * 1.5;
         }
     }
 
@@ -4958,13 +4981,15 @@ function loop() {
     // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
-    // R32.81: night-adaptive bloom — CRANKED FOR TESTING
+    // R32.81: night-adaptive bloom — off during day, ramps up at dusk, full at night
     try {
+        const dm = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
         if (bloomPass) {
-            bloomPass.enabled = true;
-            bloomPass.strength = 2.0;      // NUCLEAR — normally 0.55 max
-            bloomPass.radius = 0.8;        // wide glow
-            bloomPass.threshold = 0.3;     // everything blooms
+            // dayMix: 1=noon, 0=midnight. Bloom activates below 0.5 (dusk)
+            const nightBloom = dm < 0.15 ? 1.0 : (dm > 0.5 ? 0.0 : (0.5 - dm) / 0.35);
+            bloomPass.enabled = nightBloom > 0.01;
+            bloomPass.strength = 0.55 * nightBloom;   // max 0.55 at full night
+            bloomPass.threshold = 0.92 - 0.15 * nightBloom; // lower threshold at night → more glow
         }
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
@@ -5480,8 +5505,7 @@ let _dustPoints = null;
 let _dustState = null;
 
 function initDustLayer() {
-    // R32.63.3: fairies disabled — pink rings bleed through sky, user requested removal
-    console.log('[R32.63.3] Fairy/dust layer disabled');
+    // R32.63.3: ground fairies disabled — pink rings bleed through sky
     return;
     if (_htSize < 2) {
         console.warn('[R32.36] initDustLayer aborted: heightmap not ready');
