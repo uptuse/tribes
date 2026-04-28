@@ -273,6 +273,14 @@ function initScene() {
     scene.background = new THREE.Color(0xC0C8D0);
     // R32.25.4-DIAG: expose for diagnostic overlay
     try { window.scene = scene; window.camera = camera; window.renderer = renderer; } catch(e) {}
+    // R32.56: expose for debug panel
+    window._tribesDebug = {
+        scene, camera, renderer, composer,
+        setComposerEnabled: function(on) {
+            if (on && !composer) { try { initPostProcessing(); } catch(e) {} }
+            else if (!on) { composer = null; }
+        }
+    };
 }
 
 // ============================================================
@@ -454,7 +462,7 @@ const DayNight = (() => {
         }
     }
 
-    return { update, _apply };
+    return { update, _apply, freeze: function(h) { this._frozen = h; }, unfreeze: function() { this._frozen = null; }, _frozen: null };
 })();
 try { window.DayNight = DayNight; } catch(e) {}
 
