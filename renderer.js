@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=145'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=146'; // R32.143: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -168,7 +168,8 @@ export async function start() {
 
     // R32.140: Terrain carving — uses actual interior mesh bounding boxes
     // Buildings are hobbit-holed into hillsides; carve terrain out from under them.
-    try { _carveTerrainUnderBuildings(); } catch (e) { console.warn('[R32.140] terrain carve failed:', e); }
+    // terrain carve disabled — reverted per user request
+    // try { _carveTerrainUnderBuildings(); } catch (e) { console.warn('[R32.140] terrain carve failed:', e); }
     // R32.104: Interior mesh colliders are created inside registerModelCollision()
     // which is now redirected to Rapier (see below)
     initCustomModels(); // R32.57: load custom GLB models
