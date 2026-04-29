@@ -126,20 +126,21 @@ function _createInstance() {
 
     // R32.137: Jet flame cones — two small cones on upper back, visible when jetting
     const flameMat = new THREE.MeshBasicMaterial({
-        color: 0xff8822,
+        color: 0xff4400,
         transparent: true,
-        opacity: 0.85,
+        opacity: 0.9,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
+        depthTest: false,
         side: THREE.DoubleSide,
     });
-    const flameGeo = new THREE.ConeGeometry(0.06, 0.5, 6);
+    const flameGeo = new THREE.ConeGeometry(0.15, 0.8, 8);
     flameGeo.rotateX(Math.PI); // point downward
     const flameL = new THREE.Mesh(flameGeo, flameMat);
     const flameR = new THREE.Mesh(flameGeo, flameMat.clone());
     // Position in world scale (model root is scale 1, armature child is 0.01)
-    flameL.position.set(-0.12, 1.0, 0.25);
-    flameR.position.set(0.12, 1.0, 0.25);
+    flameL.position.set(-0.15, 1.1, 0.3);
+    flameR.position.set(0.15, 1.1, 0.3);
     flameL.scale.set(1, 1, 1);
     flameR.scale.set(1, 1, 1);
     flameL.visible = false;

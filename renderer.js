@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=143'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=144'; // R32.143: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -1153,13 +1153,14 @@ function _carveTerrainUnderBuildings() {
     // Only carve for shapes that are actual base buildings embedded in hillsides
     const carvePatterns = ['bunker', 'esmall'];
     const boxes = [];
-    console.log('[R32.142] Carve: checking', interiorShapesGroup.children.length, 'interior shapes');
+    console.log('[R32.143] Carve: checking', interiorShapesGroup.children.length, 'interior shapes');
+    const allNames = [];
     interiorShapesGroup.children.forEach(outer => {
         if (!outer.userData) return;
         const fn = (outer.userData.fileName || '').toLowerCase();
+        allNames.push(fn);
         // Only carve for base buildings
         const shouldCarve = carvePatterns.some(p => fn.startsWith(p));
-        if (shouldCarve) console.log('[R32.142] Carve match:', fn);
         if (!shouldCarve) return;
         const box = new THREE.Box3().setFromObject(outer);
         if (box.isEmpty()) return;
@@ -1203,7 +1204,9 @@ function _carveTerrainUnderBuildings() {
                 _htData[j * size + i] = pos.getY(vi);
             }
         }
-        console.log(`[R32.141] Terrain carved: ${carved} vertices under ${boxes.length} base buildings`);
+        console.warn(`[R32.143] Terrain carved: ${carved} vertices under ${boxes.length} base buildings`);
+    } else {
+        console.warn('[R32.143] Terrain carve: 0 vertices carved. boxes=' + boxes.length + ' allNames=' + JSON.stringify(allNames.slice(0,10)));
     }
 }
 
