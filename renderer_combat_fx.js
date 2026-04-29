@@ -319,3 +319,19 @@ const CombatFX = (function () {
 if (typeof window !== 'undefined') {
     window.CombatFX = CombatFX;
 }
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Future: STORM phase adds lightning flash to muzzle FX,
+// FOG phase dims tracer brightness, NIGHT_OPS adds IR glow, etc.
+// ============================================================
+if (typeof window !== 'undefined' && window.PhaseSystem) {
+    window.PhaseSystem.registerListener({
+        onPhaseChange(event) {
+            // TODO: Adjust tracer brightness/color based on phase visibility
+            // TODO: STORM → occasional lightning white-flash on fire()
+            // TODO: NIGHT_OPS → IR-green tint on tracers
+        }
+    });
+}

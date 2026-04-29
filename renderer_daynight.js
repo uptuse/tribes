@@ -266,3 +266,18 @@ try {
         get sunDir() { return sunDir; }
     };
 } catch (e) { /* SSR safety */ }
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Future: NIGHT_OPS phase forces dayMix to low value,
+// STORM phase overrides cycle speed, etc.
+// ============================================================
+if (typeof window !== 'undefined' && window.PhaseSystem) {
+    window.PhaseSystem.registerListener({
+        onPhaseChange(event) {
+            // TODO: NIGHT_OPS → force dayMix toward 0
+            // TODO: STORM → modulate ambient light
+        }
+    });
+}

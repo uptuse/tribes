@@ -368,3 +368,19 @@
 
     if (window.DEBUG_LOGS) console.log('[R32.77] Minimap module loaded');
 })();
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Future: FOG/BLIZZARD phase fades minimap terrain to white,
+// NIGHT_OPS restricts radar range, etc.
+// ============================================================
+if (typeof window !== 'undefined' && window.PhaseSystem) {
+    window.PhaseSystem.registerListener({
+        onPhaseChange(event) {
+            // TODO: Reduce minimap radar range based on visibility
+            // TODO: FOG → fade terrain overlay toward white
+            // TODO: NIGHT_OPS → dim minimap, show only nearby pings
+        }
+    });
+}

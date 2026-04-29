@@ -78,7 +78,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 // R32.7 — additive polish module. Single import; ?polish=off gracefully
 // disables the entire pack at runtime. Effects stack on top of the existing
 // renderer pipeline without modifying any existing materials or meshes.
-import * as Polish from './renderer_polish.js';
+import * as Polish from './renderer_polish.js?v=240'; // R32.240: completed weather extraction
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system

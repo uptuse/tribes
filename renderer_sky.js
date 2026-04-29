@@ -421,3 +421,23 @@ function _createStarField(scene) {
     _starPoints.renderOrder = -998;
     scene.add(_starPoints);
 }
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Registered with PhaseSystem when available. Future implementation
+// will adjust sky gradient (storm darkening, fog whitening, etc.)
+// ============================================================
+const _skyPhaseListener = {
+    onPhaseChange(event) {
+        // TODO: Adjust sky dome uniforms based on phase
+        // e.g., storm → darker sky, more cloud density
+        // e.g., fog → whiter horizon blend
+        // e.g., night_ops → force low dayMix
+    }
+};
+export function registerPhaseHooks() {
+    if (typeof window !== 'undefined' && window.PhaseSystem) {
+        window.PhaseSystem.registerListener(_skyPhaseListener);
+    }
+}

@@ -218,3 +218,25 @@ export function dispose() {
     _wetGround = null;
     _ctx = null;
 }
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Weather is the PRIMARY consumer of phase transitions.
+// Future: STORM → activate rain + lightning, BLIZZARD → snow particles,
+// FOG → volumetric fog layer, CLEAR → disable all weather FX
+// ============================================================
+const _weatherPhaseListener = {
+    onPhaseChange(event) {
+        // TODO: Map phase to weather intensity:
+        //   CLEAR → setIntensity(0)
+        //   FOG → enable fog layer at event.easedProgress
+        //   STORM → enable rain + lightning at event.easedProgress
+        //   BLIZZARD → enable snow + wind at event.easedProgress
+        //   NIGHT_OPS → subtle ambient changes only
+    }
+};
+export { _weatherPhaseListener };
+if (typeof window !== 'undefined' && window.PhaseSystem) {
+    window.PhaseSystem.registerListener(_weatherPhaseListener);
+}

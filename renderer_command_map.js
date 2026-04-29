@@ -651,3 +651,19 @@
         isOpen: () => STATE.active,
     };
 })();
+
+
+// ============================================================
+// R32.271: Phase System Hook — stub
+// Future: FOG phase obscures command map beyond certain range,
+// STORM adds weather overlay, NIGHT_OPS dims the map, etc.
+// ============================================================
+if (typeof window !== 'undefined' && window.PhaseSystem) {
+    window.PhaseSystem.registerListener({
+        onPhaseChange(event) {
+            // TODO: Adjust command map rendering based on phase
+            // TODO: FOG → reduced visible range on command map
+            // TODO: STORM → weather overlay on command map canvas
+        }
+    });
+}

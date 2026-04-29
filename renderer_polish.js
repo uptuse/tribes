@@ -1,12 +1,11 @@
 // @ai-contract
-// PURPOSE: Visual polish grab-bag — 18 safeInit'd subsystems including weather FX
-//   (lightning, thunder), combat feedback (camera shake, damage vignette, FOV punch),
-//   building details (turret coils, missile clusters, sensor dishes, railings, tower
-//   windows, station icons, chimney smoke), HUD elements (compass, telemetry overlay,
-//   settings panel), and visual atmosphere (lens flare, decals, shockwave rings)
-// SERVES: Aliveness (weather, atmosphere), Adaptation (combat feedback),
-//   Belonging (building details, faction materials)
-// DEPENDS_ON: three, Lensflare + LensflareElement (addon), DecalGeometry (addon),
+// PURPOSE: Visual polish — screen FX (camera shake, damage vignette, FOV punch,
+//   flag flash), building details (turret coils, missile clusters, sensor dishes,
+//   railings, tower windows, station icons, chimney smoke), HUD elements (compass,
+//   telemetry overlay, settings panel), decals, shockwave rings, and faction materials.
+//   Weather FX (lightning, lens flare, wet ground) live in renderer_weather.js.
+// SERVES: Adaptation (combat feedback), Belonging (building details, faction materials)
+// DEPENDS_ON: three, DecalGeometry (addon), renderer_weather.js,
 //   window.ST (settings), window.Module._getLocalPlayerIdx() (WASM),
 //   window.playSoundUI() (shell.html audio), window.__tribesApplyQuality(),
 //   _ctx.{scene, camera, renderer, composer, sunLight, hemiLight, terrainMesh,
@@ -14,13 +13,12 @@
 // EXPOSES: ES module exports: installPolish, registerGeneratorChimney, removeGeneratorChimney, enhanceTurret,
 //   enhanceSensor, addBridgeRailings, addTowerWindows, addStationIcon,
 //   getFactionPalette, spawnShockwave, placeDecal. No window.* globals
-//   (communicates via _ctx reference and DOM elements)
 // LIFECYCLE: installPolish(ctx) → returns API object with tick(), onDamage(),
 //   onShoot(), onNearMiss(), onJetBoost(), onFlagEvent(), onSpawn(), onDeath().
 //   Called by renderer.js each frame via polish.tick(dt, t)
 // PATTERN: ES module with single entry point installPolish(ctx)
-// BEFORE_MODIFY: read docs/lessons-learned.md. This file is flagged for decomposition
-//   (see docs/design-intent.md). Prefer adding to proper target modules instead.
+// BEFORE_MODIFY: read docs/lessons-learned.md. This file is flagged for further
+//   decomposition into renderer_screen_fx.js (see audit-log).
 // NEVER: add unrelated subsystems here — decompose to proper homes instead
 // ALWAYS: wrap each subsystem in safeInit try/catch so failures are isolated
 // @end-ai-contract
@@ -57,11 +55,10 @@ let _clock = null;
 let _matchStartT = 0;
 
 // Subsystems (each null until init or unavailable)
-// R32.235: _lensflare, _lightning, _wetGround moved to renderer_weather.js
+// R32.240: Weather FX (lensflare, lightning, wet ground) live in renderer_weather.js
 let _decals = null;           // decal pool
 let _shake = null;            // camera shake state
 let _fovPunch = null;         // FOV transient state
-// R32.235: _splashGroup removed — rain was already disabled
 let _smokeStacks = [];        // generator chimney smoke plumes
 let _vignettePulse = null;    // damage red vignette overlay (DOM)
 let _telemetry = null;        // fps/ping HUD overlay
@@ -75,7 +72,6 @@ let _coilRings = [];          // plasma turret emissive coils
 let _missileClusters = [];    // rocket turret missile cluster splits
 let _sensorDishes = [];       // sensor dish detail
 let _factionMaterials = {};   // tinted variants for buildings
-// R32.235: _wetGround moved to renderer_weather.js
 
 // FX flags (URL-driven)
 let _fxLevel = 'mid';   // low|mid|high
@@ -125,14 +121,12 @@ export function installPolish(ctx) {
     safeInit('windows',  _initTowerWindows);
     safeInit('stationIcons', _initStationIcons);
     safeInit('factionMaterials', _initFactionMaterials);
-    safeInit('wetGround', _initWetGround);
     safeInit('subdivision', _maybeSubdivideMeshes);
     safeInit('vignette',  _initDamageVignette);
     safeInit('telemetry', _initTelemetryHUD);
     safeInit('hudRing',   _initObjectiveHUDRing);
     safeInit('flagFlash', _initFlagFlash);
     safeInit('settings',  _initSettingsPanel);
-    safeInit('thunder',   _initThunder);
 
     return {
         tick: tick,
@@ -185,158 +179,7 @@ function tick(dt, t) {
     _tickDecals();
 }
 
-// ============================================================
-// Item 6+? — Sun lens flare (only when sun is in front of camera)
-// ============================================================
-function _initLensflare() {
-    const scene = _ctx.scene, sunLight = _ctx.sunLight;
-    if (!sunLight) return;
-
-    // Generate procedural flare textures on-canvas (no external asset fetch)
-    const tex0 = _makeFlareTexture(256, 'rgba(255,235,180,1)', 0.55);
-    const tex1 = _makeFlareTexture(64,  'rgba(255,200,140,1)', 0.30);
-    const tex2 = _makeFlareTexture(96,  'rgba(255,180,120,1)', 0.18);
-
-    const lens = new Lensflare();
-    lens.addElement(new LensflareElement(tex0, 380, 0.0));
-    lens.addElement(new LensflareElement(tex1, 90,  0.4));
-    lens.addElement(new LensflareElement(tex2, 60,  0.7));
-    lens.addElement(new LensflareElement(tex2, 80,  0.95));
-    sunLight.add(lens);
-    _lensflare = lens;
-}
-
-function _makeFlareTexture(size, color, fade) {
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    const g = c.getContext('2d');
-    const grad = g.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
-    grad.addColorStop(0, color);
-    grad.addColorStop(fade, color.replace(/,1\)$/, ',0.4)'));
-    grad.addColorStop(1, color.replace(/,1\)$/, ',0)'));
-    g.fillStyle = grad;
-    g.fillRect(0, 0, size, size);
-    const tex = new THREE.CanvasTexture(c);
-    tex.colorSpace = THREE.SRGBColorSpace;
-    return tex;
-}
-
-// ============================================================
-// Items 32, 33 — Lightning flash + ambient brighten + thunder rumble
-// ============================================================
-function _initLightning() {
-    if (_fxLevel === 'low') return;
-    const scene = _ctx.scene;
-    _lightning = {
-        nextStrike: performance.now() * 0.001 + _rand(8, 18),
-        flashIntensity: 0.0,
-        flashDecay: 4.0,         // intensity halves every 0.25s
-        boltMesh: null,
-        boltExpiry: 0,
-        ambientBoost: 0.0,
-        screenFlashAlpha: 0.0,
-    };
-    // DOM overlay for screen-wide white flash
-    const f = document.createElement('div');
-    f.id = 'r327-lightning-flash';
-    f.style.cssText = 'position:fixed;inset:0;pointer-events:none;background:rgba(220,230,255,0);z-index:9990;mix-blend-mode:screen;transition:none;';
-    document.body.appendChild(f);
-    _lightning.screenFlashEl = f;
-}
-
-function _tickLightning(dt, t) {
-    const s = _lightning;
-    if (!s) return;
-
-    // Trigger a strike
-    if (t >= s.nextStrike) {
-        _spawnLightningBolt(t);
-        s.nextStrike = t + _rand(6, 22);
-        s.flashIntensity = 1.0;
-        s.screenFlashAlpha = 0.55;
-        // R32.12.3: SHARP CRACK ~60-150ms after visible flash. Now slot 17
-        // (was 8 in R32.12 — but slot 8 is the C++-fired generator-explosion
-        // sound, so we moved lightning_crack to safe new slot 17 to avoid
-        // clobbering it). The rolling thunder rumble (separate _playThunder
-        // WebAudio path) still fires 1-3s later for the natural "flash,
-        // near-crack, distant rumble" sequence.
-        const crackDelay = _rand(60, 150);
-        setTimeout(() => { if (!_enabled) return; if (window.playSoundUI) window.playSoundUI(17); }, crackDelay);
-        // Rolling thunder rumble ~1-3s after flash (unchanged from R32.7).
-        const delay = _rand(0.8, 3.0) * 1000;
-        setTimeout(() => { if (!_enabled) return; _playThunder(); }, delay);
-    }
-
-    // Decay flash
-    if (s.flashIntensity > 0.001) {
-        s.flashIntensity = Math.max(0, s.flashIntensity - dt * s.flashDecay);
-        if (_ctx.hemiLight) _ctx.hemiLight.intensity = 1.0 + s.flashIntensity * 0.8;
-    }
-    if (s.screenFlashAlpha > 0.001) {
-        s.screenFlashAlpha = Math.max(0, s.screenFlashAlpha - dt * 1.6);
-        s.screenFlashEl.style.background = 'rgba(220,230,255,' + s.screenFlashAlpha.toFixed(3) + ')';
-    }
-
-    // Remove bolt mesh after expiry
-    if (s.boltMesh && t > s.boltExpiry) {
-        _ctx.scene.remove(s.boltMesh);
-        s.boltMesh.geometry.dispose();
-        s.boltMesh.material.dispose();
-        s.boltMesh = null;
-    }
-}
-
-function _spawnLightningBolt(t) {
-    const scene = _ctx.scene, cam = _ctx.camera;
-    if (!cam) return;
-    // Author a procedural jagged line from sky to ground in the camera's view direction
-    const camDir = _v3a.set(0, 0, -1).applyQuaternion(cam.quaternion);
-    const offset = (Math.random() * 80 - 40);
-    const startX = cam.position.x + camDir.x * 200 + offset;
-    const startZ = cam.position.z + camDir.z * 200 + offset;
-    const startY = 250;
-    const endY = 30;
-    const segs = 18;
-    const pts = [];
-    for (let i = 0; i <= segs; i++) {
-        const f = i / segs;
-        const wob = (1 - f) * (Math.random() - 0.5) * 14;
-        pts.push(new THREE.Vector3(startX + wob, startY * (1 - f) + endY * f, startZ + wob));
-    }
-    const geom = new THREE.BufferGeometry().setFromPoints(pts);
-    const mat = new THREE.LineBasicMaterial({ color: 0xfff8e0, transparent: true, opacity: 0.95, fog: false });
-    const line = new THREE.Line(geom, mat);
-    line.frustumCulled = false;
-    scene.add(line);
-    _lightning.boltMesh = line;
-    _lightning.boltExpiry = t + 0.25;
-}
-
-function _playThunder() {
-    // R32.168: Use the main audio engine's AudioContext (window.AE.ctx) instead
-    // of creating a second one. iOS Safari limits to 1 AudioContext (POL-02).
-    const ctx = window.AE && window.AE.ctx;
-    if (!ctx) return;
-    const dur = 2.2;
-    const noise = ctx.createBufferSource();
-    const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
-    const data = buf.getChannelData(0);
-    for (let i = 0; i < data.length; i++) {
-        const f = i / data.length;
-        const env = Math.exp(-3 * f) * (1 - f * 0.4);
-        data[i] = (Math.random() * 2 - 1) * env;
-    }
-    noise.buffer = buf;
-    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 90;
-    const gain = ctx.createGain(); gain.gain.value = 0.45;
-    noise.connect(lp).connect(gain).connect(ctx.destination);
-    noise.start();
-    // Add a tiny camera shake when thunder fires
-    onNearMiss(0.18);
-}
-// R32.168: _audioCtx removed — thunder now uses window.AE.ctx (shared audio context)
-
-function _initThunder() { /* R32.168: no-op — uses window.AE.ctx lazily */ }
+// R32.240: Lightning, lens flare, thunder, wet ground all live in renderer_weather.js
 
 // ============================================================
 // Item 41 — Camera shake on near-miss / explosions
@@ -588,73 +431,7 @@ function _tickDecals() {
     _applyDecalFade();
 }
 
-// ============================================================
-// Item 31 — Rain ground splashes (depth-aware via terrain sampling)
-// ============================================================
-function _initRainSplashes() {
-    if (_fxLevel === 'low') return;
-    const scene = _ctx.scene;
-    const count = _fxLevel === 'high' ? 80 : 40;
-    _splashGroup = { count, ringPool: [], idx: 0, lastSpawn: 0 };
-    const ringGeom = new THREE.RingGeometry(0.05, 0.18, 12);
-    ringGeom.rotateX(-Math.PI / 2);
-    const ringMat = new THREE.MeshBasicMaterial({
-        color: 0x9fbfd8, transparent: true, opacity: 0, side: THREE.DoubleSide,
-        depthWrite: false, fog: true,
-    });
-    for (let i = 0; i < count; i++) {
-        const m = new THREE.Mesh(ringGeom, ringMat.clone());
-        m.visible = false;
-        m.frustumCulled = false;
-        scene.add(m);
-        _splashGroup.ringPool.push({ mesh: m, born: 0, dur: 0 });
-    }
-}
-
-function _tickRainSplashes(dt, t) {
-    const s = _splashGroup;
-    if (!s) return;
-    const cam = _ctx.camera;
-    if (!cam) return;
-    // Spawn rate ~ count per second
-    const rate = s.count;
-    const tNow = performance.now() * 0.001;
-    if (tNow - s.lastSpawn > 1 / rate) {
-        s.lastSpawn = tNow;
-        const ring = s.ringPool[s.idx];
-        s.idx = (s.idx + 1) % s.ringPool.length;
-        if (ring.mesh.visible) {
-            // skip if pool wraps too fast
-        } else {
-            // Place near camera on terrain
-            const r = 8 + Math.random() * 18;
-            const a = Math.random() * Math.PI * 2;
-            const px = cam.position.x + Math.cos(a) * r;
-            const pz = cam.position.z + Math.sin(a) * r;
-            const py = _sampleTerrainViaCtx(px, pz);
-            ring.mesh.position.set(px, py + 0.05, pz);
-            ring.mesh.scale.setScalar(0.5);
-            ring.mesh.material.opacity = 0.7;
-            ring.mesh.visible = true;
-            ring.born = tNow;
-            ring.dur = 0.45;
-        }
-    }
-    // Animate live splashes
-    for (let i = 0; i < s.ringPool.length; i++) {
-        const r = s.ringPool[i];
-        if (!r.mesh.visible) continue;
-        const f = (tNow - r.born) / r.dur;
-        if (f >= 1) { r.mesh.visible = false; continue; }
-        r.mesh.scale.setScalar(0.5 + f * 1.8);
-        r.mesh.material.opacity = 0.7 * (1 - f);
-    }
-}
-
-function _sampleTerrainViaCtx(x, z) {
-    if (_ctx.sampleTerrainH) return _ctx.sampleTerrainH(x, z);
-    return 0;
-}
+// R32.240: Rain splashes removed (rain system was disabled; dead code)
 
 // ============================================================
 // Item 16 — Generator chimney smoke plumes
@@ -942,26 +719,7 @@ export function getFactionPalette(team) {
     return team === 0 ? _factionMaterials.inferno : _factionMaterials.storm;
 }
 
-// ============================================================
-// Item 30 — Wet ground tint (Raindance is a rainy map)
-// ============================================================
-function _initWetGround() {
-    if (_fxLevel === 'low') return;
-    const terrain = _ctx.terrainMesh;
-    if (!terrain || !terrain.material) return;
-    // Tweak base material — bump roughness map influence on flat areas
-    terrain.material.envMapIntensity = Math.max(terrain.material.envMapIntensity || 0.35, 0.5);
-    terrain.material.roughness = Math.max(0.8, terrain.material.roughness * 0.95);
-    terrain.material.needsUpdate = true;
-    _wetGround = { material: terrain.material, basePulse: 0 };
-}
-
-function _tickWetGround(t) {
-    if (!_wetGround) return;
-    // Subtle slow pulse so the ground reads as varying-wet rather than uniform
-    const p = 0.5 + 0.5 * Math.sin(t * 0.13);
-    _wetGround.material.envMapIntensity = 0.5 + 0.15 * p;
-}
+// R32.240: Wet ground moved to renderer_weather.js
 
 // ============================================================
 // Item 23 (terrain wear - skipped per user) - REPLACED by:
