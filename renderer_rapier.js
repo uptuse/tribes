@@ -96,7 +96,12 @@ async function _doInit() {
     // Create character controller
     characterController = world.createCharacterController(CC_OFFSET);
     characterController.enableAutostep(CC_STEP_HEIGHT, CC_MIN_STEP_WIDTH, true);
-    characterController.enableSnapToGround(CC_SNAP_TO_GROUND);
+    // R32.165: Snap-to-ground DISABLED. WASM owns terrain clamping; snap-to-ground
+    // was fighting it by pulling the player 0.2m down to Rapier's heightfield surface
+    // every frame. With terrain excluded from CC (Item 10), snap would only affect
+    // building floors — but those are flat surfaces where autostep already handles
+    // step-ups and the CC_OFFSET gap (0.02m) is negligible.
+    // Was: characterController.enableSnapToGround(CC_SNAP_TO_GROUND);
     characterController.setMaxSlopeClimbAngle(CC_MAX_SLOPE);
     characterController.setSlideEnabled(true);
 
