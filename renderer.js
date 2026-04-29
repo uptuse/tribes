@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=147'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=148'; // R32.143: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -4000,7 +4000,8 @@ function syncParticles() {
         const type = particleView[o + 6] | 0;
         // R32.62: skip rain/splash particles (types 1, 2) — Raindance mission
         // spawns these natively but rain was removed from the renderer
-        if (type === 1 || type === 2) continue;
+        // R32.147: skip jet particles (type 0) — removed per user request
+        if (type === 0 || type === 1 || type === 2) continue;
         const dst = activeCount * 3;
         particlePositions[dst]     = particleView[o];
         particlePositions[dst + 1] = particleView[o + 1];
