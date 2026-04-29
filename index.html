@@ -848,6 +848,78 @@
     </div>
     <div id="ge-status" style="font-size:0.73em;color:#7A6A4A;min-height:16px;margin-bottom:8px;"></div>
     <button onclick="editorExportLayout()" style="width:100%;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:5px;cursor:pointer;font-family:inherit;font-size:0.82em;">⬇ Save layout.json</button>
+
+    <!-- Post-FX section (Phase C) -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;border-top:1px solid #2A2010;padding-top:8px;margin-top:10px;">Post FX</div>
+
+    <!-- Bloom -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-bloom-on" checked onchange="pfxBloom()"> Bloom
+      </label>
+      <input type="range" style="flex:1;" id="pfx-bloom" min="0" max="100" value="30"
+        oninput="geV('pfx-bloom-v',this.value+'%');pfxBloom()">
+      <span id="pfx-bloom-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">30%</span>
+    </div>
+
+    <!-- Chromatic Aberration -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-chroma-on" onchange="pfxChroma()"> Chroma
+      </label>
+      <input type="range" style="flex:1;" id="pfx-chroma" min="0" max="100" value="40"
+        oninput="geV('pfx-chroma-v',this.value+'%');pfxChroma()">
+      <span id="pfx-chroma-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">40%</span>
+    </div>
+
+    <!-- Film Grain -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-grain-on" onchange="pfxGrain()"> Film Grain
+      </label>
+      <input type="range" style="flex:1;" id="pfx-grain" min="0" max="100" value="35"
+        oninput="geV('pfx-grain-v',this.value+'%');pfxGrain()">
+      <span id="pfx-grain-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">35%</span>
+    </div>
+
+    <!-- God Rays -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-godray-on" onchange="pfxGodRays()"> God Rays
+      </label>
+      <input type="range" style="flex:1;" id="pfx-godray" min="0" max="100" value="30"
+        oninput="geV('pfx-godray-v',this.value+'%');pfxGodRays()">
+      <span id="pfx-godray-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">30%</span>
+    </div>
+
+    <!-- Depth of Field -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-dof-on" onchange="pfxDOF()"> Depth of Field
+      </label>
+      <input type="range" style="flex:1;" id="pfx-dof" min="0" max="100" value="50"
+        oninput="geV('pfx-dof-v',this.value+'%');pfxDOF()">
+      <span id="pfx-dof-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">50%</span>
+    </div>
+
+    <!-- Glitch -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-glitch-on" onchange="pfxGlitch()"> Glitch
+      </label>
+      <span style="flex:1;font-size:0.73em;color:#6A5A3A;">(digital artefacts)</span>
+    </div>
+
+    <!-- Preset buttons -->
+    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+      <button onclick="pfxSave()" style="flex:1;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">💾 Save</button>
+      <button onclick="pfxExport()" style="flex:1;background:rgba(40,30,10,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">⬇ Export</button>
+      <button onclick="pfxReset()" style="flex:0.7;background:rgba(80,20,20,0.4);border:1px solid #5A2020;color:#9A6A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">Reset</button>
+    </div>
+    <label style="display:block;margin-top:5px;background:rgba(40,30,10,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;text-align:center;">
+      ⬆ Import preset
+      <input type="file" accept=".json" style="display:none" onchange="pfxImportFile(this)">
+    </label>
   </div>
 
   <!-- R21: First-match tutorial overlay -->
@@ -3530,6 +3602,67 @@
     // Keep old names working for backward compat
     function toggleMapEditMode(on){ toggleLevelEditor(on); }
     function saveMapLayout(){ editorExportLayout(); }
+
+    // ── Phase C: Post-FX handlers ────────────────────────────
+    function pfxBloom(){
+      var on=document.getElementById('pfx-bloom-on').checked;
+      var v=parseFloat(document.getElementById('pfx-bloom').value)/100;
+      if(window.__postFX)window.__postFX.setBloom(on,v*0.6,0.45,0.92-v*0.25);
+    }
+    function pfxChroma(){
+      var on=document.getElementById('pfx-chroma-on').checked;
+      var v=parseFloat(document.getElementById('pfx-chroma').value)/100;
+      if(window.__postFX)window.__postFX.setChroma(on,v);
+    }
+    function pfxGrain(){
+      var on=document.getElementById('pfx-grain-on').checked;
+      var v=parseFloat(document.getElementById('pfx-grain').value)/100;
+      if(window.__postFX)window.__postFX.setGrain(on,v);
+    }
+    function pfxGodRays(){
+      var on=document.getElementById('pfx-godray-on').checked;
+      var v=parseFloat(document.getElementById('pfx-godray').value)/100;
+      if(window.__postFX)window.__postFX.setGodRays(on,v,0.5,0.82);
+    }
+    function pfxDOF(){
+      var on=document.getElementById('pfx-dof-on').checked;
+      var v=parseFloat(document.getElementById('pfx-dof').value)/100;
+      if(window.__postFX)window.__postFX.setDOF(on,v);
+    }
+    function pfxGlitch(){
+      var on=document.getElementById('pfx-glitch-on').checked;
+      if(window.__postFX)window.__postFX.setGlitch(on);
+    }
+    function pfxSave(){
+      if(window.__postFX)window.__postFX.savePreset();
+      showToast('Visual preset saved',1500);
+    }
+    function pfxExport(){
+      if(window.__postFX)window.__postFX.exportPreset();
+    }
+    function pfxReset(){
+      if(window.__postFX)window.__postFX.resetPreset();
+      // Sync sliders back to defaults
+      document.getElementById('pfx-bloom-on').checked=true;
+      document.getElementById('pfx-bloom').value=30;geV('pfx-bloom-v','30%');
+      document.getElementById('pfx-chroma-on').checked=false;
+      document.getElementById('pfx-grain-on').checked=false;
+      document.getElementById('pfx-godray-on').checked=false;
+      document.getElementById('pfx-dof-on').checked=false;
+      document.getElementById('pfx-glitch-on').checked=false;
+    }
+    function pfxImportFile(input){
+      var file=input.files[0];if(!file)return;
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        if(window.__postFX){
+          var ok=window.__postFX.importPreset(ev.target.result);
+          showToast(ok?'Visual preset imported':'Import failed',2000);
+        }
+      };
+      reader.readAsText(file);
+      input.value='';
+    }
     document.addEventListener('DOMContentLoaded',function(){
       var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
       var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};

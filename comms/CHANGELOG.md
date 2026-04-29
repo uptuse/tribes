@@ -282,3 +282,4 @@ Response to `docs/Claude_Build_Brief.md` (Manus authorized after Claude Audit Re
   - "Undo All" to restore original positions
 - **Architecture:** vanilla JS, zero new dependencies, separate overlay (not in settings)
 - **Limitation:** tuning sliders are preview+export only — live WASM requires C++ rebuild
+- Phase C (Visual Playground): chromatic aberration, film grain, god rays, DOF, glitch, bloom controls, preset save/export/import — Shift+Enter panel Post-FX tab
