@@ -1,29 +1,30 @@
 // @ai-contract
 // PURPOSE: WebSocket multiplayer client — lobby connection, JSON control messages,
-//   binary game-state dispatch (snapshot/delta), 60Hz input send loop, bandwidth
+//   binary game-state dispatch (snapshot/delta), input send loop, bandwidth
 //   telemetry, and voice chat bridge (9 window.* voice API globals)
 // SERVES: Belonging (enables multiplayer — without networking there is no tribe)
 // DEPENDS_ON: ./wire.js (encode/decode), ./constants.js (MSG_SNAPSHOT, MSG_DELTA,
-//   INPUT_HZ), ./prediction.js (reconciliation), ./voice.js (WebRTC voice),
+//   TICK_HZ, INPUT_HZ), ./prediction.js (reconciliation), ./voice.js (WebRTC voice),
 //   window.__TRIBES_SERVER_URL, window.__tribesReconcile, window.__tribesApplyDelta,
 //   window.__tribesHideReconnect, window.__tribesShowReconnect,
 //   window.__tribesOnSkillUpdate, window.__tribesOnMatchStart,
 //   window.__tribesOnMatchEnd, window.addKillMsg
 // EXPOSES: ES module exports: start(), setInputProvider(fn), send(msg),
-//   sendBinary(buf), onMessage(handler), getStatus(), getLatestSnapshot(), prediction.
+//   sendBinary(buf), onMessage(handler), getStatus(), getConnectionState(),
+//   getLatestSnapshot(), prediction.
 //   window.__voiceUpdatePeer, window.__voiceRegisterUuid, window.__voiceSetPeerMuted,
 //   window.__voiceIsPeerMuted, window.__voiceSetMuteAll, window.__voiceGetMuteAll,
 //   window.__voiceMuteUuid, window.__voiceSetPeerMutedDirect,
 //   window.__voiceClearPeerMutes (9 voice API bridge globals)
-// LIFECYCLE: start() opens WebSocket → onopen/onmessage/onclose handlers →
-//   60Hz input loop (setInterval) → binary dispatch to wire.js decoders.
-//   No reconnection state machine — disconnect is terminal
-// PATTERN: ES module with start() entry point
-// BEFORE_MODIFY: read docs/lessons-learned.md. start() is NOT idempotent —
-//   double-call creates ghost WebSocket. Ping interval never cleared on disconnect.
-//   Currently hardcoded to 2 teams
-// NEVER: call start() more than once per page load
+// LIFECYCLE: start() transitions state machine DISCONNECTED→CONNECTING, opens
+//   WebSocket → onopen (→CONNECTED) → onmessage/onclose handlers →
+//   input send loop (TICK_HZ) → binary dispatch to wire.js decoders.
+//   Explicit state machine: DISCONNECTED → CONNECTING → CONNECTED → RECONNECTING → DISCONNECTED
+// PATTERN: ES module with start() entry point + connection state machine
+// BEFORE_MODIFY: read docs/lessons-learned.md. start() IS idempotent (R32.157+).
+//   Currently hardcoded to 2 teams.
 // ALWAYS: validate decoded snapshots (wire.js returns null on malformed input)
+// ALWAYS: use setConnectionState() for all state transitions (logs + notifies)
 // @end-ai-contract
 //
 // ============================================================
@@ -35,7 +36,7 @@
 // ============================================================
 
 import { decodeSnapshot, decodeDelta, encodeInput } from './wire.js';
-import { MSG_SNAPSHOT, MSG_DELTA, INPUT_HZ } from './constants.js';
+import { MSG_SNAPSHOT, MSG_DELTA, TICK_HZ, INPUT_HZ } from './constants.js';
 import * as prediction from './prediction.js';
 import * as voice from './voice.js';
 window.__voiceUpdatePeer = voice.updatePeerPosition;
@@ -49,6 +50,42 @@ window.__voiceMuteUuid = voice.muteUuidDirectly;
 // R28: direct numericId-keyed mute (server is source of truth)
 window.__voiceSetPeerMutedDirect = voice.setPeerNumericMuted;
 window.__voiceClearPeerMutes = voice.clearPeerNumericMutes;
+
+// ============================================================
+// R32.260: Explicit connection state machine
+// ============================================================
+// States: DISCONNECTED → CONNECTING → CONNECTED → RECONNECTING → DISCONNECTED
+// All transitions go through setConnectionState() for logging + notification.
+const ConnectionState = Object.freeze({
+    DISCONNECTED:  'DISCONNECTED',
+    CONNECTING:    'CONNECTING',
+    CONNECTED:     'CONNECTED',
+    RECONNECTING:  'RECONNECTING',
+});
+let connectionState = ConnectionState.DISCONNECTED;
+let connectionStateListeners = [];
+
+function setConnectionState(newState) {
+    const prev = connectionState;
+    if (prev === newState) return;
+    connectionState = newState;
+    log('state ' + prev + ' → ' + newState);
+    for (const fn of connectionStateListeners) {
+        try { fn(newState, prev); } catch (e) { console.error('[NET] state listener threw:', e); }
+    }
+}
+
+/** Public API: get current connection state string */
+export function getConnectionState() { return connectionState; }
+
+/** Subscribe to state changes. Returns unsubscribe function. */
+export function onConnectionStateChange(fn) {
+    connectionStateListeners.push(fn);
+    return () => {
+        const i = connectionStateListeners.indexOf(fn);
+        if (i >= 0) connectionStateListeners.splice(i, 1);
+    };
+}
 
 let socket = null;
 let connectedAt = 0;
@@ -133,6 +170,8 @@ export function start() {
     // R32.157: Idempotency — close stale socket + clear stale ping interval
     // before creating a new connection. Prevents leaked WebSocket connections
     // and accumulating setInterval timers when start() is called multiple times.
+    const wasConnected = connectionState === ConnectionState.CONNECTED ||
+                         connectionState === ConnectionState.RECONNECTING;
     if (socket) {
         log('closing stale socket before reconnect');
         try { socket.onclose = null; socket.close(); } catch (e) { /* ignore */ }
@@ -144,6 +183,9 @@ export function start() {
     }
     stopInputLoop();
 
+    // R32.260: transition to RECONNECTING if we had a prior connection, else CONNECTING
+    setConnectionState(wasConnected ? ConnectionState.RECONNECTING : ConnectionState.CONNECTING);
+
     const url = getServerUrl();
     log('connecting to ' + url);
     try {
@@ -151,11 +193,13 @@ export function start() {
         socket.binaryType = 'arraybuffer';
     } catch (err) {
         log('connect failed: ' + err.message);
+        setConnectionState(ConnectionState.DISCONNECTED);
         return;
     }
 
     socket.onopen = () => {
         connectedAt = performance.now();
+        setConnectionState(ConnectionState.CONNECTED);
         log('socket open');
     };
 
@@ -282,6 +326,8 @@ export function start() {
         // R32.157: clear ping interval on close
         if (pingLoop) { clearInterval(pingLoop); pingLoop = null; }
         prediction.reset();
+        // R32.260: transition to DISCONNECTED
+        setConnectionState(ConnectionState.DISCONNECTED);
         // R20: if we lost connection mid-match, show reconnect overlay
         if (wasInMatch && window.__tribesShowReconnect) {
             window.__tribesShowReconnect();
@@ -357,6 +403,7 @@ export function getStatus() {
     const sumOut = telemetry.bytesOutWindow.reduce((a, e) => a + e.bytes, 0);
     return {
         connected: !!(socket && socket.readyState === WebSocket.OPEN),
+        connectionState: connectionState,   // R32.260
         playerId: myPlayerId,
         numericId: myNumericId,
         lobbyId: myLobbyId,
