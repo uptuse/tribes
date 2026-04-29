@@ -30,21 +30,22 @@ import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 let _gltf = null;
 let _scene = null;
 let _loaded = false;
+let _loading = false;  // R32.226: double-call guard
 let _lastT = 0;
 
 // Grounding: after scaling, how far below model.position.y are the feet?
 // Computed on load so we can place model.position.y = playerY - _footOffset
 // and have feet exactly at playerY.
 let _footOffset = 0;
-let _modelScale = 1.0;
 
 const _chars = new Array(16).fill(null);
-let _demo = null;
-let _demoSpawned = false;
 
 // ── Public API ──────────────────────────────────────────────
 
 export function init(targetScene) {
+    // R32.226: Guard against double init (e.g. hot-reload or re-entry)
+    if (_loaded || _loading) return;
+    _loading = true;
     _scene = targetScene;
     const loader = new GLTFLoader();
     loader.load('./assets/models/crimson_sentinel_rigged.glb', (gltf) => {
@@ -124,7 +125,7 @@ function _createInstance() {
     // and the terrain/buildings have low metalness (0.10) + moderate roughness.
     // Meshy AI PBR textures are clean CG — dial them down to blend in.
     model.traverse(child => {
-        child.frustumCulled = false;
+        child.frustumCulled = true;  // R32.226: enable frustum culling for character meshes
         if (child.isMesh || child.isSkinnedMesh) {
             child.castShadow = true;
             child.receiveShadow = true;
@@ -144,17 +145,7 @@ function _createInstance() {
 
     _scene.add(model);
 
-    // Ski particles handled in renderer.js (same pipeline as jet exhaust)
-
-    // Jet flames removed — particles only
-    const flameL = null;
-    const flameR = null;
-
-    // Ski board removed — particles only for ski effect
-    const skiBoard = null;
-
-    return { model, mixer, clips, activeClip: null, activeAction: null,
-             flameL, flameR, skiBoard };
+    return { model, mixer, clips, activeClip: null, activeAction: null };
 }
 
 function _playClip(inst, name, opts = {}) {
@@ -244,73 +235,3 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
     }
 }
 
-// ── Demo character ──────────────────────────────────────────
-
-function _spawnDemo(playerView, playerStride, localIdx) {
-    const o = localIdx * playerStride;
-    if (playerView[o + 18] < 0.5) return;
-
-    _demo = _createInstance();
-    if (!_demo) return;
-    _demoSpawned = true;
-
-    const yaw = playerView[o + 4];
-    _demo.baseX = playerView[o] + Math.sin(yaw) * 8;
-    _demo.baseY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset;
-    _demo.baseZ = playerView[o + 2] + Math.cos(yaw) * 8;
-    _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
-    _demo.time = 0;
-
-    _playClip(_demo, 'idle');
-    console.log('[R32.113] Demo spawned at',
-        _demo.baseX.toFixed(0), _demo.baseY.toFixed(0), _demo.baseZ.toFixed(0));
-}
-
-function _updateDemo(t, dt) {
-    _demo.time += dt;
-    const tt = _demo.time;
-    const cycle = tt % 24;
-    let clip = 'idle';
-
-    if (cycle < 8) {
-        clip = 'run';
-        const angle = tt * 0.6;
-        const r = 6;
-        _demo.model.position.set(
-            _demo.baseX + Math.cos(angle) * r,
-            _demo.baseY,
-            _demo.baseZ + Math.sin(angle) * r
-        );
-        _demo.model.rotation.y = -(angle + Math.PI * 0.5);
-    } else if (cycle < 11) {
-        clip = 'idle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
-    } else if (cycle < 15) {
-        clip = 'ski';
-        const angle = tt * 1.0;
-        const r = 10;
-        _demo.model.position.set(
-            _demo.baseX + Math.cos(angle) * r,
-            _demo.baseY,
-            _demo.baseZ + Math.sin(angle) * r
-        );
-        _demo.model.rotation.y = -(angle + Math.PI * 0.5);
-    } else if (cycle < 18) {
-        clip = 'jet';
-        const jetPhase = (cycle - 15) / 3;
-        _demo.model.position.set(
-            _demo.baseX,
-            _demo.baseY + Math.sin(jetPhase * Math.PI) * 6,
-            _demo.baseZ
-        );
-    } else if (cycle < 21) {
-        clip = 'fire_rifle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
-    } else {
-        clip = 'idle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
-    }
-
-    _playClip(_demo, clip);
-    _demo.mixer.update(dt);
-}
