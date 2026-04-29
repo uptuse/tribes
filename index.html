@@ -12,10 +12,10 @@
 
   <!-- R32.153-manus: resource hints. Preload the heavy assets in parallel with HTML
        parse so they finish ahead of when the runtime asks for them. The async
-       <script src="tribes.js"> at the bottom still controls actual execution order;
+       <script src="generated/emscripten_glue.js"> at the bottom still controls actual execution order;
        these just warm the cache. -->
   <link rel="preload" as="fetch" type="application/wasm" href="tribes.wasm" crossorigin="anonymous">
-  <link rel="preload" as="script" href="tribes.js">
+  <link rel="preload" as="script" href="generated/emscripten_glue.js">
   <!-- R32.153.4: modulepreload removed — it triggered renderer.js loading BEFORE the importmap was parsed,
        which made the bare 'three' specifier fail to resolve, leaving the entire 3D scene black.
        Loss is ~100ms cold-start savings; correctness wins. -->
@@ -681,7 +681,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.230</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.231</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -3123,7 +3123,7 @@
         b=mb(0.04);da=d(b);for(i=0;i<da.length;i++){da[i]=(Math.random()*2-1)*Math.exp(-i/da.length*4)*0.7;}
         this.bufs[1]=b;
         // R32.153.6: plasma — was a rising-sine chirp (800→1300Hz) which IS the
-        // "ping" the user kept hearing on every weapon fire (C++ tribes.js:6453
+        // "ping" the user kept hearing on every weapon fire (C++ generated/emscripten_glue.js:6453
         // passes weapon-fire ID dynamically, and apparently passed 2 frequently).
         // Replaced with a Tribes-plasma-flavored sound: short noise puff + sub
         // thump + brief LP-filtered crackle. No rising tone, no pitched ring,
@@ -4524,6 +4524,6 @@
     };
     Module.setStatus('Downloading...');
   </script>
-  <script async type="text/javascript" src="tribes.js"></script>
+  <script async type="text/javascript" src="generated/emscripten_glue.js"></script>
 </body>
 </html>
