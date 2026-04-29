@@ -287,12 +287,10 @@ function _spawnLightningBolt(t) {
 }
 
 function _playThunder() {
-    // Use WebAudio to synthesize a low-frequency rumble — no asset fetch needed
-    if (!_audioCtx) {
-        try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-        catch (e) { return; }
-    }
-    const ctx = _audioCtx;
+    // R32.168: Use the main audio engine's AudioContext (window.AE.ctx) instead
+    // of creating a second one. iOS Safari limits to 1 AudioContext (POL-02).
+    const ctx = window.AE && window.AE.ctx;
+    if (!ctx) return;
     const dur = 2.2;
     const noise = ctx.createBufferSource();
     const buf = ctx.createBuffer(1, ctx.sampleRate * dur, ctx.sampleRate);
@@ -310,9 +308,9 @@ function _playThunder() {
     // Add a tiny camera shake when thunder fires
     onNearMiss(0.18);
 }
-let _audioCtx = null;
+// R32.168: _audioCtx removed — thunder now uses window.AE.ctx (shared audio context)
 
-function _initThunder() { /* lazy — _audioCtx created on first thunder */ }
+function _initThunder() { /* R32.168: no-op — uses window.AE.ctx lazily */ }
 
 // ============================================================
 // Item 41 — Camera shake on near-miss / explosions
@@ -937,11 +935,8 @@ function _playFlagSting(eventType) {
     return;
     // (legacy code below; kept for diagnostic toggle if ever needed)
     if (typeof window !== 'undefined' && window._flagStingMuted) return;
-    if (!_audioCtx) {
-        try { _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-        catch (e) { return; }
-    }
-    const ctx = _audioCtx;
+    const ctx = window.AE && window.AE.ctx; // R32.168: use shared audio context
+    if (!ctx) return;
     const now = ctx.currentTime;
     const o = ctx.createOscillator();
     const g = ctx.createGain();
