@@ -20,7 +20,7 @@
 // ============================================================
 
 import * as THREE from 'three';
-// R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky_custom.js
+// R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky.js
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -33,7 +33,7 @@ import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
-import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
+import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 
@@ -130,7 +130,7 @@ export async function start() {
     initScene();
     initLights();
     // R32.63: HDRI for PBR environment lighting only (not background).
-    // Custom sky dome in renderer_sky_custom.js replaces THREE.Sky and HDRI background.
+    // Custom sky dome in renderer_sky.js replaces THREE.Sky and HDRI background.
     loadHDRISky();   // async — sets scene.environment for PBR; sky dome handles visuals
     initCustomSky(scene); // R32.63: procedural sky dome + stars + clouds
     await initTerrain();

@@ -1,4 +1,4 @@
-// renderer_sky_custom.js — R32.63 REWRITE
+// renderer_sky.js — R32.63 REWRITE (renamed from renderer_sky_custom.js at R32.169)
 // Custom procedural sky system: sky dome + stars + clouds
 // Replaces THREE.Sky entirely. All driven by a single dayMix value (0=midnight, 1=noon).
 //
