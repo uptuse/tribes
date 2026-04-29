@@ -13,7 +13,7 @@ We will ship Phase A first to establish the baseline UI and prove the JSON bridg
 ---
 
 ## Phase A: The Core Tuning Panel (Authorized)
-**Status:** In Progress (Handed to Claude via `Claude_Build_Brief.md`)  
+**Status:** ✅ Complete (R32.273 — `client/editor_panel.js`)  
 **Target Branch:** `master`
 
 **Scope:**

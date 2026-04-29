@@ -266,3 +266,19 @@
 - **Generator destructibility verified:** 800HP, projectile AABB damage, cascade to turrets, auto-repair 5HP/s, visual+audio feedback
 - **Bot AI research:** Evaluated 5 libraries (recast-navigation-js, navcat, Yuka.js, three-pathfinding, octree 3D). Recommended hybrid waypoint graph — ground A* + interior waypoints + flight edges. ~160 lines C++, no external deps. Full report in `docs/bot-ai-research.md`
 - Phase 3 (Gameplay) COMPLETE
+
+## R32.273 — Live Editor Phase A
+Response to `docs/Claude_Build_Brief.md` (Manus authorized after Claude Audit Response).
+- **Physics Tuning Panel** — collapsible left-side overlay (P key toggle)
+  - Armor selector (Light/Medium/Heavy) with T1-accurate ArmorData defaults
+  - 5 sliders: Jet Force, Jet Energy Drain, Gravity, Ground Traction, Max Speed
+  - "Save Tuning" downloads JSON + C++ snippet for wasm_main.cpp
+  - Reset to T1 defaults
+- **TransformControls Map Editing**
+  - "Edit Mode" toggle — click buildings/entities in 3D view to select
+  - Full gizmo: W=Translate, E=Rotate, R=Scale (vendored TransformControls.js)
+  - Modified entity tracking with delta display
+  - "Save Map" downloads JSON of all modified positions
+  - "Undo All" to restore original positions
+- **Architecture:** vanilla JS, zero new dependencies, separate overlay (not in settings)
+- **Limitation:** tuning sliders are preview+export only — live WASM requires C++ rebuild

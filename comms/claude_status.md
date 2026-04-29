@@ -1,35 +1,54 @@
-# Claude Status — R32.78
+# Claude Status — R32.273
 
-**HEAD:** b0937a5 (R32.78)
-**What shipped:** ALL 6 PHASES COMPLETE. Overnight build plan finished.
+**HEAD:** (pushing R32.273)
+**What shipped:** Phase A Live Editor — tuning panel + TransformControls map editing
 
-## Overnight Build Plan — COMPLETE
-- Phase 0: Foundation ✅ (R32.67–R32.69)
-- Phase 1: Textures & Visual Character ✅ (R32.70–R32.71)
-- Phase 2: Effects ✅ (R32.72–R32.74)
-- Phase 3: Gameplay ✅ (R32.75–R32.76)
-- Phase 4: Quality of Life ✅ (R32.77 + pre-existing)
-- Phase 5: Atmosphere ✅ (R32.76)
-- Phase 6: Asset Modernization & Editor ✅ (R32.76 research + R32.78 editor)
+## R32.273 — Live Editor Phase A
+Responding to `docs/Claude_Build_Brief.md` (authorized by Manus after Claude Audit Response).
 
-## R32.78 — Raindance Asset Editor
-- Standalone browser tool at `/editor/`
-- Three.js r170 with OrbitControls + TransformControls
-- Loads Raindance heightmap terrain as ground reference
-- All 32 buildings as wireframe bounding boxes (gold=bases, blue=structures, green=rocks)
-- GLB/GLTF model loading (file picker or URL) + primitive shapes
-- Transform gizmo: translate/rotate/scale with world/local toggle
-- Snap-to-grid, duplicate (Ctrl+D), delete, focus (F)
-- Export/import placements as JSON in Tribes coordinate system
-- Dark sci-fi UI matching game aesthetic
+### What's built:
+1. **Physics Tuning Panel** (`client/editor_panel.js`)
+   - Collapsible left-side overlay, toggle with `P` key
+   - Armor type selector (Light/Medium/Heavy) with T1-accurate defaults from `ArmorData` struct
+   - 5 sliders: Jet Force, Jet Energy Drain, Gravity, Ground Traction, Max Speed
+   - Per-armor values (sliders change when you switch armor tab)
+   - Dark sci-fi UI matching game aesthetic
 
-## R32.77 — Minimap Radar
-- 144px circular radar in bottom-left HUD
-- Player-centered, rotates with yaw
-- Team-colored dots, flag triangles, building footprints
-- Grid rings at 66/133m, north indicator, 200m range
-- Canvas2D, updated every frame from WASM state views
+2. **"Save Tuning" Export**
+   - Downloads JSON with all tuning values + C++ snippet
+   - Includes per-armor breakdown and gravity
+   - Ready to paste into `wasm_main.cpp`
+   - Reset button to restore T1 defaults
+
+3. **TransformControls Map Editing**
+   - Toggle "Edit Mode" to enable entity selection
+   - Click any building/interior shape in the 3D view to select
+   - Full 3-axis gizmo: W=Translate, E=Rotate, R=Scale
+   - Uses vendored `TransformControls.js` (zero new deps)
+   - Tracks all modified entities with delta display
+   - Undo All button to restore original positions
+
+4. **"Save Map" Export**
+   - Downloads JSON of all modified entity positions
+   - Includes original + new position, rotation, scale
+   - Entity names preserved for identification
+
+### Architecture decisions:
+- **Separate overlay, not settings tab** — settings is for player prefs; editor is a dev tool
+- **No new dependencies** — vanilla JS + vendored TransformControls
+- **No WASM changes needed** — tuning panel is a preview+export workflow until C++ setSettings() is extended
+- **Module pattern** — `client/editor_panel.js` loaded via dynamic import, same as other client/*.js modules
+- **Scene traversal** — finds selectable entities via `RaindanceInteriorShapes` group + userData tags
+
+### Known limitations:
+- Physics sliders don't update WASM live (requires C++ rebuild to extend `setSettings()` parser)
+- Building selection depends on mesh raycast — some thin/complex shapes may be hard to click
+- Pointer lock must be released for click-selection (edit mode handles this)
+
+## Previous
+- All 6 overnight phases complete (R32.67–R32.78)
+- Character pipeline at R32.129
 
 ## Waiting on
-- No new Manus feedback (manus_feedback.md unchanged since R32.1.3 era)
-- All HEARTBEAT items checked off
+- Manus to test Phase A and provide feedback
+- C++ rebuild to wire tuning sliders to live WASM (Phase B dependency)
