@@ -58,6 +58,7 @@
 
 import * as THREE from 'three';
 // R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky.js
+import { TransformControls } from 'three/addons/controls/TransformControls.js'; // Phase-A map editor
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -5850,3 +5851,99 @@ function updateDustLayer(t) {
 
     posAttr.needsUpdate = true;
 }
+
+// ============================================================
+// Phase-A Live Editor: TransformControls for building drag-to-move
+// ============================================================
+let _editorControls = null;      // TransformControls instance
+let _editorAttached = null;      // currently attached building group
+let _editorActive = false;
+const _buildingOverrides = {};   // idx → {x, y, z} world-space overrides
+
+function initMapEditor() {
+    if (!camera || !renderer) return;
+    _editorControls = new TransformControls(camera, renderer.domElement);
+    _editorControls.setMode('translate');
+    _editorControls.setSpace('world');
+    scene.add(_editorControls);
+
+    // Suppress game pointer-lock while dragging
+    _editorControls.addEventListener('dragging-changed', (e) => {
+        if (e.value && document.exitPointerLock) document.exitPointerLock();
+    });
+
+    // On drag end, record the override
+    _editorControls.addEventListener('mouseUp', () => {
+        if (!_editorAttached) return;
+        const idx = _editorAttached.userData._editorIdx;
+        if (idx === undefined) return;
+        _buildingOverrides[idx] = {
+            x: _editorAttached.position.x,
+            y: _editorAttached.position.y,
+            z: _editorAttached.position.z,
+        };
+    });
+
+    // Click on canvas to select a building
+    renderer.domElement.addEventListener('click', (e) => {
+        if (!_editorActive) return;
+        const rect = renderer.domElement.getBoundingClientRect();
+        const ndc = new THREE.Vector2(
+            ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+            -((e.clientY - rect.top)  / rect.height) * 2 + 1
+        );
+        const ray = new THREE.Raycaster();
+        ray.setFromCamera(ndc, camera);
+
+        // Collect meshes inside building groups
+        const targets = [];
+        buildingMeshes.forEach((b, idx) => {
+            b.mesh.traverse(child => { if (child.isMesh) targets.push({ obj: child, idx, group: b.mesh }); });
+        });
+        const hits = ray.intersectObjects(targets.map(t => t.obj), false);
+        if (hits.length > 0) {
+            const hit = hits[0];
+            const entry = targets.find(t => t.obj === hit.object);
+            if (!entry) return;
+            // Tag the group with its index so we can record overrides
+            entry.group.userData._editorIdx = entry.idx;
+            _editorAttached = entry.group;
+            _editorControls.attach(_editorAttached);
+        } else {
+            _editorControls.detach();
+            _editorAttached = null;
+        }
+    });
+
+    console.log('[PhaseA] Map editor (TransformControls) initialised');
+}
+
+// Called by index.html when the checkbox toggles
+window.__tribesSetMapEditMode = function(on) {
+    _editorActive = on;
+    if (!on && _editorControls) {
+        _editorControls.detach();
+        _editorAttached = null;
+    }
+    if (on && !_editorControls) {
+        initMapEditor();
+    }
+    _editorControls && (_editorControls.visible = on);
+    console.log('[PhaseA] Map edit mode:', on ? 'ON' : 'OFF');
+};
+
+// Called by index.html Save Map button
+window.__tribesGetBuildingOverrides = function() {
+    const out = { _comment: 'Phase-A building position overrides — Phase B will feed into raindance_layout.json', buildings: [] };
+    for (const [idx, pos] of Object.entries(_buildingOverrides)) {
+        const b = buildingMeshes[idx];
+        out.buildings.push({
+            idx: parseInt(idx),
+            type: b ? b.type : 'unknown',
+            x: parseFloat(pos.x.toFixed(3)),
+            y: parseFloat(pos.y.toFixed(3)),
+            z: parseFloat(pos.z.toFixed(3)),
+        });
+    }
+    return out;
+};

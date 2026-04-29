@@ -1121,6 +1121,7 @@
         <span class="tab-item" onclick="setStab('controls')">Controls</span>
         <span class="tab-item" onclick="setStab('video')">Video</span>
         <span class="tab-item" onclick="setStab('gameplay')">Gameplay</span>
+        <span class="tab-item" onclick="setStab('physics')" style="color:#FFD479;">⚙ Physics</span>
       </div>
 
       <!-- AUDIO TAB -->
@@ -1205,6 +1206,66 @@
         </div></div>
       </div>
 
+
+      <!-- PHYSICS TAB — Phase A Live Editor -->
+      <div class="stab" id="stab-physics">
+        <div class="s-section" style="color:#FFD479;">Live Physics Tuning</div>
+        <div style="font-size:0.76em;color:#7A6A4A;margin-bottom:8px;line-height:1.4;">
+          Changes apply immediately in-game. Use "Save Tuning" to download values for permanent edits.
+        </div>
+        <div class="s-row">
+          <div class="s-label">Gravity</div>
+          <div class="s-ctrl"><input type="range" class="s-slider" id="p-gravity" min="5" max="40" step="0.5"
+            oninput="sVal('p-gravity-v',this.value+' m/s²');applyPhysicsTuning()"></div>
+          <div class="s-val" id="p-gravity-v">20 m/s²</div>
+        </div>
+        <div class="s-row">
+          <div class="s-label">Jet Force</div>
+          <div class="s-ctrl"><input type="range" class="s-slider" id="p-jetforce" min="0.2" max="3.0" step="0.05"
+            oninput="sVal('p-jetforce-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
+          <div class="s-val" id="p-jetforce-v">1.00×</div>
+        </div>
+        <div class="s-row">
+          <div class="s-label">Energy Drain</div>
+          <div class="s-ctrl"><input type="range" class="s-slider" id="p-jetenergy" min="0.1" max="3.0" step="0.05"
+            oninput="sVal('p-jetenergy-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
+          <div class="s-val" id="p-jetenergy-v">1.00×</div>
+        </div>
+        <div class="s-row">
+          <div class="s-label">Ground Friction</div>
+          <div class="s-ctrl"><input type="range" class="s-slider" id="p-friction" min="0.1" max="2.0" step="0.05"
+            oninput="sVal('p-friction-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
+          <div class="s-val" id="p-friction-v">1.00×</div>
+        </div>
+        <div class="s-row">
+          <div class="s-label">Player Speed</div>
+          <div class="s-ctrl"><input type="range" class="s-slider" id="p-speed" min="0.2" max="3.0" step="0.05"
+            oninput="sVal('p-speed-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
+          <div class="s-val" id="p-speed-v">1.00×</div>
+        </div>
+        <hr class="s-divider">
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn" onclick="saveTuning()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;">⬇ Save Tuning</button>
+          <button class="btn btn-back" onclick="resetPhysicsTuning()" style="flex:0.5;">Reset</button>
+        </div>
+        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">Downloads a JSON file with values to paste into C++ constants.</div>
+        <hr class="s-divider">
+        <div class="s-section" style="color:#FFD479;">Map Editor</div>
+        <div style="font-size:0.76em;color:#7A6A4A;margin-bottom:8px;line-height:1.4;">
+          Click a building in-game to select it, then drag the gizmo to reposition.
+        </div>
+        <div class="s-row">
+          <div class="s-label">Edit Mode</div>
+          <div class="s-ctrl"><label style="cursor:pointer;font-size:0.82em;color:#9A8A6A;user-select:none;">
+            <input type="checkbox" id="p-editmode" onchange="toggleMapEditMode(this.checked)">
+            Enable building transform gizmo
+          </label></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn" id="p-savemap" onclick="saveMapLayout()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;" disabled>⬇ Save Map Layout</button>
+        </div>
+        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">Downloads JSON of modified building positions (Phase B loads into C++).</div>
+      </div>
       <hr class="s-divider">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
         <button class="btn btn-back" onclick="resetAllSettings()" style="flex:1">Reset to Defaults</button>

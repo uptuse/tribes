@@ -90,6 +90,14 @@ static bool  g_jetToggle=false;
 static bool  g_invertY=false;
 static bool  g_jetActive=false; // for toggle mode state
 
+// Phase-A Live Editor: runtime physics tuning overrides.
+// Multipliers (1.0 = stock) except g_tuneGravity which is absolute m/s².
+static float g_tuneGravity        = 20.0f; // absolute m/s² (was local 20.0f per R31.3)
+static float g_tuneJetForce       = 1.0f;  // × armors[].jetForce
+static float g_tuneJetEnergyDrain = 1.0f;  // × armors[].jetEnergyDrain
+static float g_tuneGroundFriction = 1.0f;  // × ground deceleration coefficient
+static float g_tunePlayerSpeed    = 1.0f;  // × armors[].maxFwdSpeed
+
 static double sGetF(const char*j,const char*k,double d){
     char s[64];snprintf(s,sizeof(s),"\"%s\":",k);
     const char*p=strstr(j,s);if(!p)return d;
@@ -111,6 +119,12 @@ extern "C" void setSettings(const char*json){
     g_renderDistMul=(float)sGetF(json,"renderDist",1.0);
     g_jetToggle=sGetB(json,"jetToggle",false);
     g_invertY=sGetB(json,"invertY",false);
+    // Phase-A Live Editor physics overrides (ignored when key absent)
+    g_tuneGravity        =(float)sGetF(json,"tuneGravity",        g_tuneGravity);
+    g_tuneJetForce       =(float)sGetF(json,"tuneJetForce",        g_tuneJetForce);
+    g_tuneJetEnergyDrain =(float)sGetF(json,"tuneJetEnergyDrain",  g_tuneJetEnergyDrain);
+    g_tuneGroundFriction =(float)sGetF(json,"tuneGroundFriction",  g_tuneGroundFriction);
+    g_tunePlayerSpeed    =(float)sGetF(json,"tunePlayerSpeed",     g_tunePlayerSpeed);
 }
 
 static const int TSIZE=RAINDANCE_SIZE; // 257
@@ -2015,7 +2029,7 @@ extern "C" void mainLoop(){
         // Gravity — Tribes uses ~20 m/s² as force (F=ma), so acceleration = 20
         // Applied as velocity change per frame: v += g * dt
         // Original engine gravity via SimMovement is roughly mass-independent ~20 m/s²
-        float gravity = 20.0f; // F1: T1 SimMovement reference (was 25)
+        float gravity = g_tuneGravity; // Phase-A: live-tunable via editor (default 20.0)
 
         // Ground movement — from playerUpdate.cpp lines 591-608
         if(me.skiing){
@@ -2036,10 +2050,11 @@ extern "C" void mainLoop(){
             // From playerUpdate.cpp: maxAcc = groundForce/mass * traction * timeSlice
             float maxAcc=ad.groundForce/ad.mass*ad.groundTraction*dt;
             if(maxAcc>1.0f)maxAcc=1.0f;
-            float targetSpd=moveDir.len()>0.01f?ad.maxFwdSpeed:0;
+            float targetSpd=moveDir.len()>0.01f?ad.maxFwdSpeed*g_tunePlayerSpeed:0;
             Vec3 md=moveDir.normalized();
-            me.vel.x+=(md.x*targetSpd-me.vel.x)*maxAcc;
-            me.vel.z+=(md.z*targetSpd-me.vel.z)*maxAcc;
+            float effMaxAcc=maxAcc*g_tuneGroundFriction;if(effMaxAcc>1.0f)effMaxAcc=1.0f;
+            me.vel.x+=(md.x*targetSpd-me.vel.x)*effMaxAcc;
+            me.vel.z+=(md.z*targetSpd-me.vel.z)*effMaxAcc;
             if(me.vel.y<0)me.vel.y=0;
         }else{
             // F3: Airborne — air control capped at maxJetFwdVel so WASD can't
@@ -2070,10 +2085,10 @@ extern "C" void mainLoop(){
             me.jetting=keys[32]&&me.energy>=ad.minJetEnergy&&!me.onGround;
         }
         if(me.jetting){
-            me.energy-=ad.jetEnergyDrain/TICK*dt;
+            me.energy-=ad.jetEnergyDrain*g_tuneJetEnergyDrain/TICK*dt;
             if(me.energy<0)me.energy=0;
 
-            float jetAcc=ad.jetForce/ad.mass*dt;
+            float jetAcc=ad.jetForce*g_tuneJetForce/ad.mass*dt;
             // F4: T1 jet-split formula. At max forward speed all jet is horizontal.
             // vertPct = 1 - clamp(forwardDot / maxJetFwdVel, 0, 1)
             if(moveDir.len()>0.01f && me.jumpContact>8){
