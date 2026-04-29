@@ -44,8 +44,8 @@
 // ============================================================
 
 import * as THREE from 'three';
-import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
 import { DecalGeometry } from 'three/addons/geometries/DecalGeometry.js';
+import * as Weather from './renderer_weather.js?v=240'; // R32.240: completed weather extraction
 
 // ============================================================
 // Module state
@@ -57,12 +57,11 @@ let _clock = null;
 let _matchStartT = 0;
 
 // Subsystems (each null until init or unavailable)
-let _lensflare = null;        // sun lens flare
-let _lightning = null;        // lightning flash module
+// R32.235: _lensflare, _lightning, _wetGround moved to renderer_weather.js
 let _decals = null;           // decal pool
 let _shake = null;            // camera shake state
 let _fovPunch = null;         // FOV transient state
-let _splashGroup = null;      // rain ground splashes
+// R32.235: _splashGroup removed — rain was already disabled
 let _smokeStacks = [];        // generator chimney smoke plumes
 let _vignettePulse = null;    // damage red vignette overlay (DOM)
 let _telemetry = null;        // fps/ping HUD overlay
@@ -76,7 +75,7 @@ let _coilRings = [];          // plasma turret emissive coils
 let _missileClusters = [];    // rocket turret missile cluster splits
 let _sensorDishes = [];       // sensor dish detail
 let _factionMaterials = {};   // tinted variants for buildings
-let _wetGround = null;        // wet ground tint shader uniform
+// R32.235: _wetGround moved to renderer_weather.js
 
 // FX flags (URL-driven)
 let _fxLevel = 'mid';   // low|mid|high
@@ -114,8 +113,8 @@ export function installPolish(ctx) {
     // Subsystem init — each call swallows its own errors so a single failure
     // never takes down the rest. Order is intentional: foundation first, then
     // FX that depend on scene, then DOM overlays last.
-    safeInit('lensflare', _initLensflare);
-    safeInit('lightning', _initLightning);
+    // R32.235: Weather FX delegated to renderer_weather.js
+    try { Weather.init({ ctx: _ctx, fxLevel: _fxLevel, enabled: _enabled, onNearMiss }); } catch(e) { console.warn('[R32.235] Weather.init failed:', e); }
     safeInit('decals',    _initDecals);
     // safeInit('rainSplashes', _initRainSplashes); // R32.59.2: removed — rain was removed, splashes were leftover artifact
     safeInit('smokeStacks',  _initSmokeStacks);
@@ -174,7 +173,7 @@ function safeInit(name, fn) {
 // ============================================================
 function tick(dt, t) {
     if (!_enabled) return;
-    if (_lightning) _tickLightning(dt, t);
+    Weather.tick(dt, t);
     if (_shake) _tickCameraShake(dt);
     if (_fovPunch) _tickFOVPunch(dt);
     // if (_splashGroup) _tickRainSplashes(dt, t); // R32.59.2: removed
@@ -182,7 +181,6 @@ function tick(dt, t) {
     if (_telemetry) _tickTelemetry(t);
     if (_hudRing) _tickHUDRing(t);
     _tickWearAndTear(t);
-    _tickWetGround(t);
     _tickFlashOverlay(dt);
     _tickDecals();
 }

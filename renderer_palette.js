@@ -33,13 +33,16 @@
     // -------------------------------------------------------------------
     // Locked palette — Tribes BE identity colors.
     // Hex strings (for CSS) + 0x ints (for THREE.Color).
+    // R32.250: Team colors now sourced from team_config.js when available
     // -------------------------------------------------------------------
+    var _TC = (typeof window !== 'undefined') && window.TEAM_CONFIG;
     const PALETTE = Object.freeze({
         // Team colors — saturated, distinct, team-readable from across map.
-        teamRed:    '#E84A4A',
-        teamRedInt:  0xE84A4A,
-        teamBlue:   '#4A8AE8',
-        teamBlueInt: 0x4A8AE8,
+        // Sourced from TEAM_CONFIG (canonical) with hardcoded fallback
+        teamRed:    _TC ? _TC.TEAMS[0].colorHex : '#E84A4A',
+        teamRedInt:  _TC ? _TC.TEAMS[0].colorInt : 0xE84A4A,
+        teamBlue:   _TC ? _TC.TEAMS[1].colorHex : '#4A8AE8',
+        teamBlueInt: _TC ? _TC.TEAMS[1].colorInt : 0x4A8AE8,
 
         // Objective / interactable — the brass-amber HUD tone.
         objective:    '#D4A030',
@@ -91,10 +94,12 @@
         return 'rgba(' + c.r + ',' + c.g + ',' + c.b + ',' + alpha + ')';
     }
     function teamColor(teamIdx) {
-        // 0 = red, 1 = blue. Matches game's internal convention.
+        // R32.250: prefer TEAM_CONFIG if loaded, else fall back to palette entries
+        if (_TC) return _TC.teamColor(teamIdx);
         return teamIdx === 1 ? PALETTE.teamBlue : PALETTE.teamRed;
     }
     function teamColorInt(teamIdx) {
+        if (_TC) return _TC.teamColorInt(teamIdx);
         return teamIdx === 1 ? PALETTE.teamBlueInt : PALETTE.teamRedInt;
     }
 

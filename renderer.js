@@ -110,8 +110,14 @@ let playerStride, projectileStride, particleStride, flagStride;
 const MAX_PARTICLES = 1024;
 const MAX_PROJECTILES = 256;
 const MAX_PLAYERS = 16;
-const TEAM_COLORS = [0xC8302C, 0x2C5AC8, 0x808080];
-const TEAM_TINT_HEX = [0xCC4444, 0x4477CC, 0x808080];
+// R32.250: Team colors now sourced from team_config.js (canonical source of truth)
+const _TC = window.TEAM_CONFIG;
+const TEAM_COLORS = _TC
+    ? _TC.TEAMS.map(t => t.colorInt).concat(_TC.NEUTRAL_COLOR_INT)
+    : [0xC8302C, 0x2C5AC8, 0x808080]; // fallback
+const TEAM_TINT_HEX = _TC
+    ? _TC.TEAMS.map(t => t.tintInt).concat(_TC.NEUTRAL_COLOR_INT)
+    : [0xCC4444, 0x4477CC, 0x808080]; // fallback
 const PROJ_COLORS = [
     0xFFFFFF, // 0 blaster
     0xFFEE40, // 1 chaingun
@@ -307,7 +313,7 @@ export async function start() {
         for (const b of buildingMeshes) {
             const canon = b.mesh.userData && b.mesh.userData.canon;
             if (!canon) continue;
-            const teamColor = canon.team === 0 ? 0xCC4444 : 0x4488CC;
+            const teamColor = TEAM_TINT_HEX[canon.team] || TEAM_TINT_HEX[0];
             if (canon.datablock === 'plasmaTurret') Polish.enhanceTurret(b.mesh, 'plasma', teamColor);
             else if (canon.datablock === 'rocketTurret') Polish.enhanceTurret(b.mesh, 'rocket', teamColor);
             else if (canon.datablock === 'PulseSensor') Polish.enhanceSensor(b.mesh);
@@ -677,10 +683,12 @@ function _classifyBuilding(items, px, py, pz, radius = 4.0) {
 }
 
 // Team tint helpers — used as accent on generators/turrets/stations
+// R32.250: now sources from TEAM_CONFIG via TEAM_COLORS/TEAM_TINT_HEX
 function _teamAccent(teamIdx) {
-    if (teamIdx === 0) return { tint: 0xC8302C, emissive: 0x6e1612 };
-    if (teamIdx === 1) return { tint: 0x2C5AC8, emissive: 0x12326e };
-    return { tint: 0x808080, emissive: 0x303030 };
+    const tint = TEAM_COLORS[teamIdx] || TEAM_COLORS[2];
+    // Derive emissive as darker version of team color (shift right by 1 per channel)
+    const em = (tint >> 1) & 0x7F7F7F;
+    return { tint: tint, emissive: em };
 }
 
 // Per-datablock mesh builder. Returns a Group anchored at y=0 (foot of object).
@@ -707,7 +715,7 @@ function createCanonicalMesh(datablock, teamIdx) {
         // into accentMat by caller); here we clone to a Standard material with
         // emissive identical to the base color so emissiveIntensity actually
         // controls glow.
-        const teamColor = (accentMat.color && accentMat.color.getHex) ? accentMat.color.getHex() : 0xCC4444;
+        const teamColor = (accentMat.color && accentMat.color.getHex) ? accentMat.color.getHex() : TEAM_TINT_HEX[0];
         const panelMat = new THREE.MeshStandardMaterial({
             color: teamColor, emissive: teamColor, emissiveIntensity: 0.55,
             roughness: 0.5, metalness: 0.1,
@@ -1715,7 +1723,7 @@ function ensureNameplate(slot, name, team) {
         nameplateSprites[slot].material.map.dispose();
         nameplateSprites[slot].material.dispose();
     }
-    const teamColorHex = team === 0 ? '#FFCDCD' : team === 1 ? '#CDD8FF' : '#E8DCB8';
+    const teamColorHex = (_TC && _TC.TEAMS[team]) ? _TC.TEAMS[team].nameplateHex : '#E8DCB8';
     const tex = makeNameplateTexture(name, teamColorHex, tierColor);
     const mat = new THREE.SpriteMaterial({
         map: tex, transparent: true, depthWrite: false,
