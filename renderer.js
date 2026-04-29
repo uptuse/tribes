@@ -75,7 +75,7 @@ import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
-import * as PostFX from './client/post_fx.js?v=1';        // Phase-C: visual playground
+import * as PostFX from './client/post_fx.js?v=2';        // Phase-C: visual playground
 
 // --- Module state ---
 let scene, camera, renderer, composer;

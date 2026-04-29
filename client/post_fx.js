@@ -7,7 +7,6 @@
 
 import * as THREE from 'three';
 import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { GlitchPass }  from 'three/addons/postprocessing/GlitchPass.js';
 
 const PRESET_KEY = 'tribes_postfx_v1';
 
@@ -140,6 +139,36 @@ const VFXShader = {
     `,
 };
 
+// ── Inline Glitch shader (no external deps) ──────────────────
+const GlitchShader = {
+    uniforms: {
+        tDiffuse:     { value: null },
+        uGlitchTime:  { value: 0.0 },
+        uGlitchAmt:   { value: 1.0 },
+    },
+    vertexShader: `
+        varying vec2 vUv;
+        void main() { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+    `,
+    fragmentShader: `
+        precision highp float;
+        uniform sampler2D tDiffuse;
+        uniform float uGlitchTime;
+        uniform float uGlitchAmt;
+        varying vec2 vUv;
+        float hash(float n) { return fract(sin(n) * 43758.5453); }
+        void main() {
+            float t    = floor(uGlitchTime * 12.0);
+            float band = hash(t + 7.3) > 0.7 ? 1.0 : 0.0;
+            float row  = floor(vUv.y * 40.0);
+            float shift = (hash(row + t) - 0.5) * 0.08 * band * uGlitchAmt;
+            vec4 c = texture2D(tDiffuse, vec2(vUv.x + shift, vUv.y));
+            float rShift = texture2D(tDiffuse, vec2(vUv.x + shift + 0.005 * band * uGlitchAmt, vUv.y)).r;
+            gl_FragColor = vec4(rShift, c.g, c.b, 1.0);
+        }
+    `,
+};
+
 // ── Helpers ──────────────────────────────────────────────────
 function _u(name) {
     return _vfxPass && _vfxPass.material && _vfxPass.material.uniforms[name];
@@ -198,6 +227,12 @@ export function setGlitch(enabled) {
     if (_glitchPass) _glitchPass.enabled = STATE.glitch.enabled;
 }
 
+function _tickGlitch(time) {
+    if (_glitchPass && _glitchPass.enabled && _glitchPass.material) {
+        _glitchPass.material.uniforms.uGlitchTime.value = time;
+    }
+}
+
 export function setBloom(enabled, strength, radius, threshold) {
     if (!_bloomRef) _bloomRef = window.__tribesBloom;
     if (!_bloomRef) return;
@@ -213,10 +248,12 @@ export function setBloom(enabled, strength, radius, threshold) {
 
 // ── Tick (call each frame) ────────────────────────────────────
 export function tickPostFX(time) {
-    if (!_vfxPass || !_vfxPass.enabled) return;
-    _set('uTime', time);
-    const u = _u('uResolution');
-    if (u) u.value.set(window.innerWidth, window.innerHeight);
+    if (_vfxPass && _vfxPass.enabled) {
+        _set('uTime', time);
+        const u = _u('uResolution');
+        if (u) u.value.set(window.innerWidth, window.innerHeight);
+    }
+    _tickGlitch(time);
 }
 
 // ── Preset persistence ────────────────────────────────────────
@@ -283,8 +320,8 @@ export function initPostFX(composer) {
     _vfxPass = new ShaderPass(VFXShader);
     _vfxPass.enabled = false;
 
-    // Glitch pass
-    _glitchPass = new GlitchPass();
+    // Inline glitch pass (no external shader dep)
+    _glitchPass = new ShaderPass(GlitchShader);
     _glitchPass.enabled = false;
 
     // Insert VFX pass + glitch before the final OutputPass
