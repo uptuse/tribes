@@ -409,3 +409,120 @@ Pattern:
 **Migration path:** Convert to ES module, replace `window.ModuleName = {}` with `export { init, update }`, import THREE from vendor path.
 
 **When to use:** NEVER for new code. ES modules (Pattern 11+) are canonical. This pattern is legacy documentation only.
+
+---
+
+## 18. Weapon Viewmodel — Procedural Geometry (Phase 5 audit)
+
+**Canonical:** `initWeaponViewmodel()` — renderer.js lines 2953-3160
+
+```
+Pattern:
+1. Define shared materials up front (matFrame, matMetal, matDark, matAccent, matGlow, matLens, matSkin, matGlove)
+2. Create a THREE.Group as the weapon root
+3. Build weapon from stacked BoxGeometry + CylinderGeometry primitives:
+   - Receiver/chassis: 2 boxes (upper deck + lower body)
+   - Stock, barrel, foregrip, shroud, muzzle brake: positioned boxes/cylinders
+   - Decorative elements: pic-rail ridges, energy cell (emissive glow), holographic sight (red emissive lens)
+4. Build first-person arms: forearm + upper arm per side, glove material, skin material
+   - Positioned relative to weapon grip points
+5. Attach muzzle anchor (empty Object3D) at barrel tip for CombatFX muzzle flash placement
+6. Expose muzzle anchor: `window._weaponMuzzleAnchor = muzzleAnchor` (L3160)
+7. Parent group under camera as child — moves with camera, rendered in screen space
+8. All meshes: `castShadow = false` (viewmodel shouldn't cast world shadows)
+```
+
+**Key details:**
+- All dimensions in meters (world scale): receiver is 0.055 × 0.060 × 0.220
+- Viewmodel positioned at camera-relative offset (approximately z = -0.45)
+- Viewmodel sway system at L3715-3780: `_viewmodelSway` object tracks jetting/skiing/speed state
+- `_updateViewmodelSway(dt)` applies dip/jitter during jet boost, lean during skiing
+- No GLB loading — 100% procedural Three.js primitives
+
+**When to use:** Any new weapon type or hand-held item. Clone the material set, change the geometry composition, keep the same parent-under-camera + muzzle-anchor pattern.
+
+**Rule:** Weapon viewmodels are procedural geometry, NOT loaded GLBs. This keeps load times zero and allows runtime customization (team colors on weapon accents, damage states). If a future weapon needs organic shapes, use a minimal GLB with the same attachment/sway infrastructure.
+
+---
+
+## 19. DOM HUD Overlay — #r327-* CSS Pattern (Phase 5 audit)
+
+**Canonical:** `renderer_polish.js` — HUD element creation in `safeInit` blocks (L216, L944, L970, L1022, L1088, L1126, L1137)
+
+```
+Pattern:
+1. Create DOM element via document.createElement('div')
+2. Assign ID with `r327-` prefix: el.id = 'r327-lightning-flash'
+3. Set inline styles for position:fixed, z-index above canvas (z-index: 9990+)
+4. Append to document.body (NOT inside the canvas or Three.js DOM)
+5. Toggle visibility via CSS class or direct style.display/opacity changes
+6. Update content per-frame from tick() using cached DOM references
+```
+
+**Key elements (all in renderer_polish.js):**
+| ID | Purpose | Created at |
+|---|---|---|
+| `r327-lightning-flash` | Full-screen white flash during lightning strikes | L216 |
+| `r327-damage-vignette` | Red radial vignette on damage | L944 |
+| `r327-flag-flash` | Screen flash on flag pickup/drop | L970 |
+| `r327-telemetry` | F3 debug telemetry overlay | L1022 |
+| `r327-hud-ring` | Compass ring + objective text | L1088 |
+| `r327-hud-compass` | Compass direction letter (N/S/E/W) inside hud-ring | L1098 |
+| `r327-hud-obj` | Objective label inside hud-ring | L1098 |
+| `r327-settings-btn` | F2 settings button | L1126 |
+| `r327-settings-panel` | Settings dropdown panel | L1137 |
+| `r327-quality` | Quality tier select inside settings | L1148 |
+| `r327-fx` | FX level select inside settings | L1156 |
+
+**Key details:**
+- `r327` prefix is a namespace convention (R32.7 was the first polish pass)
+- All HUD overlays are siblings of `<canvas>`, NOT children — canvas captures pointer lock
+- z-index hierarchy: canvas=1, HUD=10-9990, overlays=10000+
+- DOM updates are batched in tick() via cached querySelector results
+- Uses `pointer-events: none` on non-interactive elements to avoid blocking canvas input
+
+**When to use:** Any new HUD element (phase timer, mech health bar, objective marker). Use the `r327-` prefix to namespace, create in a safeInit block, cache the DOM reference, update in tick().
+
+**Rule:** HUD overlays are DOM elements over the canvas, not Three.js sprites. This gives free text rendering, CSS animations, and accessibility. Always use `position:fixed` + high z-index. Never put interactive elements inside the canvas element.
+
+---
+
+## 20. WASM Callback Bridge — ASM_CONST → window.* (Phase 5 audit)
+
+**Canonical:** `tribes.js` lines 6438-6457 (auto-generated), matched by `index.html` window.* function definitions
+
+```
+Pattern:
+1. C++ code uses EM_ASM / EM_ASM_INT macros to call into JavaScript
+2. Emscripten compiles these to entries in the ASM_CONSTS table (tribes.js L6438)
+3. Each entry is a lambda: (params) => { if(window.callbackName) window.callbackName(params); }
+4. The `if(window.X)` guard prevents crash if JS callback isn't registered yet
+5. index.html defines the matching `window.callbackName = function(params) { ... }` 
+6. The callback updates DOM HUD elements, plays audio, triggers visual effects
+```
+
+**ASM_CONST → window.* mapping (19 entries):**
+| C++ → JS callback | Params | Purpose | Defined in |
+|---|---|---|---|
+| `window.sbRow` | idx, team, score, kills, deaths, hasFlag, role, name | Scoreboard row data | index.html L1898 |
+| `window.sbFinish` | rs, bs, matchState, timeRemain, mvpName | Scoreboard complete (defined TWICE: L1901, L1969) | index.html |
+| `window.playSoundUI` | soundId | UI sound effect (multiple call sites) | index.html L3654 |
+| `window.playSoundAt` | soundId, x, y, z | Positional 3D audio | index.html L3653 |
+| `window.onMatchEnd` | winner, rs, bs | Match end handler (called twice in WASM) | index.html L1931 |
+| `window.onDamageSource` | srcX, srcZ | Damage direction indicator | index.html L2750 |
+| `window.onHitConfirm` | amount | Hit confirmation crosshair tick | index.html L4080 |
+| `window.updateHUD` | hp, en, ammo, maxAmmo, wpn, speed10, skiing, carrying, px, pz, yaw1000, rs, bs, armor | Full HUD state update (14 params) | index.html L1657 |
+| `window.updateMatchHUD` | matchState, timeRemain, respawnTimer10, spawnProtRemain10 | Match state overlay | index.html L1715 |
+| `window.updateAudio` | jetting, onGround, speed10, health1000[, skiing] | Audio engine state (4 OR 5 params — bug!) | index.html L3659 |
+| `window.r3FrameTime` | (written, not called) | Frame timing for perf logging | index.html L4040 |
+
+**Key details:**
+- All 19 ASM_CONST entries have `if(window.X)` null guards — safe against boot race
+- `sbFinish` is defined TWICE in index.html (L1901 and L1969) — second definition overwrites first
+- `updateAudio` is called with 4 OR 5 params from different C++ call sites (skiing param sometimes missing)
+- `r3FrameTime` is written as a value, not called as a function — it's polled by the WASM perf logger
+- Callbacks run synchronously inside the WASM tick — long operations here would stall the game loop
+
+**When to use:** Any new C++ → JS communication. Add EM_ASM in C++, define `window.callbackName` in index.html, document in this table.
+
+**Rule:** WASM→JS callbacks MUST have the `if(window.X)` guard. Signature MUST be stable (same param count from all C++ call sites). Document every new callback in system-map.md. Keep callbacks fast — they run inside the tick.
