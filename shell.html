@@ -3081,6 +3081,7 @@
       if(!Module._setSettings)return;
       var j='{"sensitivity":'+ST.sensitivity+',"fov":'+ST.fov+',"renderDist":'+ST.renderDist
            +',"jetToggle":'+(ST.jetToggle?'true':'false')+',"invertY":'+(ST.invertY?'true':'false')+'}';
+      Module._setSettings(j);
       Module._setPhysicsTuning(_physTune.gravity,_physTune.jetForce,_physTune.jetEnergy,_physTune.friction,_physTune.speed);
     }
     function applyCrosshair(){
@@ -3311,10 +3312,6 @@
     }
     function closeSettings(){
       document.getElementById('settings-modal').classList.remove('active');
-      // Apply resolution scale on close
-      var res=ST.resolutionScale/100;
-      var c2=document.getElementById('canvas');
-      if(c2){c2.width=Math.round(1024*res);c2.height=Math.round(768*res);}
     }
     function resetAllSettings(){
       if(!confirm('Reset all settings to defaults? This cannot be undone.'))return;

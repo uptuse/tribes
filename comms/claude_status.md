@@ -1,54 +1,20 @@
-# Claude Status — R32.273
+# Claude Status — 2026-04-29
 
-**HEAD:** (pushing R32.273)
-**What shipped:** Phase A Live Editor — tuning panel + TransformControls map editing
+## Last action
+Fixed camera regression: opening Options/Settings modal was causing persistent third-person camera.
 
-## R32.273 — Live Editor Phase A
-Responding to `docs/Claude_Build_Brief.md` (authorized by Manus after Claude Audit Response).
+## Root causes identified and fixed
 
-### What's built:
-1. **Physics Tuning Panel** (`client/editor_panel.js`)
-   - Collapsible left-side overlay, toggle with `P` key
-   - Armor type selector (Light/Medium/Heavy) with T1-accurate defaults from `ArmorData` struct
-   - 5 sliders: Jet Force, Jet Energy Drain, Gravity, Ground Traction, Max Speed
-   - Per-armor values (sliders change when you switch armor tab)
-   - Dark sci-fi UI matching game aesthetic
+### Bug 1 (confirmed): `applyToCpp()` discarded settings JSON — `Module._setSettings(j)` was accidentally removed in commit `97fd339`. Sensitivity, FOV, invertY, renderDist, jetToggle were never sent to C++ after that commit.
 
-2. **"Save Tuning" Export**
-   - Downloads JSON with all tuning values + C++ snippet
-   - Includes per-armor breakdown and gravity
-   - Ready to paste into `wasm_main.cpp`
-   - Reset button to restore T1 defaults
+### Bug 2 (camera regression): `closeSettings()` was hard-resetting the canvas to 1024×768 via `c2.width = Math.round(1024*res)`. Three.js manages the canvas size (sets it to window size via `renderer.setSize()`). This resize reset the WebGL drawing buffer every time settings closed, corrupting the render state while C++ continued running normally.
 
-3. **TransformControls Map Editing**
-   - Toggle "Edit Mode" to enable entity selection
-   - Click any building/interior shape in the 3D view to select
-   - Full 3-axis gizmo: W=Translate, E=Rotate, R=Scale
-   - Uses vendored `TransformControls.js` (zero new deps)
-   - Tracks all modified entities with delta display
-   - Undo All button to restore original positions
+### Bug 3 (defensive): Spectator mode guard — `syncCamera()` now refuses to trigger `_enterSpectator()` while the settings modal or escmenu is open. The alive flag (`playerView[o+13]`) can read as 0 mid-frame when pointer lock is released, which would wrongly lock the camera into orbit mode.
 
-4. **"Save Map" Export**
-   - Downloads JSON of all modified entity positions
-   - Includes original + new position, rotation, scale
-   - Entity names preserved for identification
+## Files changed
+- `index.html`: restored `Module._setSettings(j)` in `applyToCpp()`; removed canvas resize from `closeSettings()`
+- `shell.html`: same changes mirrored
+- `renderer.js`: spectator mode guard checks `_anyModalOpen` before entering `_enterSpectator()`
 
-### Architecture decisions:
-- **Separate overlay, not settings tab** — settings is for player prefs; editor is a dev tool
-- **No new dependencies** — vanilla JS + vendored TransformControls
-- **No WASM changes needed** — tuning panel is a preview+export workflow until C++ setSettings() is extended
-- **Module pattern** — `client/editor_panel.js` loaded via dynamic import, same as other client/*.js modules
-- **Scene traversal** — finds selectable entities via `RaindanceInteriorShapes` group + userData tags
-
-### Known limitations:
-- Physics sliders don't update WASM live (requires C++ rebuild to extend `setSettings()` parser)
-- Building selection depends on mesh raycast — some thin/complex shapes may be hard to click
-- Pointer lock must be released for click-selection (edit mode handles this)
-
-## Previous
-- All 6 overnight phases complete (R32.67–R32.78)
-- Character pipeline at R32.129
-
-## Waiting on
-- Manus to test Phase A and provide feedback
-- C++ rebuild to wire tuning sliders to live WASM (Phase B dependency)
+## Status
+Committed and pushed. No WASM rebuild required — all changes are JS only.

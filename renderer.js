@@ -3983,7 +3983,15 @@ function syncCamera() {
 
     // R32.16-manus: spectator/freecam while dead.
     const aliveLocal = playerView[o + 13] > 0.5;
-    if (!aliveLocal) {
+    // Guard: don't enter spectator mode while any game modal is open. The
+    // alive flag can read as 0 mid-frame when the C++ tick hasn't run yet
+    // (e.g. right after pointer-lock release), which would wrongly freeze the
+    // camera at the player's current position instead of following them.
+    const _anyModalOpen = !!(
+        document.getElementById('settings-modal')?.classList.contains('active') ||
+        document.getElementById('escmenu')?.classList.contains('active')
+    );
+    if (!aliveLocal && !_anyModalOpen) {
         if (!_spec.active) _enterSpectator(px, py, pz);
         // Advance yaw and recompute camera transform around captured death pos.
         const dt = 1 / 60;
@@ -3999,7 +4007,7 @@ function syncCamera() {
         const lookPitch = Math.atan2(dy, Math.hypot(dx, dz));
         camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
         return;
-    } else if (_spec.active) {
+    } else if (_spec.active && aliveLocal) {
         _exitSpectator();
     }
 
