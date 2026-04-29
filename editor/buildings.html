@@ -1,0 +1,1574 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Tribes — Building Layout Editor</title>
+<style>
+/* ───── reset & dark sci-fi base ───── */
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI','Roboto',sans-serif;font-size:13px}
+canvas{display:block}
+
+/* ───── toolbar ───── */
+#toolbar{position:fixed;top:0;left:0;right:0;height:38px;background:rgba(12,14,22,0.92);border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;padding:0 10px;gap:8px;z-index:100;backdrop-filter:blur(6px)}
+#toolbar .title{font-family:'Roboto Mono',monospace;font-size:12px;color:#FFD479;letter-spacing:1px;margin-right:16px;white-space:nowrap}
+#toolbar button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#toolbar button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#toolbar button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#toolbar .sep{width:1px;height:20px;background:rgba(255,255,255,0.08);margin:0 4px}
+#toolbar input[type=file]{display:none}
+
+/* ───── left panel (palette) ───── */
+#left-panel{position:fixed;top:38px;left:0;width:240px;bottom:24px;background:rgba(12,14,22,0.92);border-right:1px solid rgba(255,255,255,0.08);overflow-y:auto;z-index:90;backdrop-filter:blur(6px);display:flex;flex-direction:column}
+#left-panel h3{font-size:11px;color:#FFD479;text-transform:uppercase;letter-spacing:1.5px;padding:10px 12px 6px;border-bottom:1px solid rgba(255,255,255,0.06);flex-shrink:0}
+#left-panel .section{border-bottom:1px solid rgba(255,255,255,0.04)}
+#left-panel .section-header{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:1px;padding:8px 12px 4px;cursor:pointer;display:flex;justify-content:space-between;align-items:center}
+#left-panel .section-header:hover{color:#FFD479}
+.piece-item{padding:6px 12px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;transition:background .1s;display:flex;justify-content:space-between;align-items:center}
+.piece-item:hover{background:rgba(255,255,255,0.04)}
+.piece-item.selected{background:rgba(255,212,121,0.12);border-left:2px solid #FFD479}
+.piece-item .name{font-size:11px;color:#e0e0e0}
+.piece-item .meta{font-size:9px;color:#666;font-family:'Roboto Mono',monospace}
+.piece-item .openings-icons{font-size:8px;color:#558855;font-family:'Roboto Mono',monospace}
+
+/* ───── right panel (buildings + properties) ───── */
+#right-panel{position:fixed;top:38px;right:0;width:260px;bottom:24px;background:rgba(12,14,22,0.92);border-left:1px solid rgba(255,255,255,0.08);overflow-y:auto;z-index:90;backdrop-filter:blur(6px)}
+#right-panel h3{font-size:11px;color:#FFD479;text-transform:uppercase;letter-spacing:1.5px;padding:10px 12px 6px;border-bottom:1px solid rgba(255,255,255,0.06)}
+.building-item{padding:8px 12px;border-bottom:1px solid rgba(255,255,255,0.04);cursor:pointer;transition:background .1s;display:flex;justify-content:space-between;align-items:center}
+.building-item:hover{background:rgba(255,255,255,0.04)}
+.building-item.active{background:rgba(255,212,121,0.1);border-left:2px solid #FFD479}
+.building-item .name{font-size:11px;color:#e0e0e0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:140px}
+.building-item .info{font-size:9px;color:#666;font-family:'Roboto Mono',monospace}
+.building-item .del-btn{font-size:10px;color:#664;padding:2px 6px;border-radius:2px;background:rgba(255,80,80,0.08);border:1px solid rgba(255,80,80,0.15);cursor:pointer;opacity:0;transition:opacity .15s}
+.building-item:hover .del-btn{opacity:1}
+.building-item .del-btn:hover{background:rgba(255,80,80,0.25);color:#ff6666}
+
+/* building properties sub-panel */
+#bld-props{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.06);display:none}
+#bld-props h4{font-size:10px;color:#999;text-transform:uppercase;letter-spacing:1px;margin:8px 0 4px}
+#bld-props h4:first-child{margin-top:0}
+#bld-props .row{display:flex;gap:4px;margin-bottom:3px}
+#bld-props .row label{width:36px;font-size:10px;color:#FFD479;font-family:'Roboto Mono',monospace;line-height:22px}
+#bld-props .row input,#bld-props .row select{flex:1;background:#16181f;border:1px solid rgba(255,255,255,0.1);color:#c8ccd4;padding:2px 6px;border-radius:2px;font-size:11px;font-family:'Roboto Mono',monospace}
+#bld-props .row input:focus,#bld-props .row select:focus{border-color:rgba(255,212,121,0.4);outline:none}
+
+/* piece list in building */
+#piece-list-section{display:none}
+.placed-piece-item{padding:5px 12px;border-bottom:1px solid rgba(255,255,255,0.03);cursor:pointer;transition:background .1s;display:flex;justify-content:space-between;align-items:center;font-size:11px}
+.placed-piece-item:hover{background:rgba(255,255,255,0.04)}
+.placed-piece-item.selected{background:rgba(100,180,255,0.12);border-left:2px solid #6ab4ff}
+.placed-piece-item .del-btn{font-size:10px;color:#664;padding:2px 6px;border-radius:2px;background:rgba(255,80,80,0.08);border:1px solid rgba(255,80,80,0.15);cursor:pointer;opacity:0;transition:opacity .15s}
+.placed-piece-item:hover .del-btn{opacity:1}
+
+/* ───── validation panel ───── */
+#validation-panel{padding:10px 12px;border-top:1px solid rgba(255,255,255,0.06);font-size:11px;display:none}
+#validation-panel .status{margin-bottom:4px}
+#validation-panel .ok{color:#44cc66}
+#validation-panel .err{color:#ff6666}
+#validation-panel .warn{color:#ffaa44}
+#validation-panel .detail{font-size:9px;color:#666;font-family:'Roboto Mono',monospace}
+
+/* ───── status bar ───── */
+#statusbar{position:fixed;bottom:0;left:0;right:0;height:24px;background:rgba(12,14,22,0.92);border-top:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;padding:0 12px;font-size:10px;color:#666;font-family:'Roboto Mono',monospace;z-index:100}
+#statusbar span{margin-right:20px}
+#statusbar .mode-badge{color:#FFD479;font-weight:bold}
+
+/* ───── loading overlay ───── */
+#loading-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.95);display:flex;align-items:center;justify-content:center;z-index:200;flex-direction:column;gap:12px}
+#loading-overlay .spinner{width:32px;height:32px;border:3px solid rgba(255,212,121,0.15);border-top:3px solid #FFD479;border-radius:50%;animation:spin 1s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+#loading-overlay .text{font-size:12px;color:#FFD479;font-family:'Roboto Mono',monospace}
+
+/* ───── help overlay ───── */
+#help-overlay{position:fixed;inset:0;background:rgba(10,12,16,0.88);display:none;align-items:center;justify-content:center;z-index:300}
+#help-overlay .card{background:#16181f;border:1px solid rgba(255,212,121,0.2);border-radius:6px;padding:24px 32px;max-width:560px;max-height:80vh;overflow-y:auto}
+#help-overlay .card h2{font-size:16px;color:#FFD479;margin-bottom:12px}
+#help-overlay .card p,#help-overlay .card li{font-size:12px;color:#b0b4bc;line-height:1.7}
+#help-overlay .card kbd{background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);padding:1px 5px;border-radius:2px;font-size:11px;font-family:'Roboto Mono',monospace;color:#FFD479}
+#help-overlay .card .col2{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+
+/* new building dialog */
+#new-bld-dialog{position:fixed;inset:0;background:rgba(10,12,16,0.85);display:none;align-items:center;justify-content:center;z-index:250}
+#new-bld-dialog .card{background:#16181f;border:1px solid rgba(255,212,121,0.2);border-radius:6px;padding:24px 28px;width:320px}
+#new-bld-dialog .card h2{font-size:14px;color:#FFD479;margin-bottom:14px}
+#new-bld-dialog .card .row{display:flex;gap:6px;margin-bottom:8px;align-items:center}
+#new-bld-dialog .card .row label{width:50px;font-size:11px;color:#999}
+#new-bld-dialog .card .row input{flex:1;background:#16181f;border:1px solid rgba(255,255,255,0.12);color:#c8ccd4;padding:4px 8px;border-radius:3px;font-size:12px}
+#new-bld-dialog .card button{padding:6px 16px;margin-right:8px;margin-top:8px;background:rgba(255,212,121,0.12);border:1px solid rgba(255,212,121,0.35);color:#FFD479;border-radius:3px;cursor:pointer;font-size:12px}
+#new-bld-dialog .card button.cancel{background:rgba(255,255,255,0.04);border-color:rgba(255,255,255,0.12);color:#888}
+
+/* scrollbar */
+::-webkit-scrollbar{width:6px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.1);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:rgba(255,212,121,0.3)}
+</style>
+</head>
+<body>
+
+<!-- Loading overlay -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div class="text">Loading Building Editor…</div>
+</div>
+
+<!-- Help overlay -->
+<div id="help-overlay" onclick="this.style.display='none'">
+  <div class="card" onclick="event.stopPropagation()">
+    <h2>🏗️ Building Layout Editor</h2>
+    <p style="margin-bottom:12px">Design modular buildings with snap-to-grid placement and real-time connectivity validation.</p>
+    <div class="col2">
+      <ul style="padding-left:16px;list-style:none">
+        <li><kbd>R</kbd> Rotate piece 90° CW</li>
+        <li><kbd>Del</kbd> Delete selected piece</li>
+        <li><kbd>Ctrl+D</kbd> Duplicate piece</li>
+        <li><kbd>↑↓←→</kbd> Nudge piece ±1 grid</li>
+        <li><kbd>PgUp</kbd>/<kbd>PgDn</kbd> Nudge Y ±1 floor</li>
+        <li><kbd>Escape</kbd> Cancel / deselect</li>
+        <li><kbd>1-9</kbd> Quick-select palette piece</li>
+      </ul>
+      <ul style="padding-left:16px;list-style:none">
+        <li><kbd>Ctrl+S</kbd> Export layouts.json</li>
+        <li><kbd>Ctrl+O</kbd> Import layouts.json</li>
+        <li><kbd>Ctrl+Z</kbd> Undo</li>
+        <li><kbd>G</kbd> Toggle grid</li>
+        <li><kbd>C</kbd> Toggle collider wireframes</li>
+        <li><kbd>F</kbd> Focus camera on selection</li>
+        <li><kbd>H</kbd> This help</li>
+      </ul>
+    </div>
+    <p style="margin-top:12px;font-size:11px;color:#666">Left-click to place/select. Right-drag to pan. Scroll to zoom. Left-drag to orbit.</p>
+    <button onclick="document.getElementById('help-overlay').style.display='none'" style="margin-top:14px;padding:6px 16px;background:rgba(255,212,121,0.12);border:1px solid rgba(255,212,121,0.35);color:#FFD479;border-radius:3px;cursor:pointer;font-size:12px">Close</button>
+  </div>
+</div>
+
+<!-- New Building Dialog -->
+<div id="new-bld-dialog">
+  <div class="card">
+    <h2>New Building</h2>
+    <div class="row"><label>Name</label><input type="text" id="nbd-name" value="building-1" placeholder="building name"></div>
+    <div class="row"><label>Type</label><input type="text" id="nbd-type" value="" placeholder="e.g. base, bunker"></div>
+    <div class="row"><label>Team</label><input type="number" id="nbd-team" value="0" min="0" max="3" step="1"></div>
+    <p style="font-size:10px;color:#666;margin-top:6px">Click on terrain to set origin, or enter manually:</p>
+    <div class="row"><label>X</label><input type="number" id="nbd-px" value="0" step="1"></div>
+    <div class="row"><label>Y</label><input type="number" id="nbd-py" value="30" step="1"></div>
+    <div class="row"><label>Z</label><input type="number" id="nbd-pz" value="0" step="1"></div>
+    <div>
+      <button id="nbd-ok">Create</button>
+      <button id="nbd-cancel" class="cancel">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <span class="title">🏗️ BUILDING LAYOUT EDITOR</span>
+  <button id="btn-new-bld" title="New Building">➕ New Building</button>
+  <div class="sep"></div>
+  <button id="btn-export" title="Export (Ctrl+S)">💾 Export</button>
+  <button id="btn-import-trigger" title="Import (Ctrl+O)">📥 Import</button>
+  <input type="file" id="import-input" accept=".json" style="display:none">
+  <div class="sep"></div>
+  <button id="btn-toggle-grid" title="Toggle Grid (G)">▦ Grid</button>
+  <button id="btn-toggle-colliders" class="active" title="Toggle Colliders (C)">◻ Colliders</button>
+  <div class="sep"></div>
+  <button id="btn-undo" title="Undo (Ctrl+Z)">↩ Undo</button>
+  <div class="sep"></div>
+  <button id="btn-help" title="Help (H)">❓</button>
+</div>
+
+<!-- Left panel: Piece Palette -->
+<div id="left-panel">
+  <h3>Piece Palette</h3>
+  <div id="palette-list"></div>
+</div>
+
+<!-- Right panel: Buildings + Properties -->
+<div id="right-panel">
+  <h3>Buildings</h3>
+  <div id="building-list"></div>
+  <div id="bld-props">
+    <h4>Properties</h4>
+    <div class="row"><label>Name</label><input type="text" id="bp-name"></div>
+    <div class="row"><label>Type</label><input type="text" id="bp-type" placeholder="base, bunker..."></div>
+    <div class="row"><label>Team</label><input type="number" id="bp-team" min="0" max="3" step="1"></div>
+    <h4>Position</h4>
+    <div class="row"><label>X</label><input type="number" id="bp-px" step="1"></div>
+    <div class="row"><label>Y</label><input type="number" id="bp-py" step="0.1"></div>
+    <div class="row"><label>Z</label><input type="number" id="bp-pz" step="1"></div>
+    <h4>Rotation</h4>
+    <div class="row"><label>Deg</label><input type="number" id="bp-rot" step="90" min="0" max="270"></div>
+  </div>
+  <div id="piece-list-section">
+    <h3>Placed Pieces</h3>
+    <div id="placed-piece-list"></div>
+  </div>
+  <div id="validation-panel"></div>
+</div>
+
+<!-- Status bar -->
+<div id="statusbar">
+  <span id="st-mode" class="mode-badge">SELECT</span>
+  <span id="st-rot">Rot: 0°</span>
+  <span id="st-grid">Grid: 4m / 4.25m</span>
+  <span id="st-info"></span>
+</div>
+
+<!-- Three.js importmap (local vendor, same as game) -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/r170/three.module.js",
+    "three/addons/": "../vendor/three/r170/addons/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                     CONSTANTS                           ║
+// ╚══════════════════════════════════════════════════════════╝
+const TERRAIN_RAW_SIZE = 257;
+const TERRAIN_WORLD_SCALE = 8;
+const TERRAIN_SPAN = (TERRAIN_RAW_SIZE - 1) * TERRAIN_WORLD_SCALE;
+const HEIGHTS_BIN_URL = 'raindance_heights.bin';
+const CATALOG_URL = '../assets/buildings/catalog.json';
+const LAYOUTS_URL = '../assets/buildings/layouts.json';
+
+// Colors for debug colliders
+const COL_FLOOR   = 0x00ff00;
+const COL_CEILING = 0x0000ff;
+const COL_WALL    = 0xff0000;
+const COL_STEP    = 0xffff00;
+const COL_MATCHED = 0x44cc66;
+const COL_UNMATCHED = 0xff4444;
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                     STATE                               ║
+// ╚══════════════════════════════════════════════════════════╝
+let catalog = null;           // catalog.json data
+let GRID = 4.0;
+let FLOOR_H = 4.25;
+
+let buildings = [];           // [{id, name, type, team, pos:[x,y,z], rot, pieces:[], group, originMarker}]
+let activeBuilding = null;    // currently edited building
+let selectedPiece = null;     // currently selected placed piece {id, grid, rot, mesh, colliderGroup, openingArrows}
+
+let palettePieceId = null;    // selected palette brush
+let placementRot = 0;         // 0/90/180/270
+let ghostMesh = null;         // preview mesh following cursor
+let ghostColliders = null;    // preview collider wireframes
+
+let glbCache = {};            // pieceId → THREE.Group (template)
+let nextBuildingId = 1;
+let showGrid = true;
+let showColliders = true;
+
+let undoStack = [];           // snapshots for undo
+const MAX_UNDO = 50;
+
+let terrainMesh = null;
+let terrainHeights = null;
+let gridHelper = null;
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                   SCENE SETUP                           ║
+// ╚══════════════════════════════════════════════════════════╝
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setClearColor(0x0a0c10);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a2040);
+scene.fog = new THREE.FogExp2(0x1a2040, 0.0004);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 8000);
+camera.position.set(0, 120, 300);
+camera.lookAt(0, 30, 0);
+
+// Lights
+scene.add(new THREE.AmbientLight(0x8899bb, 0.6));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+sun.position.set(200, 400, -100);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.left = -500; sun.shadow.camera.right = 500;
+sun.shadow.camera.top = 500; sun.shadow.camera.bottom = -500;
+sun.shadow.camera.near = 10; sun.shadow.camera.far = 1200;
+scene.add(sun);
+scene.add(new THREE.HemisphereLight(0x6688aa, 0x443322, 0.4));
+
+// Grid
+gridHelper = new THREE.GridHelper(2048, 512, 0x1a2f1e, 0x14191f);
+gridHelper.position.y = 0.2;
+scene.add(gridHelper);
+
+// Controls
+const orbitControls = new OrbitControls(camera, renderer.domElement);
+orbitControls.enableDamping = true;
+orbitControls.dampingFactor = 0.08;
+orbitControls.maxDistance = 3000;
+orbitControls.target.set(0, 30, 0);
+
+// Raycasting
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+const mouseWorld = new THREE.Vector3();
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                  TERRAIN LOADING                        ║
+// ╚══════════════════════════════════════════════════════════╝
+async function loadTerrain() {
+    const resp = await fetch(HEIGHTS_BIN_URL);
+    const buf = await resp.arrayBuffer();
+    terrainHeights = new Float32Array(buf);
+
+    const geom = new THREE.PlaneGeometry(TERRAIN_SPAN, TERRAIN_SPAN, TERRAIN_RAW_SIZE - 1, TERRAIN_RAW_SIZE - 1);
+    geom.rotateX(-Math.PI / 2);
+    const pos = geom.attributes.position;
+    for (let j = 0; j < TERRAIN_RAW_SIZE; j++) {
+        for (let i = 0; i < TERRAIN_RAW_SIZE; i++) {
+            pos.setY(j * TERRAIN_RAW_SIZE + i, terrainHeights[j * TERRAIN_RAW_SIZE + i]);
+        }
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+        color: 0x3a4a28, roughness: 0.92, metalness: 0.05, flatShading: true
+    });
+    terrainMesh = new THREE.Mesh(geom, mat);
+    terrainMesh.receiveShadow = true;
+    terrainMesh.userData.isTerrain = true;
+    scene.add(terrainMesh);
+}
+
+function sampleTerrainY(wx, wz) {
+    if (!terrainHeights) return 0;
+    // World coords to heightmap indices
+    const hx = (wx + TERRAIN_SPAN / 2) / TERRAIN_WORLD_SCALE;
+    const hz = (wz + TERRAIN_SPAN / 2) / TERRAIN_WORLD_SCALE;
+    const ix = Math.floor(Math.max(0, Math.min(TERRAIN_RAW_SIZE - 2, hx)));
+    const iz = Math.floor(Math.max(0, Math.min(TERRAIN_RAW_SIZE - 2, hz)));
+    const fx = hx - ix, fz = hz - iz;
+    const h00 = terrainHeights[iz * TERRAIN_RAW_SIZE + ix];
+    const h10 = terrainHeights[iz * TERRAIN_RAW_SIZE + ix + 1];
+    const h01 = terrainHeights[(iz + 1) * TERRAIN_RAW_SIZE + ix];
+    const h11 = terrainHeights[(iz + 1) * TERRAIN_RAW_SIZE + ix + 1];
+    return h00 * (1 - fx) * (1 - fz) + h10 * fx * (1 - fz) + h01 * (1 - fx) * fz + h11 * fx * fz;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║                  CATALOG & GLB LOADING                  ║
+// ╚══════════════════════════════════════════════════════════╝
+async function loadCatalog() {
+    const resp = await fetch(CATALOG_URL);
+    if (!resp.ok) throw new Error('Failed to load catalog: ' + resp.status);
+    catalog = await resp.json();
+    GRID = catalog._meta.gridUnit || 4.0;
+    FLOOR_H = catalog._meta.floorHeight || 4.25;
+}
+
+async function ensureGLB(pieceId) {
+    if (glbCache[pieceId]) return glbCache[pieceId];
+    const def = catalog.pieces[pieceId];
+    if (!def || !def.glb) return null;
+    const url = '../' + catalog._meta.basePath + def.glb;
+    const loader = new GLTFLoader();
+    try {
+        const gltf = await loader.loadAsync(url);
+        glbCache[pieceId] = gltf.scene;
+        return gltf.scene;
+    } catch (e) {
+        console.warn(`[Editor] Failed to load GLB for ${pieceId}:`, e);
+        return null;
+    }
+}
+
+async function preloadAllGLBs() {
+    const ids = Object.keys(catalog.pieces);
+    const promises = ids.map(id => ensureGLB(id));
+    await Promise.all(promises);
+    console.log(`[Editor] Preloaded ${ids.length} GLBs`);
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              PIECE MESH & COLLIDER CREATION             ║
+// ╚══════════════════════════════════════════════════════════╝
+function createPieceMesh(pieceId, opacity = 1.0) {
+    const template = glbCache[pieceId];
+    if (!template) {
+        // Fallback: box placeholder
+        const def = catalog.pieces[pieceId];
+        const b = def ? def.bounds : [4, 4.25, 4];
+        const geom = new THREE.BoxGeometry(b[0], b[1], b[2]);
+        const mat = new THREE.MeshStandardMaterial({
+            color: 0x556677, transparent: opacity < 1, opacity, wireframe: opacity < 1
+        });
+        const mesh = new THREE.Mesh(geom, mat);
+        mesh.position.y = b[1] / 2;
+        const group = new THREE.Group();
+        group.add(mesh);
+        return group;
+    }
+    const clone = template.clone();
+    if (opacity < 1) {
+        clone.traverse(child => {
+            if (child.isMesh && child.material) {
+                child.material = child.material.clone();
+                child.material.transparent = true;
+                child.material.opacity = opacity;
+                child.material.depthWrite = false;
+            }
+        });
+    }
+    clone.traverse(child => {
+        if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+            child.frustumCulled = false;
+        }
+    });
+    return clone;
+}
+
+function createColliderWireframes(pieceId) {
+    const def = catalog.pieces[pieceId];
+    if (!def || !def.colliders) return new THREE.Group();
+    const group = new THREE.Group();
+    for (const col of def.colliders) {
+        if (col.type !== 'box') continue;
+        const geom = new THREE.BoxGeometry(col.size[0], col.size[1], col.size[2]);
+        const edges = new THREE.EdgesGeometry(geom);
+        let color;
+        switch (col.role) {
+            case 'floor':   color = COL_FLOOR; break;
+            case 'ceiling': color = COL_CEILING; break;
+            case 'step':    color = COL_STEP; break;
+            default:        color = COL_WALL;
+        }
+        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+            color, transparent: true, opacity: 0.5
+        }));
+        line.position.set(col.pos[0], col.pos[1], col.pos[2]);
+        group.add(line);
+        geom.dispose();
+    }
+    return group;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              OPENING ARROWS / CONNECTIVITY              ║
+// ╚══════════════════════════════════════════════════════════╝
+const DIR_VEC = {
+    '+x': new THREE.Vector3(1, 0, 0),
+    '-x': new THREE.Vector3(-1, 0, 0),
+    '+z': new THREE.Vector3(0, 0, 1),
+    '-z': new THREE.Vector3(0, 0, -1)
+};
+const OPPOSITE = { '+x': '-x', '-x': '+x', '+z': '-z', '-z': '+z' };
+
+function rotateDir(dir, deg) {
+    const rad = deg * Math.PI / 180;
+    const c = Math.cos(rad), s = Math.sin(rad);
+    const v = DIR_VEC[dir];
+    const rx = Math.round(v.x * c + v.z * s);
+    const rz = Math.round(-v.x * s + v.z * c);
+    if (rx === 1) return '+x'; if (rx === -1) return '-x';
+    if (rz === 1) return '+z'; if (rz === -1) return '-z';
+    return dir; // fallback
+}
+
+function getRotatedOpenings(pieceId, rot) {
+    const def = catalog.pieces[pieceId];
+    if (!def || !def.openings) return [];
+    return def.openings.map(o => rotateDir(o, rot));
+}
+
+function getFaceWorldPos(bld, piece, opening) {
+    const def = catalog.pieces[piece.id];
+    if (!def) return null;
+    const gx = (piece.grid[0] ?? 0) * GRID;
+    const gz = (piece.grid[2] ?? 0) * GRID;
+    const bounds = def.bounds;
+    let fx = gx, fz = gz;
+    if (opening === '+x') fx += bounds[0] / 2;
+    else if (opening === '-x') fx -= bounds[0] / 2;
+    else if (opening === '+z') fz += bounds[2] / 2;
+    else if (opening === '-z') fz -= bounds[2] / 2;
+    return { x: bld.pos[0] + fx, z: bld.pos[2] + fz };
+}
+
+function createOpeningArrow(direction, matched) {
+    const color = matched ? COL_MATCHED : COL_UNMATCHED;
+    const dir = DIR_VEC[direction];
+    // Arrow from center outward
+    const len = 1.5;
+    const origin = dir.clone().multiplyScalar(1.2);
+    const arrow = new THREE.ArrowHelper(dir, origin, len, color, 0.4, 0.3);
+    arrow.position.y = 2.0; // mid-height
+    return arrow;
+}
+
+function updateConnectivity(bld) {
+    if (!bld) return;
+    const pieces = bld.pieces;
+    let internalConnections = 0;
+    let exteriorOpenings = 0;
+    let totalOpenings = 0;
+
+    // Build adjacency for BFS
+    const adj = new Map();
+    pieces.forEach((_, i) => adj.set(i, new Set()));
+
+    for (let i = 0; i < pieces.length; i++) {
+        const p = pieces[i];
+        const openings = getRotatedOpenings(p.id, p.rot);
+
+        // Remove old arrows
+        if (p.openingArrows) {
+            p.openingArrows.forEach(a => p.mesh.remove(a));
+        }
+        p.openingArrows = [];
+
+        for (const op of openings) {
+            totalOpenings++;
+            const facePos = getFaceWorldPos(bld, p, op);
+            if (!facePos) continue;
+
+            let matched = false;
+            for (let j = 0; j < pieces.length; j++) {
+                if (i === j) continue;
+                const q = pieces[j];
+                const qOpenings = getRotatedOpenings(q.id, q.rot);
+                for (const qop of qOpenings) {
+                    if (qop !== OPPOSITE[op]) continue;
+                    const qFacePos = getFaceWorldPos(bld, q, qop);
+                    if (!qFacePos) continue;
+                    const dist = Math.sqrt((facePos.x - qFacePos.x) ** 2 + (facePos.z - qFacePos.z) ** 2);
+                    if (dist < 0.5) {
+                        matched = true;
+                        adj.get(i).add(j);
+                        break;
+                    }
+                }
+                if (matched) break;
+            }
+
+            if (matched) internalConnections++;
+            else exteriorOpenings++;
+
+            const arrow = createOpeningArrow(op, matched);
+            p.mesh.add(arrow);
+            p.openingArrows.push(arrow);
+        }
+    }
+
+    // BFS reachability
+    let allReachable = true;
+    let disconnectedCount = 0;
+    if (pieces.length > 1) {
+        const visited = new Set();
+        const queue = [0];
+        visited.add(0);
+        while (queue.length > 0) {
+            const curr = queue.shift();
+            for (const nb of adj.get(curr)) {
+                if (!visited.has(nb)) {
+                    visited.add(nb);
+                    queue.push(nb);
+                }
+            }
+        }
+        disconnectedCount = pieces.length - visited.size;
+        allReachable = disconnectedCount === 0;
+    }
+
+    // Update validation panel
+    const panel = document.getElementById('validation-panel');
+    panel.style.display = 'block';
+    panel.innerHTML = `
+        <div class="status ${allReachable ? 'ok' : 'err'}">
+            ${allReachable ? '✅ All pieces reachable' : `❌ ${disconnectedCount} disconnected piece(s)`}
+        </div>
+        <div class="detail">
+            Internal: ${internalConnections / 2 | 0} connections · Exterior: ${exteriorOpenings} openings · Total: ${pieces.length} pieces
+        </div>
+    `;
+
+    return { internalConnections: internalConnections / 2 | 0, exteriorOpenings, allReachable, disconnectedCount };
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              BUILDING MANAGEMENT                        ║
+// ╚══════════════════════════════════════════════════════════╝
+function createBuilding(name, pos, rot = 0, type = '', team = 0) {
+    const id = nextBuildingId++;
+    const group = new THREE.Group();
+    group.name = 'building-' + id;
+    group.position.set(pos[0], pos[1], pos[2]);
+    if (rot) group.rotation.y = rot * Math.PI / 180;
+    scene.add(group);
+
+    // Origin marker (gold wireframe cross)
+    const markerGroup = new THREE.Group();
+    const mMat = new THREE.LineBasicMaterial({ color: 0xFFD479, transparent: true, opacity: 0.7 });
+    for (const axis of [[1,0,0],[0,1,0],[0,0,1]]) {
+        const pts = [
+            new THREE.Vector3(-2*axis[0], -2*axis[1], -2*axis[2]),
+            new THREE.Vector3(2*axis[0], 2*axis[1], 2*axis[2])
+        ];
+        const bg = new THREE.BufferGeometry().setFromPoints(pts);
+        markerGroup.add(new THREE.LineSegments(bg, mMat));
+    }
+    // Add label
+    const label = makeLabel(name);
+    label.position.y = 6;
+    label.scale.set(10, 5, 1);
+    markerGroup.add(label);
+    group.add(markerGroup);
+
+    const bld = { id, name, type, team, pos: [...pos], rot, pieces: [], group, originMarker: markerGroup };
+    buildings.push(bld);
+    return bld;
+}
+
+function removeBuilding(bld) {
+    if (activeBuilding === bld) setActiveBuilding(null);
+    // Remove all piece meshes
+    for (const p of bld.pieces) {
+        bld.group.remove(p.mesh);
+    }
+    scene.remove(bld.group);
+    buildings = buildings.filter(b => b !== bld);
+    refreshBuildingList();
+}
+
+function setActiveBuilding(bld) {
+    activeBuilding = bld;
+    selectedPiece = null;
+    palettePieceId = null;
+    clearGhost();
+
+    // Dim non-active buildings
+    for (const b of buildings) {
+        const isActive = b === bld;
+        b.group.traverse(child => {
+            if (child.isMesh && child.material) {
+                if (!child.userData._origOpacity) child.userData._origOpacity = child.material.opacity;
+                if (!isActive && bld !== null) {
+                    child.material.transparent = true;
+                    child.material.opacity = 0.15;
+                } else {
+                    child.material.opacity = child.userData._origOpacity;
+                    child.material.transparent = child.material.opacity < 1;
+                }
+            }
+        });
+        // Line materials too (colliders, arrows)
+        b.group.traverse(child => {
+            if (child.isLineSegments || child.isLine || child.type === 'ArrowHelper') {
+                // leave alone
+            }
+        });
+    }
+
+    document.getElementById('bld-props').style.display = bld ? 'block' : 'none';
+    document.getElementById('piece-list-section').style.display = bld ? 'block' : 'none';
+
+    if (bld) {
+        document.getElementById('bp-name').value = bld.name;
+        document.getElementById('bp-type').value = bld.type || '';
+        document.getElementById('bp-team').value = bld.team || 0;
+        document.getElementById('bp-px').value = bld.pos[0];
+        document.getElementById('bp-py').value = bld.pos[1];
+        document.getElementById('bp-pz').value = bld.pos[2];
+        document.getElementById('bp-rot').value = bld.rot || 0;
+        updateConnectivity(bld);
+    } else {
+        document.getElementById('validation-panel').style.display = 'none';
+    }
+
+    refreshBuildingList();
+    refreshPiecePlacedList();
+    updateStatus();
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              PIECE PLACEMENT                            ║
+// ╚══════════════════════════════════════════════════════════╝
+function placePiece(bld, pieceId, grid, rot) {
+    pushUndo();
+    const def = catalog.pieces[pieceId];
+    if (!def) return null;
+
+    const mesh = createPieceMesh(pieceId);
+    const gx = (grid[0] ?? 0) * GRID;
+    const gy = (grid[1] ?? 0) * FLOOR_H;
+    const gz = (grid[2] ?? 0) * GRID;
+    mesh.position.set(gx, gy, gz);
+    if (rot) mesh.rotation.y = rot * Math.PI / 180;
+
+    // Collider wireframes
+    const colliderGroup = createColliderWireframes(pieceId);
+    colliderGroup.visible = showColliders;
+    mesh.add(colliderGroup);
+
+    bld.group.add(mesh);
+
+    const piece = { id: pieceId, grid: [...grid], rot: rot || 0, mesh, colliderGroup, openingArrows: [] };
+    bld.pieces.push(piece);
+
+    updateConnectivity(bld);
+    refreshPiecePlacedList();
+    updateStatus();
+    return piece;
+}
+
+function removePiece(bld, piece) {
+    if (!bld || !piece) return;
+    pushUndo();
+    bld.group.remove(piece.mesh);
+    bld.pieces = bld.pieces.filter(p => p !== piece);
+    if (selectedPiece === piece) selectedPiece = null;
+    updateConnectivity(bld);
+    refreshPiecePlacedList();
+    updateStatus();
+}
+
+function rotatePiece(piece, delta = 90) {
+    if (!piece || !activeBuilding) return;
+    pushUndo();
+    piece.rot = ((piece.rot || 0) + delta + 360) % 360;
+    piece.mesh.rotation.y = piece.rot * Math.PI / 180;
+    updateConnectivity(activeBuilding);
+    refreshPiecePlacedList();
+}
+
+function nudgePiece(piece, dx, dy, dz) {
+    if (!piece || !activeBuilding) return;
+    pushUndo();
+    piece.grid[0] += dx;
+    piece.grid[1] += dy;
+    piece.grid[2] += dz;
+    piece.mesh.position.set(
+        piece.grid[0] * GRID,
+        piece.grid[1] * FLOOR_H,
+        piece.grid[2] * GRID
+    );
+    updateConnectivity(activeBuilding);
+    refreshPiecePlacedList();
+}
+
+function selectPiece(piece) {
+    // Deselect old
+    if (selectedPiece && selectedPiece.mesh) {
+        selectedPiece.mesh.traverse(c => {
+            if (c.isMesh && c.userData._origEmissive !== undefined) {
+                c.material.emissive.setHex(c.userData._origEmissive);
+            }
+        });
+    }
+    selectedPiece = piece;
+    if (piece && piece.mesh) {
+        piece.mesh.traverse(c => {
+            if (c.isMesh && c.material && c.material.emissive) {
+                c.userData._origEmissive = c.material.emissive.getHex();
+                c.material.emissive.setHex(0x334466);
+            }
+        });
+    }
+    refreshPiecePlacedList();
+    updateStatus();
+}
+
+function duplicatePiece(piece) {
+    if (!piece || !activeBuilding) return;
+    // Offset by 1 grid in X
+    const newGrid = [piece.grid[0] + 1, piece.grid[1], piece.grid[2]];
+    const newPiece = placePiece(activeBuilding, piece.id, newGrid, piece.rot);
+    if (newPiece) selectPiece(newPiece);
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              GHOST PREVIEW (PLACEMENT MODE)             ║
+// ╚══════════════════════════════════════════════════════════╝
+function updateGhost(pieceId, gridPos) {
+    clearGhost();
+    if (!pieceId || !activeBuilding) return;
+
+    ghostMesh = createPieceMesh(pieceId, 0.4);
+    ghostMesh.position.set(gridPos[0] * GRID, gridPos[1] * FLOOR_H, gridPos[2] * GRID);
+    ghostMesh.rotation.y = placementRot * Math.PI / 180;
+
+    ghostColliders = createColliderWireframes(pieceId);
+    ghostColliders.visible = showColliders;
+    ghostMesh.add(ghostColliders);
+
+    activeBuilding.group.add(ghostMesh);
+}
+
+function clearGhost() {
+    if (ghostMesh && activeBuilding) {
+        activeBuilding.group.remove(ghostMesh);
+    }
+    ghostMesh = null;
+    ghostColliders = null;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              UNDO SYSTEM                                ║
+// ╚══════════════════════════════════════════════════════════╝
+function pushUndo() {
+    const snapshot = buildings.map(bld => ({
+        id: bld.id, name: bld.name, type: bld.type, team: bld.team,
+        pos: [...bld.pos], rot: bld.rot,
+        pieces: bld.pieces.map(p => ({ id: p.id, grid: [...p.grid], rot: p.rot }))
+    }));
+    undoStack.push(JSON.stringify(snapshot));
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+function popUndo() {
+    if (undoStack.length === 0) return;
+    const snapshot = JSON.parse(undoStack.pop());
+
+    // Remove all current buildings from scene
+    for (const bld of buildings) {
+        scene.remove(bld.group);
+    }
+    buildings = [];
+    activeBuilding = null;
+    selectedPiece = null;
+
+    // Rebuild from snapshot
+    for (const data of snapshot) {
+        const bld = createBuilding(data.name, data.pos, data.rot, data.type, data.team);
+        bld.id = data.id;
+        for (const pd of data.pieces) {
+            placePieceNoUndo(bld, pd.id, pd.grid, pd.rot);
+        }
+    }
+    nextBuildingId = Math.max(1, ...buildings.map(b => b.id)) + 1;
+    // Re-select the building that was active if it still exists
+    refreshBuildingList();
+    if (buildings.length > 0) setActiveBuilding(buildings[buildings.length - 1]);
+    else setActiveBuilding(null);
+}
+
+// Place without pushing undo (used by undo restoration and import)
+function placePieceNoUndo(bld, pieceId, grid, rot) {
+    const def = catalog.pieces[pieceId];
+    if (!def) return null;
+    const mesh = createPieceMesh(pieceId);
+    const gx = (grid[0] ?? 0) * GRID;
+    const gy = (grid[1] ?? 0) * FLOOR_H;
+    const gz = (grid[2] ?? 0) * GRID;
+    mesh.position.set(gx, gy, gz);
+    if (rot) mesh.rotation.y = rot * Math.PI / 180;
+
+    const colliderGroup = createColliderWireframes(pieceId);
+    colliderGroup.visible = showColliders;
+    mesh.add(colliderGroup);
+
+    bld.group.add(mesh);
+    const piece = { id: pieceId, grid: [...grid], rot: rot || 0, mesh, colliderGroup, openingArrows: [] };
+    bld.pieces.push(piece);
+    return piece;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              IMPORT / EXPORT                            ║
+// ╚══════════════════════════════════════════════════════════╝
+function exportLayouts() {
+    const data = {
+        _meta: {
+            format: 'firewolf-building-layouts-v1',
+            gridAnchor: 'center',
+            notes: 'Exported from Building Layout Editor.'
+        },
+        buildings: buildings.map(bld => {
+            const obj = {
+                name: bld.name,
+                pos: [...bld.pos],
+                rot: bld.rot || 0,
+                pieces: bld.pieces.map(p => ({
+                    id: p.id,
+                    grid: [...p.grid],
+                    rot: p.rot || 0
+                }))
+            };
+            if (bld.type) obj.type = bld.type;
+            if (bld.team) obj.team = bld.team;
+            return obj;
+        })
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'layouts.json';
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function importLayouts(file) {
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); } catch { alert('Invalid JSON'); return; }
+    if (!data.buildings || !Array.isArray(data.buildings)) { alert('No buildings array'); return; }
+
+    pushUndo();
+    // Clear existing
+    for (const bld of [...buildings]) removeBuilding(bld);
+
+    for (const bData of data.buildings) {
+        const bld = createBuilding(
+            bData.name || 'imported',
+            bData.pos || [0, 0, 0],
+            bData.rot || 0,
+            bData.type || '',
+            bData.team || 0
+        );
+        for (const pd of (bData.pieces || [])) {
+            placePieceNoUndo(bld, pd.id, pd.grid || [0, 0, 0], pd.rot || 0);
+        }
+        updateConnectivity(bld);
+    }
+
+    refreshBuildingList();
+    if (buildings.length > 0) setActiveBuilding(buildings[0]);
+}
+
+// LocalStorage auto-save/restore
+function autoSave() {
+    const data = {
+        buildings: buildings.map(bld => ({
+            name: bld.name, type: bld.type, team: bld.team,
+            pos: [...bld.pos], rot: bld.rot,
+            pieces: bld.pieces.map(p => ({ id: p.id, grid: [...p.grid], rot: p.rot }))
+        }))
+    };
+    try { localStorage.setItem('bld-editor-autosave', JSON.stringify(data)); } catch {}
+}
+
+async function autoRestore() {
+    const raw = localStorage.getItem('bld-editor-autosave');
+    if (!raw) return false;
+    let data;
+    try { data = JSON.parse(raw); } catch { return false; }
+    if (!data.buildings || data.buildings.length === 0) return false;
+
+    for (const bData of data.buildings) {
+        const bld = createBuilding(
+            bData.name || 'restored',
+            bData.pos || [0, 0, 0],
+            bData.rot || 0,
+            bData.type || '',
+            bData.team || 0
+        );
+        for (const pd of (bData.pieces || [])) {
+            placePieceNoUndo(bld, pd.id, pd.grid || [0, 0, 0], pd.rot || 0);
+        }
+        updateConnectivity(bld);
+    }
+    refreshBuildingList();
+    if (buildings.length > 0) setActiveBuilding(buildings[0]);
+    return true;
+}
+
+setInterval(autoSave, 30000);
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              UI: PALETTE & PANELS                       ║
+// ╚══════════════════════════════════════════════════════════╝
+function makeLabel(text) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const ctx = c.getContext('2d');
+    ctx.font = 'bold 20px "Segoe UI", sans-serif';
+    ctx.fillStyle = 'rgba(255,212,121,0.7)';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 32);
+    const tex = new THREE.CanvasTexture(c);
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
+    return new THREE.Sprite(mat);
+}
+
+function buildPalette() {
+    const list = document.getElementById('palette-list');
+    list.innerHTML = '';
+
+    // Group pieces by category
+    const categories = { corridors: [], rooms: [], stairs: [], gates: [], other: [] };
+    for (const [id, def] of Object.entries(catalog.pieces)) {
+        if (id.startsWith('corridor')) categories.corridors.push(id);
+        else if (id.startsWith('room')) categories.rooms.push(id);
+        else if (id.startsWith('stair')) categories.stairs.push(id);
+        else if (id.startsWith('gate')) categories.gates.push(id);
+        else categories.other.push(id);
+    }
+
+    let shortcutIdx = 1;
+    for (const [catName, ids] of Object.entries(categories)) {
+        if (ids.length === 0) continue;
+        const section = document.createElement('div');
+        section.className = 'section';
+        const header = document.createElement('div');
+        header.className = 'section-header';
+        header.textContent = catName.toUpperCase();
+        header.innerHTML += `<span style="font-size:9px;color:#555">${ids.length}</span>`;
+        section.appendChild(header);
+
+        for (const id of ids) {
+            const def = catalog.pieces[id];
+            const item = document.createElement('div');
+            item.className = 'piece-item';
+            item.dataset.pieceId = id;
+
+            const gs = def.gridSize;
+            const openStr = (def.openings || []).join(' ');
+            const shortcut = shortcutIdx <= 9 ? `<span style="color:#FFD479;font-size:9px;margin-right:4px">[${shortcutIdx}]</span>` : '';
+            item.innerHTML = `
+                <div>
+                    <div class="name">${shortcut}${id}</div>
+                    <div class="meta">${gs[0]}×${gs[1]}×${gs[2]} grid</div>
+                    <div class="openings-icons">${openStr || 'no openings'}</div>
+                </div>
+            `;
+            item.addEventListener('click', () => setPalettePiece(id));
+            section.appendChild(item);
+            if (shortcutIdx <= 9) {
+                item.dataset.shortcut = shortcutIdx;
+                shortcutIdx++;
+            }
+        }
+        list.appendChild(section);
+    }
+}
+
+function setPalettePiece(pieceId) {
+    palettePieceId = pieceId;
+    selectedPiece = null;
+    clearGhost();
+
+    // Update palette UI
+    document.querySelectorAll('.piece-item').forEach(el => {
+        el.classList.toggle('selected', el.dataset.pieceId === pieceId);
+    });
+
+    updateStatus();
+}
+
+function refreshBuildingList() {
+    const list = document.getElementById('building-list');
+    list.innerHTML = '';
+    for (const bld of buildings) {
+        const div = document.createElement('div');
+        div.className = 'building-item' + (activeBuilding === bld ? ' active' : '');
+        div.innerHTML = `
+            <div>
+                <div class="name">${bld.name}</div>
+                <div class="info">${bld.pieces.length} pieces · (${bld.pos[0]|0}, ${bld.pos[1]|0}, ${bld.pos[2]|0})</div>
+            </div>
+            <span class="del-btn" data-bld-id="${bld.id}">✕</span>
+        `;
+        div.addEventListener('click', (e) => {
+            if (e.target.classList.contains('del-btn')) {
+                if (confirm(`Delete building "${bld.name}"?`)) {
+                    pushUndo();
+                    removeBuilding(bld);
+                }
+                return;
+            }
+            setActiveBuilding(bld);
+        });
+        list.appendChild(div);
+    }
+}
+
+function refreshPiecePlacedList() {
+    const list = document.getElementById('placed-piece-list');
+    list.innerHTML = '';
+    if (!activeBuilding) return;
+
+    for (const piece of activeBuilding.pieces) {
+        const div = document.createElement('div');
+        div.className = 'placed-piece-item' + (selectedPiece === piece ? ' selected' : '');
+        div.innerHTML = `
+            <span style="color:#bbb">${piece.id} <span style="color:#666">[${piece.grid}] r${piece.rot}°</span></span>
+            <span class="del-btn">✕</span>
+        `;
+        div.addEventListener('click', (e) => {
+            if (e.target.classList.contains('del-btn')) {
+                removePiece(activeBuilding, piece);
+                return;
+            }
+            selectPiece(piece);
+            // Focus camera on piece
+            const wp = new THREE.Vector3();
+            piece.mesh.getWorldPosition(wp);
+            orbitControls.target.copy(wp);
+        });
+        list.appendChild(div);
+    }
+}
+
+function updateStatus() {
+    const mode = document.getElementById('st-mode');
+    const rotSpan = document.getElementById('st-rot');
+    const info = document.getElementById('st-info');
+
+    if (palettePieceId) {
+        mode.textContent = 'PLACE: ' + palettePieceId;
+    } else if (selectedPiece) {
+        mode.textContent = 'SELECTED: ' + selectedPiece.id;
+    } else {
+        mode.textContent = 'SELECT';
+    }
+
+    rotSpan.textContent = `Rot: ${placementRot}°`;
+    info.textContent = activeBuilding ? `Building: ${activeBuilding.name} (${activeBuilding.pieces.length} pcs)` : 'No active building';
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              MOUSE / RAYCASTING                         ║
+// ╚══════════════════════════════════════════════════════════╝
+function getMouseGridPos(event) {
+    if (!activeBuilding) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Intersect terrain and existing piece floors
+    const targets = [];
+    if (terrainMesh) targets.push(terrainMesh);
+    // Also intersect placed piece meshes for stacking
+    if (activeBuilding) {
+        activeBuilding.pieces.forEach(p => {
+            p.mesh.traverse(c => { if (c.isMesh) targets.push(c); });
+        });
+    }
+
+    const hits = raycaster.intersectObjects(targets, false);
+    if (hits.length === 0) return null;
+
+    const hit = hits[0];
+    // Convert world hit point to building-local coords
+    const localPt = activeBuilding.group.worldToLocal(hit.point.clone());
+
+    // Snap to grid
+    const gx = Math.round(localPt.x / GRID);
+    const gy = Math.round(localPt.y / FLOOR_H);
+    const gz = Math.round(localPt.z / GRID);
+
+    return [gx, gy, gz];
+}
+
+function getClickedPiece(event) {
+    if (!activeBuilding) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    raycaster.setFromCamera(mouse, camera);
+
+    // Collect all meshes from active building's pieces
+    const meshMap = new Map(); // child mesh → piece
+    for (const p of activeBuilding.pieces) {
+        p.mesh.traverse(c => {
+            if (c.isMesh) meshMap.set(c, p);
+        });
+    }
+
+    const hits = raycaster.intersectObjects([...meshMap.keys()], false);
+    if (hits.length === 0) return null;
+    return meshMap.get(hits[0].object) || null;
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              EVENT HANDLERS                             ║
+// ╚══════════════════════════════════════════════════════════╝
+
+// Track mouse for ghost preview
+let lastMouseEvent = null;
+renderer.domElement.addEventListener('mousemove', (event) => {
+    lastMouseEvent = event;
+    if (palettePieceId && activeBuilding) {
+        const gridPos = getMouseGridPos(event);
+        if (gridPos) {
+            updateGhost(palettePieceId, gridPos);
+        }
+    }
+});
+
+// Click: place or select
+let mouseDownTime = 0;
+let mouseDownPos = { x: 0, y: 0 };
+renderer.domElement.addEventListener('mousedown', (e) => {
+    mouseDownTime = Date.now();
+    mouseDownPos = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('mouseup', (event) => {
+    // Ignore drags (orbit/pan)
+    const dt = Date.now() - mouseDownTime;
+    const dx = Math.abs(event.clientX - mouseDownPos.x);
+    const dy = Math.abs(event.clientY - mouseDownPos.y);
+    if (dt > 400 || dx > 5 || dy > 5) return;
+
+    if (event.button !== 0) return; // left click only
+
+    // Double-click: set building origin on terrain
+    // (handled separately)
+
+    if (palettePieceId && activeBuilding) {
+        // Placement mode
+        const gridPos = getMouseGridPos(event);
+        if (gridPos) {
+            placePiece(activeBuilding, palettePieceId, gridPos, placementRot);
+        }
+    } else if (activeBuilding) {
+        // Selection mode
+        const piece = getClickedPiece(event);
+        if (piece) {
+            selectPiece(piece);
+        } else {
+            selectPiece(null);
+        }
+    }
+});
+
+// Double-click: move building origin to terrain point
+renderer.domElement.addEventListener('dblclick', (event) => {
+    if (!activeBuilding || !terrainMesh) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    raycaster.setFromCamera(mouse, camera);
+    const hits = raycaster.intersectObject(terrainMesh, false);
+    if (hits.length > 0) {
+        pushUndo();
+        const pt = hits[0].point;
+        activeBuilding.pos = [Math.round(pt.x), Math.round(pt.y * 10) / 10, Math.round(pt.z)];
+        activeBuilding.group.position.set(activeBuilding.pos[0], activeBuilding.pos[1], activeBuilding.pos[2]);
+        document.getElementById('bp-px').value = activeBuilding.pos[0];
+        document.getElementById('bp-py').value = activeBuilding.pos[1];
+        document.getElementById('bp-pz').value = activeBuilding.pos[2];
+    }
+});
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              KEYBOARD SHORTCUTS                         ║
+// ╚══════════════════════════════════════════════════════════╝
+window.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+    // R: rotate
+    if (e.key === 'r' || e.key === 'R') {
+        if (selectedPiece && !palettePieceId) {
+            rotatePiece(selectedPiece, 90);
+        } else {
+            placementRot = (placementRot + 90) % 360;
+            // Re-draw ghost
+            if (palettePieceId && lastMouseEvent) {
+                const gridPos = getMouseGridPos(lastMouseEvent);
+                if (gridPos) updateGhost(palettePieceId, gridPos);
+            }
+        }
+        updateStatus();
+    }
+
+    // Delete / Backspace
+    if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (selectedPiece && activeBuilding) {
+            removePiece(activeBuilding, selectedPiece);
+        }
+    }
+
+    // Ctrl+D: duplicate
+    if ((e.key === 'd' || e.key === 'D') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        if (selectedPiece) duplicatePiece(selectedPiece);
+    }
+
+    // Ctrl+Z: undo
+    if ((e.key === 'z' || e.key === 'Z') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        popUndo();
+    }
+
+    // Ctrl+S: export
+    if ((e.key === 's' || e.key === 'S') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        exportLayouts();
+    }
+
+    // Ctrl+O: import
+    if ((e.key === 'o' || e.key === 'O') && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        document.getElementById('import-input').click();
+    }
+
+    // Arrow keys: nudge selected piece
+    if (selectedPiece && activeBuilding) {
+        if (e.key === 'ArrowRight') { e.preventDefault(); nudgePiece(selectedPiece, 1, 0, 0); }
+        if (e.key === 'ArrowLeft') { e.preventDefault(); nudgePiece(selectedPiece, -1, 0, 0); }
+        if (e.key === 'ArrowUp') { e.preventDefault(); nudgePiece(selectedPiece, 0, 0, -1); }
+        if (e.key === 'ArrowDown') { e.preventDefault(); nudgePiece(selectedPiece, 0, 0, 1); }
+        if (e.key === 'PageUp') { e.preventDefault(); nudgePiece(selectedPiece, 0, 1, 0); }
+        if (e.key === 'PageDown') { e.preventDefault(); nudgePiece(selectedPiece, 0, -1, 0); }
+    }
+
+    // Escape: cancel placement or deselect
+    if (e.key === 'Escape') {
+        if (palettePieceId) {
+            palettePieceId = null;
+            clearGhost();
+            document.querySelectorAll('.piece-item').forEach(el => el.classList.remove('selected'));
+        } else {
+            selectPiece(null);
+        }
+        updateStatus();
+    }
+
+    // G: toggle grid
+    if (e.key === 'g' || e.key === 'G') {
+        showGrid = !showGrid;
+        gridHelper.visible = showGrid;
+        document.getElementById('btn-toggle-grid').classList.toggle('active', showGrid);
+    }
+
+    // C: toggle colliders
+    if (e.key === 'c' || e.key === 'C') {
+        showColliders = !showColliders;
+        for (const bld of buildings) {
+            for (const p of bld.pieces) {
+                if (p.colliderGroup) p.colliderGroup.visible = showColliders;
+            }
+        }
+        document.getElementById('btn-toggle-colliders').classList.toggle('active', showColliders);
+    }
+
+    // F: focus on selection
+    if (e.key === 'f' || e.key === 'F') {
+        if (selectedPiece) {
+            const wp = new THREE.Vector3();
+            selectedPiece.mesh.getWorldPosition(wp);
+            orbitControls.target.copy(wp);
+        } else if (activeBuilding) {
+            orbitControls.target.set(activeBuilding.pos[0], activeBuilding.pos[1], activeBuilding.pos[2]);
+        }
+    }
+
+    // H: help
+    if (e.key === 'h' || e.key === 'H') {
+        const h = document.getElementById('help-overlay');
+        h.style.display = h.style.display === 'flex' ? 'none' : 'flex';
+    }
+
+    // 1-9: quick select palette piece
+    const digit = parseInt(e.key);
+    if (!isNaN(digit) && digit >= 1 && digit <= 9) {
+        const item = document.querySelector(`.piece-item[data-shortcut="${digit}"]`);
+        if (item) setPalettePiece(item.dataset.pieceId);
+    }
+});
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              TOOLBAR BUTTONS                            ║
+// ╚══════════════════════════════════════════════════════════╝
+document.getElementById('btn-new-bld').addEventListener('click', () => {
+    document.getElementById('new-bld-dialog').style.display = 'flex';
+    document.getElementById('nbd-name').value = 'building-' + nextBuildingId;
+    document.getElementById('nbd-name').focus();
+});
+
+document.getElementById('nbd-ok').addEventListener('click', () => {
+    const name = document.getElementById('nbd-name').value.trim() || 'building';
+    const type = document.getElementById('nbd-type').value.trim();
+    const team = parseInt(document.getElementById('nbd-team').value) || 0;
+    const px = parseFloat(document.getElementById('nbd-px').value) || 0;
+    const py = parseFloat(document.getElementById('nbd-py').value) || 30;
+    const pz = parseFloat(document.getElementById('nbd-pz').value) || 0;
+
+    pushUndo();
+    const bld = createBuilding(name, [px, py, pz], 0, type, team);
+    setActiveBuilding(bld);
+    refreshBuildingList();
+    document.getElementById('new-bld-dialog').style.display = 'none';
+
+    // Focus camera on new building
+    orbitControls.target.set(px, py, pz);
+});
+
+document.getElementById('nbd-cancel').addEventListener('click', () => {
+    document.getElementById('new-bld-dialog').style.display = 'none';
+});
+
+// Close dialog on escape
+document.getElementById('new-bld-dialog').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') document.getElementById('new-bld-dialog').style.display = 'none';
+    if (e.key === 'Enter') document.getElementById('nbd-ok').click();
+});
+
+document.getElementById('btn-export').addEventListener('click', exportLayouts);
+
+document.getElementById('btn-import-trigger').addEventListener('click', () => {
+    document.getElementById('import-input').click();
+});
+document.getElementById('import-input').addEventListener('change', (e) => {
+    if (e.target.files[0]) importLayouts(e.target.files[0]);
+    e.target.value = '';
+});
+
+document.getElementById('btn-toggle-grid').addEventListener('click', () => {
+    showGrid = !showGrid;
+    gridHelper.visible = showGrid;
+    document.getElementById('btn-toggle-grid').classList.toggle('active', showGrid);
+});
+
+document.getElementById('btn-toggle-colliders').addEventListener('click', () => {
+    showColliders = !showColliders;
+    for (const bld of buildings) {
+        for (const p of bld.pieces) {
+            if (p.colliderGroup) p.colliderGroup.visible = showColliders;
+        }
+    }
+    document.getElementById('btn-toggle-colliders').classList.toggle('active', showColliders);
+});
+
+document.getElementById('btn-undo').addEventListener('click', popUndo);
+document.getElementById('btn-help').addEventListener('click', () => {
+    const h = document.getElementById('help-overlay');
+    h.style.display = h.style.display === 'flex' ? 'none' : 'flex';
+});
+
+// Building property inputs
+['bp-name','bp-type','bp-team','bp-px','bp-py','bp-pz','bp-rot'].forEach(id => {
+    const el = document.getElementById(id);
+    el.addEventListener('change', () => {
+        if (!activeBuilding) return;
+        pushUndo();
+        activeBuilding.name = document.getElementById('bp-name').value.trim() || 'building';
+        activeBuilding.type = document.getElementById('bp-type').value.trim();
+        activeBuilding.team = parseInt(document.getElementById('bp-team').value) || 0;
+        activeBuilding.pos[0] = parseFloat(document.getElementById('bp-px').value) || 0;
+        activeBuilding.pos[1] = parseFloat(document.getElementById('bp-py').value) || 0;
+        activeBuilding.pos[2] = parseFloat(document.getElementById('bp-pz').value) || 0;
+        activeBuilding.rot = parseInt(document.getElementById('bp-rot').value) || 0;
+        activeBuilding.group.position.set(activeBuilding.pos[0], activeBuilding.pos[1], activeBuilding.pos[2]);
+        activeBuilding.group.rotation.y = activeBuilding.rot * Math.PI / 180;
+        // Update origin label
+        const label = activeBuilding.originMarker.children.find(c => c.isSprite);
+        if (label) {
+            const canvas = label.material.map.image;
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.font = 'bold 20px "Segoe UI", sans-serif';
+            ctx.fillStyle = 'rgba(255,212,121,0.7)';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(activeBuilding.name, 128, 32);
+            label.material.map.needsUpdate = true;
+        }
+        refreshBuildingList();
+    });
+});
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              RESIZE & RENDER LOOP                       ║
+// ╚══════════════════════════════════════════════════════════╝
+window.addEventListener('resize', () => {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+function animate() {
+    requestAnimationFrame(animate);
+    orbitControls.update();
+    renderer.render(scene, camera);
+}
+
+// ╔══════════════════════════════════════════════════════════╗
+// ║              INIT                                       ║
+// ╚══════════════════════════════════════════════════════════╝
+async function init() {
+    try {
+        const loadingText = document.querySelector('#loading-overlay .text');
+        loadingText.textContent = 'Loading terrain…';
+        await loadTerrain();
+
+        loadingText.textContent = 'Loading catalog…';
+        await loadCatalog();
+
+        loadingText.textContent = 'Loading building pieces…';
+        await preloadAllGLBs();
+
+        // Build palette
+        buildPalette();
+
+        // Try to restore from autosave first
+        loadingText.textContent = 'Restoring session…';
+        const restored = await autoRestore();
+
+        // If no autosave, try loading the canonical layouts.json
+        if (!restored) {
+            try {
+                const resp = await fetch(LAYOUTS_URL);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.buildings && data.buildings.length > 0) {
+                        for (const bData of data.buildings) {
+                            const bld = createBuilding(
+                                bData.name || 'imported',
+                                bData.pos || [0, 0, 0],
+                                bData.rot || 0,
+                                bData.type || '',
+                                bData.team || 0
+                            );
+                            for (const pd of (bData.pieces || [])) {
+                                placePieceNoUndo(bld, pd.id, pd.grid || [0, 0, 0], pd.rot || 0);
+                            }
+                            updateConnectivity(bld);
+                        }
+                        refreshBuildingList();
+                        if (buildings.length > 0) setActiveBuilding(buildings[0]);
+                    }
+                }
+            } catch (e) {
+                console.warn('No layouts.json to load:', e);
+            }
+        }
+
+    } catch (e) {
+        console.error('Init error:', e);
+        const loadingText = document.querySelector('#loading-overlay .text');
+        loadingText.textContent = 'Error: ' + e.message;
+        loadingText.style.color = '#ff4444';
+        return;
+    }
+
+    document.getElementById('loading-overlay').style.display = 'none';
+    animate();
+    updateStatus();
+}
+
+init();
+</script>
+</body>
+</html>

@@ -3,154 +3,1173 @@
     "gridUnit": 4.0,
     "floorHeight": 4.25,
     "basePath": "assets/buildings/kenney-modular/",
-    "notes": "All dimensions in meters. gridSize is in grid units (1 unit = 4m XZ, 4.25m Y). Collider pos is relative to piece origin (assumed center). Wall thickness 0.2m. Openings indicate fully-open faces (no wall collider on that side). Rooms have 4m-wide doorway gaps centered on each opening face."
+    "notes": "All dimensions in meters. gridSize is in grid units (1 unit = 4m XZ, 4.25m Y). Collider pos is relative to piece origin (center). Wall thickness 0.2m. Floor collider pos.y = -0.1 so top surface aligns with piece origin (y=0). Openings indicate fully-open faces. Rooms have 4m-wide doorway gaps centered on each opening face. Stair steps have rise \u22640.365m to fit under Rapier CC_STEP_HEIGHT=0.4m."
   },
   "pieces": {
     "corridor": {
       "glb": "corridor.glb",
-      "gridSize": [1, 1, 1],
-      "bounds": [4.0, 4.25, 4.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
-        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
-        { "type": "box", "pos": [2.0, 2.125, 0],   "size": [0.2, 4.25, 4.0], "role": "wall" }
+      "gridSize": [
+        1,
+        1,
+        1
       ],
-      "openings": ["+z", "-z"]
+      "bounds": [
+        4.0,
+        4.25,
+        4.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "+z",
+        "-z"
+      ]
     },
     "corridor-corner": {
       "glb": "corridor-corner.glb",
-      "gridSize": [1, 1, 1],
-      "bounds": [4.0, 4.25, 4.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
-        { "type": "box", "pos": [0, 2.125, 2.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
+      "gridSize": [
+        1,
+        1,
+        1
       ],
-      "openings": ["-z", "+x"]
+      "bounds": [
+        4.0,
+        4.25,
+        4.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            2.125,
+            2.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "-z",
+        "+x"
+      ]
     },
     "corridor-end": {
       "glb": "corridor-end.glb",
-      "gridSize": [1, 1, 1],
-      "bounds": [4.0, 4.25, 4.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
-        { "type": "box", "pos": [0, 2.125, 2.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [2.0, 2.125, 0],   "size": [0.2, 4.25, 4.0], "role": "wall" },
-        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
+      "gridSize": [
+        1,
+        1,
+        1
       ],
-      "openings": ["-z"]
+      "bounds": [
+        4.0,
+        4.25,
+        4.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            2.125,
+            2.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "-z"
+      ]
     },
     "corridor-intersection": {
       "glb": "corridor-intersection.glb",
-      "gridSize": [1, 1, 1],
-      "bounds": [4.0, 4.05, 4.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],    "size": [4.0, 0.2, 4.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.05, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" }
+      "gridSize": [
+        1,
+        1,
+        1
       ],
-      "openings": ["+x", "-x", "+z", "-z"]
+      "bounds": [
+        4.0,
+        4.05,
+        4.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.05,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "ceiling"
+        }
+      ],
+      "openings": [
+        "+x",
+        "-x",
+        "+z",
+        "-z"
+      ]
     },
     "corridor-junction": {
       "glb": "corridor-junction.glb",
-      "gridSize": [1, 1, 1],
-      "bounds": [4.0, 4.25, 4.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
-        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
+      "gridSize": [
+        1,
+        1,
+        1
       ],
-      "openings": ["+x", "-z", "+z"]
+      "bounds": [
+        4.0,
+        4.25,
+        4.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            4.0,
+            0.2,
+            4.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -2.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "+x",
+        "-z",
+        "+z"
+      ]
     },
     "corridor-wide": {
       "glb": "corridor-wide.glb",
-      "gridSize": [2, 1, 2],
-      "bounds": [8.0, 4.25, 8.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],        "size": [8.0, 0.2, 8.0],  "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0],      "size": [8.0, 0.2, 8.0],  "role": "ceiling" },
-        { "type": "box", "pos": [-4.0, 2.125, 0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
-        { "type": "box", "pos": [4.0, 2.125, 0],   "size": [0.2, 4.25, 8.0], "role": "wall" }
+      "gridSize": [
+        2,
+        1,
+        2
       ],
-      "openings": ["+z", "-z"]
+      "bounds": [
+        8.0,
+        4.25,
+        8.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            8.0,
+            0.2,
+            8.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            8.0,
+            0.2,
+            8.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -4.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            4.0,
+            2.125,
+            0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "+z",
+        "-z"
+      ]
     },
     "room-small": {
       "glb": "room-small.glb",
-      "gridSize": [3, 1, 3],
-      "bounds": [12.0, 4.25, 12.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],   "size": [12.0, 0.2, 12.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [12.0, 0.2, 12.0], "role": "ceiling" },
-
-        { "type": "box", "pos": [6.0, 2.125, -4.0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
-        { "type": "box", "pos": [6.0, 2.125, 4.0],   "size": [0.2, 4.25, 4.0], "role": "wall" },
-
-        { "type": "box", "pos": [-6.0, 2.125, -4.0], "size": [0.2, 4.25, 4.0], "role": "wall" },
-        { "type": "box", "pos": [-6.0, 2.125, 4.0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
-
-        { "type": "box", "pos": [-4.0, 2.125, 6.0],  "size": [4.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [4.0, 2.125, 6.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
-
-        { "type": "box", "pos": [-4.0, 2.125, -6.0], "size": [4.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [4.0, 2.125, -6.0],  "size": [4.0, 4.25, 0.2], "role": "wall" }
+      "gridSize": [
+        3,
+        1,
+        3
       ],
-      "openings": ["+x", "-x", "+z", "-z"]
+      "bounds": [
+        12.0,
+        4.25,
+        12.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            12.0,
+            0.2,
+            12.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            12.0,
+            0.2,
+            12.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            6.0,
+            2.125,
+            -4.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            6.0,
+            2.125,
+            4.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -6.0,
+            2.125,
+            -4.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -6.0,
+            2.125,
+            4.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            4.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -4.0,
+            2.125,
+            6.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            4.0,
+            2.125,
+            6.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -4.0,
+            2.125,
+            -6.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            4.0,
+            2.125,
+            -6.0
+          ],
+          "size": [
+            4.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "+x",
+        "-x",
+        "+z",
+        "-z"
+      ]
     },
     "room-large": {
       "glb": "room-large.glb",
-      "gridSize": [5, 1, 5],
-      "bounds": [20.0, 4.25, 20.0],
-      "colliders": [
-        { "type": "box", "pos": [0, 0, 0],   "size": [20.0, 0.2, 20.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [20.0, 0.2, 20.0], "role": "ceiling" },
-
-        { "type": "box", "pos": [10.0, 2.125, -6.0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
-        { "type": "box", "pos": [10.0, 2.125, 6.0],   "size": [0.2, 4.25, 8.0], "role": "wall" },
-
-        { "type": "box", "pos": [-10.0, 2.125, -6.0], "size": [0.2, 4.25, 8.0], "role": "wall" },
-        { "type": "box", "pos": [-10.0, 2.125, 6.0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
-
-        { "type": "box", "pos": [-6.0, 2.125, 10.0],  "size": [8.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [6.0, 2.125, 10.0],   "size": [8.0, 4.25, 0.2], "role": "wall" },
-
-        { "type": "box", "pos": [-6.0, 2.125, -10.0], "size": [8.0, 4.25, 0.2], "role": "wall" },
-        { "type": "box", "pos": [6.0, 2.125, -10.0],  "size": [8.0, 4.25, 0.2], "role": "wall" }
+      "gridSize": [
+        5,
+        1,
+        5
       ],
-      "openings": ["+x", "-x", "+z", "-z"]
+      "bounds": [
+        20.0,
+        4.25,
+        20.0
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            -0.1,
+            0
+          ],
+          "size": [
+            20.0,
+            0.2,
+            20.0
+          ],
+          "role": "floor"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.25,
+            0
+          ],
+          "size": [
+            20.0,
+            0.2,
+            20.0
+          ],
+          "role": "ceiling"
+        },
+        {
+          "type": "box",
+          "pos": [
+            10.0,
+            2.125,
+            -6.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            10.0,
+            2.125,
+            6.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -10.0,
+            2.125,
+            -6.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -10.0,
+            2.125,
+            6.0
+          ],
+          "size": [
+            0.2,
+            4.25,
+            8.0
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -6.0,
+            2.125,
+            10.0
+          ],
+          "size": [
+            8.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            6.0,
+            2.125,
+            10.0
+          ],
+          "size": [
+            8.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -6.0,
+            2.125,
+            -10.0
+          ],
+          "size": [
+            8.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            6.0,
+            2.125,
+            -10.0
+          ],
+          "size": [
+            8.0,
+            4.25,
+            0.2
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "+x",
+        "-x",
+        "+z",
+        "-z"
+      ]
     },
     "stairs": {
       "glb": "stairs.glb",
-      "gridSize": [1, 2, 2],
-      "bounds": [4.0, 8.75, 8.20],
-      "colliders": [
-        { "type": "box", "pos": [0, 0.15, -3.5875],    "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 1.244, -2.5625],    "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 2.338, -1.5375],    "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 3.431, -0.5125],    "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 4.525, 0.5125],     "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 5.619, 1.5375],     "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 6.713, 2.5625],     "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [0, 7.806, 3.5875],     "size": [4.0, 0.3, 1.025], "role": "step" },
-        { "type": "box", "pos": [2.0, 4.375, 0],        "size": [0.2, 8.75, 8.2],  "role": "wall" },
-        { "type": "box", "pos": [-2.0, 4.375, 0],       "size": [0.2, 8.75, 8.2],  "role": "wall" }
+      "gridSize": [
+        1,
+        2,
+        2
       ],
-      "openings": ["-z", "+z"]
+      "bounds": [
+        4.0,
+        8.75,
+        8.2
+      ],
+      "colliders": [
+        {
+          "type": "box",
+          "pos": [
+            0,
+            0.182,
+            -3.929
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            0.547,
+            -3.587
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            0.911,
+            -3.246
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            1.276,
+            -2.904
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            1.641,
+            -2.562
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            2.005,
+            -2.221
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            2.37,
+            -1.879
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            2.734,
+            -1.538
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            3.099,
+            -1.196
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            3.464,
+            -0.854
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            3.828,
+            -0.513
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.193,
+            -0.171
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.557,
+            0.171
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            4.922,
+            0.512
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            5.286,
+            0.854
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            5.651,
+            1.196
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            6.016,
+            1.537
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            6.38,
+            1.879
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            6.745,
+            2.221
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            7.109,
+            2.562
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            7.474,
+            2.904
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            7.839,
+            3.246
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            8.203,
+            3.587
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            0,
+            8.568,
+            3.929
+          ],
+          "size": [
+            4.0,
+            0.15,
+            0.342
+          ],
+          "role": "step"
+        },
+        {
+          "type": "box",
+          "pos": [
+            2.0,
+            4.375,
+            0
+          ],
+          "size": [
+            0.2,
+            8.75,
+            8.2
+          ],
+          "role": "wall"
+        },
+        {
+          "type": "box",
+          "pos": [
+            -2.0,
+            4.375,
+            0
+          ],
+          "size": [
+            0.2,
+            8.75,
+            8.2
+          ],
+          "role": "wall"
+        }
+      ],
+      "openings": [
+        "-z",
+        "+z"
+      ]
     },
     "gate": {
       "glb": "gate.glb",
-      "gridSize": [1, 1, 0],
-      "bounds": [4.20, 4.62, 1.40],
+      "gridSize": [
+        1,
+        1,
+        0
+      ],
+      "bounds": [
+        4.2,
+        4.62,
+        1.4
+      ],
       "colliders": [],
-      "openings": ["+z", "-z"]
+      "openings": [
+        "+z",
+        "-z"
+      ]
     },
     "gate-door": {
       "glb": "gate-door.glb",
-      "gridSize": [1, 1, 0],
-      "bounds": [4.20, 4.62, 1.40],
+      "gridSize": [
+        1,
+        1,
+        0
+      ],
+      "bounds": [
+        4.2,
+        4.62,
+        1.4
+      ],
       "colliders": [],
-      "openings": ["+z", "-z"]
+      "openings": [
+        "+z",
+        "-z"
+      ]
     }
   }
 }

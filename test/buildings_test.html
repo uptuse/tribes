@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Buildings — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "../vendor/three/r170/three.module.js",
+    "three/addons/": "../vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">BUILDINGS TEST HARNESS</span>
+  <div class="sep"></div>
+  <button id="btn-init">Init</button>
+  <button id="btn-init-debug">Init +Debug</button>
+  <button id="btn-dispose">Dispose</button>
+  <button id="btn-dispose-all">Dispose All</button>
+  <button id="btn-reinit">Dispose → Re-Init</button>
+  <div class="sep"></div>
+  <button id="btn-concurrent">Test Concurrent Init</button>
+  <button id="btn-dispose-mid">Test Dispose Mid-Init</button>
+  <div class="sep"></div>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+  <span class="stat" id="stat-tris">Tris: <b>--</b></span>
+  <span class="stat" id="stat-state">State: <b>idle</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Module State</h3>
+  <div class="row"><span class="label">getGroup()</span><span class="value" id="ov-group">--</span></div>
+  <div class="row"><span class="label">colliderBodies</span><span class="value" id="ov-bodies">--</span></div>
+  <div class="row"><span class="label">scene children</span><span class="value" id="ov-children">--</span></div>
+  <div class="row"><span class="label">instanced meshes</span><span class="value" id="ov-instanced">--</span></div>
+  <div class="row"><span class="label">GLB cache alive</span><span class="value" id="ov-glb">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as Buildings from '../renderer_buildings.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+scene.fog = new THREE.Fog(0x111822, 200, 600);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(-180, 60, -80);
+
+const controls = new OrbitControls(camera, canvas);
+controls.target.set(-200, 30, -100); // test-bunker-north position
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(100, 200, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1;
+sun.shadow.camera.far = 500;
+sun.shadow.camera.left = -150;
+sun.shadow.camera.right = 150;
+sun.shadow.camera.top = 150;
+sun.shadow.camera.bottom = -150;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+scene.add(new THREE.HemisphereLight(0x88aacc, 0x443322, 0.4));
+
+// Ground plane (placeholder — no terrain in isolated test)
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(800, 800),
+    new THREE.MeshStandardMaterial({ color: 0x222833, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.position.y = 28; // slightly below test bunker at y=30
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Grid helper at building position
+const grid = new THREE.GridHelper(80, 20, 0x334455, 0x1a2233);
+grid.position.set(-200, 28.1, -100);
+scene.add(grid);
+
+// Axes at building origin
+const axes = new THREE.AxesHelper(10);
+axes.position.set(-200, 30, -100);
+scene.add(axes);
+
+// ── Rapier ──
+let RAPIER = null;
+let rapierWorld = null;
+
+async function initRapier() {
+    console.log('Loading Rapier WASM...');
+    RAPIER = await import('../vendor/rapier/rapier.mjs');
+    if (typeof RAPIER.init === 'function') await RAPIER.init();
+    rapierWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
+    console.log('Rapier ready');
+}
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+const statFps = document.getElementById('stat-fps');
+const statDraws = document.getElementById('stat-draws');
+const statTris = document.getElementById('stat-tris');
+const statState = document.getElementById('stat-state');
+
+function updateOverlay() {
+    const group = Buildings.getGroup();
+    const bodies = Buildings.getColliderBodies();
+
+    document.getElementById('ov-group').textContent = group ? `Group (${group.children.length} children)` : 'null';
+    document.getElementById('ov-group').className = 'value ' + (group ? 'good' : '');
+    document.getElementById('ov-bodies').textContent = bodies.length;
+    document.getElementById('ov-children').textContent = scene.children.length;
+
+    // Count instanced meshes
+    let instCount = 0;
+    if (group) {
+        group.traverse(c => { if (c.isInstancedMesh) instCount++; });
+    }
+    document.getElementById('ov-instanced').textContent = instCount;
+    document.getElementById('ov-instanced').className = 'value ' + (instCount > 0 ? 'good' : '');
+
+    // GLB cache — we can't read it directly, but we can test by re-init speed
+    document.getElementById('ov-glb').textContent = group ? 'yes (cached)' : '(check via re-init)';
+}
+
+// ── Render Loop ──
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 1000) {
+        statFps.innerHTML = `FPS: <b>${frameCount}</b>`;
+        statDraws.innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        statTris.innerHTML = `Tris: <b>${renderer.info.render.triangles}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+}
+animate();
+
+// ── Button Handlers ──
+let buildingsState = 'idle'; // idle | loading | ready
+
+function setState(s) {
+    buildingsState = s;
+    statState.innerHTML = `State: <b>${s}</b>`;
+    updateOverlay();
+}
+
+async function doInit(debug = false) {
+    if (!rapierWorld) await initRapier();
+    setState('loading');
+    console.log(`--- init(visible=true, debug=${debug}) ---`);
+    const t0 = performance.now();
+    const ok = await Buildings.init(scene, rapierWorld, RAPIER, { visible: true, debug });
+    const dt = (performance.now() - t0).toFixed(1);
+    if (ok) {
+        setState('ready');
+        console.log(`Init complete in ${dt}ms`);
+
+        // Verify scene graph
+        const group = Buildings.getGroup();
+        let instCount = 0, bldCount = 0;
+        group.traverse(c => {
+            if (c.isInstancedMesh) instCount++;
+            if (c.isGroup && c !== group) bldCount++;
+        });
+        console.log(`Scene: ${bldCount} building group(s), ${instCount} InstancedMesh draw calls`);
+        console.log(`Physics: ${Buildings.getColliderBodies().length} Rapier bodies`);
+    } else {
+        setState('failed');
+        console.error(`Init failed after ${dt}ms`);
+    }
+    updateOverlay();
+}
+
+document.getElementById('btn-init').onclick = () => doInit(false);
+document.getElementById('btn-init-debug').onclick = () => doInit(true);
+
+document.getElementById('btn-dispose').onclick = () => {
+    console.log('--- dispose() ---');
+    Buildings.dispose();
+    setState('disposed (GLB cache alive)');
+    updateOverlay();
+};
+
+document.getElementById('btn-dispose-all').onclick = () => {
+    console.log('--- disposeAll() ---');
+    Buildings.disposeAll();
+    setState('disposed all');
+    updateOverlay();
+};
+
+document.getElementById('btn-reinit').onclick = async () => {
+    console.log('--- dispose → re-init cycle ---');
+    Buildings.dispose();
+    setState('re-initializing...');
+    const t0 = performance.now();
+    await doInit(false);
+    const dt = (performance.now() - t0).toFixed(1);
+    console.log(`Re-init cycle took ${dt}ms (GLB cache reused)`);
+};
+
+document.getElementById('btn-concurrent').onclick = async () => {
+    if (!rapierWorld) await initRapier();
+    console.log('--- concurrent init test (3 simultaneous calls) ---');
+    document.getElementById('test-results').innerHTML = '';
+
+    const p1 = Buildings.init(scene, rapierWorld, RAPIER, { visible: true });
+    const p2 = Buildings.init(scene, rapierWorld, RAPIER, { visible: true });
+    const p3 = Buildings.init(scene, rapierWorld, RAPIER, { visible: true });
+
+    logTest(p1 === p2, 'Promise identity: p1 === p2');
+    logTest(p2 === p3, 'Promise identity: p2 === p3');
+
+    const [r1, r2, r3] = await Promise.all([p1, p2, p3]);
+    logTest(r1 === true, 'p1 resolved true');
+    logTest(r2 === true, 'p2 resolved true');
+    logTest(r3 === true, 'p3 resolved true');
+
+    const group = Buildings.getGroup();
+    logTest(group !== null, 'getGroup() not null after concurrent init');
+
+    // Verify no duplicate buildings
+    let bldCount = 0;
+    group.traverse(c => { if (c.isGroup && c !== group) bldCount++; });
+    logTest(bldCount === 1, `Exactly 1 building group (got ${bldCount})`);
+
+    setState('ready');
+    updateOverlay();
+    console.log('Concurrent init test complete');
+};
+
+document.getElementById('btn-dispose-mid').onclick = async () => {
+    if (!rapierWorld) await initRapier();
+    Buildings.dispose(); // clean slate
+    console.log('--- dispose-during-init test ---');
+    document.getElementById('test-results').innerHTML = '';
+
+    const initPromise = Buildings.init(scene, rapierWorld, RAPIER, { visible: true });
+
+    // Dispose immediately while init is awaiting fetch
+    await new Promise(r => setTimeout(r, 5)); // let fetch start
+    console.log('Calling dispose() while init is in flight...');
+    Buildings.dispose();
+
+    const result = await initPromise;
+    logTest(result === false, `Init returned false after mid-flight dispose (got ${result})`);
+    logTest(Buildings.getGroup() === null, 'getGroup() is null after aborted init');
+    logTest(Buildings.getColliderBodies().length === 0, 'No collider bodies after aborted init');
+
+    setState('idle (abort test done)');
+    updateOverlay();
+    console.log('Dispose-during-init test complete');
+};
+
+document.getElementById('btn-log').onclick = () => {
+    logEl.classList.toggle('visible');
+};
+
+// ── Resize ──
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+// ── Auto-init on load ──
+console.log('Building test harness loaded. Click Init to start.');
+updateOverlay();
+</script>
+</body>
+</html>
