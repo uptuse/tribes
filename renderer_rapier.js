@@ -11,8 +11,8 @@
 // DEPENDS_ON: Module (Emscripten WASM) — player state, building data via HEAPF32
 // EXPOSES: window.RapierPhysics { initRapierPhysics, createTerrainCollider,
 //          createBuildingColliders, registerModelCollision, stepPlayerCollision,
-//          resetPlayerPosition, removeCollider, removeAllBuildings,
-//          removeAllModels, destroy, getPhysicsInfo }
+//          resetPlayerPosition, resizeCapsuleForArmor, removeCollider,
+//          removeAllBuildings, removeAllModels, destroy, getPhysicsInfo }
 // PATTERN: IIFE + window.* facade (legacy — migrate to ES module per Item 24)
 // PERF_BUDGET: stepPlayerCollision < 0.5ms/frame; world.step() with zero
 //              dynamic bodies; broadphase update is the real cost.
@@ -664,6 +664,48 @@ function getPhysicsInfo() {
 }
 
 // ============================================================
+// R32.224: Armor-based capsule resize
+// ============================================================
+// Tribes armor dimensions (approximate from Darkstar source):
+//   Light:  radius ~0.4m, halfHeight ~0.3m  (total height ~1.0m + 2×0.4 caps = ~1.8m)
+//   Medium: radius ~0.5m, halfHeight ~0.35m (total height ~1.2m + 2×0.5 caps = ~2.2m)  [NOTE: init uses 0.6/0.3]
+//   Heavy:  radius ~0.6m, halfHeight ~0.4m  (total height ~1.2m + 2×0.6 caps = ~2.4m)
+// The existing init hardcodes medium (0.6 radius, 0.3 halfH). We keep those as
+// the baseline and scale the others relative to it.
+const ARMOR_CAPSULE = [
+    { radius: 0.45, halfH: 0.25 },  // 0 = light
+    { radius: 0.60, halfH: 0.30 },  // 1 = medium (matches init default)
+    { radius: 0.70, halfH: 0.40 },  // 2 = heavy
+];
+
+/**
+ * Resize the player capsule collider for a different armor type.
+ * Must be called AFTER initRapierPhysics() resolves.
+ * @param {number} armorIdx - 0=light, 1=medium, 2=heavy
+ */
+function resizeCapsuleForArmor(armorIdx) {
+    if (!initialized || !world || !playerRigidBody) return;
+    const dims = ARMOR_CAPSULE[armorIdx] || ARMOR_CAPSULE[1]; // default medium
+    if (dims.radius === playerRadius && dims.halfH === playerHalfH) return; // no change
+
+    // Remove old collider
+    if (playerCollider) {
+        world.removeCollider(playerCollider, false);
+    }
+
+    // Update module-level dimensions (used by stepPlayerCollision)
+    playerRadius = dims.radius;
+    playerHalfH = dims.halfH;
+
+    // Create new capsule collider with updated dimensions
+    const colliderDesc = RAPIER.ColliderDesc.capsule(playerHalfH, playerRadius);
+    colliderDesc.setCollisionGroups(CG_PLAYER_GROUPS);
+    playerCollider = world.createCollider(colliderDesc, playerRigidBody);
+
+    console.log(`[R32.224] Capsule resized for armor ${armorIdx}: radius=${playerRadius}, halfH=${playerHalfH}`);
+}
+
+// ============================================================
 // Exports — attached to window for non-module scripts
 // ============================================================
 window.RapierPhysics = {
@@ -673,6 +715,7 @@ window.RapierPhysics = {
     registerModelCollision: rapierRegisterModelCollision,
     stepPlayerCollision,
     resetPlayerPosition,
+    resizeCapsuleForArmor,
     // R32.173: Collider lifecycle management
     removeCollider,
     removeAllBuildings,
