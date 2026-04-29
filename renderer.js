@@ -4020,61 +4020,77 @@ function syncCamera() {
     // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
     camera.rotation.set(pitch, -yaw, 0, 'YXZ');
 
-    // R31.7.1-manus: 3rd-person chase camera — Tribes Ascend reference is
-    // a centered chase (no shoulder offset), camera follows aim. Hot-fix from
-    // R31.7: enforce a HARD MIN distance (3.0m) so terrain pull-in never collapses
-    // the camera into the player's head. Lift instead of pulling in.
-    //
-    //   - Centered chase (no shoulder offset)
-    //   - Smooth 200ms lerp on V-toggle so view doesn't snap
-    //   - Terrain collision: LIFT camera (don't shorten distance below 3.0m)
-    //   - Exposes window._tribesAimPoint3P + feeds it to C++ for aim convergence
+    // ── Tribes 2 rigid chase camera (Camera_3P_Spec.md) ─────────────────────
+    // Spec: centered chase, no shoulder offset, fixed 4m distance, ~80ms angular
+    // lag on yaw (Torque engine "loose" feel), terrain raycast collision.
+    // Freelook (Alt-hold orbital) deferred — requires C++ mDX zeroing hook.
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
 
-    // Smooth toggle: animate from prev distance to target over ~200ms.
+    // ── Init persistent state on first frame ──────────────────
     if (typeof window._tribesCamDist !== 'number') {
-        // module-scope state — initialize on first call
-        window._tribesCamDist = is3P ? 1.5 : 0.0; // hot-snap on init so first frame is clean
-        window._tribesCamHeight = is3P ? 0.6 : 1.7;
+        window._tribesCamDist   = is3P ? 4.0 : 0.0;
+        window._tribesCamHeight = is3P ? 1.2 : 1.7;
+        window._tribesCamYaw    = yaw;   // lagged yaw in C++ convention
     }
-    const targetDist = is3P ? 1.5 : 0.0;
-    const targetHeight = is3P ? 0.6 : 1.7;
-    // Frame-rate-independent lerp toward target (~200ms time constant)
-    const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
-    window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * lerpAlpha;
-    window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * lerpAlpha;
-    // R31.7.1: snap to target when within 0.05 to kill long-tail lerp drift.
+
+    // ── Distance lerp for V-toggle (~200ms) ───────────────────
+    const targetDist   = is3P ? 4.0 : 0.0;
+    const targetHeight = is3P ? 1.2 : 1.7;
+    const distAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
+    window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * distAlpha;
+    window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * distAlpha;
     if (Math.abs(targetDist   - window._tribesCamDist)   < 0.05) window._tribesCamDist   = targetDist;
     if (Math.abs(targetHeight - window._tribesCamHeight) < 0.05) window._tribesCamHeight = targetHeight;
     const camDist = window._tribesCamDist;
-    const camH = window._tribesCamHeight;
+    const camH    = window._tribesCamHeight;
 
-    // R31.7.1: 3P threshold is 2.0 (not 0.05) — anything under 2m is effectively
-    // 1P framing and would clip the player mesh. The lerp settles to 0 in 1P
-    // and 4 in 3P, so the only time camDist is in [0.05, 2.0] is mid-toggle.
-    if (camDist > 2.0) {
-        // 3P: place camera behind player at full distance, then LIFT y if terrain
-        // would clip. NEVER shorten the back-distance — that's what created the
-        // head-clip bug in R31.7.
-        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
+    // ── Angular lag on camera yaw (~80ms, Tribes "loose" feel) ──
+    // Operates on C++ yaw convention. Wrap to shortest arc to avoid spin.
+    if (is3P) {
+        let yawDelta = yaw - window._tribesCamYaw;
+        while (yawDelta >  Math.PI) yawDelta -= Math.PI * 2;
+        while (yawDelta < -Math.PI) yawDelta += Math.PI * 2;
+        const yawAlpha = 1.0 - Math.exp(-((1/60) / 0.08));
+        window._tribesCamYaw += yawDelta * yawAlpha;
+    } else {
+        window._tribesCamYaw = yaw; // snap instantly in 1P so there's no drift on toggle
+    }
+    const lagYaw = window._tribesCamYaw;
+
+    // ── Camera placement ──────────────────────────────────────
+    if (camDist > 0.3) {
+        // 3P chase: position uses lagged yaw; rotation uses current player aim.
+        const fwdX = Math.sin(lagYaw);
+        const fwdZ = -Math.cos(lagYaw);
         let cx = px - fwdX * camDist;
         let cy = py + camH;
         let cz = pz - fwdZ * camDist;
-        const terrH = sampleTerrainH(cx, cz);
-        const minClearance = 0.6;
-        if (cy < terrH + minClearance) {
-            // Lift the camera straight up to clear terrain, keep distance fixed.
-            cy = terrH + minClearance;
+
+        // Spec Option B: raycast from player head to ideal camera position.
+        // Walk 8 steps; if terrain blocks, pull camera to the occlusion point.
+        const headY = py + 1.7;
+        const dirX = cx - px, dirY = cy - headY, dirZ = cz - pz;
+        const rayLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+        if (rayLen > 0.1) {
+            const invLen = 1 / rayLen;
+            const nx = dirX*invLen, ny = dirY*invLen, nz = dirZ*invLen;
+            for (let s = 1; s <= 8; s++) {
+                const t = (s / 8) * rayLen;
+                const sx = px + nx*t, sy = headY + ny*t, sz = pz + nz*t;
+                if (sy < sampleTerrainH(sx, sz) + 0.3) {
+                    const pullT = Math.max(0, (s - 1) / 8) * rayLen;
+                    cx = px    + nx * pullT;
+                    cy = headY + ny * pullT + 0.3;
+                    cz = pz    + nz * pullT;
+                    break;
+                }
+            }
         }
+
         camera.position.set(cx, cy, cz);
-    } else if (camDist > 0.05) {
-        // Mid-toggle blend: linear ease between 1P head and 3P chase position.
-        const t = camDist / 2.0;  // 0..1
-        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
-        const cx = px - fwdX * camDist;
-        const cz = pz - fwdZ * camDist;
-        const cy = py + (1.7 * (1 - t) + camH * t);
-        camera.position.set(cx, cy, cz);
+        // Rotation follows current player aim (not lagged) — you always shoot
+        // where you're looking even if the camera is still swinging into position.
+        camera.rotation.set(pitch, -yaw, 0, 'YXZ');
     } else {
         // 1P
         camera.position.set(px, py + 1.7, pz);
