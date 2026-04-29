@@ -435,6 +435,14 @@ function stepPlayerCollision(playerView, stride, localIdx, dt) {
         if (grounded && vy < 0) {
             playerView[o + 7] = 0;
         }
+
+        // R32.164: Ceiling hit — zero upward velocity when Rapier blocks Y movement.
+        // Without this, a jetting player hitting a ceiling keeps vy > 0, causing them
+        // to "stick" to the ceiling until jet energy runs out. The player should fall
+        // immediately on ceiling contact.
+        if (!grounded && vy > 0 && corrected.y < desiredMovement.y * 0.5) {
+            playerView[o + 7] = 0;
+        }
     }
 
     return { grounded };
