@@ -157,6 +157,7 @@ function tick(dt, t) {
     _tickWearAndTear(t);
     _tickWetGround(t);
     _tickFlashOverlay(dt);
+    _tickDecals();
 }
 
 // ============================================================
@@ -449,10 +450,15 @@ export function spawnShockwave(scene, position, magnitude) {
 
 // ============================================================
 // Item 29 — Decal pool (bullet holes / scorch marks)
+// R32.175: Capped at 48 visible (was 256). Fade beyond 32.
 // ============================================================
+const DECAL_HARD_CAP  = 48;   // absolute max visible decals
+const DECAL_FADE_START = 32;  // decals beyond this index fade out
+const DECAL_LIFETIME   = 30000; // 30s — oldest decals fade and die
+
 function _initDecals() {
     if (_fxLevel === 'low') return;
-    const cap = _fxLevel === 'high' ? 256 : 128;
+    const cap = _fxLevel === 'high' ? DECAL_HARD_CAP : DECAL_FADE_START;
     _decals = {
         cap,
         active: [],   // { mesh, born }
@@ -498,16 +504,63 @@ export function placeDecal(targetMesh, position, normal, scale) {
         const mesh = new THREE.Mesh(geom, mat);
         _ctx.scene.add(mesh);
         _decals.active.push({ mesh, born: performance.now() });
-        // LRU cleanup
+        // Hard cap — remove oldest when exceeding budget
         while (_decals.active.length > _decals.cap) {
             const d = _decals.active.shift();
             _ctx.scene.remove(d.mesh);
             d.mesh.geometry.dispose();
             d.mesh.material.dispose();
         }
+        // Apply fade to decals beyond DECAL_FADE_START
+        _applyDecalFade();
     } catch (e) {
         // DecalGeometry can fail on non-indexed BufferGeometry; ignore quietly
     }
+}
+
+/** Fade decals beyond DECAL_FADE_START; age-fade all decals past half lifetime */
+function _applyDecalFade() {
+    if (!_decals) return;
+    const now = performance.now();
+    const count = _decals.active.length;
+    for (let i = 0; i < count; i++) {
+        const d = _decals.active[i];
+        const age = now - d.born;
+        // Age-based fade: full opacity until half lifetime, then linear fade to 0
+        let ageFade = 1.0;
+        if (age > DECAL_LIFETIME * 0.5) {
+            ageFade = 1.0 - (age - DECAL_LIFETIME * 0.5) / (DECAL_LIFETIME * 0.5);
+            ageFade = Math.max(0, ageFade);
+        }
+        // Position-based fade: decals beyond DECAL_FADE_START fade linearly
+        let posFade = 1.0;
+        if (count > DECAL_FADE_START && i < (count - DECAL_FADE_START)) {
+            // Oldest decals (low index) fade first when over the soft cap
+            const fadeRange = count - DECAL_FADE_START;
+            const fadeIdx = count - DECAL_FADE_START - i;
+            posFade = 1.0 - (fadeIdx / fadeRange);
+        }
+        d.mesh.material.opacity = Math.min(ageFade, posFade);
+    }
+}
+
+/** Tick decals — remove expired, apply fade. Call from polish tick(). */
+function _tickDecals() {
+    if (!_decals || _decals.active.length === 0) return;
+    const now = performance.now();
+    // Remove decals that have fully expired
+    while (_decals.active.length > 0) {
+        const oldest = _decals.active[0];
+        if (now - oldest.born > DECAL_LIFETIME) {
+            _decals.active.shift();
+            _ctx.scene.remove(oldest.mesh);
+            oldest.mesh.geometry.dispose();
+            oldest.mesh.material.dispose();
+        } else {
+            break;
+        }
+    }
+    _applyDecalFade();
 }
 
 // ============================================================

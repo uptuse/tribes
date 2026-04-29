@@ -681,7 +681,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.176</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.177</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -4318,10 +4318,10 @@
         // R26: tier helper expose for the main-menu badge + ranked overlays
         import('./client/skill_rating.js').then(function(m){
           window.__tiers = m;
-          console.log('[R26] tiers.js loaded');
+          console.log('[R26] skill_rating.js loaded');
           // Trigger an initial badge render with the default rating
           if(window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({ rating: 1000, matchesPlayed: 0, delta: 0, ranked: false });
-        }).catch(function(e){ console.warn('[R26] tiers.js import failed:', e); });
+        }).catch(function(e){ console.warn('[R26] skill_rating.js import failed:', e); });
         // R27: moderation primitives — needed for client-side name validation
         import('./client/moderation.js').then(function(){ console.log('[R27] moderation.js loaded'); })
           .catch(function(e){ console.warn('[R27] moderation.js import failed:', e); });
@@ -4442,7 +4442,7 @@
                 else if(d < 0) { rd.textContent = String(d); rd.style.color = '#E04A4A'; }
                 else           { rd.textContent = ''; }
               }
-              // Tier badge + promotion/demotion detection (defer to tiers.js)
+              // Tier badge + promotion/demotion detection (defer to skill_rating.js)
               if(window.__tiers){
                 var T = window.__tiers;
                 var newTier = T.tierForRating(newRating);

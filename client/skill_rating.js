@@ -1,5 +1,5 @@
 // ============================================================
-// Tribes Browser Edition — Ranked tier helper (R26)
+// Tribes Browser Edition — Ranked tier helper (R26, renamed to skill_rating.js at R32.170)
 // ============================================================
 //
 // Maps a numeric ELO rating to a tier (Bronze..Master). Both client and

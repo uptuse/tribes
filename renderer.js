@@ -36,11 +36,13 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: cust
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
+import * as DayNight from './renderer_daynight.js?v=169'; // R32.169: extracted day/night cycle
 
 // --- Module state ---
 let scene, camera, renderer, composer;
 let bloomPass, gradePass;
 let sunLight, hemiLight, moonLight, sky;
+let nightAmbient; // R32.169: module-scope for DayNight init
 let polish = null; // R32.7 polish module handle
 let _lastTickTime = 0; // R32.7 dt source for polish.tick
 let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
@@ -129,11 +131,15 @@ export async function start() {
     console.log('[R29] WebGLRenderer created, capabilities:', renderer.capabilities);
     initScene();
     initLights();
+    // R32.169: Initialize DayNight module with scene refs (terrainMesh added after initTerrain)
+    DayNight.init({ sunLight, hemiLight, moonLight, nightAmbient, terrainMesh: null, renderer, scene });
     // R32.63: HDRI for PBR environment lighting only (not background).
     // Custom sky dome in renderer_sky.js replaces THREE.Sky and HDRI background.
     loadHDRISky();   // async — sets scene.environment for PBR; sky dome handles visuals
     initCustomSky(scene); // R32.63: procedural sky dome + stars + clouds
     await initTerrain();
+    // R32.169: pass terrainMesh to DayNight now that it exists
+    DayNight.setRef('terrainMesh', terrainMesh);
     // R32.104: Initialize Rapier physics (async — loads WASM). Starts early so it's
     // ready by the time we need to create building/interior colliders.
     let _rapierReady = false;
@@ -338,188 +344,9 @@ function initScene() {
 // ============================================================
 // R32.63: THREE.Sky removed. Sun position now computed in DayNight cycle.
 // ============================================================
-let sunPos = new THREE.Vector3();
+// R32.169: sunPos now comes from DayNight.sunDir (imported module)
 
-// ============================================================
-// R32.40-manus: Day/Night cycle. 30-min real-time loop = 24h game time
-// (so 15 min day, 15 min night, with continuous dawn/dusk transitions).
-// All mutations are scene-level (sunLight, hemiLight, fog, exposure,
-// background/environment intensity) — no terrain shader is touched, so
-// this is independent of the PBR-chunk fragility we hit in R32.38.x.
-//
-// Time mapping: t01 in [0,1) over the 30-min cycle, mapped to in-game
-// hours [0..24). Sun elevation = sin( (h-6)/24 * 2pi ) so noon is +1
-// (sun overhead) and midnight is -1 (sun directly below). Azimuth slowly
-// rotates so the sun also moves east -> west across the sky over the day.
-//
-// URL params:
-//   ?daynight=off      -> freeze at noon (legacy behavior)
-//   ?daynight=fast     -> 5-min cycle (testing)
-//   ?daynight=slow     -> 60-min cycle (cinematic)
-//   ?daynight=h=NN     -> start at game hour NN (0..24), normal speed
-// ============================================================
-const DayNight = (() => {
-    const params = (() => {
-        try { return new URLSearchParams(window.location.search); }
-        catch(e) { return new URLSearchParams(''); }
-    })();
-    const mode = (params.get('daynight') || '').toLowerCase();
-    const startHourMatch = mode.match(/^h=(\d+(?:\.\d+)?)$/);
-    const startHour = startHourMatch ? Math.max(0, Math.min(24, parseFloat(startHourMatch[1]))) : 8.0;
-    const cycleSeconds = mode === 'off' ? Infinity
-                       : mode === 'fast' ? 120
-                       : mode === 'slow' ? 3600
-                       : 1800; // default 30 minutes
-    // start the cycle so first frame is `startHour` AM
-    const startWallClock = performance.now() * 0.001;
-    const startOffset01 = startHour / 24.0;
-
-    // Color palette (Color.lerp targets). Matches typical sky tones.
-    const palette = {
-        nightSun:   new THREE.Color(0x2a3858),  // R32.90: strong moonlight
-        dawnSun:    new THREE.Color(0xff8c4a),  // warm orange
-        noonSun:    new THREE.Color(0xfff2cf),  // soft warm-white
-        duskSun:    new THREE.Color(0xff5a2a),  // deep orange-red
-        nightHemi:  new THREE.Color(0x3a4a68),  // R32.90: visible terrain at night
-        dawnHemi:   new THREE.Color(0xc89878),  // warm peach fill
-        noonHemi:   new THREE.Color(0xb8c4d8),  // slightly blue-white (was grey 0xc0c8d0)
-        duskHemi:   new THREE.Color(0x4a3858),  // R32.63.7: cool purple dusk (was warm 0xb07858)
-        hemiGround: new THREE.Color(0x4d473b),  // unchanged
-        nightFog:   new THREE.Color(0x141e2c),  // R32.90: night fog with depth
-        dawnFog:    new THREE.Color(0xd0a080),  // warm pink-orange haze
-        noonFog:    new THREE.Color(0xa8b8c8),  // R32.63.6: slight blue haze (was flat grey)
-        duskFog:    new THREE.Color(0x1a1828),  // R32.63.7: deep blue-purple dusk (was brown 0xb86848)
-    };
-    const _tmpA = new THREE.Color();
-    const _tmpB = new THREE.Color();
-    function lerpColors(c0, c1, c2, c3, t) {
-        // 4-stop lerp: t in [0..1] maps midnight -> dawn -> noon -> dusk -> midnight
-        // t in [0,0.25): c0->c1; [0.25,0.5): c1->c2; [0.5,0.75): c2->c3; [0.75,1): c3->c0
-        let seg, k, a, b;
-        if (t < 0.25)      { seg = 0; k = t * 4;          a = c0; b = c1; }
-        else if (t < 0.50) { seg = 1; k = (t - 0.25) * 4; a = c1; b = c2; }
-        else if (t < 0.75) { seg = 2; k = (t - 0.50) * 4; a = c2; b = c3; }
-        else               { seg = 3; k = (t - 0.75) * 4; a = c3; b = c0; }
-        _tmpA.copy(a).lerp(b, k);
-        return _tmpA;
-    }
-
-    let lastHour = -1;
-    let _frozen01 = null; // when 'off', freeze at noon
-
-    function update() {
-        if (cycleSeconds === Infinity) {
-            // Frozen mode — once-only set to noon palette and bail.
-            if (_frozen01 === null) {
-                _frozen01 = 0.5; // noon
-                _apply(_frozen01);
-            }
-            return;
-        }
-        const wall = performance.now() * 0.001 - startWallClock;
-        const t01 = ((wall / cycleSeconds) + startOffset01) % 1.0;
-        _apply(t01);
-    }
-
-    function _apply(t01) {
-        // Sun elevation: sin curve, peak at t01=0.5 (noon), trough at t01=0.0 (midnight).
-        const elevRad = Math.sin((t01 - 0.25) * Math.PI * 2);  // [-1, +1]
-        // R32.63.2: Sun arc oriented along base axis (team0 → team1 ≈ +Z → -Z).
-        // Sun rises from team0 direction, arcs overhead, sets toward team1.
-        // dayFrac: 0 at dawn, 0.5 at noon, 1.0 at dusk
-        const dayFrac = (t01 - 0.25);  // -0.25 at midnight, 0 at dawn, 0.25 at noon, 0.5 at dusk
-        const azimRad = dayFrac * Math.PI * 2;  // full semicircle from east to west
-        const r = Math.sqrt(Math.max(0.0, 1 - elevRad * elevRad));
-        // Orient so sun travels along Z axis (base-to-base)
-        sunPos.set(r * 0.3 * Math.cos(azimRad), elevRad, -r * Math.sin(azimRad));
-
-        // Brightness curve: full at noon, zero at horizon and below.
-        // Smooth night transition over 30deg below horizon so dusk fades gracefully.
-        const dayMix = Math.max(0, Math.min(1, (elevRad + 0.05) / 0.40));   // 0 below -3deg, 1 above +20deg
-        const nightMix = 1.0 - dayMix; // inverse: 1 at midnight, 0 at noon
-        const dawnDuskMix = Math.max(0, 1 - Math.abs(elevRad) / 0.30);     // 1 near horizon, 0 high
-
-        // Lerp sun color across a 4-stop palette tied to t01.
-        const sunCol = lerpColors(palette.nightSun, palette.dawnSun, palette.noonSun, palette.duskSun, t01);
-        if (typeof sunLight !== 'undefined' && sunLight) {
-            sunLight.color.copy(sunCol);
-            // R32.63.4: sun 1.6 (was 0.9). Higher ratio vs ambient = visible shadows.
-            sunLight.intensity = 1.6 * dayMix;
-            sunLight.castShadow = sunLight.intensity > 0.05;
-        }
-
-        // Moonlight
-        if (typeof moonLight !== 'undefined' && moonLight) {
-            moonLight.position.set(-sunPos.x * 100, Math.max(0.2, -elevRad) * 100, -sunPos.z * 100);
-            moonLight.target.position.set(0, 0, 0);
-            moonLight.color.setHex(0x6688cc);
-            moonLight.intensity = 0.12 * nightMix;  // R32.63.6: subtle (was 0.3)
-        }
-
-        // Hemisphere fill — lowered to let directional sun dominate (shadow contrast)
-        const hemiCol = lerpColors(palette.nightHemi, palette.dawnHemi, palette.noonHemi, palette.duskHemi, t01);
-        if (typeof hemiLight !== 'undefined' && hemiLight) {
-            hemiLight.color.copy(hemiCol);
-            hemiLight.groundColor.copy(palette.hemiGround);
-            // R32.63.6: 0.08 night → 0.35 noon (was 0.20→0.50, too much fill)
-            hemiLight.intensity = 0.08 + 0.27 * dayMix;
-        }
-
-        // R32.91: Night ambient — ramps up as sun goes down, lifts terrain out of black
-        if (window.__nightAmbient) {
-            const nightFactor = 1.0 - dayMix; // 0 at noon, 1 at midnight
-            window.__nightAmbient.intensity = nightFactor * 0.6;
-            window.__nightAmbient.color.setHex(0x304060);
-        }
-
-        // R32.95: Terrain night emissive — self-lit moonlight glow, independent of exposure/sky
-        if (typeof terrainMesh !== 'undefined' && terrainMesh && terrainMesh.material) {
-            const nf = 1.0 - dayMix;
-            terrainMesh.material.emissive.setHex(0x1a2540);
-            terrainMesh.material.emissiveIntensity = nf * 0.35;
-        }
-
-        // Fog
-        const fogCol = lerpColors(palette.nightFog, palette.dawnFog, palette.noonFog, palette.duskFog, t01);
-        if (typeof scene !== 'undefined' && scene.fog) {
-            scene.fog.color.copy(fogCol);
-            // R32.63.6: fog density varies — thick at night (hide distant mountains),
-            // lighter during day for depth/atmosphere
-            scene.fog.density = 0.0006 + 0.0012 * nightMix;  // R32.63.8: very subtle (day 0.0006, night 0.0018)
-        }
-
-        // R32.63.6: env intensity lowered further — night near-zero, day moderate.
-        if (typeof renderer !== 'undefined' && renderer) {
-            renderer.toneMappingExposure = 0.80 + 0.20 * dayMix;  // R32.95: 0.80 night → 1.0 noon
-        }
-        if (typeof scene !== 'undefined') {
-            // R32.63.6: env 0.05 at night → 0.45 at noon (was 0.15→0.55)
-            if (scene.environmentIntensity !== undefined) {
-                scene.environmentIntensity = 0.05 + 0.40 * dayMix;
-            }
-        }
-
-        // Expose for custom sky dome (stars, moon, clouds)
-        DayNight.dayMix = dayMix;
-        DayNight.sunDir.copy(sunPos);
-
-        // Update HUD clock chip (created in index.html).
-        const h = Math.floor(t01 * 24);
-        const m = Math.floor(((t01 * 24) - h) * 60);
-        if (h !== lastHour) {
-            lastHour = h;
-        }
-        if (typeof window !== 'undefined' && window.__tribesSetGameClock) {
-            const ampm = (h % 24) < 12 ? 'AM' : 'PM';
-            const hh = ((h % 12) === 0) ? 12 : (h % 12);
-            const mm = (m < 10 ? '0' : '') + m;
-            window.__tribesSetGameClock(`${hh}:${mm} ${ampm}`);
-        }
-    }
-
-    return { update, _apply, freeze: function(h) { this._frozen = h; }, unfreeze: function() { this._frozen = null; }, _frozen: null, dayMix: 1.0, sunDir: new THREE.Vector3(0, 1, 0) };
-})();
-try { window.DayNight = DayNight; } catch(e) {}
+// R32.169: DayNight cycle extracted to renderer_daynight.js (ES module)
 
 // R32.63: HDRI loads for PBR environment ONLY. The visible sky background
 // is handled by the custom sky dome. scene.background = null so the dome shows.
@@ -593,9 +420,9 @@ function initLights() {
     scene.add(hemiLight);
 
     // R32.91: Night ambient light — flat fill so terrain isn't pitch black
-    const nightAmbient = new THREE.AmbientLight(0x3040608, 0);
+    nightAmbient = new THREE.AmbientLight(0x304060, 0); // R32.169: fixed 7-digit hex (was 0x3040608)
     scene.add(nightAmbient);
-    window.__nightAmbient = nightAmbient;
+    window.__nightAmbient = nightAmbient; // legacy bridge
 
     // R32.0: Sun — azimuth -90°, incidence 54°. R32.37.5: intensity 1.4 -> 1.8.
     sunLight = new THREE.DirectionalLight(0x999999, 1.8);
@@ -2964,7 +2791,7 @@ function initPlayers() {
 const nameplateSprites = []; // index = player slot, value = THREE.Sprite or null
 const nameplateLastName = []; // cache of last rendered name to avoid texture rebuild
 
-// R26: tier color lookup mirrors client/tiers.js (kept inline so renderer
+// R26: tier color lookup mirrors client/skill_rating.js (kept inline so renderer
 // has no module dependency cycle). If __tribesPlayerRatings has the slot's
 // rating, we paint a colored stripe on the left of the nameplate.
 const _RENDERER_TIERS = [

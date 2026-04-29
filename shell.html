@@ -3505,10 +3505,10 @@
         // R26: tier helper expose for the main-menu badge + ranked overlays
         import('./client/skill_rating.js').then(function(m){
           window.__tiers = m;
-          console.log('[R26] tiers.js loaded');
+          console.log('[R26] skill_rating.js loaded');
           // Trigger an initial badge render with the default rating
           if(window.__tribesOnSkillUpdate) window.__tribesOnSkillUpdate({ rating: 1000, matchesPlayed: 0, delta: 0, ranked: false });
-        }).catch(function(e){ console.warn('[R26] tiers.js import failed:', e); });
+        }).catch(function(e){ console.warn('[R26] skill_rating.js import failed:', e); });
         // R27: moderation primitives — needed for client-side name validation
         import('./client/moderation.js').then(function(){ console.log('[R27] moderation.js loaded'); })
           .catch(function(e){ console.warn('[R27] moderation.js import failed:', e); });
@@ -3629,7 +3629,7 @@
                 else if(d < 0) { rd.textContent = String(d); rd.style.color = '#E04A4A'; }
                 else           { rd.textContent = ''; }
               }
-              // Tier badge + promotion/demotion detection (defer to tiers.js)
+              // Tier badge + promotion/demotion detection (defer to skill_rating.js)
               if(window.__tiers){
                 var T = window.__tiers;
                 var newTier = T.tierForRating(newRating);
