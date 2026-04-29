@@ -338,6 +338,13 @@ export async function start() {
         }
     } catch (e) { console.warn('[R32.20] Toonify pass failed:', e && e.message ? e.message : e); }
 
+    // Phase-B: initialise level editor and load entity markers from WASM
+    import('./client/level_editor.js').then(mod => {
+        mod.initLevelEditor(scene, camera, renderer, terrainMesh);
+        mod.loadFromWASM();
+        console.log('[PhaseB] Level editor ready');
+    }).catch(e => console.warn('[PhaseB] level_editor.js import failed:', e));
+
     console.log('[R18] Init complete. Entering render loop.');
     requestAnimationFrame(loop);
 }

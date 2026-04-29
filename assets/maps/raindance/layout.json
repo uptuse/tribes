@@ -1,0 +1,859 @@
+{
+  "_comment": "Raindance layout \u2014 generated from canonical.json. Edit here; commit to assets/maps/raindance/layout.json; CI rebuilds tribes.data so C++ reads it on next boot.",
+  "_format_version": 1,
+  "map": "Raindance",
+  "entities": [
+    {
+      "type": "Flag",
+      "team": 0,
+      "datablock": "Flag",
+      "name": "flag",
+      "world_pos": [
+        -221.813,
+        38.708,
+        -21.7953
+      ],
+      "world_rot_y": -2.34513
+    },
+    {
+      "type": "Turret",
+      "team": 0,
+      "datablock": "plasmaTurret",
+      "name": "PlasmaTurret1",
+      "world_pos": [
+        -258.323,
+        55.5016,
+        -190.094
+      ],
+      "world_rot_y": 0.283842
+    },
+    {
+      "type": "Turret",
+      "team": 0,
+      "datablock": "rocketTurret",
+      "name": "RocketTurret1",
+      "world_pos": [
+        -320.75,
+        43.6799,
+        -130.919
+      ],
+      "world_rot_y": 1.57611
+    },
+    {
+      "type": "Turret",
+      "team": 0,
+      "datablock": "plasmaTurret",
+      "name": "PlasmaTurret1",
+      "world_pos": [
+        -243.82,
+        34.998,
+        -21.3294
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Sensor",
+      "team": 0,
+      "datablock": "PulseSensor",
+      "name": "Sensor1",
+      "world_pos": [
+        -266.02,
+        34.6298,
+        7.77847
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Generator",
+      "team": 0,
+      "datablock": "Generator",
+      "name": "Generator1",
+      "world_pos": [
+        -256.232,
+        13.75,
+        7.94455
+      ],
+      "world_rot_y": -1.50757
+    },
+    {
+      "type": "Station",
+      "team": 0,
+      "datablock": "AmmoStation",
+      "name": "AmmoStn",
+      "world_pos": [
+        -263.585,
+        18.0,
+        7.76095
+      ],
+      "world_rot_y": 1.5685
+    },
+    {
+      "type": "Station",
+      "team": 0,
+      "datablock": "InventoryStation",
+      "name": "InvStn",
+      "world_pos": [
+        -248.301,
+        18.0,
+        7.70616
+      ],
+      "world_rot_y": -1.57719
+    },
+    {
+      "type": "Structure",
+      "team": 0,
+      "datablock": "VehiclePad",
+      "name": "VehiclePad1",
+      "world_pos": [
+        -289.068,
+        22.5065,
+        -29.9709
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Station",
+      "team": 0,
+      "datablock": "CommandStation",
+      "name": "CommandStation1",
+      "world_pos": [
+        -255.985,
+        27.9986,
+        13.9711
+      ],
+      "world_rot_y": -3.11301
+    },
+    {
+      "type": "Station",
+      "team": 0,
+      "datablock": "VehicleStation",
+      "name": "VehicleStation1",
+      "world_pos": [
+        -289.688,
+        23.4153,
+        -16.7717
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -196.051,
+        38.4719,
+        -111.67
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -236.29,
+        41.4136,
+        57.4127
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -368.404,
+        34.3786,
+        -76.4616
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -349.51,
+        28.466,
+        -37.9708
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -317.673,
+        29.0787,
+        23.3524
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -293.635,
+        42.0152,
+        -127.782
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -278.719,
+        26.3572,
+        -60.5558
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 0,
+      "datablock": "MapMarker",
+      "name": "Map Marker1",
+      "world_pos": [
+        -256.0,
+        19.0,
+        -24.0
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Flag",
+      "team": 1,
+      "datablock": "Flag",
+      "name": "flag",
+      "world_pos": [
+        -379.161,
+        52.8116,
+        -640.784
+      ],
+      "world_rot_y": 0.00860452
+    },
+    {
+      "type": "Turret",
+      "team": 1,
+      "datablock": "plasmaTurret",
+      "name": "PlasmaTurret1",
+      "world_pos": [
+        -317.668,
+        52.9243,
+        -385.236
+      ],
+      "world_rot_y": -2.79152
+    },
+    {
+      "type": "Turret",
+      "team": 1,
+      "datablock": "rocketTurret",
+      "name": "RocketTurret2",
+      "world_pos": [
+        -318.085,
+        37.0511,
+        -494.068
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Turret",
+      "team": 1,
+      "datablock": "plasmaTurret",
+      "name": "PlasmaTurret1",
+      "world_pos": [
+        -356.125,
+        42.4375,
+        -614.435
+      ],
+      "world_rot_y": 3.14142
+    },
+    {
+      "type": "Sensor",
+      "team": 1,
+      "datablock": "PulseSensor",
+      "name": "PulseSensor",
+      "world_pos": [
+        -331.033,
+        42.4375,
+        -632.506
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Generator",
+      "team": 1,
+      "datablock": "Generator",
+      "name": "Generator",
+      "world_pos": [
+        -344.146,
+        21.1023,
+        -643.875
+      ],
+      "world_rot_y": -2.84419
+    },
+    {
+      "type": "Station",
+      "team": 1,
+      "datablock": "AmmoStation",
+      "name": "AmmoStation",
+      "world_pos": [
+        -351.56,
+        25.4357,
+        -643.094
+      ],
+      "world_rot_y": 1.59062
+    },
+    {
+      "type": "Station",
+      "team": 1,
+      "datablock": "InventoryStation",
+      "name": "InventoryStation",
+      "world_pos": [
+        -337.482,
+        25.4375,
+        -643.146
+      ],
+      "world_rot_y": -1.61441
+    },
+    {
+      "type": "Station",
+      "team": 1,
+      "datablock": "CommandStation",
+      "name": "CommandStation1",
+      "world_pos": [
+        -343.96,
+        35.4375,
+        -649.595
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "Station",
+      "team": 1,
+      "datablock": "VehicleStation",
+      "name": "VehicleStation1",
+      "world_pos": [
+        -303.83,
+        40.3481,
+        -642.153
+      ],
+      "world_rot_y": -2.50453
+    },
+    {
+      "type": "Structure",
+      "team": 1,
+      "datablock": "VehiclePad",
+      "name": "VehiclePad1",
+      "world_pos": [
+        -285.723,
+        35.1527,
+        -618.697
+      ],
+      "world_rot_y": -2.3704
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -400.69,
+        55.3426,
+        -561.516
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -392.074,
+        41.6603,
+        -696.325
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -200.419,
+        21.9542,
+        -498.965
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -282.61,
+        26.4227,
+        -572.272
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -258.533,
+        41.4218,
+        -627.132
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -315.752,
+        48.9828,
+        -426.333
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -262.911,
+        34.3867,
+        -552.061
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "DropPointMarker",
+      "name": "Drop Point1",
+      "world_pos": [
+        -336.898,
+        42.4375,
+        -635.03
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "SpawnPoint",
+      "team": 1,
+      "datablock": "MapMarker",
+      "name": "Map Marker1",
+      "world_pos": [
+        -344.0,
+        26.0,
+        -611.0
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "esmall2.0.dis",
+      "name": "esmall21",
+      "world_pos": [
+        -256.0,
+        19.0,
+        -24.0
+      ],
+      "world_rot_y": 3.14144
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "BETower2.0.dis",
+      "name": "BETower21",
+      "world_pos": [
+        -221.814,
+        15.6664,
+        -14.9914
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "iobservation.0.dis",
+      "name": "iobservation1",
+      "world_pos": [
+        -446.767,
+        63.3253,
+        -63.2
+      ],
+      "world_rot_y": -0.0523576
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.0.dis",
+      "name": "",
+      "world_pos": [
+        -324.159,
+        36.4799,
+        -127.0
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "bunker4.0.dis",
+      "name": "bunker41",
+      "world_pos": [
+        -289.323,
+        13.9401,
+        -29.6725
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "bunker4.1.dis",
+      "name": "bunker41",
+      "world_pos": [
+        -289.672,
+        22.3125,
+        -13.599
+      ],
+      "world_rot_y": 1.54011
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "esmall2.1.dis",
+      "name": "esmall21",
+      "world_pos": [
+        -344.0,
+        26.4375,
+        -611.398
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.1.dis",
+      "name": "cube1",
+      "world_pos": [
+        -328.335,
+        35.0,
+        -642.073
+      ],
+      "world_rot_y": 0.0349045
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.2.dis",
+      "name": "cube1",
+      "world_pos": [
+        -328.534,
+        34.0,
+        -645.779
+      ],
+      "world_rot_y": 0.279232
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.3.dis",
+      "name": "cube1",
+      "world_pos": [
+        -362.344,
+        28.9689,
+        -648.349
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.4.dis",
+      "name": "cube1",
+      "world_pos": [
+        -332.176,
+        33.0,
+        -653.266
+      ],
+      "world_rot_y": -0.959912
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.5.dis",
+      "name": "cube1",
+      "world_pos": [
+        -334.646,
+        32.0,
+        -654.891
+      ],
+      "world_rot_y": -0.593395
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.6.dis",
+      "name": "cube1",
+      "world_pos": [
+        -364.926,
+        26.7413,
+        -643.19
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.7.dis",
+      "name": "cube1",
+      "world_pos": [
+        -357.75,
+        27.0822,
+        -654.942
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.8.dis",
+      "name": "cube1",
+      "world_pos": [
+        -362.323,
+        30.016,
+        -653.969
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "cube.9.dis",
+      "name": "cube1",
+      "world_pos": [
+        -332.029,
+        31.1804,
+        -653.375
+      ],
+      "world_rot_y": 1.20408
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "BETower2.1.dis",
+      "name": "BETower21",
+      "world_pos": [
+        -379.025,
+        29.769,
+        -648.393
+      ],
+      "world_rot_y": 3.12304
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "bunker4.2.dis",
+      "name": "bunker41",
+      "world_pos": [
+        -305.568,
+        39.0363,
+        -644.687
+      ],
+      "world_rot_y": -2.50893
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "swsfloatingpad2.0.dis",
+      "name": "SWSfloatingpad21",
+      "world_pos": [
+        -285.904,
+        19.1526,
+        -618.671
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "expbridge.0.dis",
+      "name": "expbridge1",
+      "world_pos": [
+        -291.564,
+        41.0,
+        -296.68
+      ],
+      "world_rot_y": -0.279232
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "mis_ob1.0.dis",
+      "name": "mis_ob11",
+      "world_pos": [
+        -443.099,
+        60.6454,
+        -445.529
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "mis_ob2.0.dis",
+      "name": "mis_ob21",
+      "world_pos": [
+        -317.948,
+        25.051,
+        -493.702
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "mis_ob3.0.dis",
+      "name": "mis_ob31",
+      "world_pos": [
+        -190.885,
+        74.0919,
+        -327.461
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock3.0.dis",
+      "name": "lrock31",
+      "world_pos": [
+        -330.625,
+        39.5143,
+        -149.941
+      ],
+      "world_rot_y": -0.492048
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock6.0.dis",
+      "name": "lrock61",
+      "world_pos": [
+        -298.94,
+        46.9789,
+        -406.555
+      ],
+      "world_rot_y": -1.51351
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock1.0.dis",
+      "name": "lrock11",
+      "world_pos": [
+        -299.302,
+        51.5413,
+        -189.773
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock4.0.dis",
+      "name": "lrock41",
+      "world_pos": [
+        -442.638,
+        41.9206,
+        -379.901
+      ],
+      "world_rot_y": -2.78194
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock5.0.dis",
+      "name": "lrock51",
+      "world_pos": [
+        -255.875,
+        32.3888,
+        -569.575
+      ],
+      "world_rot_y": -1.76263
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock4.1.dis",
+      "name": "lrock41",
+      "world_pos": [
+        -267.551,
+        45.6608,
+        -441.392
+      ],
+      "world_rot_y": 0.793886
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "lrock4.2.dis",
+      "name": "lrock41",
+      "world_pos": [
+        -433.659,
+        37.9178,
+        -291.068
+      ],
+      "world_rot_y": -0.540901
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "DSSfloatingPad.0.dis",
+      "name": "DSSfloatingpad1",
+      "world_pos": [
+        -221.713,
+        21.1184,
+        -15.2858
+      ],
+      "world_rot_y": 0.0
+    },
+    {
+      "type": "InteriorShape",
+      "team": -1,
+      "datablock": "DSSfloatingPad.1.dis",
+      "name": "DSSfloatingpad1",
+      "world_pos": [
+        -379.112,
+        35.1267,
+        -648.667
+      ],
+      "world_rot_y": 0.0
+    }
+  ]
+}

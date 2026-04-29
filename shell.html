@@ -1250,21 +1250,35 @@
         </div>
         <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">Downloads a JSON file with values to paste into C++ constants.</div>
         <hr class="s-divider">
-        <div class="s-section" style="color:#FFD479;">Map Editor</div>
+        <div class="s-section" style="color:#FFD479;">Level Editor — Phase B</div>
         <div style="font-size:0.76em;color:#7A6A4A;margin-bottom:8px;line-height:1.4;">
-          Click a building in-game to select it, then drag the gizmo to reposition.
+          Enable edit mode, pick an entity type, then click terrain to place it. Drag to move.
         </div>
         <div class="s-row">
           <div class="s-label">Edit Mode</div>
           <div class="s-ctrl"><label style="cursor:pointer;font-size:0.82em;color:#9A8A6A;user-select:none;">
-            <input type="checkbox" id="p-editmode" onchange="toggleMapEditMode(this.checked)">
-            Enable building transform gizmo
+            <input type="checkbox" id="p-editmode" onchange="toggleLevelEditor(this.checked)">
+            Enable (click terrain to place, click entity to select/drag)
           </label></div>
         </div>
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button class="btn" id="p-savemap" onclick="saveMapLayout()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;" disabled>⬇ Save Map Layout</button>
+        <div id="p-palette" style="display:none;flex-wrap:wrap;gap:4px;margin:8px 0;">
+          <div style="width:100%;font-size:0.73em;color:#7A6A4A;margin-bottom:2px;">Place entity (click terrain after selecting):</div>
+          <button class="btn-small lvl-palette-btn" data-type="Turret"     onclick="editorPickType('Turret')">🔫 Turret</button>
+          <button class="btn-small lvl-palette-btn" data-type="Generator"  onclick="editorPickType('Generator')">⚡ Generator</button>
+          <button class="btn-small lvl-palette-btn" data-type="Station"    onclick="editorPickType('Station')">📦 Station</button>
+          <button class="btn-small lvl-palette-btn" data-type="Sensor"     onclick="editorPickType('Sensor')">📡 Sensor</button>
+          <button class="btn-small lvl-palette-btn" data-type="Flag"       onclick="editorPickType('Flag')">🚩 Flag</button>
+          <button class="btn-small lvl-palette-btn" data-type="SpawnPoint" onclick="editorPickType('SpawnPoint')">⬇ Spawn</button>
+          <button class="btn-small" onclick="editorPickType(null)" style="border-color:#555;color:#888;">✕ Select mode</button>
         </div>
-        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">Downloads JSON of modified building positions (Phase B loads into C++).</div>
+        <div style="display:flex;gap:8px;margin-top:4px;">
+          <button class="btn" id="p-savemap" onclick="editorExportLayout()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;" disabled>
+            ⬇ Save layout.json
+          </button>
+        </div>
+        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">
+          Downloads layout.json → drop into <code>assets/maps/raindance/</code> → commit → CI rebuilds.
+        </div>
       </div>
       <hr class="s-divider">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
@@ -3344,17 +3358,21 @@
       a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));
       a.download='firewolf_physics_tuning.json';document.body.appendChild(a);a.click();a.remove();
     }
-    function toggleMapEditMode(on){
+    function toggleLevelEditor(on){
       _mapEditorActive=on;
+      var palette=document.getElementById('p-palette');
+      if(palette)palette.style.display=on?'flex':'none';
       var btn=document.getElementById('p-savemap');if(btn)btn.disabled=!on;
-      if(window.__tribesSetMapEditMode)window.__tribesSetMapEditMode(on);
+      if(window.__editorSetActive)window.__editorSetActive(on);
     }
-    function saveMapLayout(){
-      if(!window.__tribesGetBuildingOverrides){alert('Open in-game first.');return;}
-      var a=document.createElement('a');
-      a.href=URL.createObjectURL(new Blob([JSON.stringify(window.__tribesGetBuildingOverrides(),null,2)],{type:'application/json'}));
-      a.download='raindance_layout_overrides.json';document.body.appendChild(a);a.click();a.remove();
+    function editorPickType(typeId){
+      if(window.__editorSelectType)window.__editorSelectType(typeId);
     }
+    function editorExportLayout(){
+      if(window.__editorExportLayout)window.__editorExportLayout();
+    }
+    function toggleMapEditMode(on){ toggleLevelEditor(on); }
+    function saveMapLayout(){ editorExportLayout(); }
     document.addEventListener('DOMContentLoaded',function(){
       var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
       var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};

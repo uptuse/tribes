@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpo_xlo3c9.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpzoz7q4vi.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -204,25 +204,25 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
     }
 
     }
-    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/hdri/overcast_soil_puresky_2k.hdr", "start": 1878841, "end": 6446841}, {"filename": "/assets/tribes/larmor.dts", "start": 6446841, "end": 6763287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 6763287, "end": 6764358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 6764358, "end": 6766871}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 6766871, "end": 6770286}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 6770286, "end": 6796286}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 6796286, "end": 7060482}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 7060482, "end": 7158951}, {"filename": "/assets/tribes/maps/raindance/material_palette.json", "start": 7158951, "end": 7166373}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.bin", "start": 7166373, "end": 7394469}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.json", "start": 7394469, "end": 7412665}, {"filename": "/assets/tribes/marmor.dts", "start": 7412665, "end": 7809807}, {"filename": "/assets/tribes/tower.DTS", "start": 7809807, "end": 7824665}], "remote_package_size": 7824665});
+    loadPackage({"files": [{"filename": "/assets/tribes/chaingun.DTS", "start": 0, "end": 26740}, {"filename": "/assets/tribes/discb.DTS", "start": 26740, "end": 30812}, {"filename": "/assets/tribes/grenade.DTS", "start": 30812, "end": 33576}, {"filename": "/assets/tribes/harmor.DTS", "start": 33576, "end": 443722}, {"filename": "/assets/tribes/hdri/kloofendal_48d_partly_cloudy_puresky_1k.hdr", "start": 443722, "end": 1878841}, {"filename": "/assets/tribes/hdri/overcast_soil_puresky_2k.hdr", "start": 1878841, "end": 6446841}, {"filename": "/assets/tribes/larmor.dts", "start": 6446841, "end": 6763287}, {"filename": "/assets/tribes/maps/raindance/HEIGHTMAP_LICENSE", "start": 6763287, "end": 6764358}, {"filename": "/assets/tribes/maps/raindance/README.md", "start": 6764358, "end": 6766871}, {"filename": "/assets/tribes/maps/raindance/build_heightmap.py", "start": 6766871, "end": 6770286}, {"filename": "/assets/tribes/maps/raindance/canonical.json", "start": 6770286, "end": 6796286}, {"filename": "/assets/tribes/maps/raindance/heightmap.bin", "start": 6796286, "end": 7060482}, {"filename": "/assets/tribes/maps/raindance/heightmap.png", "start": 7060482, "end": 7158951}, {"filename": "/assets/tribes/maps/raindance/layout.json", "start": 7158951, "end": 7175540}, {"filename": "/assets/tribes/maps/raindance/material_palette.json", "start": 7175540, "end": 7182962}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.bin", "start": 7182962, "end": 7411058}, {"filename": "/assets/tribes/maps/raindance/raindance_meshes.json", "start": 7411058, "end": 7429254}, {"filename": "/assets/tribes/marmor.dts", "start": 7429254, "end": 7826396}, {"filename": "/assets/tribes/tower.DTS", "start": 7826396, "end": 7841254}], "remote_package_size": 7841254});
 
   })();
 
-// end include: /tmp/tmpo_xlo3c9.js
-// include: /tmp/tmpvf7kb2vm.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpzoz7q4vi.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpovtds4h0.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpvf7kb2vm.js
-// include: /tmp/tmp4ngwyr9i.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpovtds4h0.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpgc_7_fr4.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmp4ngwyr9i.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpgc_7_fr4.js
 
 
 var arguments_ = [];
@@ -6436,25 +6436,25 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  348180: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 348253: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 348323: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 348370: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348417: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348469: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
- 348526: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 348584: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 348642: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 348691: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348743: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348792: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 348974: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349036: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349098: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 349148: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349204: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 349256: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349345: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348468: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348541: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348611: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 348658: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348705: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348757: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 348814: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 348872: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 348930: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 348979: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349031: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349080: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349262: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349324: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349386: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349436: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349492: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349544: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349633: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
@@ -6491,16 +6491,20 @@ var _isReady = Module['_isReady'] = makeInvalidEarlyAccess('_isReady');
 var _getThirdPerson = Module['_getThirdPerson'] = makeInvalidEarlyAccess('_getThirdPerson');
 var _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = makeInvalidEarlyAccess('_appendInteriorShapeAABBs');
 var _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = makeInvalidEarlyAccess('_setLocalAimPoint3P');
+var _getLayoutEntityCount = Module['_getLayoutEntityCount'] = makeInvalidEarlyAccess('_getLayoutEntityCount');
+var _isLayoutLoaded = Module['_isLayoutLoaded'] = makeInvalidEarlyAccess('_isLayoutLoaded');
+var _getLayoutEntity = Module['_getLayoutEntity'] = makeInvalidEarlyAccess('_getLayoutEntity');
+var _setLayoutEntityPos = Module['_setLayoutEntityPos'] = makeInvalidEarlyAccess('_setLayoutEntityPos');
 var _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = makeInvalidEarlyAccess('_appendInteriorMeshTris');
 var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
 var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
 var _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = makeInvalidEarlyAccess('_getPlayerSlopeDeg');
 var _setRenderMode = Module['_setRenderMode'] = makeInvalidEarlyAccess('_setRenderMode');
 var _tick = Module['_tick'] = makeInvalidEarlyAccess('_tick');
+var _malloc = Module['_malloc'] = makeInvalidEarlyAccess('_malloc');
+var _free = Module['_free'] = makeInvalidEarlyAccess('_free');
 var _main = Module['_main'] = makeInvalidEarlyAccess('_main');
 var _fflush = makeInvalidEarlyAccess('_fflush');
-var _free = Module['_free'] = makeInvalidEarlyAccess('_free');
-var _malloc = Module['_malloc'] = makeInvalidEarlyAccess('_malloc');
 var _emscripten_stack_get_end = makeInvalidEarlyAccess('_emscripten_stack_get_end');
 var _emscripten_stack_get_base = makeInvalidEarlyAccess('_emscripten_stack_get_base');
 var _strerror = makeInvalidEarlyAccess('_strerror');
@@ -6548,16 +6552,20 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['getThirdPerson'] != 'undefined', 'missing Wasm export: getThirdPerson');
   assert(typeof wasmExports['appendInteriorShapeAABBs'] != 'undefined', 'missing Wasm export: appendInteriorShapeAABBs');
   assert(typeof wasmExports['setLocalAimPoint3P'] != 'undefined', 'missing Wasm export: setLocalAimPoint3P');
+  assert(typeof wasmExports['getLayoutEntityCount'] != 'undefined', 'missing Wasm export: getLayoutEntityCount');
+  assert(typeof wasmExports['isLayoutLoaded'] != 'undefined', 'missing Wasm export: isLayoutLoaded');
+  assert(typeof wasmExports['getLayoutEntity'] != 'undefined', 'missing Wasm export: getLayoutEntity');
+  assert(typeof wasmExports['setLayoutEntityPos'] != 'undefined', 'missing Wasm export: setLayoutEntityPos');
   assert(typeof wasmExports['appendInteriorMeshTris'] != 'undefined', 'missing Wasm export: appendInteriorMeshTris');
   assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
   assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
   assert(typeof wasmExports['getPlayerSlopeDeg'] != 'undefined', 'missing Wasm export: getPlayerSlopeDeg');
   assert(typeof wasmExports['setRenderMode'] != 'undefined', 'missing Wasm export: setRenderMode');
   assert(typeof wasmExports['tick'] != 'undefined', 'missing Wasm export: tick');
+  assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
+  assert(typeof wasmExports['free'] != 'undefined', 'missing Wasm export: free');
   assert(typeof wasmExports['main'] != 'undefined', 'missing Wasm export: main');
   assert(typeof wasmExports['fflush'] != 'undefined', 'missing Wasm export: fflush');
-  assert(typeof wasmExports['free'] != 'undefined', 'missing Wasm export: free');
-  assert(typeof wasmExports['malloc'] != 'undefined', 'missing Wasm export: malloc');
   assert(typeof wasmExports['emscripten_stack_get_end'] != 'undefined', 'missing Wasm export: emscripten_stack_get_end');
   assert(typeof wasmExports['emscripten_stack_get_base'] != 'undefined', 'missing Wasm export: emscripten_stack_get_base');
   assert(typeof wasmExports['strerror'] != 'undefined', 'missing Wasm export: strerror');
@@ -6601,16 +6609,20 @@ function assignWasmExports(wasmExports) {
   _getThirdPerson = Module['_getThirdPerson'] = createExportWrapper('getThirdPerson', 0);
   _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = createExportWrapper('appendInteriorShapeAABBs', 2);
   _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = createExportWrapper('setLocalAimPoint3P', 3);
+  _getLayoutEntityCount = Module['_getLayoutEntityCount'] = createExportWrapper('getLayoutEntityCount', 0);
+  _isLayoutLoaded = Module['_isLayoutLoaded'] = createExportWrapper('isLayoutLoaded', 0);
+  _getLayoutEntity = Module['_getLayoutEntity'] = createExportWrapper('getLayoutEntity', 6);
+  _setLayoutEntityPos = Module['_setLayoutEntityPos'] = createExportWrapper('setLayoutEntityPos', 4);
   _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = createExportWrapper('appendInteriorMeshTris', 8);
   _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
   _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);
   _getPlayerSlopeDeg = Module['_getPlayerSlopeDeg'] = createExportWrapper('getPlayerSlopeDeg', 0);
   _setRenderMode = Module['_setRenderMode'] = createExportWrapper('setRenderMode', 1);
   _tick = Module['_tick'] = createExportWrapper('tick', 0);
+  _malloc = Module['_malloc'] = createExportWrapper('malloc', 1);
+  _free = Module['_free'] = createExportWrapper('free', 1);
   _main = Module['_main'] = createExportWrapper('main', 2);
   _fflush = createExportWrapper('fflush', 1);
-  _free = Module['_free'] = createExportWrapper('free', 1);
-  _malloc = Module['_malloc'] = createExportWrapper('malloc', 1);
   _emscripten_stack_get_end = wasmExports['emscripten_stack_get_end'];
   _emscripten_stack_get_base = wasmExports['emscripten_stack_get_base'];
   _strerror = createExportWrapper('strerror', 1);

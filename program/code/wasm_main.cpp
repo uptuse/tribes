@@ -427,38 +427,133 @@ static void addBuilding(float wx, float wy, float wz, float hx, float hy, float 
     buildings[numBuildings++] = {{wx, wy, wz}, {hx, hy, hz}, r, g, b, isRock};
 }
 
+// ============================================================
+// Phase-B JSON layout loader
+// Reads /assets/tribes/maps/raindance/layout.json from the preloaded
+// Emscripten VFS. Falls back to hardcoded mission arrays if absent.
+// Format: {"entities":[{"type":"Turret","world_pos":[x,y,z],...},...]}
+// ============================================================
+struct LayoutEntity {
+    char type[32];     // Turret | Generator | Station | Sensor | Flag | SpawnPoint
+    int  team;         // 0 | 1 | -1
+    float x, y, z;    // world position
+    float rot_y;       // yaw in radians
+};
+static LayoutEntity g_layoutEntities[256];
+static int          g_layoutEntityCount = 0;
+static bool         g_layoutLoaded      = false;
+
+// Tiny JSON helpers for our specific flat-object array format
+static const char* jsonFindKey(const char* json, const char* key) {
+    // Find "key": in the string
+    char buf[64]; snprintf(buf, sizeof(buf), "\"%s\":", key);
+    return strstr(json, buf);
+}
+static float jsonGetFloat(const char* p, float def) {
+    if (!p) return def;
+    const char* c = strchr(p, ':'); if (!c) return def;
+    c++; while (*c == ' ') c++;
+    return (float)strtod(c, nullptr);
+}
+static void jsonGetStr(const char* p, char* out, int maxLen) {
+    out[0] = 0;
+    const char* c = strchr(p, ':'); if (!c) return;
+    c++; while (*c == ' ') c++;
+    if (*c == '"') { c++; int i=0; while(*c && *c!='"' && i<maxLen-1) out[i++]=*c++; out[i]=0; }
+}
+static int jsonGetInt(const char* p, int def) {
+    if (!p) return def;
+    const char* c = strchr(p, ':'); if (!c) return def;
+    c++; while (*c == ' ') c++;
+    return (int)strtol(c, nullptr, 10);
+}
+// Parse [x, y, z] array from a pointer just past the key colon
+static void jsonGetVec3(const char* p, float& x, float& y, float& z) {
+    x = y = z = 0;
+    const char* c = strchr(p, '['); if (!c) return;
+    c++; x=(float)strtod(c,nullptr);
+    c=strchr(c,','); if(!c) return; c++; y=(float)strtod(c,nullptr);
+    c=strchr(c,','); if(!c) return; c++; z=(float)strtod(c,nullptr);
+}
+
+static bool loadLayoutJSON(const char* path) {
+    FILE* f = fopen(path, "r");
+    if (!f) { printf("[PhaseB] layout.json not found at %s — using hardcoded mission data\n", path); return false; }
+
+    fseek(f, 0, SEEK_END); long sz = ftell(f); fseek(f, 0, SEEK_SET);
+    if (sz <= 0 || sz > 4*1024*1024) { fclose(f); return false; }
+    char* buf = (char*)malloc(sz+1); if (!buf) { fclose(f); return false; }
+    fread(buf, 1, sz, f); buf[sz] = 0; fclose(f);
+
+    g_layoutEntityCount = 0;
+    const char* p = buf;
+    while ((p = strstr(p, "\"type\":")) != nullptr && g_layoutEntityCount < 256) {
+        LayoutEntity& e = g_layoutEntities[g_layoutEntityCount];
+        jsonGetStr(p, e.type, sizeof(e.type));
+
+        // Scan forward for team, world_pos, world_rot_y within this object
+        // (find the next '{' before this type token, or just use next occurrence)
+        const char* obj = p;
+        const char* tp = jsonFindKey(obj, "team");
+        e.team = tp ? jsonGetInt(tp, -1) : -1;
+
+        const char* pp = jsonFindKey(obj, "world_pos");
+        if (pp) jsonGetVec3(strchr(pp,':'), e.x, e.y, e.z);
+        else { e.x = e.y = e.z = 0; }
+
+        const char* rp = jsonFindKey(obj, "world_rot_y");
+        e.rot_y = rp ? jsonGetFloat(rp, 0) : 0;
+
+        g_layoutEntityCount++;
+        p += 7; // advance past "type":
+    }
+    free(buf);
+    printf("[PhaseB] Loaded layout.json: %d entities\n", g_layoutEntityCount);
+    return true;
+}
+
 static void initBuildings() {
     numBuildings = 0;
-    // R32.1.3: interior-shape loop REMOVED. The per-name guess halfExtents (iobservation
-    // at 4×6×4 m around a 1×1×6 m mesh, etc.) created a massive "invisible force field"
-    // around every building because both the legacy guess AABBs AND the real mesh-bound
-    // AABBs from appendInteriorShapeAABBs() (R32.1) were in buildings[]. Minkowski-sum
-    // collision always picked the larger (wrongly-sized) one. Now appendInteriorShapeAABBs()
-    // from renderer.js is the sole source of interior-shape collision using actual .dis bounds.
-    // Generators / turrets / stations keep their own small fixed-size AABBs below.
 
-    for (int i = 0; i < RAINDANCE_GENERATOR_COUNT; i++) {
-        float wx = RAINDANCE_GENERATORS[i].x;
-        float wz = -RAINDANCE_GENERATORS[i].y;
-        float wy = RAINDANCE_GENERATORS[i].z;
-        addBuilding(wx, wy, wz, 1.5f, 2.0f, 1.5f, 0.45f, 0.40f, 0.30f);
+    // Phase-B: try loading from layout.json first
+    g_layoutLoaded = loadLayoutJSON("/assets/tribes/maps/raindance/layout.json");
+
+    if (g_layoutLoaded) {
+        // Build collision AABBs from the JSON entities
+        for (int i = 0; i < g_layoutEntityCount; i++) {
+            const LayoutEntity& e = g_layoutEntities[i];
+            if (strcmp(e.type, "Generator") == 0)
+                addBuilding(e.x, e.y, e.z, 1.5f, 2.0f, 1.5f, 0.45f, 0.40f, 0.30f);
+            else if (strcmp(e.type, "Turret") == 0)
+                addBuilding(e.x, e.y, e.z, 1.0f, 2.5f, 1.0f, 0.50f, 0.45f, 0.35f);
+            else if (strcmp(e.type, "Station") == 0 || strcmp(e.type, "Structure") == 0)
+                addBuilding(e.x, e.y, e.z, 1.0f, 1.5f, 1.0f, 0.30f, 0.40f, 0.35f);
+        }
+        // Flag positions update from JSON
+        for (int i = 0; i < g_layoutEntityCount; i++) {
+            const LayoutEntity& e = g_layoutEntities[i];
+            if (strcmp(e.type, "Flag") == 0 && (e.team == 0 || e.team == 1)) {
+                flags[e.team].homePos = {e.x, e.y, e.z};
+                flags[e.team].pos     = {e.x, e.y, e.z};
+            }
+        }
+        printf("[Buildings] Initialized %d collision volumes from layout.json\n", numBuildings);
+    } else {
+        // Fallback: hardcoded Raindance mission arrays
+        for (int i = 0; i < RAINDANCE_GENERATOR_COUNT; i++) {
+            float wx=RAINDANCE_GENERATORS[i].x, wz=-RAINDANCE_GENERATORS[i].y, wy=RAINDANCE_GENERATORS[i].z;
+            addBuilding(wx, wy, wz, 1.5f, 2.0f, 1.5f, 0.45f, 0.40f, 0.30f);
+        }
+        for (int i = 0; i < RAINDANCE_TURRET_COUNT; i++) {
+            float wx=RAINDANCE_TURRETS[i].x, wz=-RAINDANCE_TURRETS[i].y, wy=RAINDANCE_TURRETS[i].z;
+            addBuilding(wx, wy, wz, 1.0f, 2.5f, 1.0f, 0.50f, 0.45f, 0.35f);
+        }
+        for (int i = 0; i < RAINDANCE_STATION_COUNT; i++) {
+            float wx=RAINDANCE_STATIONS[i].x, wz=-RAINDANCE_STATIONS[i].y, wy=RAINDANCE_STATIONS[i].z;
+            addBuilding(wx, wy, wz, 1.0f, 1.5f, 1.0f, 0.30f, 0.40f, 0.35f);
+        }
+        printf("[Buildings] Initialized %d collision volumes from hardcoded data\n", numBuildings);
     }
-
-    for (int i = 0; i < RAINDANCE_TURRET_COUNT; i++) {
-        float wx = RAINDANCE_TURRETS[i].x;
-        float wz = -RAINDANCE_TURRETS[i].y;
-        float wy = RAINDANCE_TURRETS[i].z;
-        addBuilding(wx, wy, wz, 1.0f, 2.5f, 1.0f, 0.50f, 0.45f, 0.35f);
-    }
-
-    for (int i = 0; i < RAINDANCE_STATION_COUNT; i++) {
-        float wx = RAINDANCE_STATIONS[i].x;
-        float wz = -RAINDANCE_STATIONS[i].y;
-        float wy = RAINDANCE_STATIONS[i].z;
-        addBuilding(wx, wy, wz, 1.0f, 1.5f, 1.0f, 0.30f, 0.40f, 0.35f);
-    }
-
-    printf("[Buildings] Initialized %d collision volumes from mission data\n", numBuildings);
 }
 
 // R32.103: building collision now handled by Rapier in JS
@@ -1860,6 +1955,24 @@ extern "C" {
     // R31.7 C1: aim-convergence point fed from JS ray-march each frame in 3P
     void   setLocalAimPoint3P(float x, float y, float z) {
         aimPoint3P={x,y,z}; hasAimPoint3P=true;
+    }
+
+    // Phase-B: query layout entity list so the JS editor can read positions
+    int    getLayoutEntityCount()  { return g_layoutEntityCount; }
+    int    isLayoutLoaded()        { return g_layoutLoaded ? 1 : 0; }
+    // Returns entity data packed as [x, y, z, rot_y, team, typeHash, ...] for entity idx
+    void   getLayoutEntity(int idx, float* outX, float* outY, float* outZ,
+                            float* outRotY, int* outTeam) {
+        if (idx < 0 || idx >= g_layoutEntityCount) return;
+        const LayoutEntity& e = g_layoutEntities[idx];
+        *outX=e.x; *outY=e.y; *outZ=e.z; *outRotY=e.rot_y; *outTeam=e.team;
+    }
+    // Overwrite an entity position from the editor (live drag results)
+    void   setLayoutEntityPos(int idx, float x, float y, float z) {
+        if (idx < 0 || idx >= g_layoutEntityCount) return;
+        g_layoutEntities[idx].x=x; g_layoutEntities[idx].y=y; g_layoutEntities[idx].z=z;
+        // Rebuild collision volumes so physics reflects the new position immediately
+        initBuildings();
     }
 
     // R32.68: Append per-triangle collision data for one interior mesh instance.
