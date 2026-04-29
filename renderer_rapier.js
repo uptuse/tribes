@@ -367,12 +367,22 @@ function stepPlayerCollision(playerView, stride, localIdx, dt) {
     playerRigidBody.setNextKinematicTranslation(lastCorrectedPos);
     world.step();
 
-    // Desired movement = from last corrected position to where WASM wants to be
+    // R32.163: Velocity-based CC inputs.
+    // Was: desiredMovement = wasmPos - lastCorrectedPos (position delta).
+    // Problem: position deltas accumulate error because lastCorrectedPos may
+    // diverge from WASM pos over time (Rapier correction vs WASM terrain clamp).
+    // Fix: Use WASM velocity * dt as the movement vector. This is what the player
+    // INTENDS to move, not where WASM ended up after terrain clamp.
     const desiredMovement = {
-        x: wasmX - lastCorrectedPos.x,
-        y: centerY - lastCorrectedPos.y,
-        z: wasmZ - lastCorrectedPos.z
+        x: vx * dt,
+        y: vy * dt,
+        z: vz * dt
     };
+
+    // Keep capsule center at WASM pos (re-sync every frame to prevent drift)
+    lastCorrectedPos.x = wasmX;
+    lastCorrectedPos.y = centerY;
+    lastCorrectedPos.z = wasmZ;
 
     // Use character controller to resolve collisions
     // R32.162: Pass collision filter to exclude terrain (WASM handles terrain clamping)
@@ -386,10 +396,10 @@ function stepPlayerCollision(playerView, stride, localIdx, dt) {
     const corrected = characterController.computedMovement();
     const grounded = characterController.computedGrounded();
 
-    // New corrected capsule center position
-    const newX = lastCorrectedPos.x + corrected.x;
-    const newY = lastCorrectedPos.y + corrected.y;
-    const newZ = lastCorrectedPos.z + corrected.z;
+    // New corrected capsule center position (from WASM pos + Rapier correction)
+    const newX = wasmX + corrected.x;
+    const newY = centerY + corrected.y;
+    const newZ = wasmZ + corrected.z;
 
     // Convert back to feet
     const newFeetY = newY - capsuleH;
