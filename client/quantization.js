@@ -36,6 +36,6 @@ export function unquantUnit01(q) { return q / 255; }
 export const SIZE_HEADER     = 8;
 export const SIZE_PLAYER     = 32;
 export const SIZE_PROJECTILE = 12;
-export const SIZE_FLAG       = 8;
+export const SIZE_FLAG       = 10;  // R32.202: was 8; +2 bytes for posZ (int16 quantized)
 export const SIZE_SNAP_HDR   = 24;
 export const SIZE_INPUT      = 20;

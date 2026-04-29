@@ -8,7 +8,7 @@
 //     u16 matchTick, u8 matchState, 2× u8 teamScore, 10 reserved
 //   SnapshotPlayer (32 bytes): see network_architecture.md §5.2
 //   SnapshotProjectile (12 bytes): see §5.2
-//   SnapshotFlag (8 bytes): see §5.2
+//   SnapshotFlag (10 bytes): see §5.2 (R32.202: extended from 8 to include posZ)
 //   Input (20 bytes total = 8 hdr + 12 input): see §5.5
 //
 // Validation contract: every decode* function returns null on malformed
@@ -114,10 +114,8 @@ export function encodeSnapshot(snap) {
         // 3 reserved
         view.setInt16(o + 4, quantPos(f.pos[0]), LE);
         view.setInt16(o + 6, quantPos(f.pos[1]), LE);
-        // No room for posZ in 8 bytes — but spec says quantize all three.
-        // We use 6-byte packed posXY here and an extra byte at position 3
-        // for posZ-high; this still fits in 8 bytes overall.
-        // (For brevity in R19 scaffold, posZ is approximated. R20 may extend to 10 bytes.)
+        // R32.202: posZ added — was hardcoded to 0 in decoder
+        view.setInt16(o + 8, quantPos(f.pos[2]), LE);
         o += SIZE_FLAG;
     }
     return new Uint8Array(buf);
@@ -188,7 +186,7 @@ export function decodeSnapshot(buf) {
             team:        view.getUint8(o),
             state:       view.getUint8(o + 1),
             carrierIdx:  carrierByte,
-            pos: [unquantPos(view.getInt16(o + 4, LE)), unquantPos(view.getInt16(o + 6, LE)), 0],
+            pos: [unquantPos(view.getInt16(o + 4, LE)), unquantPos(view.getInt16(o + 6, LE)), unquantPos(view.getInt16(o + 8, LE))],
         });
         o += SIZE_FLAG;
     }
