@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=148'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -4613,7 +4613,6 @@ function updateSkiParticles(dt) {
         if (playerView[o + 18] < 0.5) continue; // not visible
         if (playerView[o + 13] < 0.5) continue; // not alive
         if (playerView[o + 15] < 0.5) continue; // not skiing
-        if (!updateSkiParticles._dbg) { console.log('[R32.142] Ski emitting p='+p+' skiing='+playerView[o+15]); updateSkiParticles._dbg=true; }
         const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
         const footY = py - 1.75; // near ground level
         // 3 particles per frame from feet area

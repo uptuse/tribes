@@ -189,7 +189,6 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
     const visible = playerView[o + 18] > 0.5;
 
     if (is3P && visible) {
-        if (!_syncLocalPlayer._dbg3P) { console.log('[R32.142] 3P path active, localIdx=' + localIdx); _syncLocalPlayer._dbg3P = true; }
         if (!_chars[localIdx]) {
             _chars[localIdx] = _createInstance();
         }
@@ -210,9 +209,6 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         const jetting = playerView[o + 14] > 0.5;
         const skiing  = playerView[o + 15] > 0.5;
 
-        if (!_syncLocalPlayer._dbgJet && jetting) { console.log('[R32.142] 3P jet detected, flameL exists:', !!char.flameL); _syncLocalPlayer._dbgJet = true; }
-        if (!_syncLocalPlayer._dbgSki && skiing) { console.log('[R32.142] 3P ski detected, skiBoard exists:', !!char.skiBoard); _syncLocalPlayer._dbgSki = true; }
-
         let clip = 'idle';
         if (!alive) clip = 'death';
         else if (jetting) clip = 'jet';
@@ -221,21 +217,6 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         _playClip(char, clip, { once: clip === 'death' });
         char.mixer.update(dt);
-
-        // R32.137: Toggle jet flames and ski board
-        if (char.flameL) {
-            char.flameL.visible = jetting;
-            char.flameR.visible = jetting;
-            if (jetting) {
-                // Animate flame scale for flickering
-                const flicker = 0.8 + Math.random() * 0.4;
-                char.flameL.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
-                char.flameR.scale.set(flicker, 0.7 + Math.random() * 0.6, flicker);
-            }
-        }
-        if (char.skiBoard) {
-            char.skiBoard.visible = skiing;
-        }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
