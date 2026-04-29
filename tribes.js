@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpjiojlvg9.js
+// include: /tmp/tmpo_xlo3c9.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /tmp/tmpjiojlvg9.js
-// include: /tmp/tmpp5lij8uy.js
+// end include: /tmp/tmpo_xlo3c9.js
+// include: /tmp/tmpvf7kb2vm.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpp5lij8uy.js
-// include: /tmp/tmpne7bbaw4.js
+  // end include: /tmp/tmpvf7kb2vm.js
+// include: /tmp/tmp4ngwyr9i.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmpne7bbaw4.js
+  // end include: /tmp/tmp4ngwyr9i.js
 
 
 var arguments_ = [];
@@ -6459,6 +6459,7 @@ var ASM_CONSTS = {
 
 // Imports from the Wasm binary.
 var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings');
+var _setPhysicsTuning = Module['_setPhysicsTuning'] = makeInvalidEarlyAccess('_setPhysicsTuning');
 var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
 var _updateScoreboard = Module['_updateScoreboard'] = makeInvalidEarlyAccess('_updateScoreboard');
 var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
@@ -6515,6 +6516,7 @@ var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['setSettings'] != 'undefined', 'missing Wasm export: setSettings');
+  assert(typeof wasmExports['setPhysicsTuning'] != 'undefined', 'missing Wasm export: setPhysicsTuning');
   assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
   assert(typeof wasmExports['updateScoreboard'] != 'undefined', 'missing Wasm export: updateScoreboard');
   assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
@@ -6567,6 +6569,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
+  _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 5);
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
   _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
