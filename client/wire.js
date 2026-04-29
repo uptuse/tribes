@@ -6,7 +6,8 @@
 // DEPENDS_ON: ./quantization.js (quantize/unquantize functions + size constants),
 //   ./constants.js (MSG_SNAPSHOT, MSG_DELTA, MSG_INPUT)
 // EXPOSES: ES module exports: decodeSnapshot(ArrayBuffer), decodeDelta(ArrayBuffer),
-//   encodeInput(tick, buttons, mouseDX, mouseDY, ping, weaponSelect)
+//   encodeInput(tick, buttons, mouseDX, mouseDY, ping, weaponSelect),
+//   WIRE_VERSION, getLastServerVersion(), checkVersionMismatch()
 // LIFECYCLE: stateless — each function call is independent. No init/dispose
 // PATTERN: ES module, pure functions. Every decode returns null on malformed input
 // COORDINATE_SPACE: positions quantized to int16 at 50x scale (±655m, 2cm resolution),
@@ -45,20 +46,54 @@ import { MSG_SNAPSHOT, MSG_DELTA, MSG_INPUT } from './constants.js';
 
 const LE = true;
 
+// ============================================================
+// R32.261: Wire format version field
+// ============================================================
+// The header's byte[1] (formerly "flags", always 0) is now used as a protocol
+// version field. Client-sent messages stamp WIRE_VERSION in that byte.
+// Server messages from legacy WASM servers will still send 0; we treat version 0
+// as "legacy, compatible" and never reject it.
+//
+// When the server eventually adds version stamping, the client can detect
+// mismatch and warn the user to refresh.
+export const WIRE_VERSION = 1;
+
+// Track the last version we saw from the server (0 = legacy/unversioned)
+let _lastServerVersion = 0;
+let _versionMismatchLogged = false;
+
+/** Returns the version byte from the most recently decoded server message (0 = legacy) */
+export function getLastServerVersion() { return _lastServerVersion; }
+
+/** Returns true if client and server versions are known to be incompatible.
+ *  Version 0 (legacy) is always considered compatible. */
+export function checkVersionMismatch() {
+    return _lastServerVersion !== 0 && _lastServerVersion !== WIRE_VERSION;
+}
+
+function _trackServerVersion(headerFlags) {
+    _lastServerVersion = headerFlags;
+    if (headerFlags !== 0 && headerFlags !== WIRE_VERSION && !_versionMismatchLogged) {
+        _versionMismatchLogged = true;
+        console.warn('[WIRE] server wire version ' + headerFlags + ' ≠ client version ' + WIRE_VERSION + ' — protocol mismatch detected');
+    }
+}
+
 // --- Header ---
 function writeHeader(view, off, type, flags, payloadLen, tick) {
     view.setUint8(off,     type);
-    view.setUint8(off + 1, flags);
+    view.setUint8(off + 1, WIRE_VERSION);   // R32.261: stamp wire version (replaces unused flags byte)
     view.setUint16(off + 2, payloadLen, LE);
     view.setUint32(off + 4, tick >>> 0, LE);
 }
 function readHeader(view, off) {
-    return {
+    const hdr = {
         type:       view.getUint8(off),
-        flags:      view.getUint8(off + 1),
+        flags:      view.getUint8(off + 1),   // now interpreted as version; 0 = legacy
         payloadLen: view.getUint16(off + 2, LE),
         tick:       view.getUint32(off + 4, LE),
     };
+    return hdr;
 }
 
 // ============================================================
@@ -148,6 +183,7 @@ export function decodeSnapshot(buf) {
     const hdr = readHeader(view, 0);
     if (hdr.type !== MSG_SNAPSHOT) return null;
     if (hdr.payloadLen + SIZE_HEADER !== buf.byteLength) return null;
+    _trackServerVersion(hdr.flags);  // R32.261: track server wire version
 
     let o = SIZE_HEADER;
     const pCount    = view.getUint8(o);
