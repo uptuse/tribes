@@ -64,13 +64,12 @@ jobs:
 
       - name: Stamp version chip
         run: |
-          # Inject git SHA + UTC timestamp into the visible version chip so the
-          # Director can always verify which build is live by checking top-right.
-          SHA=$(git rev-parse --short HEAD)
-          TS=$(date -u +%m-%d\ %H:%Mz)
-          # Replace whatever text is inside the version-chip div
-          sed -i "s|>R32\.[^<]*<|>WASM ${SHA} ${TS}<|g" index.html
-          echo "Version chip set to: WASM ${SHA} ${TS}"
+          # Human-readable build timestamp — "Apr 29 · 16:17" — visible top-right.
+          # No SHA: it means nothing to a human. The time is enough to confirm freshness.
+          TS=$(date -u +"%-d %b · %H:%M")
+          # Target the chip by its id attribute; replace whatever text is inside.
+          sed -i 's|id="version-chip"\([^>]*\)>[^<]*<|id="version-chip"\1>'"${TS}"'<|' index.html
+          echo "Version chip set to: ${TS}"
 
       - name: Commit & push artifacts
         run: |
