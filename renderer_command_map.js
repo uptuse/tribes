@@ -1,3 +1,25 @@
+// @ai-contract
+// PURPOSE: Full-screen tactical overhead map (bound to C key) — hill-shaded terrain,
+//   team-colored soldier positions, flag positions, building footprints, local player
+//   aim cone. Read-only v1; command-issuing layer deferred to v2
+// SERVES: Belonging (tribal coordination — see all bases, flags, teammates),
+//   Adaptation (plan tribe's response to phase transitions)
+// DEPENDS_ON: window.TEAM_CONFIG (client/team_config.js — team colors, optional),
+//   window.DEBUG_LOGS, WASM state views (passed via init hooks from renderer.js)
+// EXPOSES: window.CommandMap { init(hooks), update(hooks), toggle(), isOpen() }
+// LIFECYCLE: bootstrap() on load binds C key → init(hooks) wires data sources →
+//   update(hooks) per frame when open → _startSelfLoop() runs own RAF when visible.
+//   Runs own RAF loop (architecture issue — should be called from main loop)
+// PATTERN: IIFE → window.CommandMap facade
+// COORDINATE_SPACE: world (meters) projected to screen-space 2D canvas
+// BEFORE_MODIFY: read docs/lessons-learned.md. Currently hardcoded to 2 teams
+//   (teamColors[3], flag loop i < 2) — needs expansion to 4 tribes.
+//   Self-driven RAF loop should eventually be removed (call update from main loop)
+// NEVER: add 3D rendering here (this is a 2D canvas overlay)
+// ALWAYS: use TEAM_CONFIG for team colors when available, with literal fallback
+// ALWAYS: cache hill-shaded terrain background (re-render only on canvas size change)
+// @end-ai-contract
+//
 // renderer_command_map.js — R32.17-manus
 // =============================================================================
 // Tribes-style Command Map ("Tactical Map" / "Command Circuit").

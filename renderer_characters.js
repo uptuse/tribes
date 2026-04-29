@@ -1,3 +1,25 @@
+// @ai-contract
+// PURPOSE: GLB character model loading, skeleton cloning, animation state machine
+//   (idle/run/ski/jet/death/fire_rifle), and terrain grounding. Manages per-player
+//   3D character instances synced to WASM player state each frame
+// SERVES: Belonging (team-colored armor silhouettes readable at distance),
+//   Scale (characters grounded on vast terrain)
+// DEPENDS_ON: three, GLTFLoader (addon), SkeletonUtils (addon),
+//   window._rapierGrounded (Boolean, renderer.js), window._sampleTerrainH (Function,
+//   renderer.js), window.Module._getThirdPerson() (WASM)
+// EXPOSES: ES module exports: init(scene), sync(playerView, playerStride, localIdx,
+//   playerMeshes, dt), isLoaded(). No window.* globals
+// LIFECYCLE: init(scene) → loads GLB → sync() called per frame by renderer.js.
+//   No dispose — character meshes hidden but not cleaned up
+// COORDINATE_SPACE: world (meters), Y-up. Foot offset computed from skeleton at load
+// BEFORE_MODIFY: read docs/lessons-learned.md. Player state magic number offsets
+//   (13=alive, 18=visible, 14=jetting, 15=skiing, etc.) must match WASM layout.
+//   Check docs/system-map.md Player State Stride Layout
+// NEVER: use model-local or armature-local coordinates for world placement
+// ALWAYS: strip Hips root-motion tracks (position is WASM-driven)
+// ALWAYS: compute foot offset from skeleton, not hardcoded constants
+// @end-ai-contract
+//
 // ============================================================
 // R32.113: Rigged GLB Character Models
 // ============================================================

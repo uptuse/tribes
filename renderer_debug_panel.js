@@ -1,3 +1,21 @@
+// @ai-contract
+// PURPOSE: Debug toggle panel for isolating rendering issues — toggling interior
+//   shapes, building meshes, composer, wireframe mode, DayNight freeze. Activated
+//   via ?debugPanel URL param, toggled with F8
+// SERVES: Infrastructure (development tool — not player-facing)
+// DEPENDS_ON: window._tribesDebug { scene, renderer, composer } (renderer.js),
+//   window.DayNight { freeze, unfreeze } (renderer_daynight.js)
+// EXPOSES: nothing (self-contained DOM panel, no window.* globals)
+// LIFECYCLE: IIFE on load → polls for window._tribesDebug → builds DOM panel →
+//   F8 toggles visibility. No dispose
+// PATTERN: IIFE, self-bootstrapping (waitForScene polling pattern)
+// BEFORE_MODIFY: this is dev-only tooling. Ensure zero runtime cost when
+//   ?debugPanel is absent (early return on line 7). Should be completely hidden
+//   in production builds
+// NEVER: add features that affect gameplay or rendering in non-debug mode
+// ALWAYS: gate behind ?debugPanel URL param
+// @end-ai-contract
+//
 // renderer_debug_panel.js — R32.56
 // Toggle panel for isolating the interior shapes black rectangle bug.
 // Load with ?debugPanel in URL. Press F8 to show/hide.

@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Scope zoom system — right-mouse-button hold for smooth 2x zoom,
+//   Z key tap to cycle through 1x/2x/4x stops. Includes scope reticle overlay
+//   and mouse sensitivity reduction during zoom
+// SERVES: Scale (zooming to 400m target IS the sensation of scale),
+//   Adaptation (zoom is a tactical awareness tradeoff)
+// DEPENDS_ON: window.DEBUG_LOGS
+// EXPOSES: window.ZoomFX { getFovMultiplier(), isActive(), boot() }
+// LIFECYCLE: boot() on load binds mouse/key events + starts own RAF →
+//   getFovMultiplier() read per frame by renderer.js to fold into FOV computation.
+//   Runs own RAF loop (architecture issue — should be called from main loop)
+// PATTERN: IIFE → window.ZoomFX facade
+// BEFORE_MODIFY: read docs/lessons-learned.md. Self-driven RAF loop should
+//   eventually be removed (call tick from main loop). FOV multiplier is in (0,1]
+//   range — renderer.js multiplies C++ FOV by this value
+// NEVER: return getFovMultiplier() > 1.0 or ≤ 0 (would invert/zero the camera)
+// ALWAYS: preserve RMB + Z key bindings (matches Tribes 1 controls)
+// @end-ai-contract
+//
 // renderer_zoom.js — R32.18-manus
 // =============================================================================
 // Tribes-style zoom system.

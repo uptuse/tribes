@@ -1,3 +1,40 @@
+// @ai-contract
+// PURPOSE: Main rendering monolith — terrain, buildings, interiors, players,
+//          projectiles, flags, weapons, particles (6 systems), camera, post-processing,
+//          quality tiers, spectator mode, and the core render loop
+// SERVES: Scale, Belonging, Aliveness, Adaptation (contains subsystems for all four)
+// DEPENDS_ON: three (+ 7 addons), renderer_polish.js (Polish.*),
+//   renderer_sky.js (initCustomSky, updateCustomSky, removeOldSky),
+//   renderer_characters.js (Characters.init, Characters.sync),
+//   renderer_daynight.js (DayNight.*), client/audio.js (initMoodBed),
+//   window.RapierPhysics (renderer_rapier.js), window.Toonify (renderer_toonify.js),
+//   window.CombatFX (renderer_combat_fx.js), window.CommandMap (renderer_command_map.js),
+//   window.Minimap (renderer_minimap.js), window.ZoomFX (renderer_zoom.js),
+//   window.Cohesion (renderer_cohesion.js), window.ST (settings),
+//   window.Module (Emscripten WASM), window.__voice (network.js),
+//   window.__voiceUpdatePeer (network.js), window.__teamColors (settings),
+//   window.__tribesPlayerRatings (skill_rating.js), window.__qualityTier (settings)
+// EXPOSES: export start(); window._sampleTerrainH, window.DayNight (legacy bridge),
+//   window.scene, window.camera, window.renderer (debug), window._tribesDebug,
+//   window.__tribesPolish, window.__tribesApplyQuality, window.__tribesSetTerrainPBR,
+//   window.registerModelCollision, window._weaponMuzzleAnchor,
+//   window.__tribesBloom, window.__tribesComposer, window._tribesAimPoint3P,
+//   window._tribesCamDist, window._tribesCamHeight, window.__nightAmbient,
+//   window.__generatorPositions, window.__camX/Y/Z, window._rapierGrounded,
+//   window.__tribesLoadMap
+// LIFECYCLE: start() → initTerrain → initBuildings → initInteriors → initPlayers →
+//   initParticles → initPostProcessing → requestAnimationFrame loop (tick WASM → sync
+//   state → update subsystems → render). No dispose — runs for page lifetime.
+// PATTERN: ES module, single export start(). 6000+ line monolith.
+// COORDINATE_SPACE: world (meters), Y-up. Terrain centered at origin.
+// BEFORE_MODIFY: read docs/lessons-learned.md, docs/patterns.md. Check cache bust
+//   on any import lines you change (?v=NNN). Verify coordinate space (world meters, Y-up).
+// NEVER: add new particle systems here (extract to renderer_*.js and clone ski pattern)
+// NEVER: add new window.* globals without documenting in docs/system-map.md
+// ALWAYS: bump ?v= param on import lines when editing imported modules
+// ALWAYS: test with ?daynight=off, ?polish=off, ?style=pbr to verify fallback paths
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — Three.js Renderer (R15 → R17 default → R18 quality)
 // ============================================================

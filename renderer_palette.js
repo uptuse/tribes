@@ -1,3 +1,21 @@
+// @ai-contract
+// PURPOSE: Single source of truth for all JS-side colors — team colors, accent,
+//   objective, status, neutral tones. Enforces the single-accent-color rule
+//   (brass amber for all highlights). Includes team color helper and hex↔int conversion
+// SERVES: Belonging (team colors are tribal identity — readable from across the map)
+// DEPENDS_ON: window.DEBUG_LOGS
+// EXPOSES: window.PALETTE (frozen object — hex strings + 0x ints for every color),
+//   window.PaletteUtils { teamColor(teamIdx), hexToInt(hex) }
+// LIFECYCLE: IIFE executes on load, freezes PALETTE immediately. No init/dispose
+// PATTERN: IIFE → window.PALETTE (frozen) + window.PaletteUtils facade
+// BEFORE_MODIFY: read docs/lessons-learned.md. Every color in the game should trace
+//   back to this file. Currently only 2 team colors (red/blue) — needs expansion
+//   to 4 tribes (gold/green). Adding a new color? Add it here first, explain why
+// NEVER: hardcode hex color literals in other modules — reference window.PALETTE instead
+// NEVER: mutate PALETTE after freeze (Object.freeze is enforced)
+// ALWAYS: maintain the single-accent-color rule (#2.11 — only accent for HUD highlights)
+// @end-ai-contract
+//
 // renderer_palette.js — R32.21
 // Visual Cohesion #2.3 (locked palette) + #2.11 (single accent color rule).
 //

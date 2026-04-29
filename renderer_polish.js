@@ -1,3 +1,30 @@
+// @ai-contract
+// PURPOSE: Visual polish grab-bag — 18 safeInit'd subsystems including weather FX
+//   (lightning, thunder), combat feedback (camera shake, damage vignette, FOV punch),
+//   building details (turret coils, missile clusters, sensor dishes, railings, tower
+//   windows, station icons, chimney smoke), HUD elements (compass, telemetry overlay,
+//   settings panel), and visual atmosphere (lens flare, decals, shockwave rings)
+// SERVES: Aliveness (weather, atmosphere), Adaptation (combat feedback),
+//   Belonging (building details, faction materials)
+// DEPENDS_ON: three, Lensflare + LensflareElement (addon), DecalGeometry (addon),
+//   window.ST (settings), window.Module._getLocalPlayerIdx() (WASM),
+//   window.playSoundUI() (shell.html audio), window.__tribesApplyQuality(),
+//   _ctx.{scene, camera, renderer, composer, sunLight, hemiLight, terrainMesh,
+//   playerView, playerStride} (passed via installPolish)
+// EXPOSES: ES module exports: installPolish, registerGeneratorChimney, enhanceTurret,
+//   enhanceSensor, addBridgeRailings, addTowerWindows, addStationIcon,
+//   getFactionPalette, spawnShockwave, placeDecal. No window.* globals
+//   (communicates via _ctx reference and DOM elements)
+// LIFECYCLE: installPolish(ctx) → returns API object with tick(), onDamage(),
+//   onShoot(), onNearMiss(), onJetBoost(), onFlagEvent(), onSpawn(), onDeath().
+//   Called by renderer.js each frame via polish.tick(dt, t)
+// PATTERN: ES module with single entry point installPolish(ctx)
+// BEFORE_MODIFY: read docs/lessons-learned.md. This file is flagged for decomposition
+//   (see docs/design-intent.md). Prefer adding to proper target modules instead.
+// NEVER: add unrelated subsystems here — decompose to proper homes instead
+// ALWAYS: wrap each subsystem in safeInit try/catch so failures are isolated
+// @end-ai-contract
+//
 // ============================================================
 // renderer_polish.js — R32.7 visual polish (additive, opt-out via ?polish=off)
 // ============================================================

@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Procedural sky dome — day/night gradient, sun/moon discs, stars with
+//   twinkling, cloud layers with simplex noise. All driven by a single dayMix
+//   value (0=midnight, 1=noon) from DayNight module
+// SERVES: Scale (vast sky dome is the largest visual element), Aliveness (stars,
+//   day/night atmosphere), Adaptation (phase-reactive sky color shifts)
+// DEPENDS_ON: three (via local vendor path ./vendor/three/r170/three.module.js),
+//   window.DayNight (renderer_daynight.js — provides dayMix, sunDir)
+// EXPOSES: ES module exports: initCustomSky(scene), updateCustomSky(t, dayMix,
+//   sunDir, cameraPos), removeOldSky(scene, oldSky)
+// LIFECYCLE: initCustomSky(scene) → per-frame updateCustomSky() → removeOldSky()
+//   on map change. Called by renderer.js
+// COORDINATE_SPACE: world (meters), Y-up. Sky dome is a large sphere centered on camera
+// BEFORE_MODIFY: read docs/lessons-learned.md. Coordinate with renderer_daynight.js
+//   (dayMix/sunDir source). Verify sky renders correctly at all dayMix values 0–1
+// NEVER: write to window.* from this module (pure ES module exports)
+// ALWAYS: keep sky dome rendering < 0.5ms per frame (single draw call + shader math)
+// @end-ai-contract
+//
 // renderer_sky.js — R32.63 REWRITE (renamed from renderer_sky_custom.js at R32.169)
 // Custom procedural sky system: sky dome + stars + clouds
 // Replaces THREE.Sky entirely. All driven by a single dayMix value (0=midnight, 1=noon).

@@ -1,3 +1,23 @@
+// @ai-contract
+// PURPOSE: Combat visual feedback — muzzle flash (additive sprite on weapon barrel),
+//   projectile tracers (pooled glowing lines), crosshair hit flash (CSS animation).
+//   Three systems that communicate "you shot / you hit" to the player
+// SERVES: Adaptation (tactical feedback — tracers reveal positions, hits confirm damage)
+// DEPENDS_ON: three (passed via init arg), window._weaponMuzzleAnchor (THREE.Object3D,
+//   renderer.js — muzzle flash placement), window._tribesAimPoint3P (Object {x,y,z},
+//   renderer.js — tracer endpoint)
+// EXPOSES: window.CombatFX { init(scene, camera, weaponHand, THREE), fire(),
+//   update(dt), flashHit(strong) }
+// LIFECYCLE: init() once after scene/camera/weaponHand ready → fire() per shot →
+//   update(dt) per frame to drive fade animations → flashHit() on damage confirm
+// PATTERN: IIFE → window.CombatFX facade (legacy pattern)
+// COORDINATE_SPACE: world (meters), Y-up for tracers; screen-space for hit flash
+// BEFORE_MODIFY: read docs/lessons-learned.md. Muzzle flash texture is procedural
+//   (256×256 canvas) — no external assets. Tracer pool is pre-allocated (4 lines)
+// NEVER: allocate per-shot (use the pre-allocated pool)
+// ALWAYS: use additive blending + depthWrite:false for FX meshes
+// @end-ai-contract
+//
 /* ------------------------------------------------------------------
  * renderer_combat_fx.js  —  R32.13 (manus)
  *

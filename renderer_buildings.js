@@ -1,3 +1,27 @@
+// @ai-contract
+// PURPOSE: Modular building system — loads building layouts from JSON, places Kenney
+//   modular pieces via InstancedMesh, registers Rapier box colliders per piece.
+//   Handles building geometry lifecycle (init, dispose, disposeAll)
+// SERVES: Belonging (bases are home — generator rooms, inventory stations, flag stands)
+// DEPENDS_ON: three, GLTFLoader (addon), Rapier (passed via init args: rapierWorld, RAPIER),
+//   assets/buildings/catalog.json, assets/buildings/layouts.json
+// EXPOSES: ES module exports: init(scene, rapierWorld, RAPIER, opts), dispose(),
+//   disposeAll(), getGroup(), getColliderBodies(). No window.* globals
+// LIFECYCLE: init(scene, rapierWorld, RAPIER) → loads catalog + layouts + GLBs →
+//   creates InstancedMesh per piece type per building → registers Rapier colliders.
+//   dispose() cleans materials + debug + colliders (preserves GLB cache).
+//   disposeAll() also frees GLB geometry cache
+// COORDINATE_SPACE: world (meters), Y-up. Grid=4.0m, floor height=4.25m
+// PATTERN: ES module with init()/dispose()/disposeAll() lifecycle. ONE InstancedMesh
+//   per sub-mesh per piece type per building for tight frustum culling
+// BEFORE_MODIFY: read docs/lessons-learned.md. Geometry owned by GLB cache — never
+//   dispose in dispose(), only in disposeAll(). init() returns shared Promise —
+//   concurrent callers get same result
+// NEVER: dispose GLB cache geometry in dispose() (only in disposeAll)
+// ALWAYS: register Rapier colliders for new building pieces
+// ALWAYS: use module-scope temp allocations (_tmpMat4a, _tmpVec3, etc.) for transforms
+// @end-ai-contract
+//
 // renderer_buildings.js — Modular building integration system
 // Loads building layouts from JSON, places Kenney modular pieces via InstancedMesh,
 // registers Rapier box colliders per piece.

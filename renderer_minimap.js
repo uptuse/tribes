@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Circular radar HUD in bottom-left corner — team-colored player dots,
+//   flag positions (triangles), local player direction indicator, building footprints,
+//   north indicator. Rotates with player yaw (up = forward)
+// SERVES: Belonging (see teammates as colored dots), Scale (spatial context for 4km world)
+// DEPENDS_ON: window.TEAM_CONFIG (client/team_config.js — team colors, optional fallback),
+//   WASM state views (playerView, flagView, buildingView — passed via init hooks),
+//   window.DEBUG_LOGS
+// EXPOSES: window.Minimap { init(hooks), update(hooks) }
+// LIFECYCLE: init(hooks) creates canvas + attaches to DOM → update(hooks) called per
+//   frame by renderer.js to redraw radar from WASM state
+// PATTERN: IIFE → window.Minimap facade
+// COORDINATE_SPACE: world (meters) mapped to radar pixel space. WORLD_RANGE=200m radius
+// BEFORE_MODIFY: read docs/lessons-learned.md. Team color order: team 0=red, team 1=blue
+//   (matches WASM/renderer.js). Currently hardcoded to 2 teams — needs expansion to 4
+// NEVER: add heavyweight rendering (keep < 0.3ms per frame, pure 2D canvas)
+// ALWAYS: use TEAM_CONFIG for team colors when available, with literal fallback
+// @end-ai-contract
+//
 // renderer_minimap.js — R32.77
 // =============================================================================
 // Tribes-style Minimap / Radar HUD element.

@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Toon shader post-process — traverses scene and converts every
+//   MeshStandardMaterial to MeshToonMaterial sharing a 4-band gradient ramp.
+//   Enforces the game's "procedural boldness" visual identity
+// SERVES: Scale (bold non-photorealistic look makes silhouettes readable at any distance)
+// DEPENDS_ON: three (passed via init arg), window.DEBUG_LOGS
+// EXPOSES: window.Toonify { init(THREE, scene), toonifyScene(scene),
+//   convertMaterial(mat), gradientMap, enabled }
+// LIFECYCLE: init(THREE, scene) builds gradient texture + converts all materials →
+//   toonifyScene(scene) can be re-run when new objects spawn →
+//   convertMaterial(mat) for individual materials
+// PATTERN: IIFE → window.Toonify facade. Default ON; ?style=pbr bypasses
+// BEFORE_MODIFY: read docs/lessons-learned.md. The RGBAFormat fix (R32.25.2) made
+//   gradient ramp portable across GPUs. Verify toon shading doesn't conflict with
+//   PBR texture array system
+// NEVER: modify the gradient ramp without testing on multiple GPU vendors
+// ALWAYS: preserve ?style=pbr escape hatch for A/B testing
+// @end-ai-contract
+//
 // renderer_toonify.js — R32.20
 // Visual Cohesion #2.1A: commit to toon shader paradigm across the whole scene.
 //
