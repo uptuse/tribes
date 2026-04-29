@@ -3078,16 +3078,19 @@ function animatePlayer(mesh, vx, vz, jetting, skiing, t, alive) {
 // Projectiles, flags, weapon viewmodel
 // ============================================================
 function initProjectiles() {
+    // R32.159: Share one geometry + one material across all 256 projectile meshes.
+    // Was: 256 × new SphereGeometry + 256 × new MeshStandardMaterial (~10MB GPU).
+    // Now: 1 geometry + 1 material shared by reference (~40KB GPU).
+    const sharedGeom = new THREE.SphereGeometry(0.20, 10, 8);
+    const sharedMat = new THREE.MeshStandardMaterial({
+        color: 0xFFFFFF,
+        emissive: 0xFFFFFF,
+        emissiveIntensity: 1.5,
+        roughness: 0.4,
+        metalness: 0.1,
+    });
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-        const geom = new THREE.SphereGeometry(0.20, 10, 8);
-        const mat = new THREE.MeshStandardMaterial({
-            color: 0xFFFFFF,
-            emissive: 0xFFFFFF,
-            emissiveIntensity: 1.5,
-            roughness: 0.4,
-            metalness: 0.1,
-        });
-        const mesh = new THREE.Mesh(geom, mat);
+        const mesh = new THREE.Mesh(sharedGeom, sharedMat);
         mesh.visible = false;
         scene.add(mesh);
         projectileMeshes.push(mesh);
