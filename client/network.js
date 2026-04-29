@@ -50,6 +50,7 @@ const telemetry = {
 
 // 60Hz input loop
 let inputLoop = null;
+let pingLoop = null; // R32.157: store ping interval for cleanup
 let inputProvider = null;   // () → {buttons, mouseDX, mouseDY, weaponSelect}
 
 // Latest server snapshot (for prediction reconcile)
@@ -101,6 +102,20 @@ function trackOutbound(bytes) {
 }
 
 export function start() {
+    // R32.157: Idempotency — close stale socket + clear stale ping interval
+    // before creating a new connection. Prevents leaked WebSocket connections
+    // and accumulating setInterval timers when start() is called multiple times.
+    if (socket) {
+        log('closing stale socket before reconnect');
+        try { socket.onclose = null; socket.close(); } catch (e) { /* ignore */ }
+        socket = null;
+    }
+    if (pingLoop) {
+        clearInterval(pingLoop);
+        pingLoop = null;
+    }
+    stopInputLoop();
+
     const url = getServerUrl();
     log('connecting to ' + url);
     try {
@@ -200,7 +215,9 @@ export function start() {
             }
             if (window.__tribesOnMatchEnd) window.__tribesOnMatchEnd(msg);
         } else if (msg.type === 'pong') {
-            telemetry.pingMs = msg.serverTs - msg.clientTs;
+            // R32.157: Fix ping measurement. Was: msg.serverTs - msg.clientTs (measures
+            // clock skew, not latency!). Correct: Date.now() - msg.clientTs = full RTT.
+            telemetry.pingMs = Date.now() - msg.clientTs;
         } else if (msg.type === 'kill') {
             // R20: server-side kill → client kill feed (uses existing addKillMsg)
             if (window.addKillMsg) {
@@ -234,6 +251,8 @@ export function start() {
         myLobbyId = null;
         telemetry.inMatch = false;
         stopInputLoop();
+        // R32.157: clear ping interval on close
+        if (pingLoop) { clearInterval(pingLoop); pingLoop = null; }
         prediction.reset();
         // R20: if we lost connection mid-match, show reconnect overlay
         if (wasInMatch && window.__tribesShowReconnect) {
@@ -242,7 +261,8 @@ export function start() {
     };
 
     // Periodic ping for clock-sync (drives telemetry.pingMs)
-    setInterval(() => {
+    // R32.157: store interval ID so we can clear it on close/reconnect
+    pingLoop = setInterval(() => {
         if (socket && socket.readyState === WebSocket.OPEN) {
             const payload = JSON.stringify({ type: 'ping', clientTs: Date.now() });
             telemetry.lastPingSent = Date.now();
