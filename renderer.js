@@ -36,7 +36,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: cust
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
-import * as DayNight from './renderer_daynight.js?v=169'; // R32.169: extracted day/night cycle
+import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -3562,7 +3562,7 @@ function initStateViews() {
     // to PBR materials, which is why buildings looked flat-shaded.
     if (sunLight) {
         const cx = 0, cy = 200, cz = 0;
-        sunLight.position.set(cx + sunPos.x * 800, cy + sunPos.y * 800, cz + sunPos.z * 800);
+        sunLight.position.set(cx + DayNight.sunDir.x * 800, cy + DayNight.sunDir.y * 800, cz + DayNight.sunDir.z * 800);
         sunLight.target.position.set(cx, cy - 50, cz);
         sunLight.target.updateMatrixWorld();
     }
@@ -4100,7 +4100,7 @@ function syncCamera() {
     }
 
     // Sun follows the camera so the (smaller) shadow frustum covers active area
-    sunLight.position.set(px + sunPos.x * 800, py + sunPos.y * 800, pz + sunPos.z * 800);
+    sunLight.position.set(px + DayNight.sunDir.x * 800, py + DayNight.sunDir.y * 800, pz + DayNight.sunDir.z * 800);
     sunLight.target.position.set(px, py, pz);
     sunLight.target.updateMatrixWorld();
 
@@ -5000,7 +5000,7 @@ function loop() {
             }
         }
     } catch (e) { /* keep loop alive — collision failure shouldn't crash render */ }
-    // R32.40-manus: Day/Night cycle tick — mutates sunPos, sun/hemi colors,
+    // R32.169: Day/Night cycle tick — updates DayNight.sunDir, light colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
     // R32.81: night-adaptive bloom — off during day, ramps up at dusk, full at night
@@ -5212,9 +5212,10 @@ export function loadMap(doc) {
         if (sky && (typeof a.sunAngleDeg === 'number' || typeof a.sunAzimuthDeg === 'number')) {
             const elev = (a.sunAngleDeg ?? 35) * Math.PI / 180;
             const azim = (a.sunAzimuthDeg ?? 60) * Math.PI / 180;
-            sunPos.setFromSphericalCoords(1, Math.PI / 2 - elev, azim);
-            sky.material.uniforms.sunPosition.value.copy(sunPos);
-            if (sunLight) sunLight.position.copy(sunPos).multiplyScalar(150);
+            const _overrideSunPos = new THREE.Vector3();
+            _overrideSunPos.setFromSphericalCoords(1, Math.PI / 2 - elev, azim);
+            sky.material.uniforms.sunPosition.value.copy(_overrideSunPos);
+            if (sunLight) sunLight.position.copy(_overrideSunPos).multiplyScalar(150);
         }
         if (hemiLight && typeof a.ambient === 'number') {
             hemiLight.intensity = a.ambient;
