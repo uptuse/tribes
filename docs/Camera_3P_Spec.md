@@ -40,6 +40,8 @@ The illusion of an orbital camera comes from the "Freelook" feature [3] [4]. Whe
 
 Firewolf must implement this dual-mode system: a rigid chase by default, and a bindable Freelook key that enables orbital camera movement without altering player aim or velocity.
 
+![Rigid Chase vs. Freelook Top-Down Diagram](camera_references/diagram_chase_vs_freelook.png)
+
 ## 4. Dynamics and Smoothing (Angular Lag)
 
 Modern third-person cameras use continuous spring damping to create a sense of weight and speed. Authentic Tribes 2 does not use continuous spring damping or speed-based zoom-outs [1].
