@@ -148,21 +148,8 @@ function _createInstance() {
     model.add(flameL);
     model.add(flameR);
 
-    // R32.137: Ski energy board — flat glowing rectangle under feet
-    const boardMat = new THREE.MeshBasicMaterial({
-        color: 0x44aaff,
-        transparent: true,
-        opacity: 0.7,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        side: THREE.DoubleSide,
-    });
-    const boardGeo = new THREE.PlaneGeometry(0.35, 0.9); // width, length in meters (world scale)
-    boardGeo.rotateX(-Math.PI / 2); // lay flat
-    const skiBoard = new THREE.Mesh(boardGeo, boardMat);
-    skiBoard.position.set(0, 0.02, 0); // just above feet (2cm, world scale)
-    skiBoard.visible = false;
-    model.add(skiBoard);
+    // Ski board removed — particles only for ski effect
+    const skiBoard = null;
 
     return { model, mixer, clips, activeClip: null, activeAction: null,
              flameL, flameR, skiBoard };
