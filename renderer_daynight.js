@@ -64,9 +64,8 @@ const _palette = {
     duskFog:    new THREE.Color(0x1a1828),
 };
 
-// --- Pre-allocated temps ---
+// --- Pre-allocated temp (lerpColors returns this — callers must .copy() before next call) ---
 const _tmpA = new THREE.Color();
-const _tmpB = new THREE.Color();
 
 // --- Internal state ---
 let _sunPos = new THREE.Vector3();
@@ -82,6 +81,9 @@ export const sunDir = new THREE.Vector3(0, 1, 0);
 /**
  * 4-stop cyclic color lerp: t in [0,1] maps midnight → dawn → noon → dusk → midnight.
  * Exported for reuse by other modules (phase transitions, sky tint, etc.)
+ * 
+ * WARNING: Returns a shared THREE.Color temp. Callers must .copy() the result
+ * before calling lerpColors again — consecutive calls overwrite the same object.
  */
 export function lerpColors(c0, c1, c2, c3, t) {
     let k, a, b;
@@ -233,6 +235,7 @@ export function dispose() {
     _terrainMesh = null;
     _renderer = null;
     _scene = null;
+    _frozen01 = null;
     _initialized = false;
 }
 

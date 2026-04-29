@@ -361,7 +361,7 @@ function loadHDRISky() {
             const envRT = pmrem.fromEquirectangular(hdrTex);
             scene.environment = envRT.texture;       // PBR lighting only
             scene.background = null;                 // sky dome handles visuals
-            scene.environmentIntensity = 1.45;       // fixed — never dimmed by DayNight
+            scene.environmentIntensity = 1.45;       // initial; DayNight.update() overrides per-frame
             hdrTex.dispose();
             pmrem.dispose();
             // Remove old THREE.Sky if it exists
