@@ -543,11 +543,119 @@
     <div class="load-text" id="load-text">Initializing engine...</div>
   </div>
 
-  <!-- Version chip — top-right, always visible, stamped on every push -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;">29 Apr · 21:59</div>
-
   <!-- Game Canvas -->
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
+
+  <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
+       User asked for this so they can verify each new build is actually live.
+       The text is the single source of truth; the menu footer reads from it. -->
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">29 Apr - 22:02</div>
+  <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
+  <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
+  <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
+       DayNight module via window.__tribesSetGameClock(). Sits between FPS and
+       PBR chips; pure cosmetic, no interaction needed. -->
+  <div id="clock-chip" style="position:fixed;top:64px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DC9EA;border:1px solid rgba(157,201,234,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:64px;text-align:right;">--:-- AM</div>
+  <script>
+    // R32.153-manus: tiny shim so renderer.js can update the clock chip without
+    // worrying about element existence.
+    window.__tribesSetGameClock = function(text) {
+      var c = document.getElementById('clock-chip');
+      if (c && c.textContent !== text) c.textContent = text;
+    };
+  </script>
+  <script>
+    // Simple, lightweight FPS counter. Samples last ~30 frames at any time and
+    // updates the chip 4 times per second so the number doesn't strobe.
+    (function() {
+      var times = [];
+      var chip = document.getElementById('fps-chip');
+      function tick(now) {
+        times.push(now);
+        // Keep last second of timestamps
+        while (times.length > 0 && times[0] < now - 1000) times.shift();
+        requestAnimationFrame(tick);
+      }
+      requestAnimationFrame(tick);
+      setInterval(function() {
+        if (!chip) return;
+        var n = times.length;
+        if (n < 2) { chip.textContent = '-- fps'; return; }
+        var span = (times[n - 1] - times[0]) / 1000;
+        var fps = span > 0 ? Math.round((n - 1) / span) : 0;
+        chip.textContent = fps + ' fps';
+        // Color-code: green >=50, amber 30-49, red <30
+        chip.style.color = (fps >= 50) ? '#9DEAA0' : (fps >= 30) ? '#FFD479' : '#FF8A8A';
+        chip.style.borderColor = (fps >= 50) ? 'rgba(157,234,160,0.35)' : (fps >= 30) ? 'rgba(255,212,121,0.35)' : 'rgba(255,138,138,0.35)';
+      }, 250);
+    })();
+  </script>
+
+  <!-- R32.153.2-manus: PBR toggle chips on the main game HUD per user request
+       ("I want the tabs on the game itself - not settings"). Three clickable
+       chips stacked under the FPS chip: Roughness / Ambient Occlusion /
+       Parallax (POM). Click to toggle; green border = ON, red border = OFF.
+       State persists in localStorage via the same ST.pbr* keys as the
+       Settings menu, so opening Settings shows the same state. -->
+  <div id="pbr-chips" style="position:fixed;top:92px;right:10px;z-index:10000;display:flex;flex-direction:column;gap:4px;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;">
+    <div class="pbr-chip" id="pbr-chip-rough" data-key="roughness" data-st="pbrRoughness" title="Per-tile shininess from PBR roughness map" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">R: ON</div>
+    <div class="pbr-chip" id="pbr-chip-ao"    data-key="ao"        data-st="pbrAO"        title="Baked micro-shadow in crevices"               style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">AO: ON</div>
+    <div class="pbr-chip" id="pbr-chip-pom"   data-key="pom"       data-st="pbrPOM"       title="Parallax Occlusion Mapping (3D depth from height map; ~5-10% FPS)" style="cursor:pointer;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.55);border-radius:3px;text-shadow:0 0 4px rgba(0,0,0,0.8);user-select:none;text-align:right;min-width:78px;">POM: ON</div>
+  </div>
+  <script>
+    // R32.153.2-manus: PBR chip wiring. Reads/writes ST.pbr* via the same
+    // saveSettings() pipeline as the Settings menu, and pushes the toggle
+    // through window.__tribesSetTerrainPBR(key, on) to flip the shader
+    // uniform live (no recompile). Mirrors any open Settings checkbox by id.
+    (function(){
+      var LABELS = { roughness: 'R', ao: 'AO', pom: 'POM' };
+      function paint(chip, on) {
+        var key  = chip.dataset.key;
+        chip.textContent = LABELS[key] + ': ' + (on ? 'ON' : 'OFF');
+        chip.style.color       = on ? '#9DEAA0' : '#FF8A8A';
+        chip.style.borderColor = on ? 'rgba(157,234,160,0.55)' : 'rgba(255,138,138,0.55)';
+        chip.style.opacity     = on ? '1.0' : '0.78';
+      }
+      function readST(stKey) {
+        // Default ON if unset; respect explicit false
+        try { return (window.ST && window.ST[stKey] !== false); } catch(e) { return true; }
+      }
+      function syncOne(chip) {
+        paint(chip, readST(chip.dataset.st));
+      }
+      function syncAll() {
+        document.querySelectorAll('#pbr-chips .pbr-chip').forEach(syncOne);
+      }
+      // Click handler
+      document.querySelectorAll('#pbr-chips .pbr-chip').forEach(function(chip){
+        chip.addEventListener('click', function(){
+          var stKey = chip.dataset.st, key = chip.dataset.key;
+          var cur = readST(stKey);
+          var next = !cur;
+          // 1) update ST + persist
+          if (window.ST) {
+            window.ST[stKey] = next;
+            if (typeof saveSettings === 'function') saveSettings();
+          }
+          // 2) push to shader uniform
+          if (window.__tribesSetTerrainPBR) window.__tribesSetTerrainPBR(key, next);
+          // 3) repaint our chip
+          paint(chip, next);
+          // 4) keep the (possibly already-built) Settings checkbox in sync
+          var idMap = { roughness: 's-pbr-rough', ao: 's-pbr-ao', pom: 's-pbr-pom' };
+          var cb = document.getElementById(idMap[key]);
+          if (cb) cb.checked = next;
+        });
+      });
+      // Sync once ST is loaded; the loadSettings() call happens later in
+      // index.html, so wait one tick.
+      setTimeout(syncAll, 0);
+      // Re-sync after settings load to honour any saved ST values.
+      window.addEventListener('load', function(){ setTimeout(syncAll, 50); });
+      // Expose so other code (e.g. Settings checkbox onchange) can re-sync chips.
+      window.__tribesSyncPBRChips = syncAll;
+    })();
+  </script>
 
   <!-- In-Game HUD -->
   <div id="hud">
@@ -673,6 +781,146 @@
 
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
+
+  <!-- ── In-game editor panel — toggle with Shift+Enter ── -->
+  <div id="game-editor" style="
+    display:none; position:fixed; top:50%; right:0; transform:translateY(-50%);
+    width:260px; background:rgba(8,6,3,0.92); border-left:2px solid #FFD479;
+    border-top:2px solid #FFD479; border-bottom:2px solid #FFD479;
+    border-radius:4px 0 0 4px; padding:12px 14px; z-index:9990;
+    font-family:'Barlow Condensed',sans-serif; font-size:0.88em; color:#E0D0A0;
+    box-shadow:-4px 0 24px rgba(0,0,0,0.6);">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="color:#FFD479;font-weight:bold;letter-spacing:2px;font-size:0.95em;">EDITOR</span>
+      <span style="color:#7A6A4A;font-size:0.72em;">Shift+Enter to close</span>
+    </div>
+
+    <!-- Physics sliders -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Physics</div>
+
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Gravity</label>
+      <input type="range" style="flex:1;" id="ge-gravity" min="5" max="40" step="0.5" value="20"
+        oninput="geV('ge-gravity-v',this.value+' m/s²');applyPhysicsTuning()">
+      <span id="ge-gravity-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">20 m/s²</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Jet Force</label>
+      <input type="range" style="flex:1;" id="ge-jetforce" min="0.2" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-jetforce-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-jetforce-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Energy Drain</label>
+      <input type="range" style="flex:1;" id="ge-jetenergy" min="0.1" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-jetenergy-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-jetenergy-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Ground Fric.</label>
+      <input type="range" style="flex:1;" id="ge-friction" min="0.1" max="2.0" step="0.05" value="1"
+        oninput="geV('ge-friction-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-friction-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Speed</label>
+      <input type="range" style="flex:1;" id="ge-speed" min="0.2" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-speed-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-speed-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;">
+      <button onclick="saveTuning()" style="flex:1;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:4px;cursor:pointer;font-family:inherit;font-size:0.8em;">⬇ Save</button>
+      <button onclick="geResetPhysics()" style="flex:0.5;background:rgba(80,60,30,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.8em;">Reset</button>
+    </div>
+
+    <!-- Level editor -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;border-top:1px solid #2A2010;padding-top:8px;">Level Editor</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">
+      <button class="ge-type-btn" data-type="Turret"     onclick="gePickType('Turret')"    >🔫 Turret</button>
+      <button class="ge-type-btn" data-type="Generator"  onclick="gePickType('Generator')" >⚡ Gen</button>
+      <button class="ge-type-btn" data-type="Station"    onclick="gePickType('Station')"   >📦 Station</button>
+      <button class="ge-type-btn" data-type="Sensor"     onclick="gePickType('Sensor')"    >📡 Sensor</button>
+      <button class="ge-type-btn" data-type="Flag"       onclick="gePickType('Flag')"      >🚩 Flag</button>
+      <button class="ge-type-btn" data-type="SpawnPoint" onclick="gePickType('SpawnPoint')">⬇ Spawn</button>
+      <button class="ge-type-btn" data-type=""           onclick="gePickType(null)"
+        style="border-color:#444;color:#666;">✕ Select</button>
+    </div>
+    <div id="ge-status" style="font-size:0.73em;color:#7A6A4A;min-height:16px;margin-bottom:8px;"></div>
+    <button onclick="editorExportLayout()" style="width:100%;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:5px;cursor:pointer;font-family:inherit;font-size:0.82em;">⬇ Save layout.json</button>
+
+    <!-- Post-FX section (Phase C) -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;border-top:1px solid #2A2010;padding-top:8px;margin-top:10px;">Post FX</div>
+
+    <!-- Bloom -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-bloom-on" checked onchange="pfxBloom()"> Bloom
+      </label>
+      <input type="range" style="flex:1;" id="pfx-bloom" min="0" max="100" value="30"
+        oninput="geV('pfx-bloom-v',this.value+'%');pfxBloom()">
+      <span id="pfx-bloom-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">30%</span>
+    </div>
+
+    <!-- Chromatic Aberration -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-chroma-on" onchange="pfxChroma()"> Chroma
+      </label>
+      <input type="range" style="flex:1;" id="pfx-chroma" min="0" max="100" value="40"
+        oninput="geV('pfx-chroma-v',this.value+'%');pfxChroma()">
+      <span id="pfx-chroma-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">40%</span>
+    </div>
+
+    <!-- Film Grain -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-grain-on" onchange="pfxGrain()"> Film Grain
+      </label>
+      <input type="range" style="flex:1;" id="pfx-grain" min="0" max="100" value="35"
+        oninput="geV('pfx-grain-v',this.value+'%');pfxGrain()">
+      <span id="pfx-grain-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">35%</span>
+    </div>
+
+    <!-- God Rays -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-godray-on" onchange="pfxGodRays()"> God Rays
+      </label>
+      <input type="range" style="flex:1;" id="pfx-godray" min="0" max="100" value="30"
+        oninput="geV('pfx-godray-v',this.value+'%');pfxGodRays()">
+      <span id="pfx-godray-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">30%</span>
+    </div>
+
+    <!-- Depth of Field -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:4px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-dof-on" onchange="pfxDOF()"> Depth of Field
+      </label>
+      <input type="range" style="flex:1;" id="pfx-dof" min="0" max="100" value="50"
+        oninput="geV('pfx-dof-v',this.value+'%');pfxDOF()">
+      <span id="pfx-dof-v" style="width:36px;text-align:right;font-size:0.78em;color:#FFD479;">50%</span>
+    </div>
+
+    <!-- Glitch -->
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">
+        <input type="checkbox" id="pfx-glitch-on" onchange="pfxGlitch()"> Glitch
+      </label>
+      <span style="flex:1;font-size:0.73em;color:#6A5A3A;">(digital artefacts)</span>
+    </div>
+
+    <!-- Preset buttons -->
+    <div style="display:flex;gap:5px;flex-wrap:wrap;">
+      <button onclick="pfxSave()" style="flex:1;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">💾 Save</button>
+      <button onclick="pfxExport()" style="flex:1;background:rgba(40,30,10,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">⬇ Export</button>
+      <button onclick="pfxReset()" style="flex:0.7;background:rgba(80,20,20,0.4);border:1px solid #5A2020;color:#9A6A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;">Reset</button>
+    </div>
+    <label style="display:block;margin-top:5px;background:rgba(40,30,10,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.78em;text-align:center;">
+      ⬆ Import preset
+      <input type="file" accept=".json" style="display:none" onchange="pfxImportFile(this)">
+    </label>
+  </div>
 
   <!-- R21: First-match tutorial overlay -->
   <div id="tutorial">
@@ -1207,6 +1455,7 @@
           </select>
         </div></div>
       </div>
+
 
       <hr class="s-divider">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
@@ -3262,22 +3511,66 @@
     // ── Phase-A Live Editor: Physics Tuning ──────────────────────────────────
     var _physTune = { gravity:20, jetForce:1, jetEnergy:1, friction:1, speed:1 };
     var _mapEditorActive = false;
+    // Read from in-game panel sliders (ge-*) — the settings modal Physics tab is removed
     function applyPhysicsTuning(){
-      _physTune.gravity   = parseFloat(document.getElementById('p-gravity').value);
-      _physTune.jetForce  = parseFloat(document.getElementById('p-jetforce').value);
-      _physTune.jetEnergy = parseFloat(document.getElementById('p-jetenergy').value);
-      _physTune.friction  = parseFloat(document.getElementById('p-friction').value);
-      _physTune.speed     = parseFloat(document.getElementById('p-speed').value);
+      _physTune.gravity   = parseFloat(document.getElementById('ge-gravity').value);
+      _physTune.jetForce  = parseFloat(document.getElementById('ge-jetforce').value);
+      _physTune.jetEnergy = parseFloat(document.getElementById('ge-jetenergy').value);
+      _physTune.friction  = parseFloat(document.getElementById('ge-friction').value);
+      _physTune.speed     = parseFloat(document.getElementById('ge-speed').value);
       if(!Module||!Module._setPhysicsTuning)return;
       Module._setPhysicsTuning(_physTune.gravity,_physTune.jetForce,_physTune.jetEnergy,_physTune.friction,_physTune.speed);
     }
-    function resetPhysicsTuning(){
+    function geV(id,v){var el=document.getElementById(id);if(el)el.textContent=v;}
+    function geResetPhysics(){
       _physTune={gravity:20,jetForce:1,jetEnergy:1,friction:1,speed:1};
-      var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
-      var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};
-      for(var id in d){var el=document.getElementById(id);if(el)el.value=d[id];sVal(id+'-v',(l[id]===' m/s²'?d[id]:parseFloat(d[id]).toFixed(2))+l[id]);}
+      var map=[['ge-gravity',20,' m/s²'],['ge-jetforce',1,'×'],['ge-jetenergy',1,'×'],['ge-friction',1,'×'],['ge-speed',1,'×']];
+      map.forEach(function(m){
+        var el=document.getElementById(m[0]);if(el)el.value=m[1];
+        geV(m[0]+'-v',(m[2]===' m/s²'?m[1]:parseFloat(m[1]).toFixed(2))+m[2]);
+      });
       applyPhysicsTuning();
     }
+    function resetPhysicsTuning(){ geResetPhysics(); }
+
+    // ── In-game editor panel — Shift+Enter toggle ─────────────────────────
+    var _editorPanelOpen = false;
+    function gePickType(t){
+      if(window.__editorSelectType)window.__editorSelectType(t);
+      document.querySelectorAll('.ge-type-btn').forEach(function(b){
+        b.style.borderColor = (b.dataset.type===t&&t) ? '#FFD479' : '#3A3020';
+        b.style.color       = (b.dataset.type===t&&t) ? '#FFD479' : '#9A8A6A';
+      });
+      var s=document.getElementById('ge-status');
+      if(s)s.textContent=t?('Click terrain to place '+t+'. Esc=cancel.'):'Select mode: click entity.';
+    }
+    function geOpenPanel(){
+      _editorPanelOpen=true;
+      document.getElementById('game-editor').style.display='block';
+      if(document.exitPointerLock)document.exitPointerLock();
+      if(window.__editorSetActive)window.__editorSetActive(true);
+    }
+    function geClosePanel(){
+      _editorPanelOpen=false;
+      document.getElementById('game-editor').style.display='none';
+      if(window.__editorSetActive)window.__editorSetActive(false);
+      gePickType(null);
+      // Re-acquire pointer lock if in-game
+      var canvas=document.getElementById('canvas');
+      if(gameStarted&&canvas)canvas.requestPointerLock();
+    }
+    function geTogglePanel(){
+      if(_editorPanelOpen)geClosePanel(); else geOpenPanel();
+    }
+    // Shift+Enter — works during play
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Enter'&&e.shiftKey){e.preventDefault();geTogglePanel();}
+      if(e.key==='Escape'&&_editorPanelOpen){geClosePanel();}
+    });
+    // Apply button style
+    var _geStyle=document.createElement('style');
+    _geStyle.textContent='.ge-type-btn{background:rgba(20,16,10,0.8);border:1px solid #3A3020;color:#9A8A6A;padding:3px 7px;cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;font-size:0.8em;border-radius:2px;}.ge-type-btn:hover{border-color:#7A6A4A;color:#E0D0A0;}';
+    document.head.appendChild(_geStyle);
     function saveTuning(){
       var out={_comment:'Phase-A physics tuning — paste values into C++ constants',
         tuneGravity:_physTune.gravity,tuneJetForce:_physTune.jetForce,
@@ -3299,9 +3592,77 @@
     }
     function editorExportLayout(){
       if(window.__editorExportLayout)window.__editorExportLayout();
+      else if(window.__tribesGetBuildingOverrides){
+        // Phase-A fallback
+        var a=document.createElement('a');
+        a.href=URL.createObjectURL(new Blob([JSON.stringify(window.__tribesGetBuildingOverrides(),null,2)],{type:'application/json'}));
+        a.download='layout.json';document.body.appendChild(a);a.click();a.remove();
+      }
     }
+    // Keep old names working for backward compat
     function toggleMapEditMode(on){ toggleLevelEditor(on); }
     function saveMapLayout(){ editorExportLayout(); }
+
+    // ── Phase C: Post-FX handlers ────────────────────────────
+    function pfxBloom(){
+      var on=document.getElementById('pfx-bloom-on').checked;
+      var v=parseFloat(document.getElementById('pfx-bloom').value)/100;
+      if(window.__postFX)window.__postFX.setBloom(on,v*0.6,0.45,0.92-v*0.25);
+    }
+    function pfxChroma(){
+      var on=document.getElementById('pfx-chroma-on').checked;
+      var v=parseFloat(document.getElementById('pfx-chroma').value)/100;
+      if(window.__postFX)window.__postFX.setChroma(on,v);
+    }
+    function pfxGrain(){
+      var on=document.getElementById('pfx-grain-on').checked;
+      var v=parseFloat(document.getElementById('pfx-grain').value)/100;
+      if(window.__postFX)window.__postFX.setGrain(on,v);
+    }
+    function pfxGodRays(){
+      var on=document.getElementById('pfx-godray-on').checked;
+      var v=parseFloat(document.getElementById('pfx-godray').value)/100;
+      if(window.__postFX)window.__postFX.setGodRays(on,v,0.5,0.82);
+    }
+    function pfxDOF(){
+      var on=document.getElementById('pfx-dof-on').checked;
+      var v=parseFloat(document.getElementById('pfx-dof').value)/100;
+      if(window.__postFX)window.__postFX.setDOF(on,v);
+    }
+    function pfxGlitch(){
+      var on=document.getElementById('pfx-glitch-on').checked;
+      if(window.__postFX)window.__postFX.setGlitch(on);
+    }
+    function pfxSave(){
+      if(window.__postFX)window.__postFX.savePreset();
+      showToast('Visual preset saved',1500);
+    }
+    function pfxExport(){
+      if(window.__postFX)window.__postFX.exportPreset();
+    }
+    function pfxReset(){
+      if(window.__postFX)window.__postFX.resetPreset();
+      // Sync sliders back to defaults
+      document.getElementById('pfx-bloom-on').checked=true;
+      document.getElementById('pfx-bloom').value=30;geV('pfx-bloom-v','30%');
+      document.getElementById('pfx-chroma-on').checked=false;
+      document.getElementById('pfx-grain-on').checked=false;
+      document.getElementById('pfx-godray-on').checked=false;
+      document.getElementById('pfx-dof-on').checked=false;
+      document.getElementById('pfx-glitch-on').checked=false;
+    }
+    function pfxImportFile(input){
+      var file=input.files[0];if(!file)return;
+      var reader=new FileReader();
+      reader.onload=function(ev){
+        if(window.__postFX){
+          var ok=window.__postFX.importPreset(ev.target.result);
+          showToast(ok?'Visual preset imported':'Import failed',2000);
+        }
+      };
+      reader.readAsText(file);
+      input.value='';
+    }
     document.addEventListener('DOMContentLoaded',function(){
       var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
       var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};
@@ -3551,6 +3912,9 @@
           .catch(function(e){ console.warn('[R25] replay.js import failed:', e); });
         import('./client/mapeditor.js').then(function(){ console.log('[R25] mapeditor.js loaded'); })
           .catch(function(e){ console.warn('[R25] mapeditor.js import failed:', e); });
+        // R32.273: Live Editor Phase A — physics tuning panel + TransformControls map editing
+        import('./client/editor_panel.js').then(function(){ console.log('[R32.273] editor_panel.js loaded'); })
+          .catch(function(e){ console.warn('[R32.273] editor_panel.js import failed:', e); });
         // R26: tier helper expose for the main-menu badge + ranked overlays
         import('./client/skill_rating.js').then(function(m){
           window.__tiers = m;
