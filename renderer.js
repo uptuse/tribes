@@ -68,6 +68,7 @@ import * as THREE from 'three';
 // R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky.js
 // R32.203: post-processing imports moved to renderer_postprocess.js
 import * as PostProcess from './renderer_postprocess.js?v=203';
+import * as Particles from './renderer_particles.js?v=233';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 // R32.7 — additive polish module. Single import; ?polish=off gracefully
 // disables the entire pack at runtime. Effects stack on top of the existing
@@ -94,7 +95,7 @@ let projectileMeshes = [];
 let flagMeshes = [];
 let buildingMeshes = [];
 let weaponHand;             // small box mesh attached at local-player view position
-let particleSystem, particleGeom, particlePositions, particleColors, particleSizes;
+// R32.233: particle state moved to renderer_particles.js
 
 // Typed-array views into WASM HEAPF32
 let playerView, projectileView, particleView, flagView;
@@ -227,14 +228,21 @@ export async function start() {
     try { Characters.init(scene); } catch(e) { console.warn('[R32.109] Characters init failed:', e); } // R32.109: rigged GLB characters
     initProjectiles();
     initFlags();
-    initParticles();
+    // R32.233: All particle systems unified into renderer_particles.js
+    try {
+        Particles.init({
+            scene, camera,
+            MAX_PARTICLES, MAX_PLAYERS, MAX_PROJECTILES,
+            getPlayerView: () => playerView ? { view: playerView, stride: playerStride } : null,
+            getProjectileView: () => projectileView ? { view: projectileView, stride: projectileStride } : null,
+            getParticleView: () => particleView ? { view: particleView, stride: particleStride } : null,
+            getProjectileCount: () => Module._getProjectileStateCount ? Module._getProjectileStateCount() : 0,
+            getQualityTier: () => QUALITY_TIERS[currentQuality],
+            sampleTerrainH,
+            htData: _htData, htSize: _htSize, htScale: _htScale,
+        });
+    } catch (e) { console.warn('[R32.233] Particles.init failed:', e); }
     initWeaponViewmodel();
-    // R32.166: Old jet exhaust particles deleted (was disabled since R32.141,
-    // replaced by mesh flame cones on character model)
-    try { initSkiParticles(); } catch (e) { console.warn('[R32.141] initSkiParticles failed:', e); }
-    try { initProjectileTrails(); } catch (e) { console.warn('[R32.73] initProjectileTrails failed:', e); }
-    try { initExplosionFX(); } catch (e) { console.warn('[R32.74] initExplosionFX failed:', e); }
-    try { initNightFairies(); } catch (e) { console.warn('[R32.74] initNightFairies failed:', e); }
     try { initInteriorLights(); } catch (e) { console.warn('[R32.75] initInteriorLights failed:', e); }
     // R32.36.3-manus: rain disabled by default per user request "Turn off rain
     // please so I can see them". The Raindance map's signature rain streaks
@@ -3316,48 +3324,6 @@ function updateRain(dt, camPos) {
     _rainSystem.position.set(0, 0, 0); // world-space
 }
 
-function makeSoftCircleTexture() {
-    const size = 64;
-    const c = document.createElement('canvas');
-    c.width = c.height = size;
-    const ctx = c.getContext('2d');
-    const grad = ctx.createRadialGradient(size / 2, size / 2, 0, size / 2, size / 2, size / 2);
-    grad.addColorStop(0.0, 'rgba(255,255,255,1.0)');
-    grad.addColorStop(0.4, 'rgba(255,255,255,0.6)');
-    grad.addColorStop(1.0, 'rgba(255,255,255,0.0)');
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, size, size);
-    const t = new THREE.CanvasTexture(c);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-}
-
-function initParticles() {
-    particleGeom = new THREE.BufferGeometry();
-    particlePositions = new Float32Array(MAX_PARTICLES * 3);
-    particleColors = new Float32Array(MAX_PARTICLES * 3);
-    particleSizes = new Float32Array(MAX_PARTICLES);
-    particleGeom.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
-    particleGeom.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
-    particleGeom.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
-
-    const mat = new THREE.PointsMaterial({
-        size: 0.6,
-        map: makeSoftCircleTexture(),
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.95,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-        sizeAttenuation: true,
-        alphaTest: 0.01,
-    });
-    particleSystem = new THREE.Points(particleGeom, mat);
-    particleSystem.frustumCulled = false;
-    scene.add(particleSystem);
-}
-
-
 // ============================================================
 // R32.203: Post-processing code extracted to renderer_postprocess.js
 // Functions removed: initPostProcessing(), _buildCinematicLUT(), makeVignetteAndGradeShader()
@@ -3678,71 +3644,6 @@ function syncFlags(t) {
 // so we don't fire a new shockwave every frame for the same explosion. The C++
 // side fills age with a positive value once at spawn and decrements it per tick;
 // we trigger when age was 0 last frame and is positive now.
-let _r327PrevParticleAge = null;
-function syncParticles() {
-    const tier = QUALITY_TIERS[currentQuality];
-    const cap = tier.particleCap;
-    let activeCount = 0;
-    if (!_r327PrevParticleAge) _r327PrevParticleAge = new Float32Array(MAX_PARTICLES);
-    for (let i = 0; i < MAX_PARTICLES && activeCount < cap; i++) {
-        const o = i * particleStride;
-        const age = particleView[o + 7];
-        // R32.7 explosion-spawn detection (rising edge on type=3)
-        const prevAge = _r327PrevParticleAge[i];
-        if (age > 0 && prevAge <= 0) {
-            const ptype = particleView[o + 6] | 0;
-            if (ptype === 3 && polish && Polish.spawnShockwave) {
-                try {
-                    const px = particleView[o], py = particleView[o + 1], pz = particleView[o + 2];
-                    Polish.spawnShockwave(scene, new THREE.Vector3(px, py, pz), 1.0);
-                    // R32.74: enhanced explosion fireball + sparks
-                    triggerExplosion(px, py, pz, 1.0);
-                    // R32.45: FOV punch when explosion is within 30m of camera
-                    const dx = px - camera.position.x, dy = py - camera.position.y, dz = pz - camera.position.z;
-                    if (dx * dx + dy * dy + dz * dz < 900) _fovPunchExtra = 2.5;
-                } catch (e) {}
-            }
-        }
-        _r327PrevParticleAge[i] = age;
-        if (age <= 0) continue;
-        const type = particleView[o + 6] | 0;
-        // R32.62: skip rain/splash particles (types 1, 2) — Raindance mission
-        // spawns these natively but rain was removed from the renderer
-        // R32.147: skip jet particles (type 0) — removed per user request
-        if (type === 0 || type === 1 || type === 2) continue;
-        const dst = activeCount * 3;
-        particlePositions[dst]     = particleView[o];
-        particlePositions[dst + 1] = particleView[o + 1];
-        particlePositions[dst + 2] = particleView[o + 2];
-        // Color by type (jet, ski, hit-spark, explosion, generic)
-        let r, g, b, sz;
-        if (type === 0) {        // jet flame: cyan-orange gradient by age
-            const ageT = Math.min(1, age * 2);
-            r = 1.0;
-            g = 0.4 + ageT * 0.5;
-            b = 0.05 + (1 - ageT) * 0.6;
-            sz = 0.45;
-        } else if (type === 3) { // explosion: bright orange-yellow
-            r = 1.0; g = 0.55; b = 0.15;
-            sz = 0.7;
-        } else if (type === 4) { // spark / generic hit
-            r = 1.0; g = 0.85; b = 0.4;
-            sz = 0.30;
-        } else {                 // generic / ski spray: muted
-            r = 0.9; g = 0.85; b = 0.7;
-            sz = 0.35;
-        }
-        particleColors[dst]     = r;
-        particleColors[dst + 1] = g;
-        particleColors[dst + 2] = b;
-        particleSizes[activeCount] = Math.min(sz, age * sz);
-        activeCount++;
-    }
-    particleGeom.setDrawRange(0, activeCount);
-    particleGeom.attributes.position.needsUpdate = true;
-    particleGeom.attributes.color.needsUpdate = true;
-    particleGeom.attributes.size.needsUpdate = true;
-}
 
 // R32.16-manus: spectator/freecam orbit state. Activated while local player
 // is dead; orbits the death position at altitude with a slow auto-yaw and
@@ -4152,684 +4053,6 @@ function _runFirstFrameDiagnostic() {
     console.log('[R29] First Three.js frame submitted');
 }
 
-
-// ============================================================
-// R32.141: Ski surfboard particles — cloned from jet exhaust (proven working)
-// Blue-white energy sparks from feet when skiing
-// ============================================================
-const SKI_MAX = 256;
-const SKI_LIFETIME = 0.45;
-const SKI_SPEED = 2.0;
-
-let _skiPoints = null;
-let _skiPos, _skiAge, _skiVel, _skiAlpha;
-let _skiNextSlot = 0;
-
-function initSkiParticles() {
-    _skiPos   = new Float32Array(SKI_MAX * 3);
-    _skiAge   = new Float32Array(SKI_MAX);
-    _skiVel   = new Float32Array(SKI_MAX * 3);
-    _skiAlpha = new Float32Array(SKI_MAX);
-
-    for (let i = 0; i < SKI_MAX; i++) {
-        _skiPos[i * 3 + 1] = -9999;
-        _skiAlpha[i] = 0;
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('aAlpha',   new THREE.BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
-
-    // Cloned from jet exhaust shader — changed color to blue-white
-    const mat = new THREE.ShaderMaterial({
-        uniforms: {},
-        vertexShader: `
-            attribute float aAlpha;
-            varying float vAlpha;
-            void main() {
-                vAlpha = aAlpha;
-                vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = aAlpha * 120.0 / max(1.0, -mv.z);
-                gl_Position = projectionMatrix * mv;
-            }
-        `,
-        fragmentShader: `
-            varying float vAlpha;
-            void main() {
-                float r = length(gl_PointCoord - vec2(0.5));
-                if (r > 0.5) discard;
-                float soft = 1.0 - smoothstep(0.2, 0.5, r);
-                vec3 col = mix(vec3(0.8, 0.95, 1.0), vec3(0.3, 0.6, 1.0), r * 2.0);
-                gl_FragColor = vec4(col, soft * vAlpha);
-            }
-        `,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-    });
-
-    _skiPoints = new THREE.Points(geo, mat);
-    _skiPoints.frustumCulled = false;
-    _skiPoints.renderOrder = 100;
-    scene.add(_skiPoints);
-    console.log('[R32.141] Ski surfboard particles: pool=' + SKI_MAX);
-}
-
-function _skiEmit(wx, wy, wz, vx, vy, vz) {
-    for (let t = 0; t < 16; t++) {
-        if (_skiAge[_skiNextSlot] <= 0) break;
-        _skiNextSlot = (_skiNextSlot + 1) % SKI_MAX;
-    }
-    const i = _skiNextSlot;
-    _skiPos[i*3]   = wx;
-    _skiPos[i*3+1] = wy;
-    _skiPos[i*3+2] = wz;
-    _skiVel[i*3]   = vx;
-    _skiVel[i*3+1] = vy;
-    _skiVel[i*3+2] = vz;
-    _skiAge[i]     = SKI_LIFETIME;
-    _skiAlpha[i]   = 0.7 + Math.random() * 0.3;
-    _skiNextSlot   = (_skiNextSlot + 1) % SKI_MAX;
-}
-
-function updateSkiParticles(dt) {
-    if (!_skiPoints || !playerView) return;
-
-    // Age + move — identical pattern to jet exhaust
-    for (let i = 0; i < SKI_MAX; i++) {
-        if (_skiAge[i] <= 0) continue;
-        _skiAge[i] -= dt;
-        if (_skiAge[i] <= 0) {
-            _skiAge[i] = 0;
-            _skiPos[i*3+1] = -9999;
-            _skiAlpha[i] = 0;
-            continue;
-        }
-        _skiPos[i*3]   += _skiVel[i*3]   * dt;
-        _skiPos[i*3+1] += _skiVel[i*3+1] * dt;
-        _skiPos[i*3+2] += _skiVel[i*3+2] * dt;
-        _skiVel[i*3+1] -= 3.0 * dt; // light gravity
-        _skiVel[i*3]   *= 0.96;
-        _skiVel[i*3+2] *= 0.96;
-        const life = _skiAge[i] / SKI_LIFETIME;
-        _skiAlpha[i] = life < 0.6 ? life / 0.6 : 1.0;
-    }
-
-    // Emit from skiing players — same loop structure as jet exhaust
-    for (let p = 0; p < MAX_PLAYERS; p++) {
-        const o = p * playerStride;
-        if (playerView[o + 18] < 0.5) continue; // not visible
-        if (playerView[o + 13] < 0.5) continue; // not alive
-        if (playerView[o + 15] < 0.5) continue; // not skiing
-        const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
-        const footY = py - 1.75; // near ground level
-        // 3 particles per frame from feet area
-        for (let e = 0; e < 3; e++) {
-            _skiEmit(
-                px + (Math.random()-0.5)*0.3,
-                footY + Math.random()*0.08,
-                pz + (Math.random()-0.5)*0.3,
-                (Math.random()-0.5)*SKI_SPEED,
-                Math.random()*1.5 + 0.3,
-                (Math.random()-0.5)*SKI_SPEED
-            );
-        }
-    }
-
-    _skiPoints.geometry.attributes.position.needsUpdate = true;
-    _skiPoints.geometry.attributes.aAlpha.needsUpdate = true;
-}
-
-// ============================================================
-// R32.73: Projectile trails — glowing particle trail behind each projectile
-// ============================================================
-const TRAIL_MAX = 512;       // max trail particles
-const TRAIL_LIFETIME = 0.25; // seconds — short trail that fades fast
-let _trailPoints = null;
-let _trailPos, _trailAge, _trailAlpha, _trailColor;
-let _trailNextSlot = 0;
-
-function initProjectileTrails() {
-    _trailPos   = new Float32Array(TRAIL_MAX * 3);
-    _trailAge   = new Float32Array(TRAIL_MAX);
-    _trailAlpha = new Float32Array(TRAIL_MAX);
-    _trailColor = new Float32Array(TRAIL_MAX * 3); // per-particle RGB
-
-    for (let i = 0; i < TRAIL_MAX; i++) {
-        _trailPos[i * 3 + 1] = -9999;
-        _trailAlpha[i] = 0;
-        _trailColor[i * 3] = 1; _trailColor[i * 3 + 1] = 1; _trailColor[i * 3 + 2] = 1;
-    }
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(_trailPos, 3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_trailAlpha, 1).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('aColor',   new THREE.Float32BufferAttribute(_trailColor, 3).setUsage(THREE.DynamicDrawUsage));
-
-    const mat = new THREE.ShaderMaterial({
-        uniforms: {},
-        vertexShader: `
-            attribute float aAlpha;
-            attribute vec3 aColor;
-            varying float vAlpha;
-            varying vec3 vColor;
-            void main() {
-                vAlpha = aAlpha;
-                vColor = aColor;
-                vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = aAlpha * 180.0 / max(1.0, -mv.z);
-                gl_Position = projectionMatrix * mv;
-            }
-        `,
-        fragmentShader: `
-            varying float vAlpha;
-            varying vec3 vColor;
-            void main() {
-                float r = length(gl_PointCoord - vec2(0.5));
-                if (r > 0.5) discard;
-                float soft = 1.0 - smoothstep(0.15, 0.5, r);
-                gl_FragColor = vec4(vColor, soft * vAlpha);
-            }
-        `,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-    });
-
-    _trailPoints = new THREE.Points(geo, mat);
-    _trailPoints.frustumCulled = false;
-    _trailPoints.renderOrder = 101;
-    scene.add(_trailPoints);
-    console.log('[R32.73] Projectile trails: pool=' + TRAIL_MAX);
-}
-
-// Color lookup matching PROJ_COLORS but as normalized RGB
-const _TRAIL_RGB = [
-    [1.0, 1.0, 1.0],   // 0 blaster (white)
-    [1.0, 0.93, 0.25],  // 1 chaingun (yellow)
-    [0.7, 0.85, 1.0],   // 2 disc (blueish white)
-    [0.3, 0.5, 0.19],   // 3 grenade (green)
-    [1.0, 0.38, 0.13],  // 4 plasma (orange)
-    [1.0, 0.63, 0.25],  // 5 mortar (warm orange)
-    [1.0, 0.25, 0.25],  // 6
-    [0.5, 0.63, 1.0],   // 7
-    [0.25, 1.0, 0.5],   // 8
-];
-
-function _trailEmit(wx, wy, wz, type) {
-    for (let t = 0; t < 16; t++) {
-        if (_trailAge[_trailNextSlot] <= 0) break;
-        _trailNextSlot = (_trailNextSlot + 1) % TRAIL_MAX;
-    }
-    const i = _trailNextSlot;
-    _trailPos[i*3]   = wx + (Math.random()-0.5)*0.05;
-    _trailPos[i*3+1] = wy + (Math.random()-0.5)*0.05;
-    _trailPos[i*3+2] = wz + (Math.random()-0.5)*0.05;
-    _trailAge[i]     = TRAIL_LIFETIME;
-    _trailAlpha[i]   = 0.8 + Math.random() * 0.2;
-    const rgb = _TRAIL_RGB[type] || _TRAIL_RGB[0];
-    _trailColor[i*3]   = rgb[0];
-    _trailColor[i*3+1] = rgb[1];
-    _trailColor[i*3+2] = rgb[2];
-    _trailNextSlot = (_trailNextSlot + 1) % TRAIL_MAX;
-}
-
-function updateProjectileTrails(dt) {
-    if (!_trailPoints || !projectileView) return;
-
-    // Age existing trail particles
-    for (let i = 0; i < TRAIL_MAX; i++) {
-        if (_trailAge[i] <= 0) continue;
-        _trailAge[i] -= dt;
-        if (_trailAge[i] <= 0) {
-            _trailAge[i] = 0;
-            _trailPos[i*3+1] = -9999;
-            _trailAlpha[i] = 0;
-            continue;
-        }
-        // Smooth fade-out
-        _trailAlpha[i] = (_trailAge[i] / TRAIL_LIFETIME);
-    }
-
-    // Emit trail particles at each active projectile
-    const count = Module._getProjectileStateCount ? Module._getProjectileStateCount() : 0;
-    for (let p = 0; p < count && p < MAX_PROJECTILES; p++) {
-        const o = p * projectileStride;
-        if (projectileView[o + 9] < 0.5) continue; // not alive
-        const type = projectileView[o + 6] | 0;
-        // Emit 1 trail particle per projectile per frame
-        _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
-    }
-
-    _trailPoints.geometry.attributes.position.needsUpdate = true;
-    _trailPoints.geometry.attributes.aAlpha.needsUpdate = true;
-    _trailPoints.geometry.attributes.aColor.needsUpdate = true;
-}
-
-// ============================================================
-// R32.75: Interior lighting — warm point lights inside buildings
-// ============================================================
-let _interiorLights = [];
-
-function initInteriorLights() {
-    // Scan buildingMeshes for stations and generators that need interior lighting
-    const lightDefs = []; // { position, color, intensity, range, team }
-    for (const b of buildingMeshes) {
-        const canon = b.mesh.userData && b.mesh.userData.canon;
-        if (!canon) continue;
-        const db = canon.datablock;
-        const pos = b.mesh.position;
-        const teamIdx = canon.team != null ? canon.team : -1;
-        // Generator: team-tinted warm light + slightly brighter (the heart of the base)
-        if (db === 'Generator') {
-            const color = teamIdx === 0 ? 0xFF9060 : (teamIdx === 1 ? 0x6090FF : 0xFFE0B0);
-            lightDefs.push({ x: pos.x, y: pos.y + 3.0, z: pos.z, color, intensity: 1.4, range: 14, team: teamIdx, isGenerator: true });
-        }
-        // Inventory / Ammo / Command stations: warm interior light
-        if (db === 'InventoryStation' || db === 'AmmoStation' || db === 'CommandStation') {
-            lightDefs.push({ x: pos.x, y: pos.y + 2.5, z: pos.z, color: 0xFFE0B0, intensity: 0.9, range: 10, team: teamIdx });
-        }
-    }
-    if (lightDefs.length === 0) {
-        console.log('[R32.75] No buildings found for interior lighting');
-        return;
-    }
-    for (const def of lightDefs) {
-        const light = new THREE.PointLight(def.color, 0, def.range);
-        light.position.set(def.x, def.y, def.z);
-        light.castShadow = false; // performance: skip shadow casting for ambient interior lights
-        light.decay = 2; // physically realistic falloff
-        scene.add(light);
-        _interiorLights.push({ light, baseIntensity: def.intensity, team: def.team, isGenerator: def.isGenerator || false });
-    }
-    console.log('[R32.75] Interior lights placed:', _interiorLights.length);
-    // R32.76: Expose generator positions for proximity-based audio hum
-    window.__generatorPositions = _interiorLights
-        .filter(il => il.isGenerator)
-        .map(il => ({ x: il.light.position.x, y: il.light.position.y, z: il.light.position.z }));
-}
-
-function updateInteriorLights() {
-    if (_interiorLights.length === 0) return;
-    // DayNight modulation: interiors glow brighter at dusk/night for contrast
-    const dayMix = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
-    // Night boost: lights go from 40% during full day to 100% at night
-    const nightBoost = 0.4 + 0.6 * (1.0 - dayMix);
-    for (const il of _interiorLights) {
-        il.light.intensity = il.baseIntensity * nightBoost;
-    }
-    // R32.76: expose camera position for audio proximity hum
-    if (camera) {
-        window.__camX = camera.position.x;
-        window.__camY = camera.position.y;
-        window.__camZ = camera.position.z;
-    }
-}
-
-// ============================================================
-// R32.74: Enhanced explosion effects — fireball sphere + spark burst
-// ============================================================
-const EXPL_POOL = 8;
-const EXPL_LIFETIME = 0.55;
-const SPARKS_PER_EXPLOSION = 24;
-const MAX_SPARKS = EXPL_POOL * SPARKS_PER_EXPLOSION;
-let _explPool = null;     // [{mesh, active, age, intensity}]
-let _sparkPoints = null;
-let _sparkPos, _sparkVel, _sparkAge, _sparkAlpha;
-let _sparkNextSlot = 0;
-
-function initExplosionFX() {
-    _explPool = [];
-    for (let i = 0; i < EXPL_POOL; i++) {
-        const geo = new THREE.SphereGeometry(1.0, 12, 8);
-        const mat = new THREE.ShaderMaterial({
-            uniforms: {
-                uProgress: { value: 0.0 },
-            },
-            vertexShader: `
-                varying vec3 vNormal;
-                varying vec3 vViewDir;
-                void main() {
-                    vNormal = normalize(normalMatrix * normal);
-                    vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                    vViewDir = normalize(-mv.xyz);
-                    gl_Position = projectionMatrix * mv;
-                }
-            `,
-            fragmentShader: `
-                precision mediump float;
-                uniform float uProgress;
-                varying vec3 vNormal;
-                varying vec3 vViewDir;
-                void main() {
-                    float t = clamp(uProgress, 0.0, 1.0);
-                    float fresnel = pow(1.0 - abs(dot(vNormal, vViewDir)), 1.5);
-                    vec3 coreColor = vec3(1.0, 0.95, 0.8);
-                    vec3 outerColor = vec3(1.0, 0.4, 0.05);
-                    vec3 col = mix(coreColor, outerColor, t);
-                    float alpha = (1.0 - t * t) * (0.55 + 0.45 * fresnel);
-                    gl_FragColor = vec4(col, alpha);
-                }
-            `,
-            transparent: true,
-            blending: THREE.AdditiveBlending,
-            depthWrite: false,
-            side: THREE.FrontSide,
-        });
-        const mesh = new THREE.Mesh(geo, mat);
-        mesh.visible = false;
-        mesh.frustumCulled = false;
-        mesh.renderOrder = 95;
-        scene.add(mesh);
-        _explPool.push({ mesh, active: false, age: 0, intensity: 1.0 });
-    }
-
-    // Spark particle pool
-    _sparkPos   = new Float32Array(MAX_SPARKS * 3);
-    _sparkVel   = new Float32Array(MAX_SPARKS * 3);
-    _sparkAge   = new Float32Array(MAX_SPARKS);
-    _sparkAlpha = new Float32Array(MAX_SPARKS);
-    for (let i = 0; i < MAX_SPARKS; i++) {
-        _sparkPos[i * 3 + 1] = -9999;
-        _sparkAlpha[i] = 0;
-    }
-
-    const sGeo = new THREE.BufferGeometry();
-    sGeo.setAttribute('position', new THREE.Float32BufferAttribute(_sparkPos, 3).setUsage(THREE.DynamicDrawUsage));
-    sGeo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_sparkAlpha, 1).setUsage(THREE.DynamicDrawUsage));
-
-    const sMat = new THREE.ShaderMaterial({
-        vertexShader: `
-            attribute float aAlpha;
-            varying float vAlpha;
-            void main() {
-                vAlpha = aAlpha;
-                vec4 mv = modelViewMatrix * vec4(position, 1.0);
-                gl_PointSize = aAlpha * 180.0 / max(1.0, -mv.z);
-                gl_Position = projectionMatrix * mv;
-            }
-        `,
-        fragmentShader: `
-            varying float vAlpha;
-            void main() {
-                float r = length(gl_PointCoord - vec2(0.5));
-                if (r > 0.5) discard;
-                float soft = 1.0 - smoothstep(0.15, 0.5, r);
-                vec3 col = mix(vec3(1.0, 0.7, 0.2), vec3(1.0, 0.95, 0.8), soft);
-                gl_FragColor = vec4(col, soft * vAlpha);
-            }
-        `,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-    });
-
-    _sparkPoints = new THREE.Points(sGeo, sMat);
-    _sparkPoints.frustumCulled = false;
-    _sparkPoints.renderOrder = 96;
-    scene.add(_sparkPoints);
-    console.log('[R32.74] Explosion FX: fireballs=' + EXPL_POOL + ' sparks=' + MAX_SPARKS);
-}
-
-function triggerExplosion(px, py, pz, intensity) {
-    if (!_explPool) return;
-    // Find free fireball slot (or steal oldest)
-    let slot = null;
-    for (let i = 0; i < _explPool.length; i++) {
-        if (!_explPool[i].active) { slot = _explPool[i]; break; }
-    }
-    if (!slot) {
-        let oldest = 0;
-        for (let i = 1; i < _explPool.length; i++) {
-            if (_explPool[i].age > _explPool[oldest].age) oldest = i;
-        }
-        slot = _explPool[oldest];
-    }
-    slot.active = true;
-    slot.age = 0;
-    slot.intensity = intensity;
-    slot.mesh.position.set(px, py, pz);
-    slot.mesh.scale.setScalar(0.3);
-    slot.mesh.visible = true;
-
-    // Emit sparks
-    const sparkCount = Math.round(SPARKS_PER_EXPLOSION * Math.min(1.5, intensity));
-    for (let s = 0; s < sparkCount; s++) {
-        for (let t = 0; t < 8; t++) {
-            if (_sparkAge[_sparkNextSlot] <= 0) break;
-            _sparkNextSlot = (_sparkNextSlot + 1) % MAX_SPARKS;
-        }
-        const i = _sparkNextSlot;
-        _sparkPos[i*3]   = px + (Math.random() - 0.5) * 0.5;
-        _sparkPos[i*3+1] = py + (Math.random() - 0.5) * 0.5;
-        _sparkPos[i*3+2] = pz + (Math.random() - 0.5) * 0.5;
-        const speed = (3.0 + Math.random() * 8.0) * intensity;
-        const theta = Math.random() * Math.PI * 2;
-        const phi   = Math.random() * Math.PI * 0.8;
-        _sparkVel[i*3]   = Math.sin(phi) * Math.cos(theta) * speed;
-        _sparkVel[i*3+1] = Math.cos(phi) * speed * 0.7 + 2.0;
-        _sparkVel[i*3+2] = Math.sin(phi) * Math.sin(theta) * speed;
-        _sparkAge[i]   = 0.4 + Math.random() * 0.35;
-        _sparkAlpha[i] = 0.8 + Math.random() * 0.2;
-        _sparkNextSlot = (_sparkNextSlot + 1) % MAX_SPARKS;
-    }
-}
-
-function updateExplosionFX(dt) {
-    if (!_explPool) return;
-    // Update fireballs
-    for (let i = 0; i < _explPool.length; i++) {
-        const ex = _explPool[i];
-        if (!ex.active) continue;
-        ex.age += dt;
-        if (ex.age >= EXPL_LIFETIME) {
-            ex.active = false;
-            ex.mesh.visible = false;
-            continue;
-        }
-        const t = ex.age / EXPL_LIFETIME;
-        const radius = (0.5 + 3.5 * (1 - (1 - t) * (1 - t))) * ex.intensity;
-        ex.mesh.scale.setScalar(radius);
-        ex.mesh.material.uniforms.uProgress.value = t;
-    }
-    // Update sparks
-    if (!_sparkPoints) return;
-    for (let i = 0; i < MAX_SPARKS; i++) {
-        if (_sparkAge[i] <= 0) continue;
-        _sparkAge[i] -= dt;
-        if (_sparkAge[i] <= 0) {
-            _sparkAge[i] = 0;
-            _sparkPos[i*3+1] = -9999;
-            _sparkAlpha[i] = 0;
-            continue;
-        }
-        _sparkPos[i*3]   += _sparkVel[i*3]   * dt;
-        _sparkPos[i*3+1] += _sparkVel[i*3+1] * dt;
-        _sparkPos[i*3+2] += _sparkVel[i*3+2] * dt;
-        _sparkVel[i*3+1] -= 12.0 * dt; // gravity
-        _sparkVel[i*3]   *= 0.98;
-        _sparkVel[i*3+2] *= 0.98;
-        const life = _sparkAge[i] / 0.55;
-        _sparkAlpha[i] = life > 0.4 ? 0.9 : 0.9 * (life / 0.4);
-    }
-    _sparkPoints.geometry.attributes.position.needsUpdate = true;
-    _sparkPoints.geometry.attributes.aAlpha.needsUpdate = true;
-}
-
-// ============================================================
-// R32.86: Sky fairy particles — GPU-driven, world-anchored, terrain-aware
-// ============================================================
-const NIGHT_FAIRY_COUNT = 44800;
-const NIGHT_FAIRY_RADIUS = 400;
-const NIGHT_FAIRY_ALT_ABOVE = 2;    // min metres above terrain (touching ground)
-const NIGHT_FAIRY_ALT_RANGE = 90;   // additional random altitude spread
-let _nfPoints = null;
-let _nfOpacity = 0;
-let _nfHeightTex = null;
-
-function initNightFairies() {
-    const N = NIGHT_FAIRY_COUNT;
-    const R = NIGHT_FAIRY_RADIUS;
-    const positions = new Float32Array(N * 3);
-    const params    = new Float32Array(N * 4);
-    const colors    = new Float32Array(N * 3);
-
-    // Distribute in a SQUARE tile (not circular) so toroidal wrap tiles seamlessly
-    for (let i = 0; i < N; i++) {
-        positions[i*3]   = (Math.random() - 0.5) * R * 2;     // square tile X [-R, R]
-        positions[i*3+1] = NIGHT_FAIRY_ALT_ABOVE + Math.random() * NIGHT_FAIRY_ALT_RANGE;
-        positions[i*3+2] = (Math.random() - 0.5) * R * 2;     // square tile Z [-R, R]
-        params[i*4]   = Math.random() * Math.PI * 2;          // phase
-        params[i*4+1] = 0.2 + Math.random() * 0.6;           // speed
-        params[i*4+2] = Math.random() * Math.PI * 2;          // drift angle
-        params[i*4+3] = Math.random();                         // hue
-        const hue = params[i*4+3];
-        const h6 = hue * 6;
-        const f = h6 - Math.floor(h6);
-        const sector = Math.floor(h6) % 6;
-        let r = 1, g = 1, b = 1;
-        if      (sector === 0) { g = f;     b = 0; }
-        else if (sector === 1) { r = 1 - f; b = 0; }
-        else if (sector === 2) { r = 0;     b = f; }
-        else if (sector === 3) { r = 0;     g = 1 - f; }
-        else if (sector === 4) { r = f;     g = 0; }
-        else                   { b = 1 - f; g = 0; }
-        colors[i*3]   = 0.6 + 0.4 * r;
-        colors[i*3+1] = 0.6 + 0.4 * g;
-        colors[i*3+2] = 0.6 + 0.4 * b;
-    }
-
-    // Upload heightmap as a float texture for GPU terrain sampling
-    _nfHeightTex = _createHeightmapTexture();
-
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geo.setAttribute('aParams',  new THREE.Float32BufferAttribute(params, 4));
-    geo.setAttribute('aColor',   new THREE.Float32BufferAttribute(colors, 3));
-
-    const htSize = _htSize || 256;
-    const htScale = _htScale || 1;
-    const htHalf = (htSize - 1) * htScale * 0.5;
-
-    const mat = new THREE.ShaderMaterial({
-        uniforms: {
-            uTime:      { value: 0 },
-            uCamPos:    { value: new THREE.Vector3() },
-            uRadius:    { value: R },
-            uOpacity:   { value: 1.0 },
-            uHeightmap: { value: _nfHeightTex },
-            uHtSize:    { value: htSize },
-            uHtScale:   { value: htScale },
-            uHtHalf:    { value: htHalf },
-        },
-        vertexShader: `
-            attribute vec4 aParams;
-            attribute vec3 aColor;
-            uniform float uTime;
-            uniform vec3 uCamPos;
-            uniform float uRadius;
-            uniform float uOpacity;
-            uniform sampler2D uHeightmap;
-            uniform float uHtSize;
-            uniform float uHtScale;
-            uniform float uHtHalf;
-            varying float vAlpha;
-            varying vec3 vColor;
-
-            float sampleTerrain(float wx, float wz) {
-                float gx = (wx + uHtHalf) / uHtScale;
-                float gz = (wz + uHtHalf) / uHtScale;
-                vec2 uv = vec2(gx, gz) / uHtSize;
-                return texture2D(uHeightmap, uv).r;
-            }
-
-            void main() {
-                float phase = aParams.x;
-                float speed = aParams.y;
-                float driftAngle = aParams.z;
-
-                // World-space position: tile offset + slow drift (NOT camera-relative)
-                float wx = position.x + cos(driftAngle) * speed * uTime * 0.3;
-                float wz = position.z + sin(driftAngle) * speed * uTime * 0.3;
-
-                // Toroidal wrap relative to camera (keeps particles near player)
-                float dx = wx - uCamPos.x;
-                float dz = wz - uCamPos.z;
-                float diameter = uRadius * 2.0;
-                dx = dx - diameter * floor((dx + uRadius) / diameter);
-                dz = dz - diameter * floor((dz + uRadius) / diameter);
-                wx = uCamPos.x + dx;
-                wz = uCamPos.z + dz;
-
-                // Sample terrain height at this world XZ, add altitude above it
-                float terrainH = sampleTerrain(wx, wz);
-                float wy = terrainH + position.y + sin(uTime * 0.4 + phase) * 3.0;
-
-                // Twinkle (no edge fade needed — square tile wraps seamlessly)
-                float pulse = 0.4 + 0.6 * sin(uTime * 0.8 + phase * 3.0);
-
-                vAlpha = uOpacity * pulse;
-                vColor = aColor;
-
-                vec4 mv = viewMatrix * vec4(wx, wy, wz, 1.0);
-                float dist = max(2.0, length(mv.xyz));
-                gl_PointSize = clamp(vAlpha * 500.0 / dist, 1.5, 12.0);
-                gl_Position = projectionMatrix * mv;
-            }
-        `,
-        fragmentShader: `
-            precision mediump float;
-            varying float vAlpha;
-            varying vec3 vColor;
-            void main() {
-                float r = length(gl_PointCoord - vec2(0.5));
-                if (r > 0.5) discard;
-                float soft = 1.0 - smoothstep(0.05, 0.5, r);
-                gl_FragColor = vec4(vColor, soft * vAlpha * 0.9);
-            }
-        `,
-        transparent: true,
-        blending: THREE.AdditiveBlending,
-        depthWrite: false,
-    });
-
-    _nfPoints = new THREE.Points(geo, mat);
-    _nfPoints.frustumCulled = false;
-    _nfPoints.renderOrder = 85;
-    _nfPoints.visible = true;
-    scene.add(_nfPoints);
-    console.log('[R32.86] Sky fairies (GPU, world-anchored): N=' + N + ' R=' + R + 'm terrain-aware');
-}
-
-function _createHeightmapTexture() {
-    if (!_htData || _htSize < 2) {
-        // Fallback: flat terrain at y=0
-        const d = new Float32Array(4);
-        const tex = new THREE.DataTexture(d, 2, 2, THREE.RedFormat, THREE.FloatType);
-        tex.needsUpdate = true;
-        return tex;
-    }
-    const tex = new THREE.DataTexture(_htData, _htSize, _htSize, THREE.RedFormat, THREE.FloatType);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.needsUpdate = true;
-    console.log('[R32.86] Heightmap texture uploaded: ' + _htSize + 'x' + _htSize);
-    return tex;
-}
-
-function updateNightFairies(dt, t) {
-    if (!_nfPoints) return;
-    _nfOpacity = 1.0;
-    _nfPoints.visible = true;
-    const u = _nfPoints.material.uniforms;
-    u.uTime.value = t;
-    u.uCamPos.value.copy(camera.position);
-    u.uOpacity.value = _nfOpacity;
-}
-
-
 // ============================================================
 // Render loop
 // ============================================================
@@ -4877,15 +4100,19 @@ function loop() {
     try { Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes); } catch(e) { /* keep loop alive */ }
     syncProjectiles();
     syncFlags(t);
-    syncParticles();
+    // R32.233: Unified particle update + WASM particle sync
+    try {
+        Particles.syncWASMParticles({
+            particleView, particleStride, MAX_PARTICLES,
+            qualityTier: QUALITY_TIERS[currentQuality],
+            scene, camera, polish, Polish,
+            fovPunchCallback: (v) => { _fovPunchExtra = v; }
+        });
+    } catch(e) { /* keep loop alive */ }
+    try { Particles.update(1/60, t); } catch (e) { /* cosmetic — keep loop alive */ }
     syncTurretBarrels(t);
     syncCamera();
     if (_rainEnabled) updateRain(1 / 60, camera.position); // R32.201: skip when rain not allocated
-    // R32.141: Old jet exhaust disabled — mesh flames on character model instead
-    try { updateSkiParticles(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
-    try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
-    try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
-    try { updateNightFairies(1/60, t); } catch (e) { console.error('[R32.84] sky fairy error:', e); }
     try { updateInteriorLights(); } catch (e) { /* cosmetic — keep loop alive */ }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
@@ -5071,8 +4298,6 @@ export function loadMap(doc) {
     }
 }
 window.__tribesLoadMap = loadMap;
-
-
 // ============================================================
 // R32.32.1-manus: Camera-local thin-blade grass ring
 // ----------------------------------------------------------
@@ -5321,10 +4546,6 @@ function updateGrassRing(t) {
         if (_grassRingMesh.instanceColor) _grassRingMesh.instanceColor.needsUpdate = true;
     }
 }
-
-
-
-
 // ============================================================
 // R32.35-manus: ABOVE-GROUND PARTICLE DUST LAYER
 // ----------------------------------------------------------
