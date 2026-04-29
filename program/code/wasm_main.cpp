@@ -2598,8 +2598,9 @@ extern "C" void mainLoop(){
 
     drawHUD();
     broadcastHUD();
-    EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },
-           me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000));
+    EM_ASM({ if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },
+           me.jetting?1:0, me.onGround?1:0, (int)(me.speed*10), (int)(me.health*1000),
+           (me.skiing&&me.alive&&g_matchState==1)?1:0);
 
     if(frameCount%1800==1){
         printf("[Game] Score: Red %d - Blue %d | %s: HP=%.0f%% EN=%.0f%% SPD=%.0f WPN=%s\n",

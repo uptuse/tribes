@@ -6449,7 +6449,7 @@ var ASM_CONSTS = {
  348719: () => { if(window.playSoundUI)window.playSoundUI(6); },  
  348768: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
  348950: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349012: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3); },  
+ 349012: ($0, $1, $2, $3) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,0); },  
  349071: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
  349121: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
  349177: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
