@@ -129,3 +129,51 @@ The grounding code always subtracted 1.8, correct for terrain but wrong for buil
 **Root cause:** `ping = msg.serverTs - msg.clientTs`. Server and client clocks aren't synchronized, so this computes the time zone difference, not latency.
 **Fix:** Use proper RTT measurement: `rtt = now - sentTs` where sentTs is recorded when the ping was sent.
 **Rule:** RTT requires round-trip measurement from the same clock. Never subtract timestamps from different machines.
+
+---
+
+## 15. Team Color INDEX Inversion (R32.153 audit)
+**Issue:** Minimap and command map show team 0 as blue, but every other module shows team 0 as red. Five different hex values for "red" exist across the codebase.
+**Root cause:** No single source of truth for team→color mapping. Each module independently defines its own TEAM_COLORS array, and minimap/command_map have them swapped. Plus renderer_palette.js, renderer_combat_fx.js, renderer_characters.js, and renderer.js all use different hex values for the same team color.
+**Fix:** Create `client/team_config.js` with a canonical 4-tribe definition and a single team→color mapping. All modules import from this file.
+**Rule:** Color constants for gameplay-meaningful values (teams, factions, damage types) must come from ONE shared source. Never define team colors locally in a module.
+
+---
+
+## 16. Disabled Rain Still Allocates Unconditionally (R32.153 audit)
+**Issue:** Disabled weather systems still allocate GPU resources at init time. Rain allocates particle buffers even when weather is off. The grass ring system allocates ~213MB GPU memory if accidentally enabled.
+**Root cause:** `initRain()` and `initGrassRing()` are called unconditionally during `start()`. They allocate Float32Arrays, BufferGeometries, and ShaderMaterials regardless of whether the feature is active. The disable flag only prevents the update loop, not the allocation.
+**Fix:** Guard allocation behind the feature flag, or better: delete disabled systems entirely and restore from git history if needed later.
+**Rule:** Disabled code should allocate ZERO resources. If a feature is off, its init should be skipped entirely. Mark with `// @disabled YYYY-MM-DD reason` and delete after 30 days.
+
+---
+
+## 17. Six Particle Systems Instead of One Parameterized (R32.153 audit)
+**Issue:** The codebase has 6 separate particle implementations (jet exhaust, ski spray, dust, rain, night fairies, explosions) with duplicated shader code, pool logic, and update loops.
+**Root cause:** Each particle system was built independently at different times without consulting the existing implementations. Four of them (jet, ski, dust, rain) share identical architecture but use different variable names and slightly different parameters.
+**Fix:** Merge systems 1–4 into a single parameterized `renderer_particles.js` that takes config (color, lifetime, gravity, emission shape). Keep explosions and fairies separate — they're architecturally distinct.
+**Rule:** Before building ANY new visual system, grep for existing implementations that do the same thing. If one exists, clone and parameterize it. Never build a 2nd version of the same pattern.
+
+---
+
+## 18. 82 window.* Globals as Inter-Module Communication (R32.153 audit)
+**Issue:** 82 globals on `window.*` serve as the only inter-module communication layer. No import graph, no compile-time checking. Any module can read/write any global at any time.
+**Root cause:** Organic growth from a single-file prototype. Modules were extracted into IIFEs that communicate via window globals because ES module migration was never done. 37 are API facades, 12 are WASM bridge, 20 are shared data, 8 are debug, 3 are config, 2 are orphaned.
+**Fix:** IIFE→ES module migration. Replace `window.ModuleName = {}` with `export` / `import`. Priority: rapier first (10 call sites), then combat_fx, minimap, etc.
+**Rule:** New modules MUST use ES `import`/`export`. Never add new `window.*` globals. When touching an IIFE module, migrate it to ES as part of the change.
+
+---
+
+## 19. GPU Memory Leaks — No dispose() Lifecycle (R32.153 audit)
+**Issue:** Only 2 of 10 modules have `dispose()` methods. `loadMap()` removes building meshes from the scene but doesn't dispose geometry/materials (~40MB leaked per map change). `applyQuality()` creates a new EffectComposer without disposing the old one (~40MB per quality change). 256 identical SphereGeometries for projectiles prevent batching.
+**Root cause:** No module lifecycle contract. Modules have `init()` and `update()` but no `dispose()`. Three.js requires explicit cleanup of GPU resources — `scene.remove()` alone doesn't free GPU memory.
+**Fix:** Add mandatory `dispose()` to every module. `loadMap()` must traverse and dispose geometry+materials. `applyQuality()` must dispose the old composer. Share one SphereGeometry across all projectiles.
+**Rule:** Every module that creates Three.js objects MUST have a `dispose()` that frees geometry, materials, textures, and render targets. Call dispose before re-init.
+
+---
+
+## 20. No Test Harnesses for Audit Fixes (R32.153 audit)
+**Issue:** The audit identified 16+ concrete fixes (telemetry offsets, network idempotency, team color mapping, ping measurement, etc.) but no test infrastructure exists to verify fixes or prevent regressions.
+**Root cause:** Rapid single-developer prototyping phase prioritized shipping features over testing infrastructure. No unit tests, no integration tests, no visual regression tests.
+**Fix:** For each structural fix, add at minimum a console assertion or a `?test=true` URL-parameter-gated self-test that validates the invariant on boot.
+**Rule:** Every bug fix should include a way to verify it worked. At minimum, add a runtime assertion that would catch the original bug if it regressed. Prefer `console.assert()` for invariants that should always hold.
