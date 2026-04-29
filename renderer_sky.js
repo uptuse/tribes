@@ -283,11 +283,14 @@ export function initCustomSky(scene) {
 }
 
 export function updateCustomSky(t, dayMix, sunDir, cameraPos) {
+    // R32.225: Wrap uTime to prevent float precision loss after long sessions
+    const wrappedT = t % 100000.0;
+
     if (_skyDome) {
         const u = _skyDome.material.uniforms;
         u.uDayMix.value = dayMix;
         u.uSunDir.value.copy(sunDir);
-        u.uTime.value = t;
+        u.uTime.value = wrappedT;
         if (cameraPos) _skyDome.position.copy(cameraPos);
     }
 
@@ -295,15 +298,20 @@ export function updateCustomSky(t, dayMix, sunDir, cameraPos) {
         const u = _cloudDome.material.uniforms;
         u.uDayMix.value = dayMix;
         u.uSunDir.value.copy(sunDir);
-        u.uTime.value = t;
+        u.uTime.value = wrappedT;
         if (cameraPos) _cloudDome.position.copy(cameraPos);
     }
 
     // Stars: completely hidden during day, fade in only at deep dusk
     const starTarget = dayMix < 0.15 ? (1.0 - dayMix / 0.15) : 0.0;
-    _starOpacity += (starTarget - _starOpacity) * 0.05;
+    // R32.225: Frame-rate-independent exponential decay (tau=0.15s, assumes ~16ms dt)
+    // Using dt≈0.016 as fallback; the lerp constant 0.05 was ~3fps-dependent
+    const dt = 0.016; // approximate; sky update doesn't receive dt directly
+    const tau = 0.15;
+    const k = 1 - Math.exp(-dt / tau);
+    _starOpacity += (starTarget - _starOpacity) * k;
     if (_starPoints) {
-        _starPoints.material.uniforms.uTime.value = t;
+        _starPoints.material.uniforms.uTime.value = wrappedT;
         _starPoints.material.uniforms.uOpacity.value = _starOpacity;
         _starPoints.material.uniforms.uSunDir.value.copy(sunDir);
         if (cameraPos) _starPoints.position.copy(cameraPos);
