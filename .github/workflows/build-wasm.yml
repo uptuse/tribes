@@ -52,22 +52,31 @@ jobs:
             --preload-file assets/hdri@/assets/tribes/hdri \
             --preload-file assets/maps@/assets/tribes/maps \
             -O0 -g0 -Wno-format \
-            -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_setLocalPlayerNetCorrection","_setMapBuildings","_malloc","_free","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick","_getPlayerSkiing","_getPlayerSpeed","_getPlayerSlopeDeg","_getThirdPerson","_setLocalAimPoint3P","_appendInteriorShapeAABBs","_appendInteriorMeshTris"]' \
+            -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_setLocalPlayerNetCorrection","_setMapBuildings","_malloc","_free","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick","_getPlayerSkiing","_getPlayerSpeed","_getPlayerSlopeDeg","_getThirdPerson","_setLocalAimPoint3P","_appendInteriorShapeAABBs","_appendInteriorMeshTris","_setPhysicsTuning"]' \
             -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 
       - name: Deploy to repo root
         run: |
-          # Do NOT copy tribes.html → index.html; index.html is maintained in git
-          # and contains hand-edited shell + renderer markup that must not be overwritten.
+          # Do NOT copy tribes.html → index.html; index.html is maintained in git.
           cp build/tribes.js   tribes.js
           cp build/tribes.wasm tribes.wasm
           cp build/tribes.data tribes.data
+
+      - name: Stamp version chip
+        run: |
+          # Inject git SHA + UTC timestamp into the visible version chip so the
+          # Director can always verify which build is live by checking top-right.
+          SHA=$(git rev-parse --short HEAD)
+          TS=$(date -u +%m-%d\ %H:%Mz)
+          # Replace whatever text is inside the version-chip div
+          sed -i "s|>R32\.[^<]*<|>WASM ${SHA} ${TS}<|g" index.html
+          echo "Version chip set to: WASM ${SHA} ${TS}"
 
       - name: Commit & push artifacts
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add tribes.js tribes.wasm tribes.data
+          git add tribes.js tribes.wasm tribes.data index.html
           # Only commit if something actually changed
           git diff --cached --quiet || \
             git commit -m "build(CI): rebuild WASM [skip ci] — $(date -u +%Y-%m-%dT%H:%M:%SZ)"
