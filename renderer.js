@@ -73,6 +73,7 @@ import * as PostProcess from './renderer_postprocess.js?v=203';
 import * as Particles from './renderer_particles.js?v=233';
 import * as Terrain from './renderer_terrain.js?v=232'; // R32.232: extracted terrain
 import * as Interiors from './renderer_interiors.js?v=233'; // R32.233: extracted interiors
+import * as Camera from './renderer_camera.js?v=234'; // R32.234: extracted camera
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 // R32.7 — additive polish module. Single import; ?polish=off gracefully
 // disables the entire pack at runtime. Effects stack on top of the existing
@@ -92,7 +93,7 @@ let sunLight, hemiLight, moonLight, sky;
 let nightAmbient; // R32.169: module-scope for DayNight init
 let polish = null; // R32.7 polish module handle
 let _lastTickTime = 0; // R32.7 dt source for polish.tick
-let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
+// R32.234: _fovPunchExtra moved to renderer_camera.js
 // R32.232: terrainMesh moved to renderer_terrain.js
 let playerMeshes = [];
 let projectileMeshes = [];
@@ -122,8 +123,8 @@ const PROJ_COLORS = [
 ];
 
 // Reused tmp objects
-const _tmpVec = new THREE.Vector3();
-const _aimPoint3P = { x: 0, y: 0, z: 0 };    // R32.43: persistent aim-point (no per-frame alloc)
+// R32.234: _tmpVec, _aimPoint3P moved to renderer_camera.js
+// R32.234: _fovPunchExtra moved to renderer_camera.js — use Camera.addFovPunch(v)
 const _flagStateByTeam = [0, 0];               // R32.43: persistent flag state (no per-frame alloc)
 
 // Diagnostic
@@ -282,6 +283,15 @@ export async function start() {
     // crashed with `Cannot read properties of undefined (reading 'parent')` at
     // WebGLRenderer.render line 30015 (camera.parent === null check).
     initStateViews();
+    // R32.234: Initialize camera module after camera is created
+    Camera.init({
+        camera, Module, sunLight, DayNight,
+        getPlayerView: () => playerView ? { view: playerView, stride: playerStride } : null,
+        getWeaponHand: () => weaponHand,
+        sampleTerrainH: Terrain.sampleHeight,
+        getLastTickTime: () => _lastTickTime,
+        MAX_PLAYERS,
+    });
     PostProcess.init(renderer, scene, camera, readQualityFromSettings(), currentQuality);
     console.log('[R29.2] State views + post-process initialized in correct order (camera-first)');
     // R32.7 — install polish AFTER state views so the module can see playerView/playerStride
@@ -2461,241 +2471,6 @@ function syncFlags(t) {
 // so we don't fire a new shockwave every frame for the same explosion. The C++
 // side fills age with a positive value once at spawn and decrements it per tick;
 // we trigger when age was 0 last frame and is positive now.
-
-// R32.16-manus: spectator/freecam orbit state. Activated while local player
-// is dead; orbits the death position at altitude with a slow auto-yaw and
-// a gentle pitch sway. Returns control to live-cam on respawn.
-const _spec = {
-    active: false,
-    deathX: 0, deathY: 0, deathZ: 0,
-    yaw: 0,           // current orbit yaw (rad)
-    yawRate: 0.35,    // rad/sec
-    radius: 14,       // m from death point
-    height: 6,        // m above death point
-    pitch: -0.20,     // look down ~11°
-    fadeIn: 0,        // 0–1 fade for the overlay
-};
-function _enterSpectator(deathX, deathY, deathZ) {
-    _spec.active = true;
-    _spec.deathX = deathX; _spec.deathY = deathY; _spec.deathZ = deathZ;
-    _spec.yaw = 0;
-    _spec.fadeIn = 0;
-    // Show "SPECTATING" HUD label + letterbox bars
-    const el = document.getElementById('spec-label');
-    if (el) el.classList.add('show');
-    const bars = document.getElementById('spec-bars');
-    if (bars) bars.classList.add('show');
-    // Hide weapon viewmodel
-    if (weaponHand) weaponHand.visible = false;
-}
-function _exitSpectator() {
-    _spec.active = false;
-    const el = document.getElementById('spec-label');
-    if (el) el.classList.remove('show');
-    const bars = document.getElementById('spec-bars');
-    if (bars) bars.classList.remove('show');
-}
-
-function syncCamera() {
-    const localIdx = Module._getLocalPlayerIdx();
-    // R30.1: hard guard against invalid local player index. Without this,
-    // playerView[-32] returns undefined, camera.position.set(undefined,...)
-    // silently no-ops, and the camera stays at constructor default (0,0,0)
-    // — which is BELOW the terrain (min Y ≈ 7) and therefore frustum-culls
-    // EVERYTHING in the scene. That's why we saw '1 draw call, 1 tri'.
-    if (!Number.isFinite(localIdx) || localIdx < 0 || localIdx >= MAX_PLAYERS) return;
-    const o = localIdx * playerStride;
-    const px = playerView[o], py = playerView[o + 1], pz = playerView[o + 2];
-    const pitch = playerView[o + 3];
-    const yaw   = playerView[o + 4];
-
-    // R30.1: also guard against garbage / NaN / sub-terrain positions before
-    // the WASM side has finished spawning the player. If position is invalid
-    // or buried under the lowest terrain point, leave camera at its current
-    // safe default (initialized to 0,100,0 above the basin).
-    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz)) return;
-    if (px === 0 && py === 0 && pz === 0) return;     // unspawned local player
-
-    // R32.16-manus: spectator/freecam while dead.
-    const aliveLocal = playerView[o + 13] > 0.5;
-    if (!aliveLocal) {
-        if (!_spec.active) _enterSpectator(px, py, pz);
-        // Advance yaw and recompute camera transform around captured death pos.
-        const dt = 1 / 60;
-        _spec.yaw += _spec.yawRate * dt;
-        _spec.fadeIn = Math.min(1, _spec.fadeIn + dt * 1.6);
-        const cx = _spec.deathX + Math.sin(_spec.yaw) * _spec.radius;
-        const cz = _spec.deathZ + Math.cos(_spec.yaw) * _spec.radius;
-        const cy = _spec.deathY + _spec.height + Math.sin(_spec.yaw * 0.4) * 0.6;
-        camera.position.set(cx, cy, cz);
-        // Look at the death point with a slight downward bias
-        const dx = _spec.deathX - cx, dy = (_spec.deathY + 1.0) - cy, dz = _spec.deathZ - cz;
-        const lookYaw   = Math.atan2(dx, -dz);  // Three.js convention
-        const lookPitch = Math.atan2(dy, Math.hypot(dx, dz));
-        camera.rotation.set(lookPitch, lookYaw, 0, 'YXZ');
-        return;
-    } else if (_spec.active) {
-        _exitSpectator();
-    }
-
-    // R31: negate yaw. C++ forward = {sin(yaw), 0, -cos(yaw)}.
-    // Three.js camera forward at rotation.y=θ = {-sin(θ), 0, -cos(θ)}.
-    // Setting rotation.y = -yaw makes Three.js forward = {sin(yaw), 0, -cos(yaw)} ✓.
-    camera.rotation.set(pitch, -yaw, 0, 'YXZ');
-
-    // R31.7.1-manus: 3rd-person chase camera — Tribes Ascend reference is
-    // a centered chase (no shoulder offset), camera follows aim. Hot-fix from
-    // R31.7: enforce a HARD MIN distance (3.0m) so terrain pull-in never collapses
-    // the camera into the player's head. Lift instead of pulling in.
-    //
-    //   - Centered chase (no shoulder offset)
-    //   - Smooth 200ms lerp on V-toggle so view doesn't snap
-    //   - Terrain collision: LIFT camera (don't shorten distance below 3.0m)
-    //   - Exposes window._tribesAimPoint3P + feeds it to C++ for aim convergence
-    const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
-
-    // Smooth toggle: animate from prev distance to target over ~200ms.
-    if (typeof window._tribesCamDist !== 'number') {
-        // module-scope state — initialize on first call
-        window._tribesCamDist = is3P ? 1.5 : 0.0; // hot-snap on init so first frame is clean
-        window._tribesCamHeight = is3P ? 0.6 : 1.7;
-    }
-    const targetDist = is3P ? 1.5 : 0.0;
-    const targetHeight = is3P ? 0.6 : 1.7;
-    // Frame-rate-independent lerp toward target (~200ms time constant)
-    const lerpAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
-    window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * lerpAlpha;
-    window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * lerpAlpha;
-    // R31.7.1: snap to target when within 0.05 to kill long-tail lerp drift.
-    if (Math.abs(targetDist   - window._tribesCamDist)   < 0.05) window._tribesCamDist   = targetDist;
-    if (Math.abs(targetHeight - window._tribesCamHeight) < 0.05) window._tribesCamHeight = targetHeight;
-    const camDist = window._tribesCamDist;
-    const camH = window._tribesCamHeight;
-
-    // R31.7.1: 3P threshold is 2.0 (not 0.05) — anything under 2m is effectively
-    // 1P framing and would clip the player mesh. The lerp settles to 0 in 1P
-    // and 4 in 3P, so the only time camDist is in [0.05, 2.0] is mid-toggle.
-    if (camDist > 2.0) {
-        // 3P: place camera behind player at full distance, then LIFT y if terrain
-        // would clip. NEVER shorten the back-distance — that's what created the
-        // head-clip bug in R31.7.
-        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
-        let cx = px - fwdX * camDist;
-        let cy = py + camH;
-        let cz = pz - fwdZ * camDist;
-        const terrH = Terrain.sampleHeight(cx, cz);
-        const minClearance = 0.6;
-        if (cy < terrH + minClearance) {
-            // Lift the camera straight up to clear terrain, keep distance fixed.
-            cy = terrH + minClearance;
-        }
-        camera.position.set(cx, cy, cz);
-    } else if (camDist > 0.05) {
-        // Mid-toggle blend: linear ease between 1P head and 3P chase position.
-        const t = camDist / 2.0;  // 0..1
-        const fwdX = Math.sin(yaw),  fwdZ = -Math.cos(yaw);
-        const cx = px - fwdX * camDist;
-        const cz = pz - fwdZ * camDist;
-        const cy = py + (1.7 * (1 - t) + camH * t);
-        camera.position.set(cx, cy, cz);
-    } else {
-        // 1P
-        camera.position.set(px, py + 1.7, pz);
-    }
-
-    // R31.7-manus: compute and expose world aim point under crosshair.
-    // Camera-forward * 1000m, then ray-march against terrain to find first hit.
-    // Available as window._tribesAimPoint3P for C++ aim-convergence readback.
-    {
-        const cf = _tmpVec.set(0, 0, -1).applyQuaternion(camera.quaternion);
-        let hitX = camera.position.x + cf.x * 1000;
-        let hitY = camera.position.y + cf.y * 1000;
-        let hitZ = camera.position.z + cf.z * 1000;
-        // Coarse ray-march against terrain heightfield (32 steps)
-        for (let i = 1; i <= 32; i++) {
-            const t = (i / 32) * 1000;
-            const wx = camera.position.x + cf.x * t;
-            const wy = camera.position.y + cf.y * t;
-            const wz = camera.position.z + cf.z * t;
-            const th = Terrain.sampleHeight(wx, wz);
-            if (wy <= th) {
-                // Walk back one step and refine with binary search (4 iters)
-                let lo = (i - 1) / 32 * 1000, hi = t;
-                for (let j = 0; j < 4; j++) {
-                    const m = (lo + hi) * 0.5;
-                    const mx = camera.position.x + cf.x * m;
-                    const my = camera.position.y + cf.y * m;
-                    const mz = camera.position.z + cf.z * m;
-                    if (my <= Terrain.sampleHeight(mx, mz)) hi = m; else lo = m;
-                }
-                hitX = camera.position.x + cf.x * hi;
-                hitY = camera.position.y + cf.y * hi;
-                hitZ = camera.position.z + cf.z * hi;
-                break;
-            }
-        }
-        _aimPoint3P.x = hitX; _aimPoint3P.y = hitY; _aimPoint3P.z = hitZ;
-        window._tribesAimPoint3P = _aimPoint3P;
-    }
-
-    // R31.7.1: weapon viewmodel — visible only in true 1P (camDist near 0).
-    // Was 0.5 in R31.7 which left it visible for the first ~0.5m of 3P transition
-    // then SUDDENLY hid it; users perceived this as "weapon disappeared".
-    if (weaponHand) weaponHand.visible = (camDist < 0.3);
-
-    // R31.7.1: feed the world aim-point we computed above into the C++ aim-
-    // convergence override (Claude shipped C1 in commit 32b4b41 / R31.7).
-    // Without this hookup, fireWeapon's `if(thirdPerson&&hasAimPoint3P)` branch
-    // never triggers and 3P shots come out of camera-fwd instead of crosshair-fwd.
-    if (is3P && Module._setLocalAimPoint3P && window._tribesAimPoint3P) {
-        const p = window._tribesAimPoint3P;
-        Module._setLocalAimPoint3P(p.x, p.y, p.z);
-    }
-
-    let fov = Module._getCameraFov();
-    // R32.18-manus: apply ZoomFX multiplier (RMB hold + Z stepped zoom).
-    // FOV multiplier is 1/effectiveZoom, so 2x zoom → 0.5x FOV. While zoom is
-    // active or transitioning, use a tight threshold so smoothing reads.
-    let zoomActive = false;
-    if (window.ZoomFX) {
-        window.ZoomFX.tick();   // R32.167: drive ZoomFX from main loop (no self-RAF)
-        fov = fov * window.ZoomFX.getFovMultiplier();
-        zoomActive = window.ZoomFX.isActive();
-    }
-    // R32.45: apply FOV punch from nearby explosions, then decay back
-    fov += _fovPunchExtra;
-    if (_fovPunchExtra > 0.01) {
-        const dt = _lastTickTime > 0 ? Math.min(0.1, performance.now() * 0.001 - _lastTickTime) : 1/60;
-        _fovPunchExtra *= Math.max(0, 1 - dt * 5); // ~200ms decay
-    } else {
-        _fovPunchExtra = 0;
-    }
-    const fovThreshold = zoomActive || _fovPunchExtra > 0.01 ? 0.05 : 0.5;
-    if (Math.abs(camera.fov - fov) > fovThreshold) {
-        camera.fov = fov;
-        camera.updateProjectionMatrix();
-    }
-
-    // Sun follows the camera so the (smaller) shadow frustum covers active area
-    sunLight.position.set(px + DayNight.sunDir.x * 800, py + DayNight.sunDir.y * 800, pz + DayNight.sunDir.z * 800);
-    sunLight.target.position.set(px, py, pz);
-    sunLight.target.updateMatrixWorld();
-
-    // R32.50: Snap shadow camera to texel boundaries to prevent shadow swimming.
-    // Without this, sub-texel shifts as the camera moves cause shadow edges to
-    // flicker on every surface. We snap the light+target in world XZ to the
-    // nearest shadow texel size.
-    if (sunLight.shadow && sunLight.shadow.mapSize) {
-        const shadowFrustumSize = 240; // s * 2, from shadow camera setup (R32.63.4)
-        const texelSize = shadowFrustumSize / sunLight.shadow.mapSize.x;
-        sunLight.position.x = Math.round(sunLight.position.x / texelSize) * texelSize;
-        sunLight.position.z = Math.round(sunLight.position.z / texelSize) * texelSize;
-        sunLight.target.position.x = Math.round(sunLight.target.position.x / texelSize) * texelSize;
-        sunLight.target.position.z = Math.round(sunLight.target.position.z / texelSize) * texelSize;
-        sunLight.target.updateMatrixWorld();
-    }
-}
-
 // ============================================================
 // R32.4 — canonical building animation (replaces R18 syncTurretBarrels which
 // was a no-op since R32.3 buildings carry C++ type=0, not type=3). Now keyed
@@ -2923,12 +2698,12 @@ function loop() {
             particleView, particleStride, MAX_PARTICLES,
             qualityTier: QUALITY_TIERS[currentQuality],
             scene, camera, polish, Polish,
-            fovPunchCallback: (v) => { _fovPunchExtra = v; }
+            fovPunchCallback: (v) => { Camera.addFovPunch(v); }
         });
     } catch(e) { /* keep loop alive */ }
     try { Particles.update(1/60, t); } catch (e) { /* cosmetic — keep loop alive */ }
     syncTurretBarrels(t);
-    syncCamera();
+    Camera.update();
     if (_rainEnabled) updateRain(1 / 60, camera.position); // R32.201: skip when rain not allocated
     try { updateInteriorLights(); } catch (e) { /* cosmetic — keep loop alive */ }
 
