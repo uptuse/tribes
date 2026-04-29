@@ -221,6 +221,7 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
     const visible = playerView[o + 18] > 0.5;
 
     if (is3P && visible) {
+        if (!_syncLocalPlayer._dbg3P) { console.log('[R32.142] 3P path active, localIdx=' + localIdx); _syncLocalPlayer._dbg3P = true; }
         if (!_chars[localIdx]) {
             _chars[localIdx] = _createInstance();
         }
@@ -240,6 +241,9 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         const speed = Math.hypot(playerView[o + 6], playerView[o + 8]);
         const jetting = playerView[o + 14] > 0.5;
         const skiing  = playerView[o + 15] > 0.5;
+
+        if (!_syncLocalPlayer._dbgJet && jetting) { console.log('[R32.142] 3P jet detected, flameL exists:', !!char.flameL); _syncLocalPlayer._dbgJet = true; }
+        if (!_syncLocalPlayer._dbgSki && skiing) { console.log('[R32.142] 3P ski detected, skiBoard exists:', !!char.skiBoard); _syncLocalPlayer._dbgSki = true; }
 
         let clip = 'idle';
         if (!alive) clip = 'death';
