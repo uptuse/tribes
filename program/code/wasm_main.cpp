@@ -89,6 +89,7 @@ static float g_renderDistMul=1.0f;
 static bool  g_jetToggle=false;
 static bool  g_invertY=false;
 static bool  g_jetActive=false; // for toggle mode state
+static bool  g_freelook=false;  // Freelook: freeze player aim, JS orbits camera
 
 // Phase-A Live Editor: runtime physics tuning overrides.
 // Multipliers (1.0 = stock) except g_tuneGravity which is absolute m/s².
@@ -113,6 +114,7 @@ static bool sGetB(const char*j,const char*k,bool d){
     if(strncmp(p,"false",5)==0)return false;
     return d;
 }
+extern "C" void setFreelook(int on){ g_freelook = (on != 0); }
 extern "C" void setSettings(const char*json){
     g_mouseSensitivity=(float)sGetF(json,"sensitivity",1.0);
     g_fov=(float)sGetF(json,"fov",90.0);
@@ -2069,9 +2071,12 @@ extern "C" void mainLoop(){
     Player&me=players[localPlayer];
 
     // --- Input ---
-    me.yaw+=mDX*0.003f*g_mouseSensitivity;
-    me.pitch-=(g_invertY?-1.0f:1.0f)*mDY*0.003f*g_mouseSensitivity;
-    if(me.pitch>1.4f)me.pitch=1.4f;if(me.pitch<-1.4f)me.pitch=-1.4f;
+    // g_freelook: JS is orbiting camera; freeze player aim so mouse only moves the view.
+    if(!g_freelook){
+        me.yaw+=mDX*0.003f*g_mouseSensitivity;
+        me.pitch-=(g_invertY?-1.0f:1.0f)*mDY*0.003f*g_mouseSensitivity;
+        if(me.pitch>1.4f)me.pitch=1.4f;if(me.pitch<-1.4f)me.pitch=-1.4f;
+    }
     mDX=mDY=0;
 
     // Toggle third person (V key)

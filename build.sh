@@ -31,14 +31,14 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
   --preload-file assets/hdri@/assets/tribes/hdri \
   --preload-file assets/maps@/assets/tribes/maps \
   -O0 -g0 -Wno-format \
-  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_setLocalPlayerNetCorrection","_setMapBuildings","_malloc","_free","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick","_getPlayerSkiing","_getPlayerSpeed","_getPlayerSlopeDeg","_getThirdPerson","_setLocalAimPoint3P","_appendInteriorShapeAABBs","_appendInteriorMeshTris","_setPhysicsTuning","_getLayoutEntityCount","_isLayoutLoaded","_getLayoutEntity","_setLayoutEntityPos"]' \
+  -s EXPORTED_FUNCTIONS='["_main","_applyLoadout","_setGameSettings","_updateScoreboard","_setSettings","_setLocalPlayerNetCorrection","_setMapBuildings","_malloc","_free","_getPlayerStatePtr","_getPlayerStateCount","_getPlayerStateStride","_getLocalPlayerIdx","_getProjectileStatePtr","_getProjectileStateCount","_getProjectileStateStride","_getParticleStatePtr","_getParticleStateCount","_getParticleStateStride","_getFlagStatePtr","_getFlagStateCount","_getFlagStateStride","_getBuildingPtr","_getBuildingCount","_getBuildingStride","_getHeightmapPtr","_getHeightmapCount","_getHeightmapSize","_getHeightmapWorldScale","_getCameraFov","_getMatchState","_isReady","_setRenderMode","_tick","_getPlayerSkiing","_getPlayerSpeed","_getPlayerSlopeDeg","_getThirdPerson","_setLocalAimPoint3P","_appendInteriorShapeAABBs","_appendInteriorMeshTris","_setPhysicsTuning","_getLayoutEntityCount","_isLayoutLoaded","_getLayoutEntity","_setLayoutEntityPos","_setFreelook"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 # R29: _setRenderMode must stay in EXPORTED_FUNCTIONS above — required for Three.js cutover.
 
 echo "[build] Output: build/tribes.html, build/tribes.js, build/tribes.wasm, build/tribes.data"
 
 # Deploy to repo root for GitHub Pages
-cp build/tribes.html index.html
+# NOTE: index.html is hand-maintained — never overwrite it from build output.
 cp build/tribes.js tribes.js
 cp build/tribes.wasm tribes.wasm
 cp build/tribes.data tribes.data

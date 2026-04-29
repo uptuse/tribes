@@ -341,6 +341,7 @@ export async function start() {
     } catch (e) { console.warn('[R32.20] Toonify pass failed:', e && e.message ? e.message : e); }
 
     // Phase-C: initPostFX removed — see comment at top of imports
+    _initFreelook();
 
     // Phase-B: initialise level editor and load entity markers from WASM
     import('./client/level_editor.js').then(mod => {
@@ -3931,6 +3932,32 @@ function syncParticles() {
     particleGeom.attributes.size.needsUpdate = true;
 }
 
+// Freelook orbit state — activated while Left Alt is held in 3P mode.
+// C++ freezes player aim during this time (setFreelook(1)); JS orbits camera.
+const _fl = { active: false, yaw: 0, pitch: 0 };
+function _initFreelook() {
+    document.addEventListener('keydown', e => {
+        if (e.keyCode === 18 && !_fl.active) { // Left Alt
+            _fl.active = true;
+            if (Module && Module._setFreelook) Module._setFreelook(1);
+        }
+    });
+    document.addEventListener('keyup', e => {
+        if (e.keyCode === 18 && _fl.active) {
+            _fl.active = false;
+            _fl.yaw = 0; _fl.pitch = 0;
+            if (Module && Module._setFreelook) Module._setFreelook(0);
+        }
+    });
+    // Accumulate mouse delta while freelook is active
+    document.addEventListener('mousemove', e => {
+        if (!_fl.active) return;
+        const sens = 0.003 * ((window.ST && window.ST.sensitivity) || 1.0);
+        _fl.yaw  += e.movementX * sens;
+        _fl.pitch = Math.max(-1.0, Math.min(1.0, _fl.pitch + e.movementY * sens));
+    });
+}
+
 // R32.16-manus: spectator/freecam orbit state. Activated while local player
 // is dead; orbits the death position at altitude with a slow auto-yaw and
 // a gentle pitch sway. Returns control to live-cam on respawn.
@@ -4059,38 +4086,57 @@ function syncCamera() {
 
     // ── Camera placement ──────────────────────────────────────
     if (camDist > 0.3) {
-        // 3P chase: position uses lagged yaw; rotation uses current player aim.
-        const fwdX = Math.sin(lagYaw);
-        const fwdZ = -Math.cos(lagYaw);
-        let cx = px - fwdX * camDist;
-        let cy = py + camH;
-        let cz = pz - fwdZ * camDist;
+        if (_fl.active) {
+            // ── Freelook: orbit camera around player (Alt held) ──
+            // Player aim is frozen in C++ (setFreelook(1)); mouse delta
+            // goes to _fl.yaw / _fl.pitch instead.
+            const orbitYaw  = lagYaw + _fl.yaw;
+            const cosP = Math.cos(_fl.pitch);
+            const sinP = Math.sin(_fl.pitch);
+            const offX = Math.sin(orbitYaw) * cosP;
+            const offY = sinP;
+            const offZ = -Math.cos(orbitYaw) * cosP;
+            let cx = px - offX * camDist;
+            let cy = (py + 1.0) - offY * camDist;
+            let cz = pz - offZ * camDist;
+            const terrH = sampleTerrainH(cx, cz);
+            if (cy < terrH + 0.3) cy = terrH + 0.3;
+            camera.position.set(cx, cy, cz);
+            // Look at player centre (you see your own model in Freelook)
+            camera.lookAt(px, py + 1.0, pz);
+        } else {
+            // ── Rigid chase: position uses lagged yaw ─────────────
+            const fwdX = Math.sin(lagYaw);
+            const fwdZ = -Math.cos(lagYaw);
+            let cx = px - fwdX * camDist;
+            let cy = py + camH;
+            let cz = pz - fwdZ * camDist;
 
-        // Spec Option B: raycast from player head to ideal camera position.
-        // Walk 8 steps; if terrain blocks, pull camera to the occlusion point.
-        const headY = py + 1.7;
-        const dirX = cx - px, dirY = cy - headY, dirZ = cz - pz;
-        const rayLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
-        if (rayLen > 0.1) {
-            const invLen = 1 / rayLen;
-            const nx = dirX*invLen, ny = dirY*invLen, nz = dirZ*invLen;
-            for (let s = 1; s <= 8; s++) {
-                const t = (s / 8) * rayLen;
-                const sx = px + nx*t, sy = headY + ny*t, sz = pz + nz*t;
-                if (sy < sampleTerrainH(sx, sz) + 0.3) {
-                    const pullT = Math.max(0, (s - 1) / 8) * rayLen;
-                    cx = px    + nx * pullT;
-                    cy = headY + ny * pullT + 0.3;
-                    cz = pz    + nz * pullT;
-                    break;
+            // Spec Option B: 8-step terrain raycast from player head → camera.
+            const headY = py + 1.7;
+            const dirX = cx - px, dirY = cy - headY, dirZ = cz - pz;
+            const rayLen = Math.sqrt(dirX*dirX + dirY*dirY + dirZ*dirZ);
+            if (rayLen > 0.1) {
+                const invLen = 1 / rayLen;
+                const nx = dirX*invLen, ny = dirY*invLen, nz = dirZ*invLen;
+                for (let s = 1; s <= 8; s++) {
+                    const t = (s / 8) * rayLen;
+                    const sx = px + nx*t, sy = headY + ny*t, sz = pz + nz*t;
+                    if (sy < sampleTerrainH(sx, sz) + 0.3) {
+                        const pullT = Math.max(0, (s - 1) / 8) * rayLen;
+                        cx = px    + nx * pullT;
+                        cy = headY + ny * pullT + 0.3;
+                        cz = pz    + nz * pullT;
+                        break;
+                    }
                 }
             }
-        }
 
-        camera.position.set(cx, cy, cz);
-        // Rotation follows current player aim (not lagged) — you always shoot
-        // where you're looking even if the camera is still swinging into position.
-        camera.rotation.set(pitch, -yaw, 0, 'YXZ');
+            camera.position.set(cx, cy, cz);
+            // Rotation: current player aim — crosshair stays accurate while
+            // the camera position is still swinging into place.
+            camera.rotation.set(pitch, -yaw, 0, 'YXZ');
+        }
     } else {
         // 1P
         camera.position.set(px, py + 1.7, pz);
