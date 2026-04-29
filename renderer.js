@@ -4054,15 +4054,16 @@ function syncCamera() {
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
 
     // ── Init persistent state on first frame ──────────────────
+    if (!window._tribes3PCam) window._tribes3PCam = { dist: 4.0, height: 1.2 };
     if (typeof window._tribesCamDist !== 'number') {
-        window._tribesCamDist   = is3P ? 4.0 : 0.0;
-        window._tribesCamHeight = is3P ? 1.2 : 1.7;
-        window._tribesCamYaw    = yaw;   // lagged yaw in C++ convention
+        window._tribesCamDist   = is3P ? window._tribes3PCam.dist : 0.0;
+        window._tribesCamHeight = is3P ? window._tribes3PCam.height : 1.7;
+        window._tribesCamYaw    = yaw;
     }
 
     // ── Distance lerp for V-toggle (~200ms) ───────────────────
-    const targetDist   = is3P ? 4.0 : 0.0;
-    const targetHeight = is3P ? 1.2 : 1.7;
+    const targetDist   = is3P ? window._tribes3PCam.dist : 0.0;
+    const targetHeight = is3P ? window._tribes3PCam.height : 1.7;
     const distAlpha = 1.0 - Math.exp(-((1/60) / 0.05));
     window._tribesCamDist   += (targetDist   - window._tribesCamDist)   * distAlpha;
     window._tribesCamHeight += (targetHeight - window._tribesCamHeight) * distAlpha;
