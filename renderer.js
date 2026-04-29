@@ -4840,6 +4840,9 @@ function loop() {
     }
     const t = performance.now() * 0.001;
     Module._tick();
+    // R32.225: HEAPF32 buffer assertion — catches silent detach if WASM memory growth is ever enabled.
+    // See @ai-invariant FIXED_WASM_MEMORY at top of file.
+    if (Module.HEAPF32.buffer !== Module.wasmMemory.buffer) console.error('HEAPF32 detached — WASM memory grew unexpectedly');
     // R32.104: Rapier collision resolution — runs after WASM tick() which has already
     // computed velocity, applied gravity/skiing/jetting, and done pos += vel*dt + terrain clamp.
     // Rapier resolves building/interior collisions and writes corrected pos back to WASM.
