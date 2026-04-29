@@ -1,0 +1,2 @@
+# Emscripten-generated WASM bootstrap glue — suppress diffs and exclude from language stats
+generated/emscripten_glue.js linguist-generated=true

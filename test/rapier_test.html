@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Rapier Physics — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+
+#controls-help{position:fixed;bottom:10px;right:12px;background:rgba(12,14,22,0.85);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:8px 12px;z-index:90;
+  font-family:monospace;font-size:10px;color:#666}
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">RAPIER PHYSICS TEST</span>
+  <div class="sep"></div>
+  <button id="btn-init">Init Rapier</button>
+  <button id="btn-spawn">Spawn Capsule</button>
+  <button id="btn-add-boxes">Add Box Colliders</button>
+  <button id="btn-reset">Reset Position</button>
+  <button id="btn-destroy">Destroy All</button>
+  <div class="sep"></div>
+  <button id="btn-test-wall">Test Wall Slide</button>
+  <button id="btn-test-ground">Test Grounding</button>
+  <button id="btn-test-cleanup">Test Cleanup</button>
+  <div class="sep"></div>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-colliders">Colliders: <b>0</b></span>
+  <span class="stat" id="stat-step">Step: <b>--</b>ms</span>
+</div>
+
+<div id="overlay">
+  <h3>Physics State</h3>
+  <div class="row"><span class="label">Rapier ready</span><span class="value" id="ov-ready">--</span></div>
+  <div class="row"><span class="label">capsule pos</span><span class="value" id="ov-capsule">--</span></div>
+  <div class="row"><span class="label">grounded</span><span class="value" id="ov-grounded">--</span></div>
+  <div class="row"><span class="label">collider count</span><span class="value" id="ov-colliders">--</span></div>
+  <div class="row"><span class="label">move delta</span><span class="value" id="ov-delta">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="controls-help">
+  WASD = Move capsule | SPACE = Jump | Mouse = Orbit camera
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(15, 15, 15);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(50, 100, 30);
+sun.castShadow = true;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+
+// Ground plane (visual only)
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100),
+    new THREE.MeshStandardMaterial({ color: 0x334433, roughness: 0.9, wireframe: false })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Wireframe ground for physics visibility
+const groundWire = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100, 20, 20),
+    new THREE.MeshBasicMaterial({ color: 0x225522, wireframe: true })
+);
+groundWire.rotation.x = -Math.PI / 2;
+groundWire.position.y = 0.01;
+scene.add(groundWire);
+
+const grid = new THREE.GridHelper(100, 20, 0x334455, 0x1a2233);
+scene.add(grid);
+
+// ── Rapier State ──
+let RAPIER = null;
+let world = null;
+let characterController = null;
+let playerBody = null;
+let playerCollider = null;
+let capsuleMesh = null;
+let colliderVisuals = [];
+let capsulePos = { x: 0, y: 5, z: 0 };
+let velocity = { x: 0, y: 0, z: 0 };
+let grounded = false;
+let rapierReady = false;
+let colliderCount = 0;
+
+// Key state
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+async function initRapier() {
+    console.log('Loading Rapier WASM...');
+    const t0 = performance.now();
+    RAPIER = await import('./vendor/rapier/rapier.mjs');
+    if (typeof RAPIER.init === 'function') await RAPIER.init();
+    world = new RAPIER.World({ x: 0, y: 0, z: 0 }); // Zero gravity (we handle manually)
+
+    // Character controller
+    characterController = world.createCharacterController(0.02);
+    characterController.enableAutostep(0.4, 0.25, true);
+    characterController.setMaxSlopeClimbAngle(55 * Math.PI / 180);
+    characterController.setSlideEnabled(true);
+
+    // Ground collider (static)
+    const groundBodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(0, -0.5, 0);
+    const groundBody = world.createRigidBody(groundBodyDesc);
+    const groundColDesc = RAPIER.ColliderDesc.cuboid(50, 0.5, 50);
+    world.createCollider(groundColDesc, groundBody);
+    colliderCount = 1;
+
+    rapierReady = true;
+    console.log(`Rapier initialized in ${(performance.now()-t0).toFixed(1)}ms`);
+}
+
+function spawnCapsule() {
+    if (!rapierReady) { console.warn('Init Rapier first'); return; }
+    if (playerBody) {
+        world.removeRigidBody(playerBody);
+        if (capsuleMesh) scene.remove(capsuleMesh);
+    }
+
+    capsulePos = { x: 0, y: 3, z: 0 };
+    velocity = { x: 0, y: 0, z: 0 };
+
+    const bodyDesc = RAPIER.RigidBodyDesc.kinematicPositionBased()
+        .setTranslation(capsulePos.x, capsulePos.y, capsulePos.z);
+    playerBody = world.createRigidBody(bodyDesc);
+    playerCollider = world.createCollider(
+        RAPIER.ColliderDesc.capsule(0.3, 0.6), playerBody
+    );
+    colliderCount++;
+
+    // Visual capsule
+    const group = new THREE.Group();
+    const cylGeo = new THREE.CylinderGeometry(0.6, 0.6, 0.6, 16);
+    const sphGeoTop = new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI*2, 0, Math.PI/2);
+    const sphGeoBot = new THREE.SphereGeometry(0.6, 16, 8, 0, Math.PI*2, Math.PI/2, Math.PI/2);
+    const wireMat = new THREE.MeshBasicMaterial({ color: 0x44ff88, wireframe: true });
+    const cyl = new THREE.Mesh(cylGeo, wireMat);
+    const top = new THREE.Mesh(sphGeoTop, wireMat);
+    top.position.y = 0.3;
+    const bot = new THREE.Mesh(sphGeoBot, wireMat);
+    bot.position.y = -0.3;
+    group.add(cyl, top, bot);
+    capsuleMesh = group;
+    capsuleMesh.position.set(capsulePos.x, capsulePos.y, capsulePos.z);
+    scene.add(capsuleMesh);
+
+    console.log('Capsule spawned at (0, 3, 0)');
+}
+
+function addBoxColliders() {
+    if (!rapierReady) { console.warn('Init Rapier first'); return; }
+    const positions = [
+        { x: 5, y: 2.5, z: 0, hx: 2, hy: 2.5, hz: 2 },
+        { x: -5, y: 4, z: -5, hx: 1.5, hy: 4, hz: 3 },
+        { x: 0, y: 1.5, z: -8, hx: 6, hy: 1.5, hz: 0.5 },
+        { x: 8, y: 3, z: 8, hx: 3, hy: 3, hz: 3 },
+        { x: -8, y: 6, z: 5, hx: 1, hy: 6, hz: 1 },
+    ];
+
+    positions.forEach(p => {
+        const bodyDesc = RAPIER.RigidBodyDesc.fixed().setTranslation(p.x, p.y, p.z);
+        const body = world.createRigidBody(bodyDesc);
+        world.createCollider(RAPIER.ColliderDesc.cuboid(p.hx, p.hy, p.hz), body);
+        colliderCount++;
+
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(p.hx*2, p.hy*2, p.hz*2),
+            new THREE.MeshBasicMaterial({ color: 0xff8844, wireframe: true })
+        );
+        mesh.position.set(p.x, p.y, p.z);
+        scene.add(mesh);
+        colliderVisuals.push(mesh);
+    });
+
+    console.log(`Added ${positions.length} box colliders`);
+}
+
+function destroyAll() {
+    if (world) {
+        // Remove all rigid bodies
+        world.bodies.forEach(body => world.removeRigidBody(body));
+    }
+    if (capsuleMesh) { scene.remove(capsuleMesh); capsuleMesh = null; }
+    colliderVisuals.forEach(m => scene.remove(m));
+    colliderVisuals = [];
+    playerBody = null;
+    playerCollider = null;
+    colliderCount = 0;
+    rapierReady = false;
+    world = null;
+    console.log('All physics destroyed');
+}
+
+// ── Physics step ──
+let stepTimeMs = 0;
+
+function stepPhysics(dt) {
+    if (!rapierReady || !playerBody || !playerCollider) return;
+    const t0 = performance.now();
+
+    // Apply WASD input
+    const speed = 8;
+    let mx = 0, mz = 0;
+    if (keys['w']) mz -= speed * dt;
+    if (keys['s']) mz += speed * dt;
+    if (keys['a']) mx -= speed * dt;
+    if (keys['d']) mx += speed * dt;
+
+    // Gravity
+    velocity.y -= 20 * dt;
+    if (keys[' '] && grounded) velocity.y = 8;
+
+    const desiredMovement = {
+        x: mx + velocity.x * dt,
+        y: velocity.y * dt,
+        z: mz + velocity.z * dt
+    };
+
+    // Character controller collision resolution
+    characterController.computeColliderMovement(playerCollider, desiredMovement);
+    const corrected = characterController.computedMovement();
+
+    capsulePos.x += corrected.x;
+    capsulePos.y += corrected.y;
+    capsulePos.z += corrected.z;
+
+    // Grounding check
+    grounded = characterController.computedGrounded();
+    if (grounded && velocity.y < 0) velocity.y = 0;
+
+    // Update rigid body
+    playerBody.setNextKinematicTranslation(capsulePos);
+
+    stepTimeMs = performance.now() - t0;
+}
+
+// ── Button handlers ──
+document.getElementById('btn-init').onclick = () => initRapier();
+document.getElementById('btn-spawn').onclick = () => spawnCapsule();
+document.getElementById('btn-add-boxes').onclick = () => addBoxColliders();
+document.getElementById('btn-reset').onclick = () => {
+    capsulePos = { x: 0, y: 5, z: 0 };
+    velocity = { x: 0, y: 0, z: 0 };
+    if (playerBody) playerBody.setNextKinematicTranslation(capsulePos);
+    console.log('Reset position to (0, 5, 0)');
+};
+document.getElementById('btn-destroy').onclick = () => destroyAll();
+
+document.getElementById('btn-test-wall').onclick = async () => {
+    document.getElementById('test-results').innerHTML = '';
+    if (!rapierReady) await initRapier();
+    spawnCapsule();
+    addBoxColliders();
+    // Move capsule toward a wall
+    capsulePos = { x: 3, y: 1.2, z: 0 };
+    velocity = { x: 0, y: 0, z: 0 };
+    playerBody.setNextKinematicTranslation(capsulePos);
+    // Try to move into the wall
+    characterController.computeColliderMovement(playerCollider, { x: 5, y: 0, z: 0 });
+    const corr = characterController.computedMovement();
+    logTest(Math.abs(corr.x) < 5, `Wall blocked: requested 5m, got ${corr.x.toFixed(3)}m`);
+    logTest(Math.abs(corr.z) > 0 || Math.abs(corr.x) < 5, 'Wall sliding or stop detected');
+    console.log('Wall slide test done');
+};
+
+document.getElementById('btn-test-ground').onclick = async () => {
+    document.getElementById('test-results').innerHTML = '';
+    if (!rapierReady) await initRapier();
+    spawnCapsule();
+    // Place on ground
+    capsulePos = { x: 0, y: 1.2, z: 0 };
+    playerBody.setNextKinematicTranslation(capsulePos);
+    characterController.computeColliderMovement(playerCollider, { x: 0, y: -0.1, z: 0 });
+    const g = characterController.computedGrounded();
+    logTest(g === true, `Grounding detected: ${g}`);
+    // Place in air
+    capsulePos = { x: 0, y: 10, z: 0 };
+    playerBody.setNextKinematicTranslation(capsulePos);
+    characterController.computeColliderMovement(playerCollider, { x: 0, y: -0.1, z: 0 });
+    const g2 = characterController.computedGrounded();
+    logTest(g2 === false, `Not grounded in air: ${g2}`);
+    console.log('Grounding test done');
+};
+
+document.getElementById('btn-test-cleanup').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    destroyAll();
+    logTest(playerBody === null, 'playerBody nulled');
+    logTest(colliderCount === 0, 'collider count = 0');
+    logTest(colliderVisuals.length === 0, 'visual cleanup done');
+    console.log('Cleanup test done');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+function updateOverlay() {
+    document.getElementById('ov-ready').textContent = rapierReady ? 'YES' : 'NO';
+    document.getElementById('ov-ready').className = 'value ' + (rapierReady ? 'good' : '');
+    document.getElementById('ov-capsule').textContent = playerBody ?
+        `(${capsulePos.x.toFixed(2)}, ${capsulePos.y.toFixed(2)}, ${capsulePos.z.toFixed(2)})` : 'none';
+    document.getElementById('ov-grounded').textContent = grounded ? 'YES' : 'NO';
+    document.getElementById('ov-grounded').className = 'value ' + (grounded ? 'good' : '');
+    document.getElementById('ov-colliders').textContent = colliderCount;
+    document.getElementById('ov-delta').textContent = stepTimeMs.toFixed(3) + 'ms';
+}
+
+// ── Render Loop ──
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    lastTime = now;
+
+    stepPhysics(dt);
+
+    if (capsuleMesh) {
+        capsuleMesh.position.set(capsulePos.x, capsulePos.y, capsulePos.z);
+    }
+
+    controls.update();
+    renderer.render(scene, camera);
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-colliders').innerHTML = `Colliders: <b>${colliderCount}</b>`;
+        document.getElementById('stat-step').innerHTML = `Step: <b>${stepTimeMs.toFixed(2)}</b>ms`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Rapier test harness loaded. Click Init Rapier to start.');
+</script>
+</body>
+</html>

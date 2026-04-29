@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Minimap — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud input[type=range]{width:100px;accent-color:#FFD479}
+#hud label{font-size:11px;color:#888}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+
+#minimap-container{position:fixed;bottom:20px;left:20px;z-index:50}
+#minimap-large{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:60;display:none}
+</style>
+</head>
+<body>
+<div id="hud">
+  <span class="title">MINIMAP TEST HARNESS</span>
+  <div class="sep"></div>
+  <button id="btn-add-players">Add Players</button>
+  <button id="btn-move-players">Animate Players</button>
+  <button id="btn-4teams">4-Team Mode</button>
+  <div class="sep"></div>
+  <label>Zoom: <b id="zoom-val">200</b>m</label>
+  <input type="range" id="zoom-slider" min="50" max="500" value="200">
+  <label>Rotation: <b id="rot-val">0</b>°</label>
+  <input type="range" id="rot-slider" min="0" max="360" value="0">
+  <div class="sep"></div>
+  <button id="btn-enlarge">Enlarge</button>
+  <button id="btn-test">Run Tests</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-players">Players: <b>0</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Minimap State</h3>
+  <div class="row"><span class="label">player count</span><span class="value" id="ov-players">0</span></div>
+  <div class="row"><span class="label">local team</span><span class="value" id="ov-team">0</span></div>
+  <div class="row"><span class="label">world range</span><span class="value" id="ov-range">200m</span></div>
+  <div class="row"><span class="label">rotation</span><span class="value" id="ov-rot">0°</span></div>
+  <div class="row"><span class="label">flag positions</span><span class="value" id="ov-flags">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="minimap-container">
+  <canvas id="minimap-canvas" width="288" height="288" style="width:144px;height:144px;border-radius:50%;"></canvas>
+</div>
+<div id="minimap-large">
+  <canvas id="minimap-large-canvas" width="576" height="576" style="width:400px;height:400px;border-radius:50%;border:2px solid rgba(255,212,121,0.3);"></canvas>
+</div>
+
+<div id="log"></div>
+
+<script>
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ═══════════════════════════════════
+// Minimap Renderer (standalone clone)
+// ═══════════════════════════════════
+const RADAR_RADIUS = 72;
+const RADAR_DIAMETER = RADAR_RADIUS * 2;
+const BG_ALPHA = 0.45;
+const RING_COLOR = 'rgba(180,160,120,0.35)';
+const GRID_COLOR = 'rgba(180,160,120,0.12)';
+const TEAM_COLORS_2 = ['#FF6A4A', '#3FA8FF'];
+const TEAM_COLORS_4 = ['#FF6A4A', '#3FA8FF', '#44DD44', '#FFAA22'];
+const BUILDING_COLOR = 'rgba(140,130,100,0.35)';
+const NORTH_COLOR = '#D4A030';
+
+let teamColors = TEAM_COLORS_2;
+let worldRange = 200;
+let rotation = 0; // radians
+let localTeam = 0;
+let animating = false;
+
+// Mock game data
+const players = [];
+const flags = [
+    { x: -200, z: -200, team: 0 },
+    { x: 200, z: 200, team: 1 },
+];
+const buildings = [
+    { x: -200, z: -200, hw: 15, hz: 15 },
+    { x: 200, z: 200, hw: 15, hz: 15 },
+    { x: 0, z: 0, hw: 8, hz: 8 },
+];
+
+function addMockPlayers() {
+    players.length = 0;
+    const teamCount = teamColors.length;
+    for (let t = 0; t < teamCount; t++) {
+        for (let i = 0; i < 8; i++) {
+            const baseX = t === 0 ? -180 : t === 1 ? 180 : t === 2 ? -180 : 180;
+            const baseZ = t === 0 ? -180 : t === 1 ? 180 : t === 2 ? 180 : -180;
+            players.push({
+                x: baseX + (Math.random()-0.5)*80,
+                z: baseZ + (Math.random()-0.5)*80,
+                yaw: Math.random() * Math.PI * 2,
+                team: t,
+                alive: true,
+                isLocal: t === 0 && i === 0,
+            });
+        }
+    }
+    console.log(`Added ${players.length} mock players (${teamCount} teams)`);
+}
+
+function drawMinimap(canvas, scale) {
+    const ctx = canvas.getContext('2d');
+    const dpr = window.devicePixelRatio || 1;
+    const r = (canvas.width / 2);
+    const cx = r, cy = r;
+
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Background circle
+    ctx.beginPath();
+    ctx.arc(cx, cy, r-1, 0, Math.PI*2);
+    ctx.fillStyle = `rgba(10,14,24,${BG_ALPHA})`;
+    ctx.fill();
+
+    // Grid rings
+    ctx.strokeStyle = GRID_COLOR;
+    ctx.lineWidth = 0.5 * scale;
+    for (let i = 1; i <= 3; i++) {
+        ctx.beginPath();
+        ctx.arc(cx, cy, (r * i / 3), 0, Math.PI * 2);
+        ctx.stroke();
+    }
+
+    // Outer ring
+    ctx.strokeStyle = RING_COLOR;
+    ctx.lineWidth = 1.5 * scale;
+    ctx.beginPath();
+    ctx.arc(cx, cy, r-1, 0, Math.PI*2);
+    ctx.stroke();
+
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-rotation); // Rotate with player yaw
+
+    const worldToRadar = (r - 4) / worldRange;
+
+    // Buildings
+    ctx.fillStyle = BUILDING_COLOR;
+    for (const b of buildings) {
+        const bx = b.x * worldToRadar;
+        const bz = b.z * worldToRadar;
+        ctx.fillRect(bx - b.hw*worldToRadar, bz - b.hz*worldToRadar,
+                     b.hw*2*worldToRadar, b.hz*2*worldToRadar);
+    }
+
+    // Flags
+    for (const f of flags) {
+        const fx = f.x * worldToRadar;
+        const fz = f.z * worldToRadar;
+        ctx.fillStyle = teamColors[f.team % teamColors.length];
+        ctx.beginPath();
+        ctx.moveTo(fx, fz - 6*scale);
+        ctx.lineTo(fx - 4*scale, fz + 4*scale);
+        ctx.lineTo(fx + 4*scale, fz + 4*scale);
+        ctx.closePath();
+        ctx.fill();
+    }
+
+    // Players
+    for (const p of players) {
+        if (!p.alive) continue;
+        const px = p.x * worldToRadar;
+        const pz = p.z * worldToRadar;
+        // Skip if out of range
+        if (Math.abs(px) > r || Math.abs(pz) > r) continue;
+
+        ctx.fillStyle = teamColors[p.team % teamColors.length];
+        if (p.isLocal) {
+            // Local player: larger diamond
+            ctx.save();
+            ctx.translate(px, pz);
+            ctx.rotate(p.yaw);
+            ctx.beginPath();
+            ctx.moveTo(0, -5*scale);
+            ctx.lineTo(3*scale, 2*scale);
+            ctx.lineTo(0, 5*scale);
+            ctx.lineTo(-3*scale, 2*scale);
+            ctx.closePath();
+            ctx.fill();
+            ctx.restore();
+        } else {
+            ctx.beginPath();
+            ctx.arc(px, pz, 2.5*scale, 0, Math.PI*2);
+            ctx.fill();
+        }
+    }
+
+    ctx.restore();
+
+    // North indicator
+    const nx = cx + Math.sin(-rotation) * (r - 12*scale);
+    const ny = cy - Math.cos(-rotation) * (r - 12*scale);
+    ctx.fillStyle = NORTH_COLOR;
+    ctx.font = `bold ${10*scale}px monospace`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('N', nx, ny);
+}
+
+// ── Controls ──
+document.getElementById('btn-add-players').onclick = () => addMockPlayers();
+document.getElementById('btn-move-players').onclick = () => {
+    animating = !animating;
+    document.getElementById('btn-move-players').classList.toggle('active', animating);
+};
+document.getElementById('btn-4teams').onclick = () => {
+    const btn = document.getElementById('btn-4teams');
+    btn.classList.toggle('active');
+    if (btn.classList.contains('active')) {
+        teamColors = TEAM_COLORS_4;
+        flags.push({ x: -200, z: 200, team: 2 }, { x: 200, z: -200, team: 3 });
+    } else {
+        teamColors = TEAM_COLORS_2;
+        flags.length = 2;
+    }
+    addMockPlayers();
+};
+
+document.getElementById('zoom-slider').oninput = (e) => {
+    worldRange = parseInt(e.target.value);
+    document.getElementById('zoom-val').textContent = worldRange;
+    document.getElementById('ov-range').textContent = worldRange + 'm';
+};
+document.getElementById('rot-slider').oninput = (e) => {
+    rotation = parseInt(e.target.value) * Math.PI / 180;
+    document.getElementById('rot-val').textContent = parseInt(e.target.value);
+    document.getElementById('ov-rot').textContent = parseInt(e.target.value) + '°';
+};
+
+document.getElementById('btn-enlarge').onclick = () => {
+    const el = document.getElementById('minimap-large');
+    el.style.display = el.style.display === 'none' ? 'block' : 'none';
+};
+
+document.getElementById('btn-test').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Minimap tests ---');
+
+    addMockPlayers();
+    logTest(players.length > 0, `Players populated: ${players.length}`);
+    logTest(players.some(p => p.team === 0), 'Team 0 has players');
+    logTest(players.some(p => p.team === 1), 'Team 1 has players');
+
+    // 4-team test
+    teamColors = TEAM_COLORS_4;
+    flags.push({ x: -200, z: 200, team: 2 }, { x: 200, z: -200, team: 3 });
+    addMockPlayers();
+    logTest(players.some(p => p.team === 2), '4-team: Team 2 has players');
+    logTest(players.some(p => p.team === 3), '4-team: Team 3 has players');
+    logTest(teamColors.length === 4, '4 team colors defined');
+
+    // Draw test
+    const testCanvas = document.createElement('canvas');
+    testCanvas.width = 288; testCanvas.height = 288;
+    try {
+        drawMinimap(testCanvas, 2);
+        logTest(true, 'drawMinimap() did not throw');
+    } catch(e) {
+        logTest(false, `drawMinimap() threw: ${e.message}`);
+    }
+
+    // Reset
+    teamColors = TEAM_COLORS_2;
+    flags.length = 2;
+    addMockPlayers();
+    console.log('--- Minimap tests complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Render Loop ──
+let lastTime = performance.now();
+let frameCount = 0, lastFpsTime = performance.now();
+
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    lastTime = now;
+
+    // Animate players
+    if (animating) {
+        for (const p of players) {
+            p.x += Math.sin(p.yaw) * 20 * dt;
+            p.z += Math.cos(p.yaw) * 20 * dt;
+            p.yaw += (Math.random()-0.5) * 2 * dt;
+            // Wrap around
+            if (p.x > 300) p.x = -300;
+            if (p.x < -300) p.x = 300;
+            if (p.z > 300) p.z = -300;
+            if (p.z < -300) p.z = 300;
+        }
+    }
+
+    // Draw both minimaps
+    drawMinimap(document.getElementById('minimap-canvas'), 2);
+    drawMinimap(document.getElementById('minimap-large-canvas'), 4);
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-players').innerHTML = `Players: <b>${players.length}</b>`;
+        document.getElementById('ov-players').textContent = players.length;
+        document.getElementById('ov-team').textContent = localTeam;
+        document.getElementById('ov-flags').textContent = flags.map(f => `T${f.team}(${f.x},${f.z})`).join(' ');
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+}
+
+addMockPlayers();
+animate();
+
+console.log('Minimap test harness loaded.');
+</script>
+</body>
+</html>

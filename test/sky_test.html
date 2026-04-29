@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Sky Dome — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud input[type=range]{width:180px;accent-color:#FFD479}
+#hud label{font-size:11px;color:#888}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">SKY DOME TEST HARNESS</span>
+  <div class="sep"></div>
+  <label>Time: <b id="time-val">12:00</b></label>
+  <input type="range" id="time-slider" min="0" max="24" step="0.1" value="12">
+  <div class="sep"></div>
+  <button id="btn-freeze" class="active">Frozen</button>
+  <button id="btn-cycle-fast">Fast Cycle</button>
+  <button id="btn-cycle-rapid">Rapid (10s)</button>
+  <div class="sep"></div>
+  <button id="btn-stars-only">Stars Only</button>
+  <button id="btn-clouds-only">Clouds Only</button>
+  <button id="btn-dome-only">Dome Only</button>
+  <button id="btn-all" class="active">All</button>
+  <div class="sep"></div>
+  <button id="btn-test">Run Tests</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Sky State</h3>
+  <div class="row"><span class="label">dayMix</span><span class="value" id="ov-daymix">1.0</span></div>
+  <div class="row"><span class="label">sunDir</span><span class="value" id="ov-sundir">--</span></div>
+  <div class="row"><span class="label">star opacity</span><span class="value" id="ov-stars">--</span></div>
+  <div class="row"><span class="label">dome visible</span><span class="value" id="ov-dome">YES</span></div>
+  <div class="row"><span class="label">clouds visible</span><span class="value" id="ov-clouds">YES</span></div>
+  <div class="row"><span class="label">stars visible</span><span class="value" id="ov-stars-vis">YES</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+
+const scene = new THREE.Scene();
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 5, 0);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.enablePan = false;
+controls.minDistance = 0.1;
+controls.maxDistance = 10;
+controls.update();
+
+// Small ground reference
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(50, 50),
+    new THREE.MeshBasicMaterial({ color: 0x222233, side: THREE.DoubleSide })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+// ── Sky System ──
+initCustomSky(scene);
+
+// References to sky objects for toggle
+let skyDome = null, cloudDome = null, starPoints = null;
+scene.traverse(child => {
+    if (child.isMesh && child.material?.uniforms?.uDayMix && child.geometry?.parameters?.radius === 950) skyDome = child;
+    if (child.isMesh && child.material?.uniforms?.uDayMix && child.material?.transparent) cloudDome = child;
+    if (child.isPoints && child.material?.uniforms?.uOpacity) starPoints = child;
+});
+if (!skyDome) scene.traverse(c => { if (c.isMesh && !skyDome && c.renderOrder === -1000) skyDome = c; });
+if (!cloudDome) scene.traverse(c => { if (c.isMesh && !cloudDome && c.renderOrder === -999) cloudDome = c; });
+if (!starPoints) scene.traverse(c => { if (c.isPoints && !starPoints && c.renderOrder === -998) starPoints = c; });
+
+// ── DayNight simulation ──
+let dayMix = 1.0;
+let sunDir = new THREE.Vector3(0, 1, 0);
+let frozen = true;
+let cycleSpeed = 0; // seconds per full cycle, 0 = frozen
+let cycleStart = 0;
+let currentHour = 12;
+
+function computeSunDirForHour(hour) {
+    const t01 = hour / 24;
+    const elevRad = Math.sin((t01 - 0.25) * Math.PI * 2);
+    const azimRad = (t01 - 0.25) * Math.PI * 2;
+    const r = Math.sqrt(Math.max(0, 1 - elevRad * elevRad));
+    sunDir.set(r * 0.3 * Math.cos(azimRad), elevRad, -r * Math.sin(azimRad));
+    dayMix = Math.max(0, Math.min(1, (elevRad + 0.05) / 0.40));
+}
+
+computeSunDirForHour(12);
+
+function formatHour(h) {
+    const hh = Math.floor(h) % 24;
+    const mm = Math.floor((h - Math.floor(h)) * 60);
+    return `${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`;
+}
+
+// ── Controls ──
+const slider = document.getElementById('time-slider');
+slider.oninput = () => {
+    currentHour = parseFloat(slider.value);
+    computeSunDirForHour(currentHour);
+    document.getElementById('time-val').textContent = formatHour(currentHour);
+};
+
+function setFrozen() {
+    frozen = true; cycleSpeed = 0;
+    document.getElementById('btn-freeze').classList.add('active');
+    document.getElementById('btn-cycle-fast').classList.remove('active');
+    document.getElementById('btn-cycle-rapid').classList.remove('active');
+}
+function setCycling(seconds) {
+    frozen = false; cycleSpeed = seconds; cycleStart = performance.now()*0.001;
+    document.getElementById('btn-freeze').classList.remove('active');
+    document.getElementById('btn-cycle-fast').classList.toggle('active', seconds === 120);
+    document.getElementById('btn-cycle-rapid').classList.toggle('active', seconds === 10);
+}
+
+document.getElementById('btn-freeze').onclick = setFrozen;
+document.getElementById('btn-cycle-fast').onclick = () => setCycling(120);
+document.getElementById('btn-cycle-rapid').onclick = () => setCycling(10);
+
+function showOnly(dome, clouds, stars) {
+    if (skyDome) skyDome.visible = dome;
+    if (cloudDome) cloudDome.visible = clouds;
+    if (starPoints) starPoints.visible = stars;
+    document.getElementById('btn-stars-only').classList.toggle('active', !dome && !clouds && stars);
+    document.getElementById('btn-clouds-only').classList.toggle('active', !dome && clouds && !stars);
+    document.getElementById('btn-dome-only').classList.toggle('active', dome && !clouds && !stars);
+    document.getElementById('btn-all').classList.toggle('active', dome && clouds && stars);
+}
+
+document.getElementById('btn-stars-only').onclick = () => showOnly(false, false, true);
+document.getElementById('btn-clouds-only').onclick = () => showOnly(false, true, false);
+document.getElementById('btn-dome-only').onclick = () => showOnly(true, false, false);
+document.getElementById('btn-all').onclick = () => showOnly(true, true, true);
+
+document.getElementById('btn-test').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Sky dome tests ---');
+
+    logTest(skyDome !== null, 'Sky dome mesh found');
+    logTest(cloudDome !== null, 'Cloud dome mesh found');
+    logTest(starPoints !== null, 'Star points found');
+
+    // Test star fade at night
+    computeSunDirForHour(0); // midnight
+    updateCustomSky(0, dayMix, sunDir, camera.position);
+    // Stars should be visible at night
+    const nightStarOp = starPoints?.material?.uniforms?.uOpacity?.value ?? 0;
+    // Need a few frames for opacity to ramp
+    for (let i = 0; i < 60; i++) updateCustomSky(i*0.016, dayMix, sunDir, camera.position);
+    const nightStarOpFinal = starPoints?.material?.uniforms?.uOpacity?.value ?? 0;
+    logTest(nightStarOpFinal > 0.1, `Stars visible at midnight (opacity=${nightStarOpFinal.toFixed(3)})`);
+
+    // Stars hidden at noon
+    computeSunDirForHour(12);
+    for (let i = 0; i < 120; i++) updateCustomSky(i*0.016, dayMix, sunDir, camera.position);
+    const noonStarOp = starPoints?.material?.uniforms?.uOpacity?.value ?? 1;
+    logTest(noonStarOp < 0.1, `Stars hidden at noon (opacity=${noonStarOp.toFixed(3)})`);
+
+    // Sky dome shader has uniforms
+    logTest(skyDome?.material?.uniforms?.uDayMix !== undefined, 'Sky dome has uDayMix uniform');
+    logTest(skyDome?.material?.uniforms?.uSunDir !== undefined, 'Sky dome has uSunDir uniform');
+
+    // Cloud dome shader has uniforms
+    logTest(cloudDome?.material?.uniforms?.uDayMix !== undefined, 'Cloud dome has uDayMix uniform');
+
+    computeSunDirForHour(currentHour);
+    console.log('--- Sky tests complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+function updateOverlay() {
+    document.getElementById('ov-daymix').textContent = dayMix.toFixed(3);
+    document.getElementById('ov-sundir').textContent = `(${sunDir.x.toFixed(2)}, ${sunDir.y.toFixed(2)}, ${sunDir.z.toFixed(2)})`;
+    document.getElementById('ov-stars').textContent = (starPoints?.material?.uniforms?.uOpacity?.value ?? 0).toFixed(3);
+    document.getElementById('ov-dome').textContent = skyDome?.visible ? 'YES' : 'NO';
+    document.getElementById('ov-clouds').textContent = cloudDome?.visible ? 'YES' : 'NO';
+    document.getElementById('ov-stars-vis').textContent = starPoints?.visible ? 'YES' : 'NO';
+}
+
+// ── Render Loop ──
+function animate() {
+    requestAnimationFrame(animate);
+    const time = performance.now() * 0.001;
+
+    if (!frozen && cycleSpeed > 0) {
+        const elapsed = time - cycleStart;
+        currentHour = ((elapsed / cycleSpeed) * 24) % 24;
+        computeSunDirForHour(currentHour);
+        slider.value = currentHour;
+        document.getElementById('time-val').textContent = formatHour(currentHour);
+    }
+
+    updateCustomSky(time, dayMix, sunDir, camera.position);
+    controls.update();
+    renderer.render(scene, camera);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-draws').innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Sky dome test harness loaded.');
+</script>
+</body>
+</html>

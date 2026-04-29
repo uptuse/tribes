@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Day/Night Cycle — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud input[type=range]{width:200px;accent-color:#FFD479}
+#hud label{font-size:11px;color:#888}
+
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+
+#overlay{position:fixed;top:50px;right:12px;width:300px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+
+#color-swatches{display:flex;gap:4px;margin-top:8px}
+.swatch{width:30px;height:20px;border:1px solid rgba(255,255,255,0.15);border-radius:2px}
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">DAYNIGHT TEST HARNESS</span>
+  <div class="sep"></div>
+  <label>Hour: <b id="hour-display">8:00</b></label>
+  <input type="range" id="time-slider" min="0" max="24" step="0.1" value="8">
+  <div class="sep"></div>
+  <button id="btn-freeze" class="active">Frozen</button>
+  <button id="btn-play">Play</button>
+  <button id="btn-fast">Fast (2min)</button>
+  <button id="btn-rapid">Rapid (10s)</button>
+  <div class="sep"></div>
+  <button id="btn-midnight">00:00</button>
+  <button id="btn-dawn">06:00</button>
+  <button id="btn-noon">12:00</button>
+  <button id="btn-dusk">18:00</button>
+  <div class="sep"></div>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>DayNight State</h3>
+  <div class="row"><span class="label">dayMix</span><span class="value" id="ov-daymix">--</span></div>
+  <div class="row"><span class="label">sunDir</span><span class="value" id="ov-sundir">--</span></div>
+  <div class="row"><span class="label">sun intensity</span><span class="value" id="ov-sun-int">--</span></div>
+  <div class="row"><span class="label">hemi intensity</span><span class="value" id="ov-hemi-int">--</span></div>
+  <div class="row"><span class="label">moon intensity</span><span class="value" id="ov-moon-int">--</span></div>
+  <div class="row"><span class="label">exposure</span><span class="value" id="ov-exposure">--</span></div>
+  <div class="row"><span class="label">fog color</span><span class="value" id="ov-fog">--</span></div>
+  <div class="row"><span class="label">env intensity</span><span class="value" id="ov-env">--</span></div>
+  <h3 style="margin-top:8px">Colors</h3>
+  <div id="color-swatches">
+    <div class="swatch" id="sw-sun" title="Sun"></div>
+    <div class="swatch" id="sw-hemi" title="Hemi"></div>
+    <div class="swatch" id="sw-fog" title="Fog"></div>
+    <div class="swatch" id="sw-sky" title="Sky bg"></div>
+  </div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import * as DayNight from './renderer_daynight.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+scene.fog = new THREE.FogExp2(0x111822, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 40, 80);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights matching DayNight expectations
+const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+sunLight.position.set(100, 200, 50);
+sunLight.castShadow = true;
+scene.add(sunLight);
+
+const hemiLight = new THREE.HemisphereLight(0x88aacc, 0x443322, 0.4);
+scene.add(hemiLight);
+
+const moonLight = new THREE.DirectionalLight(0x6688cc, 0.1);
+moonLight.position.set(-100, 100, -50);
+scene.add(moonLight);
+scene.add(moonLight.target);
+
+const nightAmbient = new THREE.AmbientLight(0x304060, 0.0);
+scene.add(nightAmbient);
+
+// Test geometry — terrain-like plane + some objects
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(400, 400, 64, 64),
+    new THREE.MeshStandardMaterial({ color: 0x446633, roughness: 0.85 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+// Add some height variation
+const gPos = ground.geometry.attributes.position;
+for (let i = 0; i < gPos.count; i++) {
+    const x = gPos.getX(i), y = gPos.getY(i);
+    gPos.setZ(i, (Math.sin(x*0.05)*Math.cos(y*0.04)) * 8);
+}
+ground.geometry.computeVertexNormals();
+scene.add(ground);
+
+// Some test buildings
+for (let i = 0; i < 5; i++) {
+    const box = new THREE.Mesh(
+        new THREE.BoxGeometry(8, 12+Math.random()*10, 8),
+        new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6 })
+    );
+    box.position.set(-30 + i*15, 6, -20);
+    box.castShadow = true;
+    box.receiveShadow = true;
+    scene.add(box);
+}
+
+// Spheres for lighting reference
+for (let i = 0; i < 3; i++) {
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(3, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.3, metalness: i * 0.3 })
+    );
+    sphere.position.set(-10 + i*10, 5, 15);
+    sphere.castShadow = true;
+    scene.add(sphere);
+}
+
+// ── Initialize DayNight ──
+DayNight.init({
+    sunLight, hemiLight, moonLight, nightAmbient,
+    terrainMesh: ground, renderer, scene
+});
+DayNight.freeze(8); // Start frozen at 8:00
+
+// ── Controls State ──
+let frozen = true;
+let playSpeed = 0; // 0=frozen, seconds per full cycle
+let playStart = 0;
+let playStartHour = 8;
+
+const slider = document.getElementById('time-slider');
+const hourDisplay = document.getElementById('hour-display');
+
+function formatHour(h) {
+    const hh = Math.floor(h) % 24;
+    const mm = Math.floor((h - Math.floor(h)) * 60);
+    return `${hh.toString().padStart(2,'0')}:${mm.toString().padStart(2,'0')}`;
+}
+
+slider.oninput = () => {
+    const h = parseFloat(slider.value);
+    hourDisplay.textContent = formatHour(h);
+    if (frozen) {
+        DayNight.freeze(h);
+    }
+};
+
+function setFrozen(hour) {
+    frozen = true;
+    playSpeed = 0;
+    DayNight.freeze(hour);
+    slider.value = hour;
+    hourDisplay.textContent = formatHour(hour);
+    document.getElementById('btn-freeze').classList.add('active');
+    document.getElementById('btn-play').classList.remove('active');
+    document.getElementById('btn-fast').classList.remove('active');
+    document.getElementById('btn-rapid').classList.remove('active');
+}
+
+function setPlaying(cycleSeconds) {
+    frozen = false;
+    playSpeed = cycleSeconds;
+    playStart = performance.now() * 0.001;
+    playStartHour = parseFloat(slider.value);
+    DayNight.unfreeze();
+    document.getElementById('btn-freeze').classList.remove('active');
+    document.getElementById('btn-play').classList.toggle('active', cycleSeconds === 1800);
+    document.getElementById('btn-fast').classList.toggle('active', cycleSeconds === 120);
+    document.getElementById('btn-rapid').classList.toggle('active', cycleSeconds === 10);
+}
+
+document.getElementById('btn-freeze').onclick = () => setFrozen(parseFloat(slider.value));
+document.getElementById('btn-play').onclick = () => setPlaying(1800);
+document.getElementById('btn-fast').onclick = () => setPlaying(120);
+document.getElementById('btn-rapid').onclick = () => setPlaying(10);
+document.getElementById('btn-midnight').onclick = () => setFrozen(0);
+document.getElementById('btn-dawn').onclick = () => setFrozen(6);
+document.getElementById('btn-noon').onclick = () => setFrozen(12);
+document.getElementById('btn-dusk').onclick = () => setFrozen(18);
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+const statFps = document.getElementById('stat-fps');
+const statDraws = document.getElementById('stat-draws');
+
+function toHex(color) { return '#' + color.getHexString(); }
+
+function updateOverlay() {
+    document.getElementById('ov-daymix').textContent = DayNight.dayMix.toFixed(4);
+    document.getElementById('ov-sundir').textContent = `(${DayNight.sunDir.x.toFixed(2)}, ${DayNight.sunDir.y.toFixed(2)}, ${DayNight.sunDir.z.toFixed(2)})`;
+    document.getElementById('ov-sun-int').textContent = sunLight.intensity.toFixed(3);
+    document.getElementById('ov-hemi-int').textContent = hemiLight.intensity.toFixed(3);
+    document.getElementById('ov-moon-int').textContent = moonLight.intensity.toFixed(3);
+    document.getElementById('ov-exposure').textContent = renderer.toneMappingExposure.toFixed(3);
+    document.getElementById('ov-fog').textContent = toHex(scene.fog.color);
+    document.getElementById('ov-env').textContent = (scene.environmentIntensity ?? 'N/A').toString();
+
+    document.getElementById('sw-sun').style.background = toHex(sunLight.color);
+    document.getElementById('sw-hemi').style.background = toHex(hemiLight.color);
+    document.getElementById('sw-fog').style.background = toHex(scene.fog.color);
+    document.getElementById('sw-sky').style.background = toHex(scene.background);
+}
+
+// ── Render Loop ──
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    if (!frozen && playSpeed > 0) {
+        const elapsed = performance.now() * 0.001 - playStart;
+        const hour = (playStartHour + (elapsed / playSpeed) * 24) % 24;
+        DayNight.freeze(hour); // Use freeze to drive manually at our speed
+        slider.value = hour;
+        hourDisplay.textContent = formatHour(hour);
+    }
+
+    // Update sun position for shadow
+    sunLight.position.copy(DayNight.sunDir).multiplyScalar(200);
+    scene.background.copy(scene.fog.color);
+
+    renderer.render(scene, camera);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 500) {
+        statFps.innerHTML = `FPS: <b>${Math.round(frameCount * 1000 / (now - lastFpsTime))}</b>`;
+        statDraws.innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+// ── Auto-tests ──
+function runTests() {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Running DayNight auto-tests ---');
+
+    // Test 1: freeze sets correct dayMix
+    DayNight.freeze(12);
+    logTest(DayNight.dayMix > 0.8, `Noon dayMix > 0.8 (got ${DayNight.dayMix.toFixed(3)})`);
+
+    DayNight.freeze(0);
+    logTest(DayNight.dayMix < 0.2, `Midnight dayMix < 0.2 (got ${DayNight.dayMix.toFixed(3)})`);
+
+    // Test 2: sun direction points up at noon
+    DayNight.freeze(12);
+    logTest(DayNight.sunDir.y > 0.5, `Noon sunDir.y > 0.5 (got ${DayNight.sunDir.y.toFixed(3)})`);
+
+    // Test 3: sun direction below horizon at midnight
+    DayNight.freeze(0);
+    logTest(DayNight.sunDir.y < 0, `Midnight sunDir.y < 0 (got ${DayNight.sunDir.y.toFixed(3)})`);
+
+    // Test 4: exposure ramps correctly
+    DayNight.freeze(12);
+    const noonExposure = renderer.toneMappingExposure;
+    DayNight.freeze(0);
+    const midnightExposure = renderer.toneMappingExposure;
+    logTest(noonExposure > midnightExposure, `Noon exposure (${noonExposure.toFixed(3)}) > midnight (${midnightExposure.toFixed(3)})`);
+
+    // Test 5: lerpColors works
+    const c = DayNight.lerpColors(
+        new THREE.Color(1,0,0), new THREE.Color(0,1,0),
+        new THREE.Color(0,0,1), new THREE.Color(1,1,0), 0.25
+    );
+    logTest(c.g > 0.9, `lerpColors at t=0.25 is green-ish (g=${c.g.toFixed(2)})`);
+
+    // Test 6: dispose nulls out
+    DayNight.dispose();
+    DayNight.freeze(12); // should not crash after dispose
+    logTest(true, 'dispose() + freeze() did not throw');
+
+    // Re-init for continued use
+    DayNight.init({ sunLight, hemiLight, moonLight, nightAmbient, terrainMesh: ground, renderer, scene });
+    DayNight.freeze(8);
+
+    console.log('--- DayNight tests complete ---');
+}
+
+setTimeout(runTests, 500);
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('DayNight test harness loaded.');
+</script>
+</body>
+</html>

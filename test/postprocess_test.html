@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Post-Processing — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud input[type=range]{width:100px;accent-color:#FFD479}
+#hud label{font-size:11px;color:#888}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+#split-line{position:fixed;top:50px;bottom:0;left:50%;width:2px;background:rgba(255,212,121,0.5);z-index:80;display:none;pointer-events:none}
+#split-label-l{position:fixed;top:56px;left:calc(50% - 80px);font:11px monospace;color:#FFD479;z-index:81;display:none}
+#split-label-r{position:fixed;top:56px;left:calc(50% + 10px);font:11px monospace;color:#FFD479;z-index:81;display:none}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">POSTPROCESS TEST</span>
+  <div class="sep"></div>
+  <button id="btn-bloom" class="active">Bloom</button>
+  <button id="btn-vignette" class="active">Vignette</button>
+  <button id="btn-grade" class="active">Color Grade</button>
+  <button id="btn-grain">Film Grain</button>
+  <div class="sep"></div>
+  <label>Bloom: <b id="bloom-val">0.30</b></label>
+  <input type="range" id="bloom-str" min="0" max="2" step="0.05" value="0.30">
+  <label>Thresh: <b id="thresh-val">0.92</b></label>
+  <input type="range" id="bloom-thresh" min="0" max="1.5" step="0.02" value="0.92">
+  <div class="sep"></div>
+  <button id="btn-nopost">No Post (bypass)</button>
+  <button id="btn-rebuild">Rebuild Pipeline</button>
+  <button id="btn-split">Split View</button>
+  <div class="sep"></div>
+  <button id="btn-test">Run Tests</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-passes">Passes: <b>--</b></span>
+  <span class="stat" id="stat-frame">Frame: <b>--</b>ms</span>
+</div>
+
+<div id="overlay">
+  <h3>Post-Processing State</h3>
+  <div class="row"><span class="label">composer</span><span class="value" id="ov-composer">--</span></div>
+  <div class="row"><span class="label">bloom enabled</span><span class="value" id="ov-bloom">--</span></div>
+  <div class="row"><span class="label">bloom strength</span><span class="value" id="ov-bloom-str">--</span></div>
+  <div class="row"><span class="label">bloom threshold</span><span class="value" id="ov-bloom-thresh">--</span></div>
+  <div class="row"><span class="label">grade pass</span><span class="value" id="ov-grade">--</span></div>
+  <div class="row"><span class="label">pass count</span><span class="value" id="ov-passes">--</span></div>
+  <div class="row"><span class="label">frame time</span><span class="value" id="ov-frametime">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="split-line"></div>
+<div id="split-label-l">RAW</div>
+<div id="split-label-r">POST</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+scene.fog = new THREE.Fog(0x111822, 100, 400);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 15, 30);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(50, 100, 30);
+sun.castShadow = true;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.4));
+scene.add(new THREE.HemisphereLight(0x88aacc, 0x443322, 0.3));
+
+// Ground
+scene.add(new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: 0x334433, roughness: 0.85 })
+).also = (m) => { m.rotation.x = -Math.PI/2; m.receiveShadow = true; return m; });
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(200, 200),
+    new THREE.MeshStandardMaterial({ color: 0x334433, roughness: 0.85 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+// Test objects — some emissive for bloom testing
+const emissiveSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(2, 32, 32),
+    new THREE.MeshStandardMaterial({ color: 0xff6600, emissive: 0xff4400, emissiveIntensity: 3.0 })
+);
+emissiveSphere.position.set(-8, 4, 0);
+scene.add(emissiveSphere);
+
+const emissiveSphere2 = new THREE.Mesh(
+    new THREE.SphereGeometry(1.5, 32, 32),
+    new THREE.MeshStandardMaterial({ color: 0x4488ff, emissive: 0x2266ff, emissiveIntensity: 2.5 })
+);
+emissiveSphere2.position.set(8, 3, -5);
+scene.add(emissiveSphere2);
+
+// Non-emissive objects
+for (let i = 0; i < 6; i++) {
+    const mesh = new THREE.Mesh(
+        new THREE.BoxGeometry(3, 5+Math.random()*5, 3),
+        new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.5, metalness: 0.1 })
+    );
+    mesh.position.set(-12+i*5, 2.5, -10);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    scene.add(mesh);
+}
+
+// Metal spheres for reflection testing
+for (let i = 0; i < 3; i++) {
+    const sphere = new THREE.Mesh(
+        new THREE.SphereGeometry(1.5, 32, 32),
+        new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.1, metalness: 0.9 })
+    );
+    sphere.position.set(-5+i*5, 2, 8);
+    scene.add(sphere);
+}
+
+// ── Post-Processing Pipeline ──
+let composer = null;
+let bloomPass = null;
+let gradePass = null;
+let useComposer = true;
+let splitView = false;
+
+function makeGradeShader() {
+    return {
+        uniforms: {
+            tDiffuse: { value: null },
+            vignetteIntensity: { value: 0.18 },
+            warmth: { value: 0.06 },
+            desaturation: { value: 0.10 },
+            grain: { value: 0.012 },
+            time: { value: 0.0 },
+        },
+        vertexShader: `varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }`,
+        fragmentShader: `
+            uniform sampler2D tDiffuse;
+            uniform float vignetteIntensity, warmth, desaturation, grain, time;
+            varying vec2 vUv;
+            float hash(vec2 p){return fract(sin(dot(p,vec2(12.9898,78.233)))*43758.5453);}
+            void main(){
+                vec4 c=texture2D(tDiffuse,vUv);
+                float gray=dot(c.rgb,vec3(0.299,0.587,0.114));
+                c.rgb=mix(c.rgb,vec3(gray),desaturation);
+                float lum=(c.r+c.g+c.b)/3.0;
+                float sm=1.0-smoothstep(0.0,0.5,lum);
+                c.r+=warmth*sm; c.b-=warmth*sm;
+                vec2 uv=vUv-0.5;
+                float v=1.0-dot(uv,uv)*vignetteIntensity*4.0;
+                c.rgb*=clamp(v,0.0,1.0);
+                float n=hash(vUv*vec2(1920.0,1080.0)+vec2(time*60.0,0.0));
+                c.rgb+=vec3((n-0.5)*grain);
+                gl_FragColor=c;
+            }`,
+    };
+}
+
+function buildComposer() {
+    if (composer) {
+        try { if (typeof composer.dispose === 'function') composer.dispose(); } catch(e) {}
+    }
+    composer = new EffectComposer(renderer);
+    const renderPass = new RenderPass(scene, camera);
+    composer.addPass(renderPass);
+
+    bloomPass = new UnrealBloomPass(
+        new THREE.Vector2(window.innerWidth, window.innerHeight),
+        parseFloat(document.getElementById('bloom-str').value),
+        0.45,
+        parseFloat(document.getElementById('bloom-thresh').value)
+    );
+    bloomPass.enabled = document.getElementById('btn-bloom').classList.contains('active');
+    composer.addPass(bloomPass);
+
+    gradePass = new ShaderPass(makeGradeShader());
+    gradePass.enabled = document.getElementById('btn-grade').classList.contains('active');
+    composer.addPass(gradePass);
+
+    composer.addPass(new OutputPass());
+
+    console.log(`Post-processing built: ${composer.passes.length} passes`);
+}
+
+buildComposer();
+
+// ── Controls ──
+function togglePass(btnId, pass) {
+    const btn = document.getElementById(btnId);
+    btn.classList.toggle('active');
+    if (pass) pass.enabled = btn.classList.contains('active');
+}
+
+document.getElementById('btn-bloom').onclick = () => togglePass('btn-bloom', bloomPass);
+document.getElementById('btn-vignette').onclick = () => {
+    const btn = document.getElementById('btn-vignette');
+    btn.classList.toggle('active');
+    if (gradePass) gradePass.uniforms.vignetteIntensity.value = btn.classList.contains('active') ? 0.18 : 0.0;
+};
+document.getElementById('btn-grade').onclick = () => togglePass('btn-grade', gradePass);
+document.getElementById('btn-grain').onclick = () => {
+    const btn = document.getElementById('btn-grain');
+    btn.classList.toggle('active');
+    if (gradePass) gradePass.uniforms.grain.value = btn.classList.contains('active') ? 0.025 : 0.012;
+};
+
+document.getElementById('bloom-str').oninput = (e) => {
+    if (bloomPass) bloomPass.strength = parseFloat(e.target.value);
+    document.getElementById('bloom-val').textContent = parseFloat(e.target.value).toFixed(2);
+};
+document.getElementById('bloom-thresh').oninput = (e) => {
+    if (bloomPass) bloomPass.threshold = parseFloat(e.target.value);
+    document.getElementById('thresh-val').textContent = parseFloat(e.target.value).toFixed(2);
+};
+
+document.getElementById('btn-nopost').onclick = () => {
+    useComposer = !useComposer;
+    document.getElementById('btn-nopost').classList.toggle('active', !useComposer);
+    console.log('Post-processing: ' + (useComposer ? 'ON' : 'BYPASSED'));
+};
+
+document.getElementById('btn-rebuild').onclick = () => {
+    console.log('--- Rebuilding post-processing pipeline ---');
+    buildComposer();
+};
+
+document.getElementById('btn-split').onclick = () => {
+    splitView = !splitView;
+    document.getElementById('btn-split').classList.toggle('active', splitView);
+    document.getElementById('split-line').style.display = splitView ? 'block' : 'none';
+    document.getElementById('split-label-l').style.display = splitView ? 'block' : 'none';
+    document.getElementById('split-label-r').style.display = splitView ? 'block' : 'none';
+};
+
+document.getElementById('btn-test').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Post-processing tests ---');
+
+    logTest(composer !== null, 'Composer exists');
+    logTest(composer.passes.length >= 3, `Pass count >= 3 (got ${composer.passes.length})`);
+    logTest(bloomPass !== null, 'Bloom pass exists');
+
+    // Test dispose/rebuild
+    const oldPasses = composer.passes.length;
+    buildComposer();
+    logTest(composer.passes.length === oldPasses, `Rebuild preserves pass count (${composer.passes.length})`);
+
+    // Test toggle
+    bloomPass.enabled = false;
+    logTest(bloomPass.enabled === false, 'Bloom can be disabled');
+    bloomPass.enabled = true;
+    logTest(bloomPass.enabled === true, 'Bloom can be re-enabled');
+
+    // Test nopost mode
+    useComposer = false;
+    // Render one frame without composer — should not crash
+    renderer.render(scene, camera);
+    logTest(true, 'Direct render (nopost) did not crash');
+    useComposer = true;
+
+    console.log('--- Post-processing tests complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+let frameTimeMs = 0;
+
+function updateOverlay() {
+    document.getElementById('ov-composer').textContent = useComposer ? 'ACTIVE' : 'BYPASSED';
+    document.getElementById('ov-composer').className = 'value ' + (useComposer ? 'good' : '');
+    document.getElementById('ov-bloom').textContent = bloomPass?.enabled ? 'YES' : 'NO';
+    document.getElementById('ov-bloom-str').textContent = bloomPass?.strength?.toFixed(2) ?? '--';
+    document.getElementById('ov-bloom-thresh').textContent = bloomPass?.threshold?.toFixed(2) ?? '--';
+    document.getElementById('ov-grade').textContent = gradePass?.enabled ? 'YES' : 'NO';
+    document.getElementById('ov-passes').textContent = composer?.passes?.length ?? '--';
+    document.getElementById('ov-frametime').textContent = frameTimeMs.toFixed(2) + 'ms';
+}
+
+// ── Render Loop ──
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    if (gradePass) gradePass.uniforms.time.value = performance.now() * 0.001;
+
+    // Animate emissive
+    const t = performance.now() * 0.001;
+    emissiveSphere.material.emissiveIntensity = 2.0 + Math.sin(t * 2) * 1.5;
+    emissiveSphere2.material.emissiveIntensity = 1.5 + Math.sin(t * 3 + 1) * 1.0;
+
+    const t0 = performance.now();
+
+    if (splitView) {
+        // Left half: raw, right half: post-processed
+        const w = window.innerWidth;
+        const h = window.innerHeight;
+        // Raw left half
+        renderer.setScissorTest(true);
+        renderer.setScissor(0, 0, w/2, h);
+        renderer.setViewport(0, 0, w, h);
+        renderer.render(scene, camera);
+        // Post right half
+        renderer.setScissor(w/2, 0, w/2, h);
+        if (useComposer && composer) {
+            composer.render();
+        } else {
+            renderer.render(scene, camera);
+        }
+        renderer.setScissorTest(false);
+    } else {
+        if (useComposer && composer) {
+            composer.render();
+        } else {
+            renderer.render(scene, camera);
+        }
+    }
+
+    frameTimeMs = performance.now() - t0;
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-passes').innerHTML = `Passes: <b>${composer?.passes?.length??0}</b>`;
+        document.getElementById('stat-frame').innerHTML = `Frame: <b>${frameTimeMs.toFixed(1)}</b>ms`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    if (bloomPass) bloomPass.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Post-processing test harness loaded.');
+</script>
+</body>
+</html>

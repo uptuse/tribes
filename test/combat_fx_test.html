@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Combat FX — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+#hit-tick{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);color:#FFD479;font-size:24px;font-weight:bold;z-index:60}
+#hit-tick.show{display:block}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">COMBAT FX TEST</span>
+  <div class="sep"></div>
+  <button id="btn-muzzle">Muzzle Flash</button>
+  <button id="btn-tracer">Tracer</button>
+  <button id="btn-hit">Hit Flash</button>
+  <button id="btn-kill">Kill Flash</button>
+  <div class="sep"></div>
+  <button id="btn-rapid-fire">Rapid Fire (hold)</button>
+  <button id="btn-shockwave">Shockwave</button>
+  <button id="btn-decal">Spawn Decal</button>
+  <div class="sep"></div>
+  <button id="btn-test-pool">Test Pool Limits</button>
+  <button id="btn-test-decal-cap">Test Decal Cap</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Combat FX State</h3>
+  <div class="row"><span class="label">muzzle active</span><span class="value" id="ov-muzzle">NO</span></div>
+  <div class="row"><span class="label">tracer count</span><span class="value" id="ov-tracers">0</span></div>
+  <div class="row"><span class="label">shockwave count</span><span class="value" id="ov-shockwave">0</span></div>
+  <div class="row"><span class="label">decal count</span><span class="value" id="ov-decals">0</span></div>
+  <div class="row"><span class="label">fire count</span><span class="value" id="ov-fires">0</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="hit-tick">+</div>
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 5, 15);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.target.set(0, 3, 0);
+controls.update();
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.2);
+sun.position.set(50, 100, 30);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.5));
+
+// Ground + walls for decals
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(50, 50),
+    new THREE.MeshStandardMaterial({ color: 0x333833, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const wall = new THREE.Mesh(
+    new THREE.BoxGeometry(20, 8, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 })
+);
+wall.position.set(0, 4, -8);
+scene.add(wall);
+
+// Weapon anchor point
+const weaponAnchor = new THREE.Group();
+weaponAnchor.position.set(2, 3, 5);
+scene.add(weaponAnchor);
+
+// Muzzle sprite
+const muzzleMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.2, 1.2),
+    new THREE.MeshBasicMaterial({ color: 0xfff4c0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0 })
+);
+weaponAnchor.add(muzzleMesh);
+
+// ═══════════════════════════════════
+// Combat FX Systems
+// ═══════════════════════════════════
+
+// ── Muzzle Flash ──
+let _flashTime = 0;
+const FLASH_DURATION = 0.07;
+let flashLight = new THREE.PointLight(0xffd070, 0, 6, 2);
+weaponAnchor.add(flashLight);
+
+function fireMuzzleFlash() {
+    _flashTime = FLASH_DURATION;
+    muzzleMesh.material.opacity = 1.0;
+    muzzleMesh.rotation.z = Math.random() * Math.PI * 2;
+    const s = 0.85 + Math.random() * 0.3;
+    muzzleMesh.scale.set(s, s, 1);
+    flashLight.intensity = 2.5;
+}
+
+// ── Tracers ──
+const TRACER_POOL = 8;
+const TRACER_LIFETIME = 0.14;
+const tracers = [];
+let tracerCursor = 0;
+
+for (let i = 0; i < TRACER_POOL; i++) {
+    const geo = new THREE.BufferGeometry();
+    const positions = new Float32Array([0,0,0, 0,0,0]);
+    geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    const line = new THREE.Line(geo, new THREE.LineBasicMaterial({
+        color: 0xffd070, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0
+    }));
+    line.frustumCulled = false;
+    line.visible = false;
+    scene.add(line);
+    tracers.push({ line, life: 0 });
+}
+
+function fireTracer() {
+    const t = tracers[tracerCursor];
+    tracerCursor = (tracerCursor + 1) % TRACER_POOL;
+    const start = weaponAnchor.position.clone();
+    const end = new THREE.Vector3(
+        (Math.random()-0.5)*15,
+        2+Math.random()*4,
+        -8+Math.random()*2
+    );
+    const arr = t.line.geometry.attributes.position.array;
+    arr[0]=start.x; arr[1]=start.y; arr[2]=start.z;
+    arr[3]=end.x; arr[4]=end.y; arr[5]=end.z;
+    t.line.geometry.attributes.position.needsUpdate = true;
+    t.line.material.opacity = 0.85;
+    t.line.visible = true;
+    t.life = TRACER_LIFETIME;
+}
+
+// ── Shockwave ──
+const SHOCKWAVE_POOL = 4;
+const shockwaves = [];
+
+for (let i = 0; i < SHOCKWAVE_POOL; i++) {
+    const geo = new THREE.RingGeometry(0.1, 1, 32);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0xff8844, transparent: true, blending: THREE.AdditiveBlending,
+        depthWrite: false, opacity: 0, side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.rotation.x = -Math.PI/2;
+    mesh.visible = false;
+    scene.add(mesh);
+    shockwaves.push({ mesh, life: 0 });
+}
+let shockCursor = 0;
+
+function triggerShockwave(x, y, z) {
+    const sw = shockwaves[shockCursor];
+    shockCursor = (shockCursor + 1) % SHOCKWAVE_POOL;
+    sw.mesh.position.set(x, y + 0.1, z);
+    sw.mesh.scale.setScalar(0.1);
+    sw.mesh.material.opacity = 0.8;
+    sw.mesh.visible = true;
+    sw.life = 0.5;
+}
+
+// ── Decals ──
+const DECAL_CAP = 48;
+const decals = [];
+
+function spawnDecal(x, y, z) {
+    if (decals.length >= DECAL_CAP) {
+        const old = decals.shift();
+        scene.remove(old);
+        old.geometry.dispose();
+        old.material.dispose();
+    }
+    const geo = new THREE.CircleGeometry(0.3 + Math.random()*0.3, 8);
+    const mat = new THREE.MeshBasicMaterial({
+        color: 0x222222, transparent: true, opacity: 0.7, depthWrite: false,
+        side: THREE.DoubleSide
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(x, y + 0.01, z);
+    mesh.rotation.x = -Math.PI/2;
+    scene.add(mesh);
+    decals.push(mesh);
+}
+
+// ── Update ──
+let fireCount = 0;
+let rapidFiring = false;
+let rapidTimer = 0;
+
+function updateCombatFX(dt) {
+    // Muzzle flash decay
+    if (_flashTime > 0) {
+        _flashTime -= dt;
+        const k = Math.max(0, _flashTime / FLASH_DURATION);
+        muzzleMesh.material.opacity = k;
+        flashLight.intensity = 2.5 * k;
+        if (_flashTime <= 0) {
+            muzzleMesh.material.opacity = 0;
+            flashLight.intensity = 0;
+        }
+    }
+
+    // Tracer fade
+    let activeTracers = 0;
+    for (const t of tracers) {
+        if (t.life > 0) {
+            t.life -= dt;
+            t.line.material.opacity = 0.85 * Math.max(0, t.life / TRACER_LIFETIME);
+            if (t.life <= 0) t.line.visible = false;
+            else activeTracers++;
+        }
+    }
+
+    // Shockwave expand + fade
+    let activeShockwaves = 0;
+    for (const sw of shockwaves) {
+        if (sw.life > 0) {
+            sw.life -= dt;
+            const t = 1 - sw.life / 0.5;
+            sw.mesh.scale.setScalar(0.1 + t * 8);
+            sw.mesh.material.opacity = 0.8 * (1 - t * t);
+            if (sw.life <= 0) sw.mesh.visible = false;
+            else activeShockwaves++;
+        }
+    }
+
+    // Rapid fire
+    if (rapidFiring) {
+        rapidTimer += dt;
+        if (rapidTimer >= 0.08) { // ~12 rounds/sec
+            fireMuzzleFlash();
+            fireTracer();
+            fireCount++;
+            rapidTimer = 0;
+        }
+    }
+
+    document.getElementById('ov-muzzle').textContent = _flashTime > 0 ? 'YES' : 'NO';
+    document.getElementById('ov-tracers').textContent = activeTracers;
+    document.getElementById('ov-shockwave').textContent = activeShockwaves;
+    document.getElementById('ov-decals').textContent = decals.length;
+    document.getElementById('ov-fires').textContent = fireCount;
+}
+
+// ── Button Handlers ──
+document.getElementById('btn-muzzle').onclick = () => { fireMuzzleFlash(); fireCount++; };
+document.getElementById('btn-tracer').onclick = () => { fireTracer(); fireCount++; };
+document.getElementById('btn-hit').onclick = () => {
+    const t = document.getElementById('hit-tick');
+    t.textContent = '+';
+    t.classList.add('show');
+    setTimeout(() => t.classList.remove('show'), 300);
+};
+document.getElementById('btn-kill').onclick = () => {
+    const t = document.getElementById('hit-tick');
+    t.textContent = '✕ KILL';
+    t.style.color = '#ff4444';
+    t.classList.add('show');
+    setTimeout(() => { t.classList.remove('show'); t.style.color = '#FFD479'; }, 480);
+};
+
+const rapidBtn = document.getElementById('btn-rapid-fire');
+rapidBtn.addEventListener('mousedown', () => { rapidFiring = true; rapidBtn.classList.add('active'); });
+rapidBtn.addEventListener('mouseup', () => { rapidFiring = false; rapidBtn.classList.remove('active'); });
+rapidBtn.addEventListener('mouseleave', () => { rapidFiring = false; rapidBtn.classList.remove('active'); });
+
+document.getElementById('btn-shockwave').onclick = () => {
+    triggerShockwave((Math.random()-0.5)*10, 0, (Math.random()-0.5)*10);
+};
+document.getElementById('btn-decal').onclick = () => {
+    spawnDecal((Math.random()-0.5)*15, 0, (Math.random()-0.5)*15);
+};
+
+document.getElementById('btn-test-pool').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Pool limit tests ---');
+    // Fire more tracers than pool size
+    for (let i = 0; i < TRACER_POOL + 5; i++) fireTracer();
+    logTest(true, `Fired ${TRACER_POOL+5} tracers (pool=${TRACER_POOL}) — no crash`);
+
+    // Fire more shockwaves than pool
+    for (let i = 0; i < SHOCKWAVE_POOL + 3; i++) triggerShockwave(Math.random()*5, 0, Math.random()*5);
+    logTest(true, `Fired ${SHOCKWAVE_POOL+3} shockwaves (pool=${SHOCKWAVE_POOL}) — no crash`);
+
+    // Rapid muzzle flash
+    for (let i = 0; i < 20; i++) fireMuzzleFlash();
+    logTest(true, '20 rapid muzzle flashes — no crash');
+    console.log('--- Pool tests complete ---');
+};
+
+document.getElementById('btn-test-decal-cap').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Decal cap test ---');
+    // Clear existing
+    while (decals.length > 0) { const d = decals.shift(); scene.remove(d); d.geometry.dispose(); d.material.dispose(); }
+    // Spawn more than cap
+    for (let i = 0; i < DECAL_CAP + 10; i++) spawnDecal(Math.random()*10, 0, Math.random()*10);
+    logTest(decals.length === DECAL_CAP, `Decal count capped at ${DECAL_CAP} (got ${decals.length})`);
+    logTest(decals.length <= DECAL_CAP, 'No memory leak from decals');
+    console.log('--- Decal cap test complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+// ── Render Loop ──
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    lastTime = now;
+
+    updateCombatFX(dt);
+    controls.update();
+    renderer.render(scene, camera);
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-draws').innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Combat FX test harness loaded.');
+</script>
+</body>
+</html>

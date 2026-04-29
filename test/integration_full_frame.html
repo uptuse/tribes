@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Full Frame Integration — Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud select{font-size:11px;padding:3px 6px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);color:#b0b4bc;border-radius:3px}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:310px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+#overlay .row .value.warn{color:#ffcc44}
+#budget-bar{height:16px;background:rgba(255,255,255,0.05);border-radius:3px;margin-top:6px;position:relative;overflow:hidden}
+#budget-fill{height:100%;background:linear-gradient(90deg,#44ff88,#FFD479,#ff4466);border-radius:3px;transition:width 0.2s}
+#budget-label{position:absolute;top:0;left:4px;line-height:16px;font-size:10px;color:#fff;text-shadow:0 0 3px #000}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">INTEGRATION TEST — FULL FRAME</span>
+  <div class="sep"></div>
+  <select id="quality-select">
+    <option value="ultra">Ultra</option>
+    <option value="high" selected>High</option>
+    <option value="medium">Medium</option>
+    <option value="low">Low</option>
+    <option value="potato">Potato</option>
+  </select>
+  <div class="sep"></div>
+  <button id="btn-toggle-sky">Sky</button>
+  <button id="btn-toggle-particles">Particles</button>
+  <button id="btn-toggle-post">PostFX</button>
+  <button id="btn-toggle-shadows">Shadows</button>
+  <div class="sep"></div>
+  <button id="btn-benchmark">Benchmark (120f)</button>
+  <button id="btn-memory">Memory Check</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-frame">Frame: <b>--</b>ms</span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+  <span class="stat" id="stat-tris">Tris: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Frame Budget (16.6ms target)</h3>
+  <div id="budget-bar"><div id="budget-fill" style="width:30%"></div><span id="budget-label">5ms / 16.6ms</span></div>
+  <h3 style="margin-top:10px">Systems Active</h3>
+  <div class="row"><span class="label">sky dome</span><span class="value" id="ov-sky">ON</span></div>
+  <div class="row"><span class="label">day/night</span><span class="value" id="ov-daynight">ON</span></div>
+  <div class="row"><span class="label">terrain</span><span class="value" id="ov-terrain">ON</span></div>
+  <div class="row"><span class="label">particles</span><span class="value" id="ov-particles">ON</span></div>
+  <div class="row"><span class="label">post-process</span><span class="value" id="ov-post">ON</span></div>
+  <div class="row"><span class="label">shadows</span><span class="value" id="ov-shadows">ON</span></div>
+  <h3 style="margin-top:8px">Render Stats</h3>
+  <div class="row"><span class="label">draw calls</span><span class="value" id="ov-draws">--</span></div>
+  <div class="row"><span class="label">triangles</span><span class="value" id="ov-tris">--</span></div>
+  <div class="row"><span class="label">textures</span><span class="value" id="ov-tex">--</span></div>
+  <div class="row"><span class="label">geometries</span><span class="value" id="ov-geo">--</span></div>
+  <div class="row"><span class="label">programs</span><span class="value" id="ov-prog">--</span></div>
+  <div class="row"><span class="label">quality tier</span><span class="value" id="ov-quality">high</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import * as DayNight from './renderer_daynight.js';
+import { initCustomSky, updateCustomSky } from './renderer_sky.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Quality Tiers ──
+const QUALITY_TIERS = {
+    ultra:  { pixelRatio: 2, shadows: true, postProcess: 'full', particles: true, skyDetail: 32 },
+    high:   { pixelRatio: 1.5, shadows: true, postProcess: 'bloom', particles: true, skyDetail: 32 },
+    medium: { pixelRatio: 1, shadows: true, postProcess: 'bloom', particles: true, skyDetail: 24 },
+    low:    { pixelRatio: 1, shadows: false, postProcess: false, particles: true, skyDetail: 16 },
+    potato: { pixelRatio: 0.75, shadows: false, postProcess: false, particles: false, skyDetail: 12 },
+};
+let currentQuality = 'high';
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.0;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.FogExp2(0x111822, 0.0008);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 60, 120);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// ── Lights ──
+const sunLight = new THREE.DirectionalLight(0xffeedd, 1.5);
+sunLight.position.set(100, 200, 50);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.near = 1; sunLight.shadow.camera.far = 500;
+sunLight.shadow.camera.left = -200; sunLight.shadow.camera.right = 200;
+sunLight.shadow.camera.top = 200; sunLight.shadow.camera.bottom = -200;
+scene.add(sunLight);
+
+const hemiLight = new THREE.HemisphereLight(0x88aacc, 0x443322, 0.4);
+scene.add(hemiLight);
+
+const moonLight = new THREE.DirectionalLight(0x6688cc, 0.1);
+moonLight.position.set(-100, 100, -50);
+scene.add(moonLight);
+scene.add(moonLight.target);
+
+const nightAmbient = new THREE.AmbientLight(0x304060, 0.0);
+scene.add(nightAmbient);
+
+// ── Terrain ──
+const terrainSize = 257;
+const terrainScale = 4;
+const terrainSpan = (terrainSize-1) * terrainScale;
+const heights = new Float32Array(terrainSize * terrainSize);
+for (let j = 0; j < terrainSize; j++) {
+    for (let i = 0; i < terrainSize; i++) {
+        const wx = (i - (terrainSize-1)/2) * terrainScale;
+        const wz = (j - (terrainSize-1)/2) * terrainScale;
+        let h = Math.sin(wx*0.005)*Math.cos(wz*0.004)*40 + Math.sin(wx*0.01+wz*0.008)*15;
+        h += Math.sin(wx*0.02-wz*0.015)*8;
+        const dist = Math.sqrt(wx*wx+wz*wz);
+        h -= Math.max(0, 25-dist*0.06);
+        heights[j*terrainSize+i] = h + 20;
+    }
+}
+
+const terrainGeom = new THREE.PlaneGeometry(terrainSpan, terrainSpan, terrainSize-1, terrainSize-1);
+terrainGeom.rotateX(-Math.PI / 2);
+const tPos = terrainGeom.attributes.position;
+const colors = new Float32Array(tPos.count * 3);
+let hMin = Infinity, hMax = -Infinity;
+for (let i = 0; i < tPos.count; i++) {
+    const h = heights[i];
+    tPos.setY(i, h);
+    if (h<hMin) hMin=h; if(h>hMax) hMax=h;
+}
+const hRange = hMax-hMin;
+for (let i = 0; i < tPos.count; i++) {
+    const hN = (tPos.getY(i)-hMin)/hRange;
+    if (hN < 0.3) { colors[i*3]=0.35; colors[i*3+1]=0.45; colors[i*3+2]=0.25; }
+    else if (hN < 0.6) { colors[i*3]=0.5; colors[i*3+1]=0.42; colors[i*3+2]=0.3; }
+    else { colors[i*3]=0.6; colors[i*3+1]=0.58; colors[i*3+2]=0.5; }
+}
+terrainGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+tPos.needsUpdate = true;
+terrainGeom.computeVertexNormals();
+
+const terrainMesh = new THREE.Mesh(terrainGeom, new THREE.MeshStandardMaterial({
+    vertexColors: true, roughness: 0.85, flatShading: false
+}));
+terrainMesh.castShadow = true;
+terrainMesh.receiveShadow = true;
+scene.add(terrainMesh);
+
+// ── Buildings ──
+const buildingPositions = [
+    { x: -200, z: -200 }, { x: 200, z: 200 }, { x: 0, z: 0 },
+    { x: -100, z: 100 }, { x: 100, z: -100 },
+];
+for (const bp of buildingPositions) {
+    const h = 10 + Math.random()*15;
+    const box = new THREE.Mesh(
+        new THREE.BoxGeometry(12, h, 12),
+        new THREE.MeshStandardMaterial({ color: 0x666666, roughness: 0.7 })
+    );
+    box.position.set(bp.x, h/2+20, bp.z);
+    box.castShadow = true; box.receiveShadow = true;
+    scene.add(box);
+}
+
+// ── Sky ──
+initCustomSky(scene);
+
+// ── DayNight ──
+DayNight.init({ sunLight, hemiLight, moonLight, nightAmbient, terrainMesh, renderer, scene });
+DayNight.freeze(10); // Start at 10am
+
+// ── Particle Systems ──
+const PARTICLE_MAX = 256;
+let _pPos = new Float32Array(PARTICLE_MAX*3);
+let _pAge = new Float32Array(PARTICLE_MAX);
+let _pAlpha = new Float32Array(PARTICLE_MAX);
+let _pVel = new Float32Array(PARTICLE_MAX*3);
+let _pNext = 0;
+let particleMesh = null;
+let particlesEnabled = true;
+
+function initParticles() {
+    for (let i = 0; i < PARTICLE_MAX; i++) { _pPos[i*3+1]=-9999; _pAlpha[i]=0; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(_pPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(_pAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.ShaderMaterial({
+        vertexShader: `attribute float aAlpha; varying float vAlpha;
+            void main(){vAlpha=aAlpha;vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=aAlpha*120.0/max(1.0,-mv.z);gl_Position=projectionMatrix*mv;}`,
+        fragmentShader: `varying float vAlpha; void main(){float r=length(gl_PointCoord-vec2(0.5));
+            if(r>0.5)discard;float s=1.0-smoothstep(0.2,0.5,r);
+            gl_FragColor=vec4(0.8,0.95,1.0,s*vAlpha);}`,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    particleMesh = new THREE.Points(geo, mat);
+    particleMesh.frustumCulled = false;
+    scene.add(particleMesh);
+}
+initParticles();
+
+function updateParticles(dt) {
+    if (!particlesEnabled || !particleMesh) return;
+    for (let i = 0; i < PARTICLE_MAX; i++) {
+        if (_pAge[i]<=0) continue;
+        _pAge[i]-=dt;
+        if (_pAge[i]<=0){_pAge[i]=0;_pPos[i*3+1]=-9999;_pAlpha[i]=0;continue;}
+        _pPos[i*3]+=_pVel[i*3]*dt;_pPos[i*3+1]+=_pVel[i*3+1]*dt;_pPos[i*3+2]+=_pVel[i*3+2]*dt;
+        _pVel[i*3+1]-=3*dt;_pVel[i*3]*=0.97;_pVel[i*3+2]*=0.97;
+        _pAlpha[i]=Math.min(1,_pAge[i]/0.3);
+    }
+    // Emit a few per frame
+    for (let e=0;e<2;e++){
+        const i=_pNext;
+        _pPos[i*3]=(Math.random()-0.5)*20;_pPos[i*3+1]=22+Math.random()*2;_pPos[i*3+2]=(Math.random()-0.5)*20;
+        _pVel[i*3]=(Math.random()-0.5)*3;_pVel[i*3+1]=Math.random()*2+1;_pVel[i*3+2]=(Math.random()-0.5)*3;
+        _pAge[i]=0.5;_pAlpha[i]=0.8;
+        _pNext=(_pNext+1)%PARTICLE_MAX;
+    }
+    particleMesh.geometry.attributes.position.needsUpdate=true;
+    particleMesh.geometry.attributes.aAlpha.needsUpdate=true;
+}
+
+// ── Post-Processing ──
+let composer = null;
+let bloomPass = null;
+let postEnabled = true;
+
+function buildComposer() {
+    if (composer) { try { composer.dispose(); } catch(e){} }
+    composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.3, 0.45, 0.92);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+}
+buildComposer();
+
+// ── System Toggles ──
+let skyEnabled = true, shadowsEnabled = true;
+const toggleBtns = {
+    sky: document.getElementById('btn-toggle-sky'),
+    particles: document.getElementById('btn-toggle-particles'),
+    post: document.getElementById('btn-toggle-post'),
+    shadows: document.getElementById('btn-toggle-shadows'),
+};
+Object.values(toggleBtns).forEach(b => b.classList.add('active'));
+
+toggleBtns.sky.onclick = () => {
+    skyEnabled = !skyEnabled;
+    toggleBtns.sky.classList.toggle('active', skyEnabled);
+    scene.traverse(c => { if (c.renderOrder <= -998) c.visible = skyEnabled; });
+};
+toggleBtns.particles.onclick = () => {
+    particlesEnabled = !particlesEnabled;
+    toggleBtns.particles.classList.toggle('active', particlesEnabled);
+    if (particleMesh) particleMesh.visible = particlesEnabled;
+};
+toggleBtns.post.onclick = () => {
+    postEnabled = !postEnabled;
+    toggleBtns.post.classList.toggle('active', postEnabled);
+};
+toggleBtns.shadows.onclick = () => {
+    shadowsEnabled = !shadowsEnabled;
+    toggleBtns.shadows.classList.toggle('active', shadowsEnabled);
+    renderer.shadowMap.enabled = shadowsEnabled;
+    scene.traverse(c => { if (c.material) c.material.needsUpdate = true; });
+};
+
+document.getElementById('quality-select').onchange = (e) => {
+    currentQuality = e.target.value;
+    const tier = QUALITY_TIERS[currentQuality];
+    renderer.setPixelRatio(tier.pixelRatio);
+    renderer.shadowMap.enabled = tier.shadows;
+    shadowsEnabled = tier.shadows;
+    toggleBtns.shadows.classList.toggle('active', tier.shadows);
+    postEnabled = !!tier.postProcess;
+    toggleBtns.post.classList.toggle('active', postEnabled);
+    particlesEnabled = tier.particles;
+    toggleBtns.particles.classList.toggle('active', tier.particles);
+    if (particleMesh) particleMesh.visible = tier.particles;
+    document.getElementById('ov-quality').textContent = currentQuality;
+    console.log(`Quality: ${currentQuality}, pixelRatio=${tier.pixelRatio}, shadows=${tier.shadows}, post=${tier.postProcess}`);
+};
+
+// ── Benchmark ──
+document.getElementById('btn-benchmark').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Benchmark: 120 frames ---');
+    const times = [];
+    function benchFrame(i) {
+        if (i >= 120) {
+            const avg = times.reduce((a,b)=>a+b,0)/times.length;
+            const max = Math.max(...times);
+            const p95 = times.sort((a,b)=>a-b)[Math.floor(times.length*0.95)];
+            logTest(avg < 16.6, `Avg frame: ${avg.toFixed(2)}ms (budget: 16.6ms)`);
+            logTest(p95 < 20, `P95 frame: ${p95.toFixed(2)}ms`);
+            logTest(max < 33, `Max frame: ${max.toFixed(2)}ms (2-frame budget)`);
+            console.log(`Benchmark: avg=${avg.toFixed(2)}ms, p95=${p95.toFixed(2)}ms, max=${max.toFixed(2)}ms`);
+            return;
+        }
+        const t0 = performance.now();
+        controls.update();
+        updateParticles(0.016);
+        updateCustomSky(performance.now()*0.001, DayNight.dayMix, DayNight.sunDir, camera.position);
+        sunLight.position.copy(DayNight.sunDir).multiplyScalar(200);
+        if (postEnabled && composer) composer.render();
+        else renderer.render(scene, camera);
+        times.push(performance.now()-t0);
+        requestAnimationFrame(() => benchFrame(i+1));
+    }
+    benchFrame(0);
+};
+
+document.getElementById('btn-memory').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    const info = renderer.info;
+    console.log('--- Memory check ---');
+    logTest(true, `Geometries: ${info.memory.geometries}`);
+    logTest(true, `Textures: ${info.memory.textures}`);
+    logTest(info.programs.length < 50, `Shader programs: ${info.programs.length} (< 50)`);
+    logTest(info.render.calls < 200, `Draw calls: ${info.render.calls} (< 200)`);
+    // Check for leaked render targets
+    const rtCount = info.memory.textures;
+    buildComposer(); // rebuild
+    const rtAfter = renderer.info.memory.textures;
+    logTest(rtAfter <= rtCount + 2, `No texture leak on rebuild: ${rtCount} → ${rtAfter}`);
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+let frameTimeMs = 0;
+
+function updateOverlay() {
+    const info = renderer.info;
+    document.getElementById('ov-draws').textContent = info.render.calls;
+    document.getElementById('ov-tris').textContent = info.render.triangles.toLocaleString();
+    document.getElementById('ov-tex').textContent = info.memory.textures;
+    document.getElementById('ov-geo').textContent = info.memory.geometries;
+    document.getElementById('ov-prog').textContent = info.programs?.length ?? '--';
+    document.getElementById('ov-sky').textContent = skyEnabled ? 'ON' : 'OFF';
+    document.getElementById('ov-sky').className = 'value ' + (skyEnabled ? 'good' : '');
+    document.getElementById('ov-daynight').textContent = 'ON';
+    document.getElementById('ov-daynight').className = 'value good';
+    document.getElementById('ov-terrain').textContent = 'ON';
+    document.getElementById('ov-terrain').className = 'value good';
+    document.getElementById('ov-particles').textContent = particlesEnabled ? 'ON' : 'OFF';
+    document.getElementById('ov-particles').className = 'value ' + (particlesEnabled ? 'good' : '');
+    document.getElementById('ov-post').textContent = postEnabled ? 'ON' : 'OFF';
+    document.getElementById('ov-post').className = 'value ' + (postEnabled ? 'good' : '');
+    document.getElementById('ov-shadows').textContent = shadowsEnabled ? 'ON' : 'OFF';
+    document.getElementById('ov-shadows').className = 'value ' + (shadowsEnabled ? 'good' : '');
+
+    // Budget bar
+    const pct = Math.min(100, (frameTimeMs / 16.6) * 100);
+    document.getElementById('budget-fill').style.width = pct + '%';
+    document.getElementById('budget-label').textContent = `${frameTimeMs.toFixed(1)}ms / 16.6ms`;
+}
+
+// ── Render Loop ──
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    const time = now * 0.001;
+    lastTime = now;
+
+    const t0 = performance.now();
+
+    controls.update();
+    DayNight.freeze(10); // keep at 10am
+    updateCustomSky(time, DayNight.dayMix, DayNight.sunDir, camera.position);
+    sunLight.position.copy(DayNight.sunDir).multiplyScalar(200);
+    updateParticles(dt);
+
+    if (postEnabled && composer) {
+        composer.render();
+    } else {
+        renderer.render(scene, camera);
+    }
+
+    frameTimeMs = performance.now() - t0;
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        const fps = Math.round(frameCount*1000/(now-lastFpsTime));
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${fps}</b>`;
+        document.getElementById('stat-frame').innerHTML = `Frame: <b>${frameTimeMs.toFixed(1)}</b>ms`;
+        document.getElementById('stat-draws').innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        document.getElementById('stat-tris').innerHTML = `Tris: <b>${renderer.info.render.triangles.toLocaleString()}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+    if (composer) composer.setSize(innerWidth, innerHeight);
+    if (bloomPass) bloomPass.setSize(innerWidth, innerHeight);
+});
+
+console.log('Full frame integration test harness loaded.');
+console.log('Systems: Sky ✓ | DayNight ✓ | Terrain ✓ | Particles ✓ | PostFX ✓ | Shadows ✓');
+</script>
+</body>
+</html>

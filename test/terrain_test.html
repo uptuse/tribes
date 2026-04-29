@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Terrain — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">TERRAIN TEST HARNESS</span>
+  <div class="sep"></div>
+  <button id="btn-wireframe">Wireframe</button>
+  <button id="btn-solid" class="active">Solid</button>
+  <button id="btn-splat">Show Splat</button>
+  <button id="btn-normals">Show Normals</button>
+  <div class="sep"></div>
+  <button id="btn-flat">Flat Shading</button>
+  <button id="btn-smooth">Smooth Normals</button>
+  <div class="sep"></div>
+  <button id="btn-lod-high" class="active">High (513)</button>
+  <button id="btn-lod-med">Med (257)</button>
+  <button id="btn-lod-low">Low (129)</button>
+  <div class="sep"></div>
+  <button id="btn-test-height">Test Heights</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-tris">Tris: <b>--</b></span>
+  <span class="stat" id="stat-verts">Verts: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Terrain State</h3>
+  <div class="row"><span class="label">grid size</span><span class="value" id="ov-size">--</span></div>
+  <div class="row"><span class="label">world span</span><span class="value" id="ov-span">--</span></div>
+  <div class="row"><span class="label">height range</span><span class="value" id="ov-height">--</span></div>
+  <div class="row"><span class="label">vertex count</span><span class="value" id="ov-verts">--</span></div>
+  <div class="row"><span class="label">triangle count</span><span class="value" id="ov-tris">--</span></div>
+  <div class="row"><span class="label">cursor world</span><span class="value" id="ov-cursor">--</span></div>
+  <div class="row"><span class="label">cursor height</span><span class="value" id="ov-cursorh">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+scene.fog = new THREE.Fog(0x111822, 300, 800);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 120, 200);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(100, 200, 50);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+sun.shadow.camera.near = 1; sun.shadow.camera.far = 500;
+sun.shadow.camera.left = -300; sun.shadow.camera.right = 300;
+sun.shadow.camera.top = 300; sun.shadow.camera.bottom = -300;
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+scene.add(new THREE.HemisphereLight(0x88aacc, 0x443322, 0.4));
+
+// ═══════════════════════════════════════
+// Procedural Terrain (simulating Raindance heightmap)
+// ═══════════════════════════════════════
+let htData, htSize, htScale, terrainMesh;
+let normalsHelper = null;
+
+function generateHeightmap(gridSize) {
+    const size = gridSize;
+    const scale = 1024 / (size - 1); // total 1024m span
+    const heights = new Float32Array(size * size);
+    const half = (size - 1) / 2;
+
+    for (let j = 0; j < size; j++) {
+        for (let i = 0; i < size; i++) {
+            const wx = (i - half) * scale;
+            const wz = (j - half) * scale;
+            // Multi-octave noise to simulate Raindance terrain
+            let h = 0;
+            h += Math.sin(wx * 0.003 + 1.2) * Math.cos(wz * 0.004) * 40;
+            h += Math.sin(wx * 0.008 + wz * 0.006) * 20;
+            h += Math.sin(wx * 0.015 - wz * 0.012 + 3.1) * 10;
+            h += Math.sin(wx * 0.03 + wz * 0.025) * 5;
+            // Basin in center
+            const dist = Math.sqrt(wx*wx + wz*wz);
+            h -= Math.max(0, 30 - dist * 0.08);
+            // Mountain ridges
+            h += Math.max(0, Math.sin(wx * 0.005) * 60 - 20) * Math.max(0, 1 - dist * 0.002);
+            heights[j * size + i] = h + 20; // baseline offset
+        }
+    }
+    return { heights, size, scale };
+}
+
+function sampleTerrainH(worldX, worldZ) {
+    if (!htData) return 0;
+    const half = (htSize - 1) * htScale * 0.5;
+    const fx = (worldX + half) / htScale;
+    const fz = (worldZ + half) / htScale;
+    const i0 = Math.max(0, Math.min(htSize - 2, Math.floor(fx)));
+    const j0 = Math.max(0, Math.min(htSize - 2, Math.floor(fz)));
+    const fi = fx - i0, fj = fz - j0;
+    const h00 = htData[j0 * htSize + i0];
+    const h10 = htData[j0 * htSize + i0 + 1];
+    const h01 = htData[(j0+1) * htSize + i0];
+    const h11 = htData[(j0+1) * htSize + i0 + 1];
+    return h00*(1-fi)*(1-fj) + h10*fi*(1-fj) + h01*(1-fi)*fj + h11*fi*fj;
+}
+
+function buildTerrain(gridSize) {
+    if (terrainMesh) { scene.remove(terrainMesh); terrainMesh.geometry.dispose(); terrainMesh.material.dispose(); }
+    if (normalsHelper) { scene.remove(normalsHelper); normalsHelper = null; }
+
+    const ht = generateHeightmap(gridSize);
+    htData = ht.heights; htSize = ht.size; htScale = ht.scale;
+
+    const span = (htSize - 1) * htScale;
+    const segs = htSize - 1;
+    const geom = new THREE.PlaneGeometry(span, span, segs, segs);
+    geom.rotateX(-Math.PI / 2);
+
+    const pos = geom.attributes.position;
+    let hMin = Infinity, hMax = -Infinity;
+    for (let j = 0; j < htSize; j++) {
+        for (let i = 0; i < htSize; i++) {
+            const h = htData[j * htSize + i];
+            pos.setY(j * htSize + i, h);
+            if (h < hMin) hMin = h;
+            if (h > hMax) hMax = h;
+        }
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+
+    // Splat-like coloring based on height + slope
+    const colors = new Float32Array(pos.count * 3);
+    const hRange = Math.max(0.01, hMax - hMin);
+    for (let i = 0; i < pos.count; i++) {
+        const h = pos.getY(i);
+        const hN = (h - hMin) / hRange;
+        // Simple height-based coloring
+        let r, g, b;
+        if (hN < 0.3) { r=0.35; g=0.45; b=0.25; } // grass
+        else if (hN < 0.6) { r=0.5; g=0.42; b=0.3; } // dirt/rock
+        else { r=0.65; g=0.6; b=0.55; } // rock/snow
+        // Add slight variation
+        r += (Math.random()-0.5)*0.05;
+        g += (Math.random()-0.5)*0.05;
+        b += (Math.random()-0.5)*0.05;
+        colors[i*3]=r; colors[i*3+1]=g; colors[i*3+2]=b;
+    }
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true, roughness: 0.85, metalness: 0.0, flatShading: false,
+    });
+    terrainMesh = new THREE.Mesh(geom, mat);
+    terrainMesh.castShadow = true;
+    terrainMesh.receiveShadow = true;
+    scene.add(terrainMesh);
+
+    console.log(`Terrain built: ${htSize}x${htSize} (${pos.count} verts, ${geom.index ? geom.index.count/3 : pos.count/3} tris), span=${span.toFixed(0)}m, h=[${hMin.toFixed(1)}, ${hMax.toFixed(1)}]`);
+    updateOverlayStatic();
+}
+
+function updateOverlayStatic() {
+    if (!terrainMesh) return;
+    const geom = terrainMesh.geometry;
+    const pos = geom.attributes.position;
+    let hMin = Infinity, hMax = -Infinity;
+    for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y<hMin)hMin=y; if(y>hMax)hMax=y; }
+    document.getElementById('ov-size').textContent = `${htSize}×${htSize}`;
+    document.getElementById('ov-span').textContent = `${((htSize-1)*htScale).toFixed(0)}m`;
+    document.getElementById('ov-height').textContent = `${hMin.toFixed(1)} — ${hMax.toFixed(1)}`;
+    document.getElementById('ov-verts').textContent = pos.count.toLocaleString();
+    document.getElementById('ov-tris').textContent = (geom.index ? geom.index.count/3 : pos.count/3).toLocaleString();
+}
+
+// Build initial terrain
+buildTerrain(513);
+
+// ── Raycaster for cursor info ──
+const raycaster = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+canvas.addEventListener('mousemove', e => {
+    mouse.x = (e.clientX / innerWidth) * 2 - 1;
+    mouse.y = -(e.clientY / innerHeight) * 2 + 1;
+});
+
+// ── Button Handlers ──
+document.getElementById('btn-wireframe').onclick = () => {
+    if (!terrainMesh) return;
+    terrainMesh.material.wireframe = true;
+    document.getElementById('btn-wireframe').classList.add('active');
+    document.getElementById('btn-solid').classList.remove('active');
+    document.getElementById('btn-splat').classList.remove('active');
+};
+document.getElementById('btn-solid').onclick = () => {
+    if (!terrainMesh) return;
+    terrainMesh.material.wireframe = false;
+    document.getElementById('btn-solid').classList.add('active');
+    document.getElementById('btn-wireframe').classList.remove('active');
+};
+document.getElementById('btn-splat').onclick = () => {
+    // Toggle vertex color intensity to visualize splat weights
+    if (!terrainMesh) return;
+    terrainMesh.material.wireframe = false;
+    document.getElementById('btn-splat').classList.toggle('active');
+};
+document.getElementById('btn-normals').onclick = () => {
+    if (normalsHelper) { scene.remove(normalsHelper); normalsHelper = null; return; }
+    if (!terrainMesh) return;
+    const { VertexNormalsHelper } = { VertexNormalsHelper: class extends THREE.LineSegments {
+        constructor(obj, size, color) {
+            const geom = obj.geometry;
+            const pos = geom.attributes.position;
+            const nrm = geom.attributes.normal;
+            const pts = new Float32Array(pos.count * 6);
+            for (let i = 0; i < pos.count; i++) {
+                pts[i*6] = pos.getX(i); pts[i*6+1] = pos.getY(i); pts[i*6+2] = pos.getZ(i);
+                pts[i*6+3] = pos.getX(i)+nrm.getX(i)*size;
+                pts[i*6+4] = pos.getY(i)+nrm.getY(i)*size;
+                pts[i*6+5] = pos.getZ(i)+nrm.getZ(i)*size;
+            }
+            const g = new THREE.BufferGeometry();
+            g.setAttribute('position', new THREE.BufferAttribute(pts, 3));
+            super(g, new THREE.LineBasicMaterial({ color }));
+        }
+    }};
+    normalsHelper = new VertexNormalsHelper(terrainMesh, 3, 0x44ff88);
+    scene.add(normalsHelper);
+};
+document.getElementById('btn-flat').onclick = () => {
+    if (!terrainMesh) return;
+    terrainMesh.material.flatShading = true;
+    terrainMesh.material.needsUpdate = true;
+};
+document.getElementById('btn-smooth').onclick = () => {
+    if (!terrainMesh) return;
+    terrainMesh.material.flatShading = false;
+    terrainMesh.material.needsUpdate = true;
+};
+document.getElementById('btn-lod-high').onclick = () => { buildTerrain(513); document.querySelectorAll('[id^=btn-lod]').forEach(b=>b.classList.remove('active')); document.getElementById('btn-lod-high').classList.add('active'); };
+document.getElementById('btn-lod-med').onclick = () => { buildTerrain(257); document.querySelectorAll('[id^=btn-lod]').forEach(b=>b.classList.remove('active')); document.getElementById('btn-lod-med').classList.add('active'); };
+document.getElementById('btn-lod-low').onclick = () => { buildTerrain(129); document.querySelectorAll('[id^=btn-lod]').forEach(b=>b.classList.remove('active')); document.getElementById('btn-lod-low').classList.add('active'); };
+
+document.getElementById('btn-test-height').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Height sampling tests ---');
+    // Test center
+    const hCenter = sampleTerrainH(0, 0);
+    logTest(Number.isFinite(hCenter), `Center height finite: ${hCenter.toFixed(2)}`);
+    // Test corners
+    const half = (htSize-1)*htScale*0.5;
+    const hCorner = sampleTerrainH(half-1, half-1);
+    logTest(Number.isFinite(hCorner), `Corner height finite: ${hCorner.toFixed(2)}`);
+    // Test out of bounds (should clamp, not crash)
+    const hOOB = sampleTerrainH(9999, 9999);
+    logTest(Number.isFinite(hOOB), `OOB height finite (clamped): ${hOOB.toFixed(2)}`);
+    // Test interpolation consistency
+    const h1 = sampleTerrainH(10, 10);
+    const h2 = sampleTerrainH(10.001, 10.001);
+    logTest(Math.abs(h1-h2) < 1.0, `Adjacent samples close: ${h1.toFixed(2)} vs ${h2.toFixed(2)}`);
+    console.log('--- Height tests complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+// ── Render Loop ──
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+
+    // Raycast for cursor info
+    raycaster.setFromCamera(mouse, camera);
+    if (terrainMesh) {
+        const hits = raycaster.intersectObject(terrainMesh);
+        if (hits.length > 0) {
+            const p = hits[0].point;
+            document.getElementById('ov-cursor').textContent = `(${p.x.toFixed(1)}, ${p.z.toFixed(1)})`;
+            document.getElementById('ov-cursorh').textContent = `${p.y.toFixed(2)}m (sampled: ${sampleTerrainH(p.x,p.z).toFixed(2)})`;
+        }
+    }
+
+    renderer.render(scene, camera);
+
+    frameCount++;
+    const now = performance.now();
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-tris').innerHTML = `Tris: <b>${renderer.info.render.triangles.toLocaleString()}</b>`;
+        document.getElementById('stat-verts').innerHTML = `Verts: <b>${(terrainMesh?terrainMesh.geometry.attributes.position.count:0).toLocaleString()}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Terrain test harness loaded.');
+</script>
+</body>
+</html>

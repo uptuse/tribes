@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Camera — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+#hud input[type=range]{width:120px;accent-color:#FFD479}
+#hud label{font-size:11px;color:#888}
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+#overlay{position:fixed;top:50px;right:12px;width:310px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:20px;height:20px;pointer-events:none;z-index:50}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,212,121,0.6)}
+#crosshair::before{top:50%;left:0;right:0;height:1px;transform:translateY(-50%)}
+#crosshair::after{left:50%;top:0;bottom:0;width:1px;transform:translateX(-50%)}
+</style>
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">CAMERA TEST HARNESS</span>
+  <div class="sep"></div>
+  <button id="btn-1p" class="active">1st Person</button>
+  <button id="btn-3p">3rd Person</button>
+  <button id="btn-spectator">Spectator</button>
+  <button id="btn-orbit">Orbit</button>
+  <div class="sep"></div>
+  <label>FOV: <b id="fov-val">70</b></label>
+  <input type="range" id="fov-slider" min="30" max="120" value="70">
+  <div class="sep"></div>
+  <label>3P Dist: <b id="dist-val">4.0</b></label>
+  <input type="range" id="dist-slider" min="1" max="15" step="0.5" value="4">
+  <div class="sep"></div>
+  <button id="btn-test-modes">Test All Modes</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Camera State</h3>
+  <div class="row"><span class="label">mode</span><span class="value" id="ov-mode">1P</span></div>
+  <div class="row"><span class="label">position</span><span class="value" id="ov-pos">--</span></div>
+  <div class="row"><span class="label">rotation (deg)</span><span class="value" id="ov-rot">--</span></div>
+  <div class="row"><span class="label">FOV</span><span class="value" id="ov-fov">70</span></div>
+  <div class="row"><span class="label">forward dir</span><span class="value" id="ov-fwd">--</span></div>
+  <div class="row"><span class="label">aim point</span><span class="value" id="ov-aim">--</span></div>
+  <div class="row"><span class="label">3P distance</span><span class="value" id="ov-3pdist">0</span></div>
+  <div class="row"><span class="label">player pos</span><span class="value" id="ov-player">--</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="crosshair"></div>
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x111822);
+scene.fog = new THREE.Fog(0x111822, 200, 600);
+
+const gameCamera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+gameCamera.position.set(0, 12, 0);
+
+const orbitCamera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+orbitCamera.position.set(20, 20, 20);
+const orbitControls = new OrbitControls(orbitCamera, canvas);
+orbitControls.enableDamping = true;
+orbitControls.enabled = false;
+
+let activeCamera = gameCamera;
+
+// Lights
+const sun = new THREE.DirectionalLight(0xffeedd, 1.5);
+sun.position.set(100, 200, 50);
+scene.add(sun);
+scene.add(new THREE.AmbientLight(0x334466, 0.6));
+scene.add(new THREE.HemisphereLight(0x88aacc, 0x443322, 0.4));
+
+// Ground
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(400, 400, 40, 40),
+    new THREE.MeshStandardMaterial({ color: 0x334433, roughness: 0.85 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+// Gentle hills
+const gPos = ground.geometry.attributes.position;
+for (let i = 0; i < gPos.count; i++) {
+    const x = gPos.getX(i), y = gPos.getY(i);
+    gPos.setZ(i, Math.sin(x*0.03)*Math.cos(y*0.02)*8);
+}
+ground.geometry.computeVertexNormals();
+scene.add(ground);
+scene.add(new THREE.GridHelper(400, 40, 0x334455, 0x1a2233));
+
+// Player avatar (visible in 3P/spectator)
+const playerGroup = new THREE.Group();
+const playerBody = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.5, 1.2, 8, 16),
+    new THREE.MeshStandardMaterial({ color: 0x44aaff })
+);
+playerBody.position.y = 1.1;
+playerGroup.add(playerBody);
+// Direction indicator (nose)
+const nose = new THREE.Mesh(
+    new THREE.ConeGeometry(0.2, 0.6, 8),
+    new THREE.MeshStandardMaterial({ color: 0xFFD479 })
+);
+nose.position.set(0, 1.5, -0.6);
+nose.rotation.x = -Math.PI/2;
+playerGroup.add(nose);
+playerGroup.position.set(0, 10, 0);
+scene.add(playerGroup);
+
+// Weapon hand (1P viewmodel)
+const weaponHand = new THREE.Group();
+const gunMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(0.08, 0.08, 0.5),
+    new THREE.MeshStandardMaterial({ color: 0x666666 })
+);
+gunMesh.position.set(0.25, -0.15, -0.3);
+weaponHand.add(gunMesh);
+gameCamera.add(weaponHand);
+scene.add(gameCamera);
+
+// Frustum helper for debug
+const frustumHelper = new THREE.CameraHelper(gameCamera);
+frustumHelper.visible = false;
+scene.add(frustumHelper);
+
+// Some landmarks
+for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    const box = new THREE.Mesh(
+        new THREE.BoxGeometry(4, 8+Math.random()*8, 4),
+        new THREE.MeshStandardMaterial({ color: 0x886644 })
+    );
+    box.position.set(Math.cos(a)*30, 4+Math.random()*4, Math.sin(a)*30);
+    box.castShadow = true;
+    scene.add(box);
+}
+
+// ── Camera Modes ──
+let camMode = '1p'; // '1p', '3p', 'spectator', 'orbit'
+let playerYaw = 0, playerPitch = 0;
+let camDist = 4;
+let camHeight = 0.6;
+let specYaw = 0;
+let specActive = false;
+let deathPos = new THREE.Vector3(0, 12, 0);
+const keys = {};
+window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+
+// Mouse look
+let mouseLocked = false;
+canvas.addEventListener('click', () => {
+    if (camMode !== 'orbit') canvas.requestPointerLock();
+});
+document.addEventListener('pointerlockchange', () => {
+    mouseLocked = document.pointerLockElement === canvas;
+});
+document.addEventListener('mousemove', e => {
+    if (!mouseLocked || camMode === 'orbit') return;
+    playerYaw -= e.movementX * 0.003;
+    playerPitch -= e.movementY * 0.003;
+    playerPitch = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, playerPitch));
+});
+
+function sampleTerrain(x, z) {
+    return Math.sin(x*0.03)*Math.cos(z*0.02)*8;
+}
+
+function syncCamera(dt) {
+    // Player movement (WASD)
+    const speed = 20;
+    const fwdX = Math.sin(playerYaw), fwdZ = -Math.cos(playerYaw);
+    const rightX = Math.cos(playerYaw), rightZ = Math.sin(playerYaw);
+    if (keys['w']) { playerGroup.position.x += fwdX*speed*dt; playerGroup.position.z += fwdZ*speed*dt; }
+    if (keys['s']) { playerGroup.position.x -= fwdX*speed*dt; playerGroup.position.z -= fwdZ*speed*dt; }
+    if (keys['a']) { playerGroup.position.x -= rightX*speed*dt; playerGroup.position.z -= rightZ*speed*dt; }
+    if (keys['d']) { playerGroup.position.x += rightX*speed*dt; playerGroup.position.z += rightZ*speed*dt; }
+
+    // Terrain clamping
+    const px = playerGroup.position.x, pz = playerGroup.position.z;
+    playerGroup.position.y = sampleTerrain(px, pz) + 1.0;
+    playerGroup.rotation.y = playerYaw;
+
+    const py = playerGroup.position.y;
+
+    if (camMode === '1p') {
+        gameCamera.position.set(px, py + 1.7, pz);
+        gameCamera.rotation.set(playerPitch, -playerYaw + Math.PI, 0, 'YXZ');
+        weaponHand.visible = true;
+        playerBody.visible = false;
+        activeCamera = gameCamera;
+    } else if (camMode === '3p') {
+        const dist = camDist;
+        const cx = px - fwdX * dist;
+        const cy = py + camHeight;
+        const cz = pz - fwdZ * dist;
+        const terrH = sampleTerrain(cx, cz);
+        const finalY = Math.max(cy, terrH + 0.6);
+        gameCamera.position.set(cx, finalY, cz);
+        gameCamera.rotation.set(playerPitch, -playerYaw + Math.PI, 0, 'YXZ');
+        weaponHand.visible = false;
+        playerBody.visible = true;
+        activeCamera = gameCamera;
+    } else if (camMode === 'spectator') {
+        specYaw += 0.3 * dt;
+        const cx = deathPos.x + Math.sin(specYaw) * 8;
+        const cz = deathPos.z + Math.cos(specYaw) * 8;
+        const cy = deathPos.y + 4;
+        gameCamera.position.set(cx, cy, cz);
+        gameCamera.lookAt(deathPos);
+        weaponHand.visible = false;
+        playerBody.visible = true;
+        activeCamera = gameCamera;
+    } else if (camMode === 'orbit') {
+        orbitControls.update();
+        weaponHand.visible = false;
+        playerBody.visible = true;
+        activeCamera = orbitCamera;
+    }
+}
+
+// Aim point calculation
+function computeAimPoint() {
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(gameCamera.quaternion);
+    return gameCamera.position.clone().add(fwd.multiplyScalar(200));
+}
+
+// ── Button Handlers ──
+function setMode(mode) {
+    camMode = mode;
+    orbitControls.enabled = mode === 'orbit';
+    document.getElementById('btn-1p').classList.toggle('active', mode === '1p');
+    document.getElementById('btn-3p').classList.toggle('active', mode === '3p');
+    document.getElementById('btn-spectator').classList.toggle('active', mode === 'spectator');
+    document.getElementById('btn-orbit').classList.toggle('active', mode === 'orbit');
+    document.getElementById('ov-mode').textContent = mode.toUpperCase();
+    if (mode === 'spectator') deathPos.copy(playerGroup.position);
+    if (mode === 'orbit') { orbitControls.target.copy(playerGroup.position); }
+    console.log('Camera mode: ' + mode);
+}
+
+document.getElementById('btn-1p').onclick = () => setMode('1p');
+document.getElementById('btn-3p').onclick = () => setMode('3p');
+document.getElementById('btn-spectator').onclick = () => setMode('spectator');
+document.getElementById('btn-orbit').onclick = () => setMode('orbit');
+
+const fovSlider = document.getElementById('fov-slider');
+fovSlider.oninput = () => {
+    const fov = parseFloat(fovSlider.value);
+    gameCamera.fov = fov;
+    gameCamera.updateProjectionMatrix();
+    document.getElementById('fov-val').textContent = fov;
+    document.getElementById('ov-fov').textContent = fov;
+};
+
+const distSlider = document.getElementById('dist-slider');
+distSlider.oninput = () => {
+    camDist = parseFloat(distSlider.value);
+    document.getElementById('dist-val').textContent = camDist.toFixed(1);
+};
+
+document.getElementById('btn-test-modes').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Camera mode tests ---');
+
+    setMode('1p');
+    syncCamera(0.016);
+    logTest(weaponHand.visible === true, '1P: weapon visible');
+    logTest(playerBody.visible === false, '1P: player body hidden');
+    logTest(activeCamera === gameCamera, '1P: game camera active');
+
+    setMode('3p');
+    syncCamera(0.016);
+    logTest(weaponHand.visible === false, '3P: weapon hidden');
+    logTest(playerBody.visible === true, '3P: player body visible');
+    const dist3P = gameCamera.position.distanceTo(playerGroup.position);
+    logTest(dist3P > 2, `3P: camera distance > 2m (got ${dist3P.toFixed(1)}m)`);
+
+    setMode('spectator');
+    syncCamera(0.016);
+    logTest(weaponHand.visible === false, 'Spectator: weapon hidden');
+
+    setMode('orbit');
+    syncCamera(0.016);
+    logTest(activeCamera === orbitCamera, 'Orbit: orbit camera active');
+    logTest(orbitControls.enabled === true, 'Orbit: controls enabled');
+
+    // FOV test
+    gameCamera.fov = 90;
+    gameCamera.updateProjectionMatrix();
+    logTest(gameCamera.fov === 90, 'FOV set to 90');
+    gameCamera.fov = 70;
+    gameCamera.updateProjectionMatrix();
+
+    // Aim point convergence
+    setMode('1p');
+    syncCamera(0.016);
+    const aim = computeAimPoint();
+    logTest(Number.isFinite(aim.x), `Aim point finite: (${aim.x.toFixed(1)}, ${aim.y.toFixed(1)}, ${aim.z.toFixed(1)})`);
+
+    setMode('1p');
+    console.log('--- Camera tests complete ---');
+};
+
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+function updateOverlay() {
+    const c = activeCamera;
+    document.getElementById('ov-pos').textContent =
+        `(${c.position.x.toFixed(1)}, ${c.position.y.toFixed(1)}, ${c.position.z.toFixed(1)})`;
+    const r = c.rotation;
+    document.getElementById('ov-rot').textContent =
+        `(${(r.x*180/Math.PI).toFixed(1)}, ${(r.y*180/Math.PI).toFixed(1)}, ${(r.z*180/Math.PI).toFixed(1)})`;
+    document.getElementById('ov-fov').textContent = gameCamera.fov.toFixed(0);
+    const fwd = new THREE.Vector3(0,0,-1).applyQuaternion(gameCamera.quaternion);
+    document.getElementById('ov-fwd').textContent = `(${fwd.x.toFixed(2)}, ${fwd.y.toFixed(2)}, ${fwd.z.toFixed(2)})`;
+    const aim = computeAimPoint();
+    document.getElementById('ov-aim').textContent = `(${aim.x.toFixed(0)}, ${aim.y.toFixed(0)}, ${aim.z.toFixed(0)})`;
+    document.getElementById('ov-3pdist').textContent = camDist.toFixed(1);
+    const p = playerGroup.position;
+    document.getElementById('ov-player').textContent = `(${p.x.toFixed(1)}, ${p.y.toFixed(1)}, ${p.z.toFixed(1)})`;
+}
+
+// ── Render Loop ──
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    lastTime = now;
+
+    syncCamera(dt);
+    renderer.render(scene, activeCamera);
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    const aspect = innerWidth / innerHeight;
+    gameCamera.aspect = aspect;
+    gameCamera.updateProjectionMatrix();
+    orbitCamera.aspect = aspect;
+    orbitCamera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Camera test harness loaded. Click canvas to lock mouse, WASD to move.');
+</script>
+</body>
+</html>

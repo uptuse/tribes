@@ -1,0 +1,595 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<base href="../">
+<title>Particles — Isolated Test Harness</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#0a0c10;color:#c8ccd4;font-family:'Segoe UI',sans-serif;font-size:13px}
+canvas{display:block}
+
+#hud{position:fixed;top:0;left:0;right:0;padding:8px 12px;background:rgba(12,14,22,0.92);
+  border-bottom:1px solid rgba(255,212,121,0.18);display:flex;align-items:center;gap:12px;z-index:100;flex-wrap:wrap}
+#hud .title{font-family:monospace;font-size:12px;color:#FFD479;letter-spacing:1px}
+#hud button{font-size:11px;padding:4px 10px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.12);
+  color:#b0b4bc;border-radius:3px;cursor:pointer;transition:all .15s}
+#hud button:hover{background:rgba(255,212,121,0.12);border-color:rgba(255,212,121,0.35);color:#FFD479}
+#hud button.active{background:rgba(255,212,121,0.18);border-color:#FFD479;color:#FFD479}
+#hud .sep{width:1px;height:20px;background:rgba(255,255,255,0.08)}
+#hud .stat{font-family:monospace;font-size:11px;color:#888}
+#hud .stat b{color:#FFD479}
+
+#log{position:fixed;bottom:0;left:0;right:0;max-height:200px;overflow-y:auto;
+  background:rgba(0,0,0,0.85);font-family:monospace;font-size:11px;padding:6px 10px;
+  border-top:1px solid rgba(255,255,255,0.08);z-index:100;display:none}
+#log.visible{display:block}
+#log div{padding:1px 0;border-bottom:1px solid rgba(255,255,255,0.03)}
+#log .info{color:#88ccff}
+#log .warn{color:#ffcc44}
+#log .error{color:#ff6666}
+#log .pass{color:#44ff88}
+#log .fail{color:#ff4466}
+
+#overlay{position:fixed;top:50px;right:12px;width:280px;background:rgba(12,14,22,0.92);
+  border:1px solid rgba(255,255,255,0.08);border-radius:4px;padding:10px;z-index:90;font-family:monospace;font-size:11px}
+#overlay h3{color:#FFD479;font-size:11px;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}
+#overlay .row{display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px solid rgba(255,255,255,0.04)}
+#overlay .row .label{color:#888}
+#overlay .row .value{color:#c8ccd4}
+#overlay .row .value.good{color:#44ff88}
+#overlay .row .value.bad{color:#ff4466}
+</style>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="hud">
+  <span class="title">PARTICLES TEST HARNESS</span>
+  <div class="sep"></div>
+  <button id="btn-ski">Ski Particles</button>
+  <button id="btn-trail">Projectile Trails</button>
+  <button id="btn-explosion">Explosion</button>
+  <button id="btn-fairies">Night Fairies</button>
+  <button id="btn-jet">Jet Exhaust</button>
+  <div class="sep"></div>
+  <button id="btn-all">All At Once</button>
+  <button id="btn-clear">Clear All</button>
+  <div class="sep"></div>
+  <button id="btn-stress">Stress Test</button>
+  <button id="btn-log">Toggle Log</button>
+  <div class="sep"></div>
+  <span class="stat" id="stat-fps">FPS: <b>--</b></span>
+  <span class="stat" id="stat-draws">Draws: <b>--</b></span>
+  <span class="stat" id="stat-particles">Particles: <b>0</b></span>
+</div>
+
+<div id="overlay">
+  <h3>Particle Systems</h3>
+  <div class="row"><span class="label">ski active</span><span class="value" id="ov-ski">0</span></div>
+  <div class="row"><span class="label">trail active</span><span class="value" id="ov-trail">0</span></div>
+  <div class="row"><span class="label">explosion active</span><span class="value" id="ov-expl">0</span></div>
+  <div class="row"><span class="label">spark active</span><span class="value" id="ov-spark">0</span></div>
+  <div class="row"><span class="label">fairy active</span><span class="value" id="ov-fairy">0</span></div>
+  <div class="row"><span class="label">jet active</span><span class="value" id="ov-jet">0</span></div>
+  <div class="row"><span class="label">total particles</span><span class="value" id="ov-total">0</span></div>
+  <h3 style="margin-top:8px">Tests</h3>
+  <div id="test-results"></div>
+</div>
+
+<div id="log"></div>
+<canvas id="canvas"></canvas>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ── Logging ──
+const logEl = document.getElementById('log');
+const origLog = console.log.bind(console);
+const origWarn = console.warn.bind(console);
+const origError = console.error.bind(console);
+function addLog(cls, ...args) {
+    const div = document.createElement('div');
+    div.className = cls;
+    div.textContent = args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ');
+    logEl.appendChild(div);
+    logEl.scrollTop = logEl.scrollHeight;
+}
+console.log = (...a) => { origLog(...a); addLog('info', ...a); };
+console.warn = (...a) => { origWarn(...a); addLog('warn', ...a); };
+console.error = (...a) => { origError(...a); addLog('error', ...a); };
+function logTest(pass, msg) {
+    addLog(pass ? 'pass' : 'fail', `${pass ? '✅' : '❌'} ${msg}`);
+    const el = document.getElementById('test-results');
+    const div = document.createElement('div');
+    div.className = 'row';
+    div.innerHTML = `<span class="label">${msg}</span><span class="value ${pass?'good':'bad'}">${pass?'PASS':'FAIL'}</span>`;
+    el.appendChild(div);
+}
+
+// ── Three.js Scene ──
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x080c14);
+
+const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.5, 2000);
+camera.position.set(0, 10, 25);
+
+const controls = new OrbitControls(camera, canvas);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+// Lights
+scene.add(new THREE.AmbientLight(0x334466, 0.4));
+const sun = new THREE.DirectionalLight(0xffeedd, 1.0);
+sun.position.set(50, 100, 30);
+scene.add(sun);
+
+// Ground
+const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(100, 100),
+    new THREE.MeshStandardMaterial({ color: 0x222833, roughness: 0.9 })
+);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(100, 20, 0x334455, 0x1a2233);
+scene.add(grid);
+
+// Reference object at origin
+const refSphere = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0x888888 })
+);
+refSphere.position.y = 0.5;
+scene.add(refSphere);
+
+// ═════════════════════════════════════════════
+// Particle Systems (standalone clones from renderer.js)
+// ═════════════════════════════════════════════
+
+// ── Ski Particles ──
+const SKI_MAX = 256;
+const SKI_LIFETIME = 0.45;
+let _skiPos = new Float32Array(SKI_MAX * 3);
+let _skiAge = new Float32Array(SKI_MAX);
+let _skiVel = new Float32Array(SKI_MAX * 3);
+let _skiAlpha = new Float32Array(SKI_MAX);
+let _skiNextSlot = 0;
+let _skiPoints = null;
+let skiActive = 0;
+
+function initSkiParticles() {
+    for (let i = 0; i < SKI_MAX; i++) { _skiPos[i*3+1] = -9999; _skiAlpha[i] = 0; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.ShaderMaterial({
+        vertexShader: `attribute float aAlpha; varying float vAlpha;
+            void main() { vAlpha = aAlpha; vec4 mv = modelViewMatrix * vec4(position, 1.0);
+            gl_PointSize = aAlpha * 120.0 / max(1.0, -mv.z); gl_Position = projectionMatrix * mv; }`,
+        fragmentShader: `varying float vAlpha; void main() { float r = length(gl_PointCoord - vec2(0.5));
+            if (r > 0.5) discard; float soft = 1.0 - smoothstep(0.2, 0.5, r);
+            vec3 col = mix(vec3(0.8, 0.95, 1.0), vec3(0.3, 0.6, 1.0), r * 2.0);
+            gl_FragColor = vec4(col, soft * vAlpha); }`,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _skiPoints = new THREE.Points(geo, mat);
+    _skiPoints.frustumCulled = false;
+    _skiPoints.renderOrder = 100;
+    scene.add(_skiPoints);
+    console.log('Ski particles initialized (pool=' + SKI_MAX + ')');
+}
+
+function emitSki(x, y, z) {
+    for (let t = 0; t < 16; t++) {
+        if (_skiAge[_skiNextSlot] <= 0) break;
+        _skiNextSlot = (_skiNextSlot + 1) % SKI_MAX;
+    }
+    const i = _skiNextSlot;
+    _skiPos[i*3] = x; _skiPos[i*3+1] = y; _skiPos[i*3+2] = z;
+    _skiVel[i*3] = (Math.random()-0.5)*2; _skiVel[i*3+1] = Math.random()*1.5+0.3; _skiVel[i*3+2] = (Math.random()-0.5)*2;
+    _skiAge[i] = SKI_LIFETIME; _skiAlpha[i] = 0.7 + Math.random()*0.3;
+    _skiNextSlot = (_skiNextSlot + 1) % SKI_MAX;
+}
+
+function updateSkiParticles(dt) {
+    if (!_skiPoints) return;
+    skiActive = 0;
+    for (let i = 0; i < SKI_MAX; i++) {
+        if (_skiAge[i] <= 0) continue;
+        _skiAge[i] -= dt;
+        if (_skiAge[i] <= 0) { _skiAge[i] = 0; _skiPos[i*3+1] = -9999; _skiAlpha[i] = 0; continue; }
+        skiActive++;
+        _skiPos[i*3] += _skiVel[i*3]*dt; _skiPos[i*3+1] += _skiVel[i*3+1]*dt; _skiPos[i*3+2] += _skiVel[i*3+2]*dt;
+        _skiVel[i*3+1] -= 3.0*dt; _skiVel[i*3] *= 0.96; _skiVel[i*3+2] *= 0.96;
+        _skiAlpha[i] = (_skiAge[i]/SKI_LIFETIME) < 0.6 ? (_skiAge[i]/SKI_LIFETIME)/0.6 : 1.0;
+    }
+    _skiPoints.geometry.attributes.position.needsUpdate = true;
+    _skiPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ── Projectile Trails ──
+const TRAIL_MAX = 512;
+const TRAIL_LIFETIME = 0.25;
+let _trailPos = new Float32Array(TRAIL_MAX * 3);
+let _trailAge = new Float32Array(TRAIL_MAX);
+let _trailAlpha = new Float32Array(TRAIL_MAX);
+let _trailColor = new Float32Array(TRAIL_MAX * 3);
+let _trailNextSlot = 0;
+let _trailPoints = null;
+let trailActive = 0;
+
+function initProjectileTrails() {
+    for (let i = 0; i < TRAIL_MAX; i++) { _trailPos[i*3+1] = -9999; _trailAlpha[i] = 0;
+        _trailColor[i*3]=1; _trailColor[i*3+1]=1; _trailColor[i*3+2]=1; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(_trailPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha', new THREE.Float32BufferAttribute(_trailAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aColor', new THREE.Float32BufferAttribute(_trailColor, 3).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.ShaderMaterial({
+        vertexShader: `attribute float aAlpha; attribute vec3 aColor; varying float vAlpha; varying vec3 vColor;
+            void main() { vAlpha=aAlpha; vColor=aColor; vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=aAlpha*180.0/max(1.0,-mv.z); gl_Position=projectionMatrix*mv; }`,
+        fragmentShader: `varying float vAlpha; varying vec3 vColor; void main() {
+            float r=length(gl_PointCoord-vec2(0.5)); if(r>0.5) discard;
+            float soft=1.0-smoothstep(0.15,0.5,r); gl_FragColor=vec4(vColor,soft*vAlpha); }`,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _trailPoints = new THREE.Points(geo, mat);
+    _trailPoints.frustumCulled = false;
+    _trailPoints.renderOrder = 101;
+    scene.add(_trailPoints);
+    console.log('Projectile trails initialized (pool=' + TRAIL_MAX + ')');
+}
+
+const TRAIL_COLORS = [[1,1,1],[1,0.93,0.25],[0.7,0.85,1],[0.3,0.5,0.19],[1,0.38,0.13],[1,0.63,0.25]];
+
+function emitTrail(x, y, z, colorIdx) {
+    const i = _trailNextSlot;
+    const c = TRAIL_COLORS[colorIdx % TRAIL_COLORS.length];
+    _trailPos[i*3]=x; _trailPos[i*3+1]=y; _trailPos[i*3+2]=z;
+    _trailAge[i]=TRAIL_LIFETIME; _trailAlpha[i]=0.9;
+    _trailColor[i*3]=c[0]; _trailColor[i*3+1]=c[1]; _trailColor[i*3+2]=c[2];
+    _trailNextSlot = (_trailNextSlot+1) % TRAIL_MAX;
+}
+
+function updateTrails(dt) {
+    if (!_trailPoints) return;
+    trailActive = 0;
+    for (let i = 0; i < TRAIL_MAX; i++) {
+        if (_trailAge[i] <= 0) continue;
+        _trailAge[i] -= dt;
+        if (_trailAge[i] <= 0) { _trailAge[i]=0; _trailPos[i*3+1]=-9999; _trailAlpha[i]=0; continue; }
+        trailActive++;
+        _trailAlpha[i] = (_trailAge[i] / TRAIL_LIFETIME) * 0.9;
+    }
+    _trailPoints.geometry.attributes.position.needsUpdate = true;
+    _trailPoints.geometry.attributes.aAlpha.needsUpdate = true;
+    _trailPoints.geometry.attributes.aColor.needsUpdate = true;
+}
+
+// ── Explosion FX ──
+const EXPL_POOL = 8;
+const EXPL_LIFETIME = 0.5;
+const MAX_SPARKS = 256;
+let _explPool = [];
+let _sparkPos, _sparkVel, _sparkAge, _sparkAlpha, _sparkNextSlot = 0;
+let _sparkPoints = null;
+let explActive = 0, sparkActive = 0;
+
+function initExplosionFX() {
+    _explPool = [];
+    for (let i = 0; i < EXPL_POOL; i++) {
+        const geo = new THREE.SphereGeometry(1.0, 12, 8);
+        const mat = new THREE.ShaderMaterial({
+            uniforms: { uProgress: { value: 0.0 } },
+            vertexShader: `varying vec3 vNormal; varying vec3 vViewDir;
+                void main() { vNormal=normalize(normalMatrix*normal);
+                vec4 mv=modelViewMatrix*vec4(position,1.0); vViewDir=normalize(-mv.xyz);
+                gl_Position=projectionMatrix*mv; }`,
+            fragmentShader: `precision mediump float; uniform float uProgress; varying vec3 vNormal; varying vec3 vViewDir;
+                void main() { float t=clamp(uProgress,0.0,1.0); float fr=pow(1.0-abs(dot(vNormal,vViewDir)),1.5);
+                vec3 core=vec3(1.0,0.95,0.8); vec3 outer=vec3(1.0,0.4,0.05); vec3 col=mix(core,outer,t);
+                float alpha=(1.0-t*t)*(0.55+0.45*fr); gl_FragColor=vec4(col,alpha); }`,
+            transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide,
+        });
+        const mesh = new THREE.Mesh(geo, mat);
+        mesh.visible = false; mesh.frustumCulled = false; mesh.renderOrder = 95;
+        scene.add(mesh);
+        _explPool.push({ mesh, active: false, age: 0, intensity: 1.0 });
+    }
+
+    _sparkPos = new Float32Array(MAX_SPARKS*3);
+    _sparkVel = new Float32Array(MAX_SPARKS*3);
+    _sparkAge = new Float32Array(MAX_SPARKS);
+    _sparkAlpha = new Float32Array(MAX_SPARKS);
+    for (let i = 0; i < MAX_SPARKS; i++) { _sparkPos[i*3+1]=-9999; _sparkAlpha[i]=0; }
+
+    const sGeo = new THREE.BufferGeometry();
+    sGeo.setAttribute('position', new THREE.Float32BufferAttribute(_sparkPos, 3).setUsage(THREE.DynamicDrawUsage));
+    sGeo.setAttribute('aAlpha', new THREE.Float32BufferAttribute(_sparkAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    const sMat = new THREE.ShaderMaterial({
+        vertexShader: `attribute float aAlpha; varying float vAlpha;
+            void main() { vAlpha=aAlpha; vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=aAlpha*180.0/max(1.0,-mv.z); gl_Position=projectionMatrix*mv; }`,
+        fragmentShader: `varying float vAlpha; void main() { float r=length(gl_PointCoord-vec2(0.5));
+            if(r>0.5) discard; float soft=1.0-smoothstep(0.15,0.5,r);
+            vec3 col=mix(vec3(1.0,0.7,0.2),vec3(1.0,0.95,0.8),soft); gl_FragColor=vec4(col,soft*vAlpha); }`,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _sparkPoints = new THREE.Points(sGeo, sMat);
+    _sparkPoints.frustumCulled = false; _sparkPoints.renderOrder = 96;
+    scene.add(_sparkPoints);
+    console.log('Explosion FX initialized (fireballs=' + EXPL_POOL + ', sparks=' + MAX_SPARKS + ')');
+}
+
+function triggerExplosion(px, py, pz, intensity) {
+    let slot = _explPool.find(e => !e.active);
+    if (!slot) { let oldest=0; for(let i=1;i<_explPool.length;i++) if(_explPool[i].age>_explPool[oldest].age) oldest=i; slot=_explPool[oldest]; }
+    slot.active=true; slot.age=0; slot.intensity=intensity;
+    slot.mesh.position.set(px,py,pz); slot.mesh.scale.setScalar(0.3); slot.mesh.visible=true;
+    const sparkCount = Math.round(24*Math.min(1.5,intensity));
+    for (let s=0;s<sparkCount;s++) {
+        for(let t=0;t<8;t++){if(_sparkAge[_sparkNextSlot]<=0)break;_sparkNextSlot=(_sparkNextSlot+1)%MAX_SPARKS;}
+        const i=_sparkNextSlot;
+        _sparkPos[i*3]=px+(Math.random()-0.5)*0.5; _sparkPos[i*3+1]=py+(Math.random()-0.5)*0.5; _sparkPos[i*3+2]=pz+(Math.random()-0.5)*0.5;
+        const sp=(3+Math.random()*8)*intensity; const th=Math.random()*Math.PI*2; const ph=Math.random()*Math.PI*0.8;
+        _sparkVel[i*3]=Math.sin(ph)*Math.cos(th)*sp; _sparkVel[i*3+1]=Math.cos(ph)*sp*0.7+2; _sparkVel[i*3+2]=Math.sin(ph)*Math.sin(th)*sp;
+        _sparkAge[i]=0.4+Math.random()*0.35; _sparkAlpha[i]=0.8+Math.random()*0.2;
+        _sparkNextSlot=(_sparkNextSlot+1)%MAX_SPARKS;
+    }
+}
+
+function updateExplosionFX(dt) {
+    explActive = 0;
+    for (const ex of _explPool) {
+        if (!ex.active) continue;
+        ex.age += dt;
+        if (ex.age >= EXPL_LIFETIME) { ex.active=false; ex.mesh.visible=false; continue; }
+        explActive++;
+        const t = ex.age/EXPL_LIFETIME;
+        ex.mesh.scale.setScalar((0.5+3.5*(1-(1-t)*(1-t)))*ex.intensity);
+        ex.mesh.material.uniforms.uProgress.value = t;
+    }
+    sparkActive = 0;
+    for (let i = 0; i < MAX_SPARKS; i++) {
+        if (_sparkAge[i]<=0) continue;
+        _sparkAge[i]-=dt;
+        if (_sparkAge[i]<=0){_sparkAge[i]=0;_sparkPos[i*3+1]=-9999;_sparkAlpha[i]=0;continue;}
+        sparkActive++;
+        _sparkPos[i*3]+=_sparkVel[i*3]*dt; _sparkPos[i*3+1]+=_sparkVel[i*3+1]*dt; _sparkPos[i*3+2]+=_sparkVel[i*3+2]*dt;
+        _sparkVel[i*3+1]-=12*dt; _sparkVel[i*3]*=0.98; _sparkVel[i*3+2]*=0.98;
+        const life=_sparkAge[i]/0.55;
+        _sparkAlpha[i]=life>0.4?0.9:0.9*(life/0.4);
+    }
+    if (_sparkPoints) {
+        _sparkPoints.geometry.attributes.position.needsUpdate = true;
+        _sparkPoints.geometry.attributes.aAlpha.needsUpdate = true;
+    }
+}
+
+// ── Night Fairies (simplified standalone) ──
+const FAIRY_COUNT = 500; // Reduced for test
+let _fairyPoints = null;
+let _fairyPos, _fairyPhase;
+let fairyActive = 0;
+
+function initNightFairies() {
+    _fairyPos = new Float32Array(FAIRY_COUNT * 3);
+    _fairyPhase = new Float32Array(FAIRY_COUNT);
+    for (let i = 0; i < FAIRY_COUNT; i++) {
+        _fairyPos[i*3] = (Math.random()-0.5)*80;
+        _fairyPos[i*3+1] = 2+Math.random()*30;
+        _fairyPos[i*3+2] = (Math.random()-0.5)*80;
+        _fairyPhase[i] = Math.random()*Math.PI*2;
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(_fairyPos, 3).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.PointsMaterial({
+        size: 1.5, color: 0xaaddff, transparent: true, opacity: 0.6,
+        blending: THREE.AdditiveBlending, depthWrite: false, sizeAttenuation: true,
+    });
+    _fairyPoints = new THREE.Points(geo, mat);
+    _fairyPoints.frustumCulled = false;
+    scene.add(_fairyPoints);
+    console.log('Night fairies initialized (count=' + FAIRY_COUNT + ')');
+}
+
+function updateFairies(dt, time) {
+    if (!_fairyPoints) return;
+    fairyActive = FAIRY_COUNT;
+    for (let i = 0; i < FAIRY_COUNT; i++) {
+        _fairyPos[i*3] += Math.sin(time*0.5+_fairyPhase[i])*dt*0.5;
+        _fairyPos[i*3+1] += Math.sin(time*0.3+_fairyPhase[i]*1.7)*dt*0.3;
+        _fairyPos[i*3+2] += Math.cos(time*0.4+_fairyPhase[i]*2.1)*dt*0.5;
+    }
+    _fairyPoints.geometry.attributes.position.needsUpdate = true;
+}
+
+// ── Jet Exhaust ──
+const JET_MAX = 256;
+const JET_LIFETIME = 0.35;
+let _jetPos = new Float32Array(JET_MAX*3);
+let _jetAge = new Float32Array(JET_MAX);
+let _jetVel = new Float32Array(JET_MAX*3);
+let _jetAlpha = new Float32Array(JET_MAX);
+let _jetNextSlot = 0;
+let _jetPoints = null;
+let jetActive = 0;
+
+function initJetExhaust() {
+    for (let i = 0; i < JET_MAX; i++) { _jetPos[i*3+1]=-9999; _jetAlpha[i]=0; }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(_jetPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha', new THREE.BufferAttribute(_jetAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    const mat = new THREE.ShaderMaterial({
+        vertexShader: `attribute float aAlpha; varying float vAlpha;
+            void main() { vAlpha=aAlpha; vec4 mv=modelViewMatrix*vec4(position,1.0);
+            gl_PointSize=aAlpha*150.0/max(1.0,-mv.z); gl_Position=projectionMatrix*mv; }`,
+        fragmentShader: `varying float vAlpha; void main() { float r=length(gl_PointCoord-vec2(0.5));
+            if(r>0.5) discard; float soft=1.0-smoothstep(0.2,0.5,r);
+            vec3 col=mix(vec3(1.0,0.8,0.3),vec3(1.0,0.4,0.1),r*2.0);
+            gl_FragColor=vec4(col,soft*vAlpha); }`,
+        transparent: true, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _jetPoints = new THREE.Points(geo, mat);
+    _jetPoints.frustumCulled = false; _jetPoints.renderOrder = 99;
+    scene.add(_jetPoints);
+    console.log('Jet exhaust initialized (pool=' + JET_MAX + ')');
+}
+
+function emitJet(x, y, z) {
+    for (let t=0;t<16;t++){if(_jetAge[_jetNextSlot]<=0)break;_jetNextSlot=(_jetNextSlot+1)%JET_MAX;}
+    const i = _jetNextSlot;
+    _jetPos[i*3]=x; _jetPos[i*3+1]=y; _jetPos[i*3+2]=z;
+    _jetVel[i*3]=(Math.random()-0.5)*1.5; _jetVel[i*3+1]=-3-Math.random()*3; _jetVel[i*3+2]=(Math.random()-0.5)*1.5;
+    _jetAge[i]=JET_LIFETIME; _jetAlpha[i]=0.8+Math.random()*0.2;
+    _jetNextSlot=(_jetNextSlot+1)%JET_MAX;
+}
+
+function updateJetExhaust(dt) {
+    if (!_jetPoints) return;
+    jetActive = 0;
+    for (let i = 0; i < JET_MAX; i++) {
+        if (_jetAge[i]<=0) continue;
+        _jetAge[i]-=dt;
+        if (_jetAge[i]<=0){_jetAge[i]=0;_jetPos[i*3+1]=-9999;_jetAlpha[i]=0;continue;}
+        jetActive++;
+        _jetPos[i*3]+=_jetVel[i*3]*dt; _jetPos[i*3+1]+=_jetVel[i*3+1]*dt; _jetPos[i*3+2]+=_jetVel[i*3+2]*dt;
+        _jetVel[i*3]*=0.95; _jetVel[i*3+2]*=0.95;
+        _jetAlpha[i]=(_jetAge[i]/JET_LIFETIME)*0.8;
+    }
+    _jetPoints.geometry.attributes.position.needsUpdate = true;
+    _jetPoints.geometry.attributes.aAlpha.needsUpdate = true;
+}
+
+// ── Init all systems ──
+initSkiParticles();
+initProjectileTrails();
+initExplosionFX();
+initNightFairies();
+initJetExhaust();
+
+// ── Emission state ──
+let emitting = { ski: false, trail: false, explosion: false, fairy: true, jet: false };
+let emitTimers = { explosion: 0, trail: 0, ski: 0, jet: 0 };
+
+function toggleEmit(key) {
+    emitting[key] = !emitting[key];
+    const btn = document.getElementById('btn-' + (key === 'explosion' ? 'explosion' : key));
+    if (btn) btn.classList.toggle('active', emitting[key]);
+}
+
+document.getElementById('btn-ski').onclick = () => toggleEmit('ski');
+document.getElementById('btn-trail').onclick = () => toggleEmit('trail');
+document.getElementById('btn-explosion').onclick = () => {
+    triggerExplosion((Math.random()-0.5)*10, 2+Math.random()*3, (Math.random()-0.5)*10, 0.8+Math.random()*0.5);
+};
+document.getElementById('btn-fairies').onclick = () => toggleEmit('fairy');
+document.getElementById('btn-jet').onclick = () => toggleEmit('jet');
+document.getElementById('btn-all').onclick = () => {
+    ['ski','trail','fairy','jet'].forEach(k => { emitting[k] = true; });
+    triggerExplosion(0, 3, 0, 1.0);
+    document.querySelectorAll('#hud button').forEach(b => {
+        if (['btn-ski','btn-trail','btn-fairies','btn-jet'].includes(b.id)) b.classList.add('active');
+    });
+};
+document.getElementById('btn-clear').onclick = () => {
+    Object.keys(emitting).forEach(k => emitting[k] = false);
+    document.querySelectorAll('#hud button.active').forEach(b => b.classList.remove('active'));
+};
+document.getElementById('btn-stress').onclick = () => {
+    document.getElementById('test-results').innerHTML = '';
+    console.log('--- Stress test: pool exhaustion ---');
+    for (let i = 0; i < SKI_MAX + 50; i++) emitSki(Math.random()*5, 1, Math.random()*5);
+    logTest(true, 'Ski pool overflow did not crash');
+    for (let i = 0; i < TRAIL_MAX + 50; i++) emitTrail(Math.random()*5, 3, Math.random()*5, i%6);
+    logTest(true, 'Trail pool overflow did not crash');
+    for (let i = 0; i < EXPL_POOL + 5; i++) triggerExplosion(Math.random()*10, 3, Math.random()*10, 1.0);
+    logTest(true, 'Explosion pool overflow did not crash');
+    for (let i = 0; i < JET_MAX + 50; i++) emitJet(Math.random()*5, 5, Math.random()*5);
+    logTest(true, 'Jet pool overflow did not crash');
+    console.log('--- Stress test complete ---');
+};
+document.getElementById('btn-log').onclick = () => logEl.classList.toggle('visible');
+
+// ── Stats ──
+let frameCount = 0, lastFpsTime = performance.now();
+
+function updateOverlay() {
+    document.getElementById('ov-ski').textContent = skiActive;
+    document.getElementById('ov-trail').textContent = trailActive;
+    document.getElementById('ov-expl').textContent = explActive;
+    document.getElementById('ov-spark').textContent = sparkActive;
+    document.getElementById('ov-fairy').textContent = fairyActive;
+    document.getElementById('ov-jet').textContent = jetActive;
+    const total = skiActive + trailActive + sparkActive + fairyActive + jetActive;
+    document.getElementById('ov-total').textContent = total;
+    document.getElementById('stat-particles').innerHTML = `Particles: <b>${total}</b>`;
+}
+
+// ── Render Loop ──
+let lastTime = performance.now();
+function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastTime) * 0.001);
+    const time = now * 0.001;
+    lastTime = now;
+
+    // Emit particles based on state
+    if (emitting.ski) { for (let i = 0; i < 3; i++) emitSki((Math.random()-0.5)*4, 0.1, (Math.random()-0.5)*4); }
+    if (emitting.trail) {
+        emitTimers.trail += dt;
+        if (emitTimers.trail > 0.02) {
+            const angle = time * 2;
+            emitTrail(Math.cos(angle)*8, 3, Math.sin(angle)*8, Math.floor(time)%6);
+            emitTimers.trail = 0;
+        }
+    }
+    if (emitting.jet) { for (let i = 0; i < 2; i++) emitJet((Math.random()-0.5)*2, 8, (Math.random()-0.5)*2); }
+
+    updateSkiParticles(dt);
+    updateTrails(dt);
+    updateExplosionFX(dt);
+    updateFairies(dt, time);
+    updateJetExhaust(dt);
+
+    controls.update();
+    renderer.render(scene, camera);
+
+    frameCount++;
+    if (now - lastFpsTime >= 500) {
+        document.getElementById('stat-fps').innerHTML = `FPS: <b>${Math.round(frameCount*1000/(now-lastFpsTime))}</b>`;
+        document.getElementById('stat-draws').innerHTML = `Draws: <b>${renderer.info.render.calls}</b>`;
+        frameCount = 0;
+        lastFpsTime = now;
+        updateOverlay();
+    }
+}
+animate();
+
+window.addEventListener('resize', () => {
+    camera.aspect = innerWidth / innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+});
+
+console.log('Particles test harness loaded.');
+</script>
+</body>
+</html>
