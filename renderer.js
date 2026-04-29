@@ -3170,6 +3170,7 @@ function initWeaponViewmodel() {
 // the view regardless of player position.
 // ============================================================
 let _rainGeom = null, _rainSystem = null;
+let _rainEnabled = false; // R32.201: defer allocation — only true after initRain()
 // R32.10: longer streak lines instead of round dots. Lines render as classic
 // Tribes/Counter-Strike rain — thin vertical streaks tilted by wind, much more
 // readable in motion than circular point sprites.
@@ -3202,6 +3203,7 @@ function _makeRaindropTexture() {
     return tex;
 }
 function initRain() {
+    if (_rainEnabled) return; // R32.201: idempotent — don't double-allocate
     _rainGeom = new THREE.BufferGeometry();
     // 2 verts per streak (head + tail) × 3 components = 6 floats per streak
     _rainPos = new Float32Array(RAIN_COUNT * 6);
@@ -3236,6 +3238,7 @@ function initRain() {
     _rainSystem = new THREE.LineSegments(_rainGeom, mat);
     _rainSystem.frustumCulled = false;
     scene.add(_rainSystem);
+    _rainEnabled = true; // R32.201: allocation complete — updates can proceed
 }
 
 function updateRain(dt, camPos) {
@@ -5018,7 +5021,7 @@ function loop() {
     syncParticles();
     syncTurretBarrels(t);
     syncCamera();
-    updateRain(1 / 60, camera.position); // R32.0 rain tick
+    if (_rainEnabled) updateRain(1 / 60, camera.position); // R32.201: skip when rain not allocated
     // R32.141: Old jet exhaust disabled — mesh flames on character model instead
     try { updateSkiParticles(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
