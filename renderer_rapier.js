@@ -48,6 +48,14 @@ const CC_STEP_HEIGHT = 0.4;       // auto-step over obstacles up to 0.4m
 const CC_MIN_STEP_WIDTH = 0.25;
 const CC_SNAP_TO_GROUND = 0.2;    // snap distance
 
+// R32.162: Collision groups — separate terrain from buildings/interiors.
+// WASM handles terrain clamping; Rapier should only resolve building/interior collision.
+// Format: (filter << 16) | membership  (Rapier u32 collision groups)
+const CG_TERRAIN_MEMBERSHIP = 0x0002;  // group 1 (bit 1)
+const CG_BUILDING_MEMBERSHIP = 0x0004; // group 2 (bit 2)
+// Player filter: interact with buildings (group 2) and interiors (group 2), NOT terrain (group 1)
+const CG_PLAYER_GROUPS = (0xFFFC << 16) | 0x0001; // member=group0, filter=all except terrain(group1)
+
 // Diagnostics
 let _colliderCount = 0;
 let _trimeshTriCount = 0;
@@ -102,6 +110,8 @@ async function _doInit() {
     playerHalfH = 0.3; // medium armor: total height ~1.8m, radius 0.6
     playerRadius = 0.6;
     const colliderDesc = RAPIER.ColliderDesc.capsule(playerHalfH, playerRadius);
+    // R32.162: Player collision group — excludes terrain (WASM handles terrain)
+    colliderDesc.setCollisionGroups(CG_PLAYER_GROUPS);
     playerCollider = world.createCollider(colliderDesc, playerRigidBody);
 
     initialized = true;
@@ -154,6 +164,9 @@ function createTerrainCollider(heightData, size, worldScale) {
     const colliderDesc = RAPIER.ColliderDesc.heightfield(
         nrows, ncols, heights, scaleVec
     );
+    // R32.162: Put terrain in its own collision group so character controller ignores it.
+    // WASM handles all terrain clamping; Rapier should only resolve building/interior collisions.
+    colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_TERRAIN_MEMBERSHIP);
     world.createCollider(colliderDesc, body);
     _colliderCount++;
 
@@ -198,6 +211,8 @@ function createBuildingColliders() {
         const body = world.createRigidBody(bodyDesc);
 
         const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
+        // R32.162: Building collision group — interacts with player
+        colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_BUILDING_MEMBERSHIP);
         world.createCollider(colliderDesc, body);
         added++;
     }
@@ -284,6 +299,8 @@ function rapierRegisterModelCollision(root, worldMatrix) {
         const body = world.createRigidBody(bodyDesc);
         const colliderDesc = RAPIER.ColliderDesc.trimesh(verts, indices);
         if (colliderDesc) {
+            // R32.162: Interior collision group — same as buildings, interacts with player
+            colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_BUILDING_MEMBERSHIP);
             world.createCollider(colliderDesc, body);
             _colliderCount++;
             totalMeshes++;
@@ -358,9 +375,12 @@ function stepPlayerCollision(playerView, stride, localIdx, dt) {
     };
 
     // Use character controller to resolve collisions
+    // R32.162: Pass collision filter to exclude terrain (WASM handles terrain clamping)
     characterController.computeColliderMovement(
         playerCollider,
-        desiredMovement
+        desiredMovement,
+        undefined,        // filterFlags (default)
+        CG_PLAYER_GROUPS  // filterGroups — excludes terrain collision group
     );
 
     const corrected = characterController.computedMovement();
