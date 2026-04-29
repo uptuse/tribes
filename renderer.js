@@ -34,7 +34,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=141'; // R32.116: cache bust
+import * as Characters from './renderer_characters.js?v=142'; // R32.142: cache bust
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -1144,7 +1144,7 @@ async function initTerrain() {
 // Only carve shapes that are actually embedded in the terrain (hobbit-holed).
 // Skip rocks, cubes, floating pads, bridges, observation towers, and small objects.
 function _carveTerrainUnderBuildings() {
-    if (!terrainMesh || !interiorShapesGroup) return;
+    if (!terrainMesh || !interiorShapesGroup) { console.warn('[R32.142] Carve: no terrainMesh or interiorShapesGroup'); return; }
 
     const geo = terrainMesh.geometry;
     const pos = geo.attributes.position;
@@ -1153,11 +1153,13 @@ function _carveTerrainUnderBuildings() {
     // Only carve for shapes that are actual base buildings embedded in hillsides
     const carvePatterns = ['bunker', 'esmall'];
     const boxes = [];
+    console.log('[R32.142] Carve: checking', interiorShapesGroup.children.length, 'interior shapes');
     interiorShapesGroup.children.forEach(outer => {
         if (!outer.userData) return;
         const fn = (outer.userData.fileName || '').toLowerCase();
         // Only carve for base buildings
         const shouldCarve = carvePatterns.some(p => fn.startsWith(p));
+        if (shouldCarve) console.log('[R32.142] Carve match:', fn);
         if (!shouldCarve) return;
         const box = new THREE.Box3().setFromObject(outer);
         if (box.isEmpty()) return;
@@ -4522,8 +4524,8 @@ function initSkiParticles() {
     }
 
     const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
-    geo.setAttribute('aAlpha',   new THREE.Float32BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('position', new THREE.BufferAttribute(_skiPos, 3).setUsage(THREE.DynamicDrawUsage));
+    geo.setAttribute('aAlpha',   new THREE.BufferAttribute(_skiAlpha, 1).setUsage(THREE.DynamicDrawUsage));
 
     // Cloned from jet exhaust shader — changed color to blue-white
     const mat = new THREE.ShaderMaterial({
