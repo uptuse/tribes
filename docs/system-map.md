@@ -449,3 +449,202 @@ prediction.js
 ### 2-Team Hardcoding Summary
 
 **12 files, 28 locations.** Full inventory in Phase 5 Integration Audit Section 5.
+
+
+---
+
+## index.html — Game Bridge & UI Shell (Phase 5 Additions)
+
+**Classification:** ~3,200 lines hand-written JavaScript (4,524 total lines including HTML/CSS). The largest single source of game logic outside renderer.js. Contains the WASM↔JS bridge, all menu/HUD UI, audio engine, settings system, chat, scoreboard, matchmaking, and the Module bootstrap.
+
+### File Structure
+
+| Line Range | Section | LOC | Description |
+|---|---|---|---|
+| 1–649 | HTML head + CSS | ~649 | Meta tags, SEO, full CSS stylesheet, importmap |
+| 650–658 | Server config | ~8 | `__TRIBES_SERVER_URL` definition (commented out) |
+| 660–698 | Dev HUD chips | ~38 | Version chip, FPS chip, clock chip, PBR toggle chips |
+| 699–791 | PBR chip logic | ~92 | Interactive PBR roughness/AO/POM toggle with settings sync |
+| 793–920 | HUD HTML | ~127 | All gameplay HUD elements (health/energy bars, crosshair, compass, score, ski HUD, damage flash, respawn overlay, match end, tutorial, etc.) |
+| 920–1512 | Menu HTML | ~592 | Main menu, team select, armor select, game setup, settings panel, help panel, report panel, profile panel, lobby browser, map selector |
+| 1513–1656 | Menu JS | ~143 | Screen navigation, team/armor selection, map selection, quickStart, game settings |
+| 1657–1770 | WASM HUD callbacks | ~113 | `updateHUD()`, `updateMatchHUD()`, compass update, damage flash |
+| 1770–1886 | Game flow | ~116 | `startGame()`, `restartGame()`, `toMainMenu()`, event messages |
+| 1887–1970 | Scoreboard | ~83 | `sbRow()`, `sbFinish()` (defined TWICE — L1901 and L1969), `renderScoreboard()` |
+| 1970–2000 | Match end | ~30 | `onMatchEnd()`, map voting, replay buttons, survey |
+| 2000–2310 | Social systems | ~310 | Chat (open/close/dispatch/render), emoji floats, display name, voice mute, report/block, help, GDPR export/delete |
+| 2310–2630 | Profile & lobbies | ~320 | Player profile, lobby browser, quick match, custom lobby, replays, map voting |
+| 2630–2780 | Combat feedback | ~150 | Damage arcs, spawn protection overlay, critical HP vignette, hit confirmation |
+| 2780–3080 | Network UI | ~300 | Reconnect overlay, kill messages, inventory stations, flag status |
+| 3083–3657 | Audio Engine (AE) | ~574 | Complete procedural audio system: 20 sound slots, procedural buffers, WebAudio graph, music, ambience, spatial audio, generator hum |
+| 3657–3700 | WASM audio bridge | ~43 | `playSoundAt()`, `playSoundUI()`, `shaz()`, `updateAudio()` |
+| 3700–4030 | Settings system (ST) | ~330 | `loadSettings()`, `saveSettings()`, keybindings, color-blind mode, crosshair customization, settings import/export |
+| 4030–4080 | FPS counter + ski HUD | ~50 | `updateFPS()`, ski speed/slope display, hit tick animation |
+| 4080–4520 | Module bootstrap | ~440 | WASM `onRuntimeInitialized`, dynamic imports (tiers.js, network.js, prediction.js, mapeditor.js, replay.js, moderation.js, renderer.js), match lifecycle callbacks |
+
+### window.* Globals Written by index.html
+
+| Global | Line | Type | Purpose | Read by |
+|---|---|---|---|---|
+| `window.__tribesSetGameClock` | L694 | Function | Set clock chip text | renderer.js (DayNight) |
+| `window.__tribesSyncPBRChips` | L788 | Function | Sync PBR toggle chip states | Settings panel |
+| `window.updateHUD` | L1657 | Function | WASM callback: full HUD state | tribes.js ASM_CONST |
+| `window._r327PrevCarry` | L1703 | Number | Previous flag carry state | updateHUD (internal) |
+| `window.updateMatchHUD` | L1715 | Function | WASM callback: match state | tribes.js ASM_CONST |
+| `window.sbRow` | L1898 | Function | WASM callback: scoreboard row | tribes.js ASM_CONST |
+| `window.sbFinish` | L1901, L1969 | Function | WASM callback: scoreboard end (**defined TWICE**) | tribes.js ASM_CONST |
+| `window.onMatchEnd` | L1931 | Function | WASM callback: match end | tribes.js ASM_CONST |
+| `window.renderScoreboard` | L1946 | Function | Render full scoreboard HTML | sbFinish |
+| `window.showDamageArc` | L2746 | Function | Show directional damage indicator | combat feedback |
+| `window.onDamageSource` | L2750 | Function | WASM callback: damage direction | tribes.js ASM_CONST |
+| `window.updateSpawnProt` | L2783 | Function | Update spawn protection timer | updateMatchHUD |
+| `window.addFriend` | L2878 | Function | Add friend by UUID | Social panel |
+| `window.__tribesShowReconnect` | L3016 | Function | Show reconnect overlay | network.js |
+| `window.__tribesHideReconnect` | L3017 | Function | Hide reconnect overlay | network.js |
+| `window.addKillMsg` | L3035 | Function | Add kill feed message | network.js, WASM |
+| `window.playSoundAt` | L3653 | Function | WASM callback: positional audio | tribes.js ASM_CONST |
+| `window.playSoundUI` | L3654 | Function | WASM callback: UI sound | tribes.js ASM_CONST |
+| `window.shaz` | L3656 | Function | Play shazbot voice line | Console/debug |
+| `window.AE` | L3657 | Object | Audio Engine instance | Debug, external tweaking |
+| `window.updateAudio` | L3659 | Function | WASM callback: audio state | tribes.js ASM_CONST |
+| `window.ST` | L3700 | Object | Settings store | renderer.js, polish, all modules |
+| `window.__teamColors` | L3772 | Object | Color-blind mode overrides | renderer.js |
+| `window.r3FrameTime` | L4040 | Number | Frame time for WASM perf log | tribes.js perf callback |
+| `window._skiPeakSpeed` | L4054 | Number | Peak ski speed (HUD display) | Ski HUD |
+| `window._skiPeakTimer` | L4055 | Number | Peak speed decay timer | Ski HUD |
+| `window.onHitConfirm` | L4080 | Function | WASM callback: hit confirmation | tribes.js ASM_CONST |
+| `window.__tribesUseThree` | L4223 | Boolean | Three.js renderer active flag | Internal |
+| `window.__tiers` | L4320 | Object | Skill tier module | Scoreboard, chat, profile |
+| `window.__tribesNet` | L4333 | Object | Network module handle | Chat, scoreboard, lobbies |
+| `window.__tribesReconcile` | L4352 | Function | Reconciliation callback for netcode | network.js → prediction.js |
+| `window.__tribesOnMatchStart` | L4385 | Function | Match start handler | network.js |
+| `window.__tribesActiveMapId` | L4389 | String | Current map ID | Map system |
+| `window.__tribesPlayerRatings` | L4397 | Object | Player skill ratings by UUID | Scoreboard |
+| `window.__tribesPlayerUuids` | L4398 | Object | Player UUID lookup | Rating system |
+| `window.__tribesPlayerRoster` | L4409 | Array | Full player roster | Scoreboard, chat, mute |
+| `window.__tribesOnMatchEnd` | L4411 | Function | Match end handler | network.js |
+| `window.__lastReplayUrl` | L4414 | String | Last match replay URL | Replay buttons |
+| `window.__lastMapVoteOptions` | L4415 | Array | Map vote options | Match end screen |
+| `window.__lastMapId` | L4416 | String | Last played map ID | Map voting |
+| `window.__tribesOnMessage` | L4420 | Function | Generic message handler | network.js |
+| `window.__tribesOnSkillUpdate` | L4430 | Function | Skill rating update handler | network.js |
+| `window.__lastRatingShown` | L4459 | Number | Last displayed rating | Tier toast dedup |
+
+### Audio Engine (AE) Interface
+
+The audio engine is defined at L3083 as `var AE = { ... }` and exposed at L3657 as `window.AE`.
+
+**Architecture:**
+- WebAudio API with master gain node + 3 bus submixes (sfx, ui, music)
+- Lazy init: `AE.init()` called on first user interaction (pointer lock)
+- 20 procedural sound buffers generated at init (disc fire, explosions, jet, ski, landing, etc.)
+- Real samples loaded async via `AE.loadRealSamples()` for higher-quality disc/ski/lightning/shazbot
+- Spatial audio: `AE.playAt(id, x, y, z)` with distance-based gain (1/r² falloff)
+- Continuous loops: jet engine, ski friction, generator hum — updated per frame via `AE.update()`
+
+**Key methods:**
+| Method | Purpose |
+|---|---|
+| `AE.init()` | Create AudioContext, build procedural buffers, set up buses |
+| `AE.playAt(id, x, y, z)` | Play sound at world position with spatial falloff |
+| `AE.playUI(id)` | Play non-spatial UI sound |
+| `AE.update(jetting, onGround, speed, health, skiing)` | Per-frame continuous sound state update |
+| `AE.startMusic()` | Begin background music loop |
+| `AE.loadRealSamples()` | Async-load WAV/OGG samples to replace procedural buffers |
+| `AE.mute()` | Toggle master mute |
+| `AE.playShazbot(loud)` | Play the iconic Tribes shazbot voice line |
+| `AE.setMusicVolume(v)` | Set music volume (0-1) |
+| `AE.setAmbienceVolume(v)` | Set ambience volume (0-1) |
+
+**Sound slot IDs (procedural):**
+| ID | Sound | Duration |
+|---|---|---|
+| 0 | Disc fire (bass thump) | 0.3s |
+| 1 | Explosion | 0.6s |
+| 2 | Energy hit | 0.2s |
+| 3 | Chain gun burst | 0.15s |
+| 4 | Grenade launch | 0.25s |
+| 5 | Scoreboard open | 0.1s |
+| 6 | Scoreboard close | 0.1s |
+| 7 | Capture sound | 0.4s |
+| 8 | Impact/land | 0.15s |
+
+### HUD Element ID Map
+
+**Gameplay HUD (`#hud`):**
+| ID | Element | Purpose |
+|---|---|---|
+| `hud` | Container div | Main HUD wrapper, hidden during menus |
+| `hud-bl` | Bottom-left group | Health + energy bars |
+| `hp-fill` | Health bar fill | Width% driven by WASM hp |
+| `en-fill` | Energy bar fill | Width% driven by WASM energy |
+| `hud-br` | Bottom-right group | Weapon info |
+| `hud-wpn-icon` | Weapon icon | CSS background-image per weapon type |
+| `hud-ammo` | Ammo display | "cur / max" text |
+| `ammo-cur` | Current ammo span | Updated from updateHUD |
+| `ammo-max` | Max ammo span | Updated from updateHUD |
+| `hud-xhair` | Crosshair container | SVG crosshair overlay at screen center |
+| `xhair-svg` | Crosshair SVG | 4 arm lines + center dot |
+| `hud-compass` | Compass bar | CSS-driven horizontal compass strip |
+| `compass-track` | Compass track | Scrolling N/S/E/W markers |
+| `hud-score` | Score display | "RED 0 : 0 BLUE" |
+| `hs-red` / `hs-blue` | Team scores | Red/blue score numbers |
+| `hud-flag-carry` | Flag carry banner | Shown when carrying enemy flag |
+| `hud-timer` | Match timer | "5:00" countdown |
+| `hud-warmup` | Warmup text | Pre-match countdown message |
+| `eventlog` | Event log | Kill feed / game events |
+| `ski-hud` | Ski HUD group | Speed + slope display during skiing |
+| `ski-badge` | "SKI" label | Visible when skiing active |
+| `ski-speed-val` | Speed number | m/s value |
+| `ski-slope-fill` | Slope indicator bar | Fill width = slope angle |
+| `ski-slope-label` | Slope text | "FLAT" / "MILD" / "STEEP" |
+| `hit-tick` | Hit marker | "+" flash on hit confirm |
+
+**State overlays:**
+| ID | Purpose |
+|---|---|
+| `damage-flash` | Full-screen red flash on damage |
+| `ptr-lock-hint` | "CLICK TO RESUME" pointer lock prompt |
+| `respawn-overlay` | Death/respawn countdown |
+| `respawn-count` | Respawn seconds counter |
+| `matchend` | Match end scoreboard + voting |
+| `countdown` | Pre-match "3, 2, 1, GO" |
+| `spawn-prot` | "INVULNERABLE 3.0s" spawn protection |
+| `damage-arcs` | Directional damage indicators |
+| `critical-hp-vignette` | Red vignette at low health |
+| `spec-bars` | Cinematic letterbox bars (spectator) |
+| `spec-label` | "SPECTATING — RESPAWNING" text |
+| `toast` | Toast notification popup |
+| `tutorial` | Tutorial step overlay |
+
+**Dev/debug chips (always visible):**
+| ID | Purpose |
+|---|---|
+| `version-chip` | Build version (e.g., "R32.221") |
+| `fps-chip` | FPS counter |
+| `clock-chip` | In-game time of day |
+| `pbr-chip-rough` | PBR roughness toggle |
+| `pbr-chip-ao` | PBR ambient occlusion toggle |
+| `pbr-chip-pom` | PBR parallax mapping toggle |
+
+### WASM Bootstrap Sequence (Module.onRuntimeInitialized)
+
+Located at ~L4175-4520. Sequence:
+
+1. **Import tiers.js** → `window.__tiers` (skill rating display)
+2. **Import network.js** → `window.__tribesNet` (multiplayer)
+3. **Register match callbacks** → `__tribesReconcile`, `__tribesOnMatchStart`, `__tribesOnMatchEnd`, `__tribesOnSkillUpdate`
+4. **Import mapeditor.js** → `window.__editor` (map editor)
+5. **Import replay.js** → `window.__replay` (replay viewer)
+6. **Import moderation.js** → `window.__moderation` (username validation)
+7. **Dynamic import renderer.js** → calls `start()` which initializes Three.js scene
+8. **Start prediction frame loop** → separate RAF for client-side prediction
+9. **Hide loading screen** → show menu
+
+### Known Issues in index.html
+
+1. **sbFinish defined twice** (L1901 and L1969) — second definition overwrites first; first 68 lines are dead code
+2. **updateAudio called with 4 OR 5 params** — two ASM_CONST entries with different signatures (skiing sometimes missing)
+3. **_restartGame is phantom export** — called with `if(Module._restartGame)` guard but not in WASM export table
+4. **~2,000 lines partially audited** — HUD, audio engine, menus, matchmaking sections need deeper review
+5. **2-team hardcoding** — teamScore[2], flags[2], team select UI only has 2 options
