@@ -653,7 +653,10 @@
     // Leave undefined for local dev (?multiplayer=local will hit ws://localhost:8080/ws).
     // window.__TRIBES_SERVER_URL = 'wss://tribes-server.workers.dev/ws';
   </script>
-  <!-- R15: Three.js renderer (default in R17). R18 adds three/addons for Sky + post-processing. -->
+  <!-- Three.js r170 — PINNED. DO NOT upgrade without testing the 6 onBeforeCompile hooks
+       in renderer.js (terrain shader, interior materials, building PBR patches, toon pass,
+       decal depth, grass instancing). These hooks do string-replacement on Three.js internal
+       shader chunks and WILL break silently on version changes. See vendor/three/README.md. -->
  <script type="importmap">
   {
     "imports": {
@@ -678,7 +681,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.169</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.174</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -4313,7 +4316,7 @@
         import('./client/mapeditor.js').then(function(){ console.log('[R25] mapeditor.js loaded'); })
           .catch(function(e){ console.warn('[R25] mapeditor.js import failed:', e); });
         // R26: tier helper expose for the main-menu badge + ranked overlays
-        import('./client/tiers.js').then(function(m){
+        import('./client/skill_rating.js').then(function(m){
           window.__tiers = m;
           console.log('[R26] tiers.js loaded');
           // Trigger an initial badge render with the default rating
