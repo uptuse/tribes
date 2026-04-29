@@ -33,7 +33,11 @@
         // Frame counter (used for animated dot pulses)
         tick: 0,
         // Settings
-        teamColors: ['#3FA8FF', '#FF6A4A', '#9DDCFF'], // team 0=blue, team 1=red, fallback
+        // R32.155: Fixed team color inversion — team 0=red, team 1=blue (matches WASM/renderer.js)
+        // Uses TEAM_CONFIG from client/team_config.js when available.
+        teamColors: (typeof window !== 'undefined' && window.TEAM_CONFIG)
+            ? [window.TEAM_CONFIG.teamHudHex(0), window.TEAM_CONFIG.teamHudHex(1), window.TEAM_CONFIG.teamHudHex(0)]
+            : ['#FF6A4A', '#3FA8FF', '#FF6A4A'], // team 0=red, team 1=blue, fallback=red
     };
 
     // -------------------------------------------------------------------------

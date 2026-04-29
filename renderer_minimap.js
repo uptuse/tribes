@@ -25,7 +25,10 @@
     const BG_ALPHA       = 0.45;         // background circle opacity
     const RING_COLOR     = 'rgba(180,160,120,0.35)';
     const GRID_COLOR     = 'rgba(180,160,120,0.12)';
-    const TEAM_COLORS    = ['#3FA8FF', '#FF6A4A']; // team 0=blue, team 1=red
+    // R32.155: Fixed team color inversion — team 0=red, team 1=blue (matches WASM/renderer.js)
+    // Uses TEAM_CONFIG from client/team_config.js when available, falls back to corrected literals.
+    const _TC = (typeof window !== 'undefined' && window.TEAM_CONFIG) ? window.TEAM_CONFIG : null;
+    const TEAM_COLORS    = _TC ? [_TC.teamHudHex(0), _TC.teamHudHex(1)] : ['#FF6A4A', '#3FA8FF']; // team 0=red, team 1=blue
     const ENEMY_GLOW     = 'rgba(255,80,60,0.6)';
     const FRIENDLY_GLOW  = 'rgba(60,160,255,0.5)';
     const FLAG_COLORS    = ['#4488FF', '#FF5533'];  // team 0=blue flag, team 1=red flag
