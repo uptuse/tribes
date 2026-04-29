@@ -347,13 +347,26 @@ export function start() {
 }
 
 // ============================================================
-// 60Hz input send loop
+// Input send loop (R32.262: with 3-input redundancy)
 // ============================================================
+// R32.262: Input redundancy — send the last INPUT_REDUNDANCY inputs per send
+// interval. Each input is its own MSG_INPUT packet (the server expects SIZE_INPUT
+// bytes per message). The server uses the tick field to identify which tick the
+// input corresponds to, so duplicate ticks from previous sends are idempotent.
+// On TCP/WebSocket, this adds overhead for resilience scaffolding. On future
+// UDP/WebRTC, lost packets are recovered by the redundant copies.
+const INPUT_REDUNDANCY = 3;
+const inputRingBuffer = [];   // recent inputs, newest last
+let inputSequence = 0;        // monotonic sequence number for inputs
+
 export function setInputProvider(fn) {
     inputProvider = fn; // returns {buttons, mouseDX, mouseDY, weaponSelect} or null
 }
 function startInputLoop() {
     if (inputLoop) return;
+    // R32.262: reset input ring buffer on match start
+    inputRingBuffer.length = 0;
+    inputSequence = 0;
     const intervalMs = 1000 / INPUT_HZ;
     inputLoop = setInterval(() => {
         if (!inputProvider) return;
@@ -363,19 +376,35 @@ function startInputLoop() {
         const tick = prediction.nextTick();
         const input = {
             tick,
+            seq:          inputSequence++,   // R32.262: monotonic sequence number
             buttons:      raw.buttons | 0,
             mouseDX:      raw.mouseDX || 0,
             mouseDY:      raw.mouseDY || 0,
             pingMs:       telemetry.pingMs | 0,
             weaponSelect: raw.weaponSelect == null ? 0xFF : raw.weaponSelect,
         };
-        const buf = encodeInput(input);
-        try { socket.send(buf); trackOutbound(buf.byteLength); } catch {}
+
+        // R32.262: add to ring buffer, keep last INPUT_REDUNDANCY entries
+        inputRingBuffer.push(input);
+        if (inputRingBuffer.length > INPUT_REDUNDANCY) {
+            inputRingBuffer.shift();
+        }
+
+        // Send all buffered inputs (oldest first). Server uses tick to deduplicate.
+        // On TCP this sends ~3 packets per interval; on future UDP this provides
+        // loss recovery without requiring server ACKs.
+        for (const inp of inputRingBuffer) {
+            const buf = encodeInput(inp);
+            try { socket.send(buf); trackOutbound(buf.byteLength); } catch {}
+        }
+
         prediction.recordInput(tick, input, 1 / INPUT_HZ);
     }, intervalMs);
 }
 function stopInputLoop() {
     if (inputLoop) { clearInterval(inputLoop); inputLoop = null; }
+    // R32.262: clear ring buffer on stop
+    inputRingBuffer.length = 0;
 }
 
 // ============================================================
