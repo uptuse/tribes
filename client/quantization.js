@@ -1,6 +1,7 @@
 // ============================================================
 // Quantization helpers — used by wire format on both sides.
 // MUST match server/quant.ts (re-exports this file).
+// Renamed from quant.js → quantization.js at R32.178.
 // Per network_architecture.md §5.2:
 //   pos: m × 50 → int16 (range ±655m, resolution 2cm)
 //   rot: rad × 10000 → int16 (range ±π, resolution ~0.006°)

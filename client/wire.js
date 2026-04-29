@@ -19,7 +19,7 @@ import {
     quantPos, unquantPos, quantRot, unquantRot, quantVel, unquantVel,
     quantUnit01, unquantUnit01,
     SIZE_HEADER, SIZE_PLAYER, SIZE_PROJECTILE, SIZE_FLAG, SIZE_SNAP_HDR, SIZE_INPUT,
-} from './quant.js';
+} from './quantization.js';
 import { MSG_SNAPSHOT, MSG_DELTA, MSG_INPUT } from './constants.js';
 
 const LE = true;
