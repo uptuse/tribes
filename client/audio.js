@@ -1,3 +1,25 @@
+// @ai-contract
+// PURPOSE: Sound system ES module facade — typed sound-id constants (17 procedural
+//   sounds) and helper functions that delegate to the global audio engine (window.AE).
+//   Also provides initMoodBed() for ambient atmospheric audio
+// SERVES: Aliveness (audio is primary non-visual sensation channel),
+//   Belonging (generator hum = home), Scale (spatial audio = world size)
+// DEPENDS_ON: window.AE (AudioEngine, initialized in shell.html for autoplay policy),
+//   window.playSoundUI (shell.html), window.playSoundAt (shell.html)
+// EXPOSES: ES module exports: SOUND (frozen enum), isReady(), muted(), setMuted(v),
+//   playUI(soundId), playAt(soundId, x, y, z), playMatchStartHorn(),
+//   playMatchEndHorn(), playRespawn(), playDamageGive(), fireSoundForWeapon(wpnIdx),
+//   initMoodBed()
+// LIFECYCLE: SOUND enum available immediately. Functions delegate to window.AE
+//   (must be initialized by shell.html first). initMoodBed() called by renderer.js
+// PATTERN: ES module facade over global window.AE. Extension, not rewrite
+// BEFORE_MODIFY: read docs/lessons-learned.md. AE lives in shell.html because browser
+//   autoplay policy requires AudioContext creation in a user gesture handler.
+//   Do NOT move AE here — would break shell.html call sites
+// NEVER: create AudioContext in this module (autoplay policy violation)
+// ALWAYS: check window.AE/window.playSoundUI existence before calling (graceful no-op)
+// @end-ai-contract
+//
 // ============================================================
 // Tribes audio module (R22)
 //

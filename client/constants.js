@@ -1,3 +1,25 @@
+// @ai-contract
+// PURPOSE: Shared gameplay constants — network rates, physics values, armor tiers,
+//   weapon definitions, class loadouts, prediction thresholds, message types.
+//   Single source of truth for client-server agreement on game balance
+// SERVES: Belonging (armor interdependence), Adaptation (weapon balance shapes combat),
+//   Infrastructure (network + physics constants)
+// DEPENDS_ON: none (standalone, no external imports)
+// EXPOSES: ES module exports: TICK_HZ, TICK_DT, SNAPSHOT_HZ, DELTA_HZ, INPUT_HZ,
+//   LAGCOMP_*, WORLD_HALF, GRAVITY, JET_THRUST, SKI_FRICTION, GROUND_FRICTION,
+//   MAX_GROUND_SPEED, MAX_HORIZONTAL_SPEED_HARD_CAP, ARMORS[], WEAPONS[],
+//   CLASS_LOADOUTS[], PRED_*, MSG_SNAPSHOT, MSG_DELTA, MSG_INPUT
+// LIFECYCLE: stateless — frozen constants, no init/dispose
+// PATTERN: ES module, pure constant exports. MUST match server/constants.ts and
+//   wasm_main.cpp values exactly
+// BEFORE_MODIFY: any balance change ripples through every Core Feeling. Armor/weapon
+//   values must match server/constants.ts AND wasm_main.cpp armors[]/weapons[] tables.
+//   See comms/balance_log.md for change history
+// NEVER: change physics constants without updating wasm_main.cpp and server
+// NEVER: add runtime-mutable state to this module (constants only)
+// ALWAYS: keep values in sync across client/server/WASM (three-way agreement)
+// @end-ai-contract
+//
 // ============================================================
 // Shared gameplay constants — client + server agree on physics.
 // MUST match server/constants.ts exactly.

@@ -1,3 +1,31 @@
+// @ai-contract
+// PURPOSE: Voice chat via WebRTC mesh — one RTCPeerConnection per teammate for
+//   peer-to-peer voice. 3D positional spatialization via HRTF PannerNode.
+//   Push-to-talk (V key) or open mic. Speaking indicator polled at 4Hz
+// SERVES: Belonging (hearing teammates coordinate IS belonging — voice transforms
+//   strangers into a squad)
+// DEPENDS_ON: WebRTC browser APIs (RTCPeerConnection, getUserMedia),
+//   Web Audio API (AudioContext, PannerNode, MediaStreamAudioSourceNode),
+//   network.js send function (passed via init)
+// EXPOSES: ES module exports: init(sendFn), setLocalNumericId(id),
+//   openPeers(teammateIds), handleVoiceMessage(msg), registerPeerUuid(id, uuid),
+//   setPeerMuted(id, muted), isPeerMuted(id), setMuteAll(on), getMuteAll(),
+//   muteUuidDirectly(uuid), setPeerNumericMuted(id, muted),
+//   isPeerNumericMuted(id), clearPeerNumericMutes(), updatePeerPosition(id, x, y, z),
+//   shutdown(), getStatus().
+//   window.__voice { speaking: {} } (read by renderer.js for nameplate indicators)
+// LIFECYCLE: init(sendFn) → lazy mic capture on first PTT → openPeers() creates
+//   RTCPeerConnections → handleVoiceMessage() processes offer/answer/ICE →
+//   4Hz polling for speaking state → shutdown() closes all connections
+// PATTERN: ES module with init/shutdown lifecycle + window.__voice state bridge
+// COORDINATE_SPACE: world (meters), Y-up for 3D positional audio (PannerNode)
+// BEFORE_MODIFY: read docs/lessons-learned.md. Mic capture is lazy (browser
+//   permission prompt on first PTT). Currently only opens to same-team peers.
+//   setInterval(pollAudioLevels, 250) never cleared — accumulates on repeated init
+// NEVER: request mic permission on page load (only on first PTT press)
+// ALWAYS: use HRTF spatialization for positional audio
+// @end-ai-contract
+//
 // ============================================================
 // Voice chat: WebRTC mesh with WebSocket signaling (R23)
 //

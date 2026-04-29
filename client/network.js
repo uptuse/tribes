@@ -1,3 +1,31 @@
+// @ai-contract
+// PURPOSE: WebSocket multiplayer client — lobby connection, JSON control messages,
+//   binary game-state dispatch (snapshot/delta), 60Hz input send loop, bandwidth
+//   telemetry, and voice chat bridge (9 window.* voice API globals)
+// SERVES: Belonging (enables multiplayer — without networking there is no tribe)
+// DEPENDS_ON: ./wire.js (encode/decode), ./constants.js (MSG_SNAPSHOT, MSG_DELTA,
+//   INPUT_HZ), ./prediction.js (reconciliation), ./voice.js (WebRTC voice),
+//   window.__TRIBES_SERVER_URL, window.__tribesReconcile, window.__tribesApplyDelta,
+//   window.__tribesHideReconnect, window.__tribesShowReconnect,
+//   window.__tribesOnSkillUpdate, window.__tribesOnMatchStart,
+//   window.__tribesOnMatchEnd, window.addKillMsg
+// EXPOSES: ES module exports: start(), setInputProvider(fn), send(msg),
+//   sendBinary(buf), onMessage(handler), getStatus(), getLatestSnapshot(), prediction.
+//   window.__voiceUpdatePeer, window.__voiceRegisterUuid, window.__voiceSetPeerMuted,
+//   window.__voiceIsPeerMuted, window.__voiceSetMuteAll, window.__voiceGetMuteAll,
+//   window.__voiceMuteUuid, window.__voiceSetPeerMutedDirect,
+//   window.__voiceClearPeerMutes (9 voice API bridge globals)
+// LIFECYCLE: start() opens WebSocket → onopen/onmessage/onclose handlers →
+//   60Hz input loop (setInterval) → binary dispatch to wire.js decoders.
+//   No reconnection state machine — disconnect is terminal
+// PATTERN: ES module with start() entry point
+// BEFORE_MODIFY: read docs/lessons-learned.md. start() is NOT idempotent —
+//   double-call creates ghost WebSocket. Ping interval never cleared on disconnect.
+//   Currently hardcoded to 2 teams
+// NEVER: call start() more than once per page load
+// ALWAYS: validate decoded snapshots (wire.js returns null on malformed input)
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — Client Network Module (R16 + R19)
 // ============================================================

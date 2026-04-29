@@ -1,3 +1,19 @@
+// @ai-contract
+// PURPOSE: Ranked tier helper — maps numeric ELO rating to tier (Bronze through Master).
+//   Provides tier badge SVG for nameplates. Shared between client and server
+//   (server re-exports via server/tiers.ts)
+// SERVES: Belonging (tier is part of tribal identity — nameplates display tier colors)
+// DEPENDS_ON: none (standalone, no external imports)
+// EXPOSES: ES module exports: TIERS (array of {id, name, min, max, color}),
+//   tierForRating(rating), tierBadgeSvg(tier, sizePx)
+// LIFECYCLE: stateless — pure functions + frozen data, no init/dispose
+// PATTERN: ES module, pure functions. Single source of truth for tier brackets
+// BEFORE_MODIFY: tier brackets must match server/tiers.ts. Rating floor clamps at 0.
+//   Color values affect nameplate rendering throughout the game
+// NEVER: change tier brackets without updating server/tiers.ts simultaneously
+// ALWAYS: clamp rating ≥ 0 (Bronze floor)
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — Ranked tier helper (R26, renamed to skill_rating.js at R32.170)
 // ============================================================

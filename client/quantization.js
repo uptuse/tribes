@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Quantization helpers for the binary wire protocol — compress floats to
+//   smaller integer representations for network transmission. Position (int16, 2cm
+//   resolution), rotation (int16, ~0.006° resolution), velocity (int8, 0.5 m/s),
+//   unit01 (uint8). Also exports struct size constants for wire format
+// SERVES: Infrastructure (bandwidth savings enable 64-player Belonging)
+// DEPENDS_ON: none (standalone, no external imports)
+// EXPOSES: ES module exports: quantPos, unquantPos, quantRot, unquantRot,
+//   quantVel, unquantVel, quantUnit01, unquantUnit01,
+//   SIZE_HEADER (8), SIZE_PLAYER (32), SIZE_PROJECTILE (12), SIZE_FLAG (8),
+//   SIZE_SNAP_HDR (24), SIZE_INPUT (20)
+// LIFECYCLE: stateless — pure math functions, no init/dispose
+// PATTERN: ES module, pure functions. MUST match server/quant.ts exactly
+// BEFORE_MODIFY: read comms/network_architecture.md §5.2. Any change to scale
+//   factors or struct sizes MUST be mirrored in server/quant.ts
+// NEVER: change quantization scales without updating both client and server
+// ALWAYS: clamp values to int range before encoding (prevent overflow)
+// @end-ai-contract
+//
 // ============================================================
 // Quantization helpers — used by wire format on both sides.
 // MUST match server/quant.ts (re-exports this file).

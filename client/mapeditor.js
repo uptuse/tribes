@@ -1,3 +1,24 @@
+// @ai-contract
+// PURPOSE: Top-down 256×256 heightmap paint editor with three tools (brush, structure,
+//   point). Serializes to .tribes-map JSON. Supports save/load/test workflow
+// SERVES: Scale (this is how the 4km worlds that create Scale are built)
+// DEPENDS_ON: none (standalone DOM-based editor, no external module imports)
+// EXPOSES: ES module exports: open(), close(), save(), loadFromFile(file),
+//   clearStructures(), test(). Also legacy aliases:
+//   window.__editor { open, close, save, loadFromFile, clearStructures, test },
+//   window.openMapEditor (= open)
+// LIFECYCLE: open() creates/shows canvas + UI → paint tools active → save() serializes
+//   to .tribes-map JSON download → test() navigates to multiplayer URL with ?map=<id> →
+//   close() hides UI. State persisted in memory only (lost on page reload)
+// PATTERN: ES module + window.* legacy aliases (for shell.html onclick handlers)
+// COORDINATE_SPACE: 2D grid (256×256), WORLD_SCALE=8 (total 2048m). Z=height
+// BEFORE_MODIFY: read docs/lessons-learned.md. Currently hardcoded to 2 teams
+//   (flags[2], spawns[2]) — needs expansion to 4 tribes. Test requires server-side
+//   map publication via tools/genmap.ts
+// NEVER: auto-save or persist to server without explicit user action
+// ALWAYS: preserve float-array heightmap encoding for edit precision
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — Map Editor (R25, basic)
 // ============================================================

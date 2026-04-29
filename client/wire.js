@@ -1,3 +1,24 @@
+// @ai-contract
+// PURPOSE: Binary wire protocol encode/decode for snapshot, delta, and input messages.
+//   Compact little-endian binary format for 64-player WebSocket multiplayer.
+//   Authoritative spec: comms/network_architecture.md §5
+// SERVES: Infrastructure (bandwidth efficiency enables the player count that creates Belonging)
+// DEPENDS_ON: ./quantization.js (quantize/unquantize functions + size constants),
+//   ./constants.js (MSG_SNAPSHOT, MSG_DELTA, MSG_INPUT)
+// EXPOSES: ES module exports: decodeSnapshot(ArrayBuffer), decodeDelta(ArrayBuffer),
+//   encodeInput(tick, buttons, mouseDX, mouseDY, ping, weaponSelect)
+// LIFECYCLE: stateless — each function call is independent. No init/dispose
+// PATTERN: ES module, pure functions. Every decode returns null on malformed input
+// COORDINATE_SPACE: positions quantized to int16 at 50x scale (±655m, 2cm resolution),
+//   rotations at 10000x scale, velocities at 2x scale
+// BEFORE_MODIFY: read comms/network_architecture.md §5. Wire format MUST match
+//   server/wire.ts exactly. Currently 2-team hardcoded (teamScore[2], flags[2]).
+//   Flag posZ silently lost (hardcoded to 0 on decode)
+// NEVER: change struct sizes without updating both client and server
+// ALWAYS: use little-endian (LE=true) for all DataView operations
+// ALWAYS: return null on malformed input (callers must drop + log nulls)
+// @end-ai-contract
+//
 // ============================================================
 // Wire format: binary encode/decode for snapshot/delta/input.
 // Authoritative spec: comms/network_architecture.md §5.

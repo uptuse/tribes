@@ -1,3 +1,26 @@
+// @ai-contract
+// PURPOSE: Replay player — parses .tribes-replay binary files (captured server-side),
+//   renders top-down tactical map with playback controls (play/pause/seek/speed/step).
+//   2D view intentionally (3D would require WASM physics integration)
+// SERVES: Adaptation (retrospective — study what happened to adapt for next match)
+// DEPENDS_ON: ./wire.js (decodeSnapshot for parsing replay frames)
+// EXPOSES: ES module exports: openFromFile(File), openFromUrl(url),
+//   openFromArrayBuffer(buf), close(), play(), pause(), setSpeed(n), seek(tick),
+//   step(±1), follow(id), pan(dx,dy), zoom(factor).
+//   window.__replay { openFromFile, openFromUrl, openFromArrayBuffer, close, play,
+//   pause, setSpeed, seek, step, follow }
+// LIFECYCLE: openFromFile/Url/ArrayBuffer → parse TRBR binary → build snap array →
+//   RAF loop for playback → close() tears down UI + stops loop
+// PATTERN: ES module + window.__replay legacy alias. Self-contained DOM overlay
+// COORDINATE_SPACE: world (meters) projected to 2D canvas. Replay file uses
+//   quantized positions (decoded by wire.js)
+// BEFORE_MODIFY: read docs/lessons-learned.md. Currently hardcoded to 2 teams
+//   (player/flag colors binary, teamScore[2]) — needs expansion to 4 tribes.
+//   Binary format: TRBR magic + u32 version + id + metadata JSON + repeating snapshots
+// NEVER: drive the 3D renderer during replay (would require WASM surgery)
+// ALWAYS: validate TRBR magic bytes and version before parsing
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — Replay Player (R25)
 // ============================================================

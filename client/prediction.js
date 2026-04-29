@@ -1,3 +1,24 @@
+// @ai-contract
+// PURPOSE: Client-side prediction and server reconciliation — maintains local input
+//   history (last 60 frames), predicted player state, and smooth position correction
+//   (200ms interpolation) when server snapshots diverge from prediction
+// SERVES: Scale (prediction makes skiing feel responsive at 100+ km/h — without it,
+//   server round-trip latency kills the sensation of speed)
+// DEPENDS_ON: ./constants.js (PRED_HISTORY, PRED_DIVERGE_POS_THRESHOLD_M,
+//   PRED_DIVERGE_ROT_THRESHOLD_DEG, PRED_SMOOTH_CORRECT_MS)
+// EXPOSES: ES module exports: setLocalNumericId(id), nextTick(), recordInput(input, dt),
+//   reconcile(serverState, serverTick), applyPendingCorrection(dt), reset(), stats
+// LIFECYCLE: setLocalNumericId() → per-frame: nextTick() + recordInput() →
+//   on snapshot: reconcile() → per-frame: applyPendingCorrection(dt).
+//   reset() clears state on respawn/reconnect
+// PATTERN: ES module, stateful (tracks input history + correction state)
+// BEFORE_MODIFY: read docs/lessons-learned.md. inputHistory is recorded but NEVER
+//   replayed (dead data — reconciliation only checks position divergence).
+//   Module should eventually be renamed to reconciliation.js
+// NEVER: replay inputs without implementing proper deterministic simulation
+// ALWAYS: use smooth correction (200ms lerp), never snap player position
+// @end-ai-contract
+//
 // ============================================================
 // Client-side prediction + reconciliation (R19, per architecture §7).
 //

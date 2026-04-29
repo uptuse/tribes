@@ -1,3 +1,22 @@
+// @ai-contract
+// PURPOSE: Content moderation primitives — bundled wordlist (~120 entries) with
+//   l33t-speak normalization. Drives username creation block, server defense-in-depth
+//   re-check, and future text-chat sanitization
+// SERVES: Belonging (protection — toxic chat destroys "my tribe needs me" faster
+//   than any mechanic can build it)
+// DEPENDS_ON: none (standalone, no external imports)
+// EXPOSES: ES module exports: RESTRICTED_TERMS (array), containsRestricted(text),
+//   validateUsername(name), sanitizeText(text)
+// LIFECYCLE: stateless — pure functions, no init/dispose
+// PATTERN: ES module, pure functions + frozen data. Bundled < 2KB
+// BEFORE_MODIFY: read docs/lessons-learned.md. Same wordlist exists in
+//   server/moderation.ts — keep in sync. Deliberately compact to avoid Scunthorpe
+//   problem. Add/remove terms based on real playtest reports
+// NEVER: expand wordlist aggressively (false positives destroy UX)
+// ALWAYS: normalize input through l33t-speak map before checking
+// ALWAYS: keep bundled size < 50KB per brief 4.0 guardrail
+// @end-ai-contract
+//
 // ============================================================
 // Tribes Browser Edition — content moderation primitives (R27)
 // ============================================================
