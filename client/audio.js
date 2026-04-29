@@ -67,7 +67,9 @@ export const SOUND = Object.freeze({
 });
 
 export function isReady() {
-    return !!(window.AE && window.AE.ctx);
+    // R32.228: Also check AudioContext.state — a suspended context means audio
+    // won't actually play even though AE and ctx exist.
+    return !!(window.AE && window.AE.ctx && window.AE.ctx.state !== 'suspended');
 }
 
 export function muted() {
@@ -107,6 +109,7 @@ export function playDamageGive() { playUI(SOUND.DAMAGE_GIVE); }
  *  remote-player fires from snapshot deltas. */
 export function fireSoundForWeapon(weaponIdx) {
     switch (weaponIdx) {
+        case 0: return SOUND.PLASMA_FIRE;    // R32.228: blaster (was falling through to IMPACT)
         case 1: return SOUND.CHAINGUN_FIRE;
         case 2: return SOUND.DISC_FIRE;
         case 3: return SOUND.GRENADE_FIRE;
