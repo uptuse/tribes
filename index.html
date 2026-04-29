@@ -782,6 +782,74 @@
   <!-- R21: Toast (clipboard share, etc.) -->
   <div id="toast"></div>
 
+  <!-- ── In-game editor panel — toggle with Shift+Enter ── -->
+  <div id="game-editor" style="
+    display:none; position:fixed; top:50%; right:0; transform:translateY(-50%);
+    width:260px; background:rgba(8,6,3,0.92); border-left:2px solid #FFD479;
+    border-top:2px solid #FFD479; border-bottom:2px solid #FFD479;
+    border-radius:4px 0 0 4px; padding:12px 14px; z-index:9990;
+    font-family:'Barlow Condensed',sans-serif; font-size:0.88em; color:#E0D0A0;
+    box-shadow:-4px 0 24px rgba(0,0,0,0.6);">
+
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <span style="color:#FFD479;font-weight:bold;letter-spacing:2px;font-size:0.95em;">EDITOR</span>
+      <span style="color:#7A6A4A;font-size:0.72em;">Shift+Enter to close</span>
+    </div>
+
+    <!-- Physics sliders -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;">Physics</div>
+
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Gravity</label>
+      <input type="range" style="flex:1;" id="ge-gravity" min="5" max="40" step="0.5" value="20"
+        oninput="geV('ge-gravity-v',this.value+' m/s²');applyPhysicsTuning()">
+      <span id="ge-gravity-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">20 m/s²</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Jet Force</label>
+      <input type="range" style="flex:1;" id="ge-jetforce" min="0.2" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-jetforce-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-jetforce-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Energy Drain</label>
+      <input type="range" style="flex:1;" id="ge-jetenergy" min="0.1" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-jetenergy-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-jetenergy-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Ground Fric.</label>
+      <input type="range" style="flex:1;" id="ge-friction" min="0.1" max="2.0" step="0.05" value="1"
+        oninput="geV('ge-friction-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-friction-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+      <label style="width:90px;color:#9A8A6A;font-size:0.8em;">Speed</label>
+      <input type="range" style="flex:1;" id="ge-speed" min="0.2" max="3.0" step="0.05" value="1"
+        oninput="geV('ge-speed-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()">
+      <span id="ge-speed-v" style="width:52px;text-align:right;font-size:0.78em;color:#FFD479;">1.00×</span>
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:12px;">
+      <button onclick="saveTuning()" style="flex:1;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:4px;cursor:pointer;font-family:inherit;font-size:0.8em;">⬇ Save</button>
+      <button onclick="geResetPhysics()" style="flex:0.5;background:rgba(80,60,30,0.5);border:1px solid #3A3020;color:#9A8A6A;padding:4px;cursor:pointer;font-family:inherit;font-size:0.8em;">Reset</button>
+    </div>
+
+    <!-- Level editor -->
+    <div style="color:#9A8A6A;font-size:0.72em;letter-spacing:1px;text-transform:uppercase;margin-bottom:6px;border-top:1px solid #2A2010;padding-top:8px;">Level Editor</div>
+    <div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px;">
+      <button class="ge-type-btn" data-type="Turret"     onclick="gePickType('Turret')"    >🔫 Turret</button>
+      <button class="ge-type-btn" data-type="Generator"  onclick="gePickType('Generator')" >⚡ Gen</button>
+      <button class="ge-type-btn" data-type="Station"    onclick="gePickType('Station')"   >📦 Station</button>
+      <button class="ge-type-btn" data-type="Sensor"     onclick="gePickType('Sensor')"    >📡 Sensor</button>
+      <button class="ge-type-btn" data-type="Flag"       onclick="gePickType('Flag')"      >🚩 Flag</button>
+      <button class="ge-type-btn" data-type="SpawnPoint" onclick="gePickType('SpawnPoint')">⬇ Spawn</button>
+      <button class="ge-type-btn" data-type=""           onclick="gePickType(null)"
+        style="border-color:#444;color:#666;">✕ Select</button>
+    </div>
+    <div id="ge-status" style="font-size:0.73em;color:#7A6A4A;min-height:16px;margin-bottom:8px;"></div>
+    <button onclick="editorExportLayout()" style="width:100%;background:rgba(255,212,121,0.1);border:1px solid #FFD479;color:#FFD479;padding:5px;cursor:pointer;font-family:inherit;font-size:0.82em;">⬇ Save layout.json</button>
+  </div>
+
   <!-- R21: First-match tutorial overlay -->
   <div id="tutorial">
     <div class="panel">
@@ -1232,7 +1300,6 @@
         <span class="tab-item" onclick="setStab('controls')">Controls</span>
         <span class="tab-item" onclick="setStab('video')">Video</span>
         <span class="tab-item" onclick="setStab('gameplay')">Gameplay</span>
-        <span class="tab-item" onclick="setStab('physics')" style="color:#FFD479;">⚙ Physics</span>
       </div>
 
       <!-- AUDIO TAB -->
@@ -1318,80 +1385,6 @@
       </div>
 
 
-      <!-- PHYSICS TAB — Phase A Live Editor -->
-      <div class="stab" id="stab-physics">
-        <div class="s-section" style="color:#FFD479;">Live Physics Tuning</div>
-        <div style="font-size:0.76em;color:#7A6A4A;margin-bottom:8px;line-height:1.4;">
-          Changes apply immediately in-game. Use "Save Tuning" to download values for permanent edits.
-        </div>
-        <div class="s-row">
-          <div class="s-label">Gravity</div>
-          <div class="s-ctrl"><input type="range" class="s-slider" id="p-gravity" min="5" max="40" step="0.5"
-            oninput="sVal('p-gravity-v',this.value+' m/s²');applyPhysicsTuning()"></div>
-          <div class="s-val" id="p-gravity-v">20 m/s²</div>
-        </div>
-        <div class="s-row">
-          <div class="s-label">Jet Force</div>
-          <div class="s-ctrl"><input type="range" class="s-slider" id="p-jetforce" min="0.2" max="3.0" step="0.05"
-            oninput="sVal('p-jetforce-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
-          <div class="s-val" id="p-jetforce-v">1.00×</div>
-        </div>
-        <div class="s-row">
-          <div class="s-label">Energy Drain</div>
-          <div class="s-ctrl"><input type="range" class="s-slider" id="p-jetenergy" min="0.1" max="3.0" step="0.05"
-            oninput="sVal('p-jetenergy-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
-          <div class="s-val" id="p-jetenergy-v">1.00×</div>
-        </div>
-        <div class="s-row">
-          <div class="s-label">Ground Friction</div>
-          <div class="s-ctrl"><input type="range" class="s-slider" id="p-friction" min="0.1" max="2.0" step="0.05"
-            oninput="sVal('p-friction-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
-          <div class="s-val" id="p-friction-v">1.00×</div>
-        </div>
-        <div class="s-row">
-          <div class="s-label">Player Speed</div>
-          <div class="s-ctrl"><input type="range" class="s-slider" id="p-speed" min="0.2" max="3.0" step="0.05"
-            oninput="sVal('p-speed-v',parseFloat(this.value).toFixed(2)+'×');applyPhysicsTuning()"></div>
-          <div class="s-val" id="p-speed-v">1.00×</div>
-        </div>
-        <hr class="s-divider">
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button class="btn" onclick="saveTuning()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;">⬇ Save Tuning</button>
-          <button class="btn btn-back" onclick="resetPhysicsTuning()" style="flex:0.5;">Reset</button>
-        </div>
-        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">Downloads a JSON file with values to paste into C++ constants.</div>
-        <hr class="s-divider">
-        <div class="s-section" style="color:#FFD479;">Level Editor — Phase B</div>
-        <div style="font-size:0.76em;color:#7A6A4A;margin-bottom:8px;line-height:1.4;">
-          Enable edit mode, pick an entity type, then click terrain to place it. Drag to move.
-        </div>
-        <div class="s-row">
-          <div class="s-label">Edit Mode</div>
-          <div class="s-ctrl"><label style="cursor:pointer;font-size:0.82em;color:#9A8A6A;user-select:none;">
-            <input type="checkbox" id="p-editmode" onchange="toggleLevelEditor(this.checked)">
-            Enable (click terrain to place, click entity to select/drag)
-          </label></div>
-        </div>
-        <!-- Entity palette -->
-        <div id="p-palette" style="display:none;flex-wrap:wrap;gap:4px;margin:8px 0;">
-          <div style="width:100%;font-size:0.73em;color:#7A6A4A;margin-bottom:2px;">Place entity (click terrain after selecting):</div>
-          <button class="btn-small lvl-palette-btn" data-type="Turret"     onclick="editorPickType('Turret')">🔫 Turret</button>
-          <button class="btn-small lvl-palette-btn" data-type="Generator"  onclick="editorPickType('Generator')">⚡ Generator</button>
-          <button class="btn-small lvl-palette-btn" data-type="Station"    onclick="editorPickType('Station')">📦 Station</button>
-          <button class="btn-small lvl-palette-btn" data-type="Sensor"     onclick="editorPickType('Sensor')">📡 Sensor</button>
-          <button class="btn-small lvl-palette-btn" data-type="Flag"       onclick="editorPickType('Flag')">🚩 Flag</button>
-          <button class="btn-small lvl-palette-btn" data-type="SpawnPoint" onclick="editorPickType('SpawnPoint')">⬇ Spawn</button>
-          <button class="btn-small" onclick="editorPickType(null)" style="border-color:#555;color:#888;">✕ Select mode</button>
-        </div>
-        <div style="display:flex;gap:8px;margin-top:4px;">
-          <button class="btn" id="p-savemap" onclick="editorExportLayout()" style="flex:1;background:rgba(255,212,121,0.12);border-color:#FFD479;color:#FFD479;" disabled>
-            ⬇ Save layout.json
-          </button>
-        </div>
-        <div style="font-size:0.73em;color:#7A6A4A;margin-top:6px;">
-          Downloads layout.json → drop into <code>assets/maps/raindance/</code> → commit → CI rebuilds.
-        </div>
-      </div>
       <hr class="s-divider">
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:4px;">
         <button class="btn btn-back" onclick="resetAllSettings()" style="flex:1">Reset to Defaults</button>
@@ -3445,22 +3438,66 @@
     // ── Phase-A Live Editor: Physics Tuning ──────────────────────────────────
     var _physTune = { gravity:20, jetForce:1, jetEnergy:1, friction:1, speed:1 };
     var _mapEditorActive = false;
+    // Read from in-game panel sliders (ge-*) — the settings modal Physics tab is removed
     function applyPhysicsTuning(){
-      _physTune.gravity   = parseFloat(document.getElementById('p-gravity').value);
-      _physTune.jetForce  = parseFloat(document.getElementById('p-jetforce').value);
-      _physTune.jetEnergy = parseFloat(document.getElementById('p-jetenergy').value);
-      _physTune.friction  = parseFloat(document.getElementById('p-friction').value);
-      _physTune.speed     = parseFloat(document.getElementById('p-speed').value);
+      _physTune.gravity   = parseFloat(document.getElementById('ge-gravity').value);
+      _physTune.jetForce  = parseFloat(document.getElementById('ge-jetforce').value);
+      _physTune.jetEnergy = parseFloat(document.getElementById('ge-jetenergy').value);
+      _physTune.friction  = parseFloat(document.getElementById('ge-friction').value);
+      _physTune.speed     = parseFloat(document.getElementById('ge-speed').value);
       if(!Module||!Module._setPhysicsTuning)return;
       Module._setPhysicsTuning(_physTune.gravity,_physTune.jetForce,_physTune.jetEnergy,_physTune.friction,_physTune.speed);
     }
-    function resetPhysicsTuning(){
+    function geV(id,v){var el=document.getElementById(id);if(el)el.textContent=v;}
+    function geResetPhysics(){
       _physTune={gravity:20,jetForce:1,jetEnergy:1,friction:1,speed:1};
-      var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
-      var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};
-      for(var id in d){var el=document.getElementById(id);if(el)el.value=d[id];sVal(id+'-v',(l[id]===' m/s²'?d[id]:parseFloat(d[id]).toFixed(2))+l[id]);}
+      var map=[['ge-gravity',20,' m/s²'],['ge-jetforce',1,'×'],['ge-jetenergy',1,'×'],['ge-friction',1,'×'],['ge-speed',1,'×']];
+      map.forEach(function(m){
+        var el=document.getElementById(m[0]);if(el)el.value=m[1];
+        geV(m[0]+'-v',(m[2]===' m/s²'?m[1]:parseFloat(m[1]).toFixed(2))+m[2]);
+      });
       applyPhysicsTuning();
     }
+    function resetPhysicsTuning(){ geResetPhysics(); }
+
+    // ── In-game editor panel — Shift+Enter toggle ─────────────────────────
+    var _editorPanelOpen = false;
+    function gePickType(t){
+      if(window.__editorSelectType)window.__editorSelectType(t);
+      document.querySelectorAll('.ge-type-btn').forEach(function(b){
+        b.style.borderColor = (b.dataset.type===t&&t) ? '#FFD479' : '#3A3020';
+        b.style.color       = (b.dataset.type===t&&t) ? '#FFD479' : '#9A8A6A';
+      });
+      var s=document.getElementById('ge-status');
+      if(s)s.textContent=t?('Click terrain to place '+t+'. Esc=cancel.'):'Select mode: click entity.';
+    }
+    function geOpenPanel(){
+      _editorPanelOpen=true;
+      document.getElementById('game-editor').style.display='block';
+      if(document.exitPointerLock)document.exitPointerLock();
+      if(window.__editorSetActive)window.__editorSetActive(true);
+    }
+    function geClosePanel(){
+      _editorPanelOpen=false;
+      document.getElementById('game-editor').style.display='none';
+      if(window.__editorSetActive)window.__editorSetActive(false);
+      gePickType(null);
+      // Re-acquire pointer lock if in-game
+      var canvas=document.getElementById('canvas');
+      if(gameStarted&&canvas)canvas.requestPointerLock();
+    }
+    function geTogglePanel(){
+      if(_editorPanelOpen)geClosePanel(); else geOpenPanel();
+    }
+    // Shift+Enter — works during play
+    document.addEventListener('keydown',function(e){
+      if(e.key==='Enter'&&e.shiftKey){e.preventDefault();geTogglePanel();}
+      if(e.key==='Escape'&&_editorPanelOpen){geClosePanel();}
+    });
+    // Apply button style
+    var _geStyle=document.createElement('style');
+    _geStyle.textContent='.ge-type-btn{background:rgba(20,16,10,0.8);border:1px solid #3A3020;color:#9A8A6A;padding:3px 7px;cursor:pointer;font-family:\'Barlow Condensed\',sans-serif;font-size:0.8em;border-radius:2px;}.ge-type-btn:hover{border-color:#7A6A4A;color:#E0D0A0;}';
+    document.head.appendChild(_geStyle);
     function saveTuning(){
       var out={_comment:'Phase-A physics tuning — paste values into C++ constants',
         tuneGravity:_physTune.gravity,tuneJetForce:_physTune.jetForce,
