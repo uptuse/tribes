@@ -115,11 +115,16 @@ export function init(refs) {
  */
 export function update() {
     if (_cycleSeconds === Infinity) {
-        // Frozen mode — apply noon palette once and bail
+        // Frozen mode (URL ?daynight=off) — apply noon palette once and bail
         if (_frozen01 === null) {
             _frozen01 = 0.5; // noon
             _apply(_frozen01);
         }
+        return;
+    }
+    // R32.201: Runtime freeze via freeze(hour) — apply frozen value and bail
+    if (_frozen01 !== null) {
+        _apply(_frozen01);
         return;
     }
     const wall = performance.now() * 0.001 - _startWallClock;
