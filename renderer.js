@@ -3489,6 +3489,26 @@ function initParticles() {
 // Post-processing
 // ============================================================
 function initPostProcessing() {
+    // R32.161: Dispose old composer before creating a new one.
+    // EffectComposer allocates WebGLRenderTarget(s) internally (~40MB at 1080p).
+    // applyQuality() calls initPostProcessing() on every quality change, leaking
+    // the previous render targets.
+    if (composer) {
+        try {
+            // EffectComposer.dispose() cleans up all render targets and passes
+            if (typeof composer.dispose === 'function') {
+                composer.dispose();
+            } else {
+                // Fallback for older Three.js versions without .dispose()
+                if (composer.renderTarget1) composer.renderTarget1.dispose();
+                if (composer.renderTarget2) composer.renderTarget2.dispose();
+            }
+        } catch (e) { console.warn('[R32.161] composer dispose error:', e); }
+        composer = null;
+        bloomPass = null;
+        gradePass = null;
+    }
+
     const tier = readQualityFromSettings();
     console.log('[R32.82] initPostProcessing: tier.postProcess=' + tier.postProcess + ' quality=' + currentQuality);
     // R32.54 DIAGNOSTIC: ?nopost → skip EffectComposer entirely, render direct
