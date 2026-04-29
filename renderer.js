@@ -5442,7 +5442,20 @@ export function loadMap(doc) {
 
     // Rebuild structures from JSON (replaces WASM-derived buildings)
     if (Array.isArray(doc.structures)) {
-        for (const entry of buildingMeshes) scene.remove(entry.mesh);
+        // R32.160: Dispose geometry+materials before removing from scene (was leaking GPU memory)
+        for (const entry of buildingMeshes) {
+            entry.mesh.traverse(child => {
+                if (child.geometry) child.geometry.dispose();
+                if (child.material) {
+                    if (Array.isArray(child.material)) {
+                        child.material.forEach(m => m.dispose());
+                    } else {
+                        child.material.dispose();
+                    }
+                }
+            });
+            scene.remove(entry.mesh);
+        }
         buildingMeshes.length = 0;
         // R26: also push AABBs into C++ collision space
         const collidables = [];
