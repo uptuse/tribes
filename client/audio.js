@@ -93,3 +93,75 @@ export function fireSoundForWeapon(weaponIdx) {
         default: return SOUND.IMPACT;
     }
 }
+
+// ============================================================
+// Ambient Mood Bed — procedural low-frequency drone
+// Migrated from renderer_cohesion.js (R32.156)
+//
+// Two detuned sawtooth oscillators @ 55Hz / 55.4Hz with heavy lowpass
+// and very low gain. The listener acclimates within seconds and stops
+// consciously hearing it — exactly what an environmental mood bed does.
+//
+// Must be started after user interaction (browser autoplay policy).
+// Reuses the existing window.AE.ctx when available.
+// ============================================================
+let _moodBedStarted = false;
+
+function _startMoodBed() {
+    if (_moodBedStarted) return;
+    try {
+        const ctx = (window.AE && window.AE.ctx) ||
+                    new (window.AudioContext || window.webkitAudioContext)();
+        if (!ctx) return;
+        if (ctx.state === 'suspended') ctx.resume();
+
+        const o1 = ctx.createOscillator();
+        o1.type = 'sawtooth';
+        o1.frequency.value = 55.0;
+        const o2 = ctx.createOscillator();
+        o2.type = 'sawtooth';
+        o2.frequency.value = 55.42;
+
+        const filter = ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.value = 220;
+        filter.Q.value = 0.7;
+
+        const lfo = ctx.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = 0.07;
+        const lfoGain = ctx.createGain();
+        lfoGain.gain.value = 35;
+        lfo.connect(lfoGain).connect(filter.frequency);
+
+        const gain = ctx.createGain();
+        gain.gain.value = 0.0;
+        gain.gain.linearRampToValueAtTime(0.022, ctx.currentTime + 4.0);
+
+        o1.connect(filter);
+        o2.connect(filter);
+        filter.connect(gain).connect(ctx.destination);
+
+        o1.start();
+        o2.start();
+        lfo.start();
+
+        _moodBedStarted = true;
+        if (window.DEBUG_LOGS) console.log('[R32.156] mood bed online');
+    } catch (e) {
+        console.warn('[R32.156] mood bed failed', e);
+    }
+}
+
+/** Start the ambient mood bed on first user interaction.
+ *  Call once from renderer.js after scene init. */
+export function initMoodBed() {
+    const startOnce = function () {
+        _startMoodBed();
+        window.removeEventListener('pointerdown', startOnce, true);
+        window.removeEventListener('keydown', startOnce, true);
+    };
+    window.addEventListener('pointerdown', startOnce, true);
+    window.addEventListener('keydown', startOnce, true);
+    if (window.DEBUG_LOGS) console.log('[R32.156] mood bed listeners registered');
+}

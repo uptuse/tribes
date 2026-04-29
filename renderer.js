@@ -35,6 +35,7 @@ import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky_custom.js'; // R32.63: full sky system
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
+import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -3676,10 +3677,8 @@ function initStateViews() {
     scene.add(camera);
     camera.add(weaponHand);
 
-    // R32.25-manus: cohesion polish (camera breathing + mood bed)
-    if (window.Cohesion && window.Cohesion.init) {
-        try { window.Cohesion.init(THREE, camera); } catch (e) { console.warn('[R32.25] cohesion init failed', e); }
-    }
+    // R32.156: mood bed (migrated from renderer_cohesion.js to client/audio.js)
+    try { initMoodBed(); } catch (e) { console.warn('[R32.156] mood bed init failed', e); }
 
     // R32.13-manus: combat FX module (muzzle flash, tracer, hit indicator).
     // Lazy-load and init on first frame so renderer.js doesn't take a hard
@@ -5343,8 +5342,8 @@ function loop() {
         gradePass.material.uniforms.time.value = (gradePass.material.uniforms.time.value + 0.05) % 10000.0;
     }
 
-    // R32.25: cohesion tick (sub-perceptual camera breathing).
-    if (window.Cohesion && window.Cohesion.tick) window.Cohesion.tick();
+    // R32.156: cohesion tick removed — camera breathing was disabled (dead code),
+    // mood bed doesn't need per-frame tick. renderer_cohesion.js deleted.
 
     // R32.32.1-manus: tick the camera-local grass ring (wind + recycle).
     // The old terrain-fuzz uTime tick from R32.32 is gone (fuzz removed),
