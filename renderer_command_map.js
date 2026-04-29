@@ -48,12 +48,17 @@
         // changes — terrain itself is static for the match).
         terrainCanvas: null,
         terrainCanvasSize: 0,
+        // R32.229: Cached terrain bitmap at native heightmap resolution.
+        // Only computed once; _renderTerrainBackground scales it to display size.
+        terrainBitmap: null,
         // Cached terrain bounds in world coords (centered on origin).
         worldHalfExtent: 1024,
         // Hooks supplied by renderer.js
         hooks: null,
         // Frame counter (used for animated dot pulses)
         tick: 0,
+        // R32.229: Current map name from hooks (replaces hardcoded "RAINDANCE")
+        mapName: '',
         // Settings
         // R32.155: Fixed team color inversion — team 0=red, team 1=blue (matches WASM/renderer.js)
         // Uses TEAM_CONFIG from client/team_config.js when available.
@@ -120,6 +125,7 @@
         STATE.canvas.height = Math.floor(h * dpr);
         STATE.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         // Invalidate terrain cache so it re-renders at new size
+        // R32.229: But keep the cached ImageBitmap of the terrain data if available
         STATE.terrainCanvas = null;
     }
 
@@ -179,7 +185,45 @@
         off.height = Math.floor(mapSize);
         const octx = off.getContext('2d');
 
-        const img = octx.createImageData(off.width, off.height);
+        // R32.229: Use cached bitmap if terrain hasn't changed, just scale
+        if (STATE.terrainBitmap) {
+            octx.drawImage(STATE.terrainBitmap, 0, 0, off.width, off.height);
+        } else {
+            // Generate hillshaded terrain at native resolution then cache
+            const nativeSize = Math.min(hm.size, 512); // cap for perf
+            const nativeCanvas = document.createElement('canvas');
+            nativeCanvas.width = nativeSize;
+            nativeCanvas.height = nativeSize;
+            const nctx = nativeCanvas.getContext('2d');
+            _renderTerrainPixels(nctx, hm, nativeSize, nativeSize);
+            STATE.terrainBitmap = nativeCanvas;
+            octx.drawImage(nativeCanvas, 0, 0, off.width, off.height);
+        }
+
+        // Faint contour grid
+        octx.strokeStyle = 'rgba(180,200,220,0.10)';
+        octx.lineWidth = 1;
+        const gridStep = off.width / 16;
+        octx.beginPath();
+        for (let i = 1; i < 16; i++) {
+            octx.moveTo(i * gridStep, 0);
+            octx.lineTo(i * gridStep, off.height);
+            octx.moveTo(0, i * gridStep);
+            octx.lineTo(off.width, i * gridStep);
+        }
+        octx.stroke();
+
+        STATE.terrainCanvas = off;
+        STATE.terrainCanvasSize = mapSize;
+        // Compute world half-extent from heightmap for projection
+        STATE.worldHalfExtent = (hm.size - 1) * hm.scale * 0.5;
+        // R32.229: Derive map name from hooks if available
+        STATE.mapName = (STATE.hooks.getMapName ? STATE.hooks.getMapName() : '') || 'TACTICAL MAP';
+    }
+
+    // R32.229: Extracted pixel-level terrain rendering (called once, result cached)
+    function _renderTerrainPixels(octx, hm, offW, offH) {
+        const img = octx.createImageData(offW, offH);
         const N = hm.size;
         const data = hm.data;
 
@@ -197,17 +241,17 @@
         const sunLen = Math.hypot(sunDx, sunDz, sunDy);
         const sx = sunDx / sunLen, sy = sunDy / sunLen, sz = sunDz / sunLen;
 
-        for (let y = 0; y < off.height; y++) {
+        for (let y = 0; y < offH; y++) {
             // Map screen Y -> heightmap row.
             // Note: in world space, +Z is "south"; we want north-up like a real
             // tactical map, so we flip Y on the heightmap.
-            const v = 1 - (y / (off.height - 1));
+            const v = 1 - (y / (offH - 1));
             const gz = v * (N - 1);
             const iz = Math.max(0, Math.min(N - 2, Math.floor(gz)));
             const fz = gz - iz;
 
-            for (let x = 0; x < off.width; x++) {
-                const u = x / (off.width - 1);
+            for (let x = 0; x < offW; x++) {
+                const u = x / (offW - 1);
                 const gx = u * (N - 1);
                 const ix = Math.max(0, Math.min(N - 2, Math.floor(gx)));
                 const fx = gx - ix;
@@ -249,7 +293,7 @@
                 g = Math.min(255, Math.floor(g * shade * 1.4));
                 b = Math.min(255, Math.floor(b * shade * 1.4));
 
-                const idx = (y * off.width + x) * 4;
+                const idx = (y * offW + x) * 4;
                 img.data[idx    ] = r;
                 img.data[idx + 1] = g;
                 img.data[idx + 2] = b;
@@ -257,24 +301,6 @@
             }
         }
         octx.putImageData(img, 0, 0);
-
-        // Faint contour grid
-        octx.strokeStyle = 'rgba(180,200,220,0.10)';
-        octx.lineWidth = 1;
-        const gridStep = off.width / 16;
-        octx.beginPath();
-        for (let i = 1; i < 16; i++) {
-            octx.moveTo(i * gridStep, 0);
-            octx.lineTo(i * gridStep, off.height);
-            octx.moveTo(0, i * gridStep);
-            octx.lineTo(off.width, i * gridStep);
-        }
-        octx.stroke();
-
-        STATE.terrainCanvas = off;
-        STATE.terrainCanvasSize = mapSize;
-        // Compute world half-extent from heightmap for projection
-        STATE.worldHalfExtent = (hm.size - 1) * hm.scale * 0.5;
     }
 
     // -------------------------------------------------------------------------
@@ -563,7 +589,7 @@
         ctx.fillText('COMMAND  MAP', 28, 36);
         ctx.font = '11px sans-serif';
         ctx.fillStyle = 'rgba(255,200,128,0.65)';
-        ctx.fillText('TACTICAL OVERVIEW \u2014 RAINDANCE', 28, 54);
+        ctx.fillText('TACTICAL OVERVIEW \u2014 ' + (STATE.mapName || 'UNKNOWN'), 28, 54);
 
         // Compass rose (top-left)
         ctx.fillStyle = 'rgba(255,255,255,0.85)';
