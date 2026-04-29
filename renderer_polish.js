@@ -11,7 +11,7 @@
 //   window.playSoundUI() (shell.html audio), window.__tribesApplyQuality(),
 //   _ctx.{scene, camera, renderer, composer, sunLight, hemiLight, terrainMesh,
 //   playerView, playerStride} (passed via installPolish)
-// EXPOSES: ES module exports: installPolish, registerGeneratorChimney, enhanceTurret,
+// EXPOSES: ES module exports: installPolish, registerGeneratorChimney, removeGeneratorChimney, enhanceTurret,
 //   enhanceSensor, addBridgeRailings, addTowerWindows, addStationIcon,
 //   getFactionPalette, spawnShockwave, placeDecal. No window.* globals
 //   (communicates via _ctx reference and DOM elements)
@@ -263,10 +263,10 @@ function _tickLightning(dt, t) {
         // WebAudio path) still fires 1-3s later for the natural "flash,
         // near-crack, distant rumble" sequence.
         const crackDelay = _rand(60, 150);
-        setTimeout(() => { if (window.playSoundUI) window.playSoundUI(17); }, crackDelay);
+        setTimeout(() => { if (!_enabled) return; if (window.playSoundUI) window.playSoundUI(17); }, crackDelay);
         // Rolling thunder rumble ~1-3s after flash (unchanged from R32.7).
         const delay = _rand(0.8, 3.0) * 1000;
-        setTimeout(() => _playThunder(), delay);
+        setTimeout(() => { if (!_enabled) return; _playThunder(); }, delay);
     }
 
     // Decay flash
@@ -435,7 +435,7 @@ function onFlagEvent(eventType, team) {
         return: 'rgba(120,180,255,0.4)',
     };
     _flashScreen(colors[eventType] || 'rgba(255,255,255,0.3)', eventType === 'capture' ? 700 : 350);
-    _playFlagSting(eventType);
+    // R32.227: _playFlagSting removed (was dead code — AE handles flag sounds)
 }
 
 // ============================================================
@@ -688,6 +688,27 @@ export function registerGeneratorChimney(worldPos) {
     pts.frustumCulled = false;
     scene.add(pts);
     _smokeStacks.push({ pts, pos, age, origin: worldPos.clone() });
+}
+
+/**
+ * R32.227: Remove generator chimney smoke when generator is destroyed.
+ * Matches by position proximity (within 1m) since generators don't have stable IDs.
+ */
+export function removeGeneratorChimney(worldPos) {
+    const THRESHOLD_SQ = 1.0; // 1m²
+    for (let i = _smokeStacks.length - 1; i >= 0; i--) {
+        const s = _smokeStacks[i];
+        const dx = s.origin.x - worldPos.x;
+        const dy = s.origin.y - worldPos.y;
+        const dz = s.origin.z - worldPos.z;
+        if (dx * dx + dy * dy + dz * dz < THRESHOLD_SQ) {
+            _ctx.scene.remove(s.pts);
+            s.pts.geometry.dispose();
+            s.pts.material.dispose();
+            _smokeStacks.splice(i, 1);
+            return;
+        }
+    }
 }
 
 function _tickSmokeStacks(dt, t) {
@@ -1007,39 +1028,8 @@ function _flashScreen(rgba, durMs) {
     setTimeout(() => { _flagFlash.alpha = 0; _flagFlash.el.style.opacity = '0'; }, durMs);
 }
 
-function _playFlagSting(eventType) {
-    // R32.13.7: PERMANENTLY DISABLED. These were 880/1320/1760 Hz triangle
-    // oscillators — textbook pings. AE has its own flag pickup/capture sounds
-    // (slots 6 & 7) that handle this event. The renderer_polish duplicate was
-    // a leftover from R32.7.
-    return;
-    // (legacy code below; kept for diagnostic toggle if ever needed)
-    if (typeof window !== 'undefined' && window._flagStingMuted) return;
-    const ctx = window.AE && window.AE.ctx; // R32.168: use shared audio context
-    if (!ctx) return;
-    const now = ctx.currentTime;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    const freqs = { pickup: 880, capture: 1320, drop: 220, return: 660 };
-    o.frequency.value = freqs[eventType] || 660;
-    o.type = 'triangle';
-    g.gain.setValueAtTime(0.0001, now);
-    g.gain.exponentialRampToValueAtTime(0.18, now + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, now + 0.45);
-    o.connect(g).connect(ctx.destination);
-    o.start(now);
-    o.stop(now + 0.5);
-    if (eventType === 'capture') {
-        // double-up for capture
-        const o2 = ctx.createOscillator(); const g2 = ctx.createGain();
-        o2.frequency.value = 1760; o2.type = 'triangle';
-        g2.gain.setValueAtTime(0.0001, now + 0.18);
-        g2.gain.exponentialRampToValueAtTime(0.14, now + 0.20);
-        g2.gain.exponentialRampToValueAtTime(0.0001, now + 0.6);
-        o2.connect(g2).connect(ctx.destination);
-        o2.start(now + 0.18); o2.stop(now + 0.65);
-    }
-}
+// R32.227: _playFlagSting removed — was permanently disabled (return as first line).
+// AE handles flag sounds via slots 6 & 7. See R32.13.7 for history.
 
 // ============================================================
 // Item 50 — Telemetry HUD overlay
