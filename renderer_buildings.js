@@ -40,6 +40,12 @@ let _RAPIER = null;
  * @param {boolean} [opts.debug=false] - render wireframe collider boxes
  */
 export async function init(scene, rapierWorld, RAPIER, opts = {}) {
+    // Guard against double-init — dispose first if already initialized
+    if (_buildingsGroup) {
+        console.warn('[Buildings] Already initialized, disposing first');
+        dispose();
+    }
+
     _scene = scene;
     _rapierWorld = rapierWorld;
     _RAPIER = RAPIER;

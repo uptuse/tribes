@@ -1,7 +1,8 @@
 {
   "_meta": {
     "format": "firewolf-building-layouts-v1",
-    "notes": "Each building has a world position, optional rotation (degrees), and a list of pieces. Piece grid coords are in grid units (4m XZ, 4.25m Y). Piece rot is degrees (0/90/180/270)."
+    "gridAnchor": "center",
+    "notes": "Grid coords address piece CENTER. For multi-cell pieces (e.g. room-small 3x3), the grid coordinate is the center cell. Piece rot is degrees (0/90/180/270). Building rot is degrees."
   },
   "buildings": [
     {
@@ -9,12 +10,15 @@
       "pos": [-200, 30, -100],
       "rot": 0,
       "pieces": [
-        { "id": "corridor-end",    "grid": [0, 0, 0], "rot": 0 },
+        { "id": "corridor-end",    "grid": [0, 0, 0], "rot": 180 },
         { "id": "corridor",        "grid": [0, 0, 1], "rot": 0 },
         { "id": "corridor",        "grid": [0, 0, 2], "rot": 0 },
         { "id": "corridor-corner", "grid": [0, 0, 3], "rot": 0 },
         { "id": "corridor",        "grid": [1, 0, 3], "rot": 90 },
-        { "id": "room-small",      "grid": [2, 0, 2], "rot": 0 }
+        { "id": "corridor",        "grid": [2, 0, 3], "rot": 90 },
+        { "id": "corridor-junction","grid": [3, 0, 3], "rot": 180 },
+        { "id": "corridor",        "grid": [3, 0, 2], "rot": 0 },
+        { "id": "room-small",      "grid": [3, 0, 0], "rot": 0 }
       ]
     }
   ]
