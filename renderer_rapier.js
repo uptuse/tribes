@@ -165,6 +165,9 @@ async function _doInit() {
  * Create a heightfield collider for the terrain.
  * Called after initTerrain() has populated _htData.
  *
+ * NOTE: Caller must call destroy() or removeCollider('terrain') before
+ * re-creating terrain on map change — otherwise the old heightfield leaks.
+ *
  * @param {Float32Array} heightData - Row-major heights (size × size)
  * @param {number} size - Grid dimension (e.g. 257)
  * @param {number} worldScale - Meters per grid cell (e.g. 8.0)
