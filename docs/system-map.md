@@ -139,7 +139,7 @@ index.html
 
 ## Known Hazards
 
-1. **HEAPF32 detachment** — WASM memory growth invalidates all typed array views. No mitigation currently in place.
+1. **HEAPF32 detachment** — WASM memory growth invalidates all typed array views. **Current status: NON-ISSUE.** Build uses fixed memory (`-sALLOW_MEMORY_GROWTH` is NOT set). `_emscripten_resize_heap` calls `abortOnCannotGrowMemory` which aborts. HEAPF32 views are created once in `updateMemoryViews()` (tribes.js L613) and never need refreshing. A `HEAPF32.buffer !== wasmMemory.buffer` assertion in the render loop (renderer.js) catches any future misconfiguration immediately. **If this invariant ever changes** (e.g., enabling memory growth for larger maps), every `new Float32Array(Module.HEAPF32.buffer, ...)` call must be replaced with a fresh view creation each frame.
 2. **HDRI/DayNight race** — Both write `toneMappingExposure` and `environmentIntensity` with different values.
 3. **Night ambient color typo** — `0x3040608` (7 hex digits) should be `0x304060`.
 4. **Remote players disabled** — Line 3792 hides all non-local players unconditionally.

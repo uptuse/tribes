@@ -128,3 +128,6 @@
 
 ### "How do I convert MIS coordinates to Three.js?"
 **y→z, z→-y.** MIS uses Z-up, Three.js uses Y-up. This is documented in every relevant `@ai-contract`. Get it wrong and buildings spawn sideways.
+
+### "Can I enable -sALLOW_MEMORY_GROWTH?"
+**Not without a major refactor.** The current build uses fixed WASM memory. All HEAPF32/HEAP32 typed array views are created once and never refreshed. If memory growth is enabled, every `new Float32Array(Module.HEAPF32.buffer, ptr, len)` in the codebase will silently detach when memory grows, returning all zeros. The render loop has a `HEAPF32.buffer !== wasmMemory.buffer` assertion to catch this, but fixing it requires recreating all views after every growth event. See `@ai-invariant FIXED_WASM_MEMORY` in renderer.js.

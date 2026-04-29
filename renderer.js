@@ -42,6 +42,14 @@
 // JS reads game state via zero-copy Float32Array views into HEAPF32.
 // No JSON, no per-frame EM_ASM. All sync is typed-array reads.
 //
+// @ai-invariant FIXED_WASM_MEMORY
+// This build assumes fixed WASM memory (-sALLOW_MEMORY_GROWTH is NOT set).
+// HEAPF32 views are created once by updateMemoryViews() in tribes.js and never
+// refreshed. If -sALLOW_MEMORY_GROWTH is ever enabled, all typed array views
+// (HEAPF32, HEAP32, etc.) will silently detach when memory grows, causing reads
+// to return all zeros. The render loop includes a HEAPF32.buffer assertion to
+// catch this immediately. See also: tribes.js L4354 (abortOnCannotGrowMemory).
+//
 // R18 cashes in on the Three.js architecture:
 //   - Composite procedural player models (3 armor tiers, leg/arm rig animation)
 //   - Composite procedural building models (turret/station/generator/interior)
@@ -58,11 +66,8 @@
 
 import * as THREE from 'three';
 // R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky.js
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+// R32.203: post-processing imports moved to renderer_postprocess.js
+import * as PostProcess from './renderer_postprocess.js?v=203';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 // R32.7 — additive polish module. Single import; ?polish=off gracefully
 // disables the entire pack at runtime. Effects stack on top of the existing
@@ -76,8 +81,8 @@ import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 
 // --- Module state ---
-let scene, camera, renderer, composer;
-let bloomPass, gradePass;
+let scene, camera, renderer; // R32.203: composer moved to renderer_postprocess.js
+// R32.203: bloomPass and gradePass moved to renderer_postprocess.js
 let sunLight, hemiLight, moonLight, sky;
 let nightAmbient; // R32.169: module-scope for DayNight init
 let polish = null; // R32.7 polish module handle
@@ -279,11 +284,11 @@ export async function start() {
     // crashed with `Cannot read properties of undefined (reading 'parent')` at
     // WebGLRenderer.render line 30015 (camera.parent === null check).
     initStateViews();
-    initPostProcessing();
+    PostProcess.init(renderer, scene, camera, readQualityFromSettings(), currentQuality);
     console.log('[R29.2] State views + post-process initialized in correct order (camera-first)');
     // R32.7 — install polish AFTER state views so the module can see playerView/playerStride
     polish = Polish.installPolish({
-        THREE: THREE, scene: scene, camera: camera, renderer: renderer, composer: composer,
+        THREE: THREE, scene: scene, camera: camera, renderer: renderer, composer: PostProcess.getComposer(),
         sunLight: sunLight, hemiLight: hemiLight, terrainMesh: terrainMesh,
         sampleTerrainH: sampleTerrainH,
         playerView: playerView, playerStride: playerStride,
@@ -370,10 +375,10 @@ function initScene() {
     try { window.scene = scene; window.camera = camera; window.renderer = renderer; } catch(e) {}
     // R32.56: expose for debug panel
     window._tribesDebug = {
-        scene, camera, renderer, composer,
+        scene, camera, renderer, get composer() { return PostProcess.getComposer(); },
         setComposerEnabled: function(on) {
-            if (on && !composer) { try { initPostProcessing(); } catch(e) {} }
-            else if (!on) { composer = null; }
+            if (on && !PostProcess.isActive()) { try { PostProcess.init(renderer, scene, camera, readQualityFromSettings(), currentQuality); } catch(e) {} }
+            else if (!on) { PostProcess.dispose(); }
         }
     };
 }
@@ -3352,191 +3357,11 @@ function initParticles() {
     scene.add(particleSystem);
 }
 
+
 // ============================================================
-// Post-processing
+// R32.203: Post-processing code extracted to renderer_postprocess.js
+// Functions removed: initPostProcessing(), _buildCinematicLUT(), makeVignetteAndGradeShader()
 // ============================================================
-function initPostProcessing() {
-    // R32.161: Dispose old composer before creating a new one.
-    // EffectComposer allocates WebGLRenderTarget(s) internally (~40MB at 1080p).
-    // applyQuality() calls initPostProcessing() on every quality change, leaking
-    // the previous render targets.
-    if (composer) {
-        try {
-            // EffectComposer.dispose() cleans up all render targets and passes
-            if (typeof composer.dispose === 'function') {
-                composer.dispose();
-            } else {
-                // Fallback for older Three.js versions without .dispose()
-                if (composer.renderTarget1) composer.renderTarget1.dispose();
-                if (composer.renderTarget2) composer.renderTarget2.dispose();
-            }
-        } catch (e) { console.warn('[R32.161] composer dispose error:', e); }
-        composer = null;
-        bloomPass = null;
-        gradePass = null;
-    }
-
-    const tier = readQualityFromSettings();
-    console.log('[R32.82] initPostProcessing: tier.postProcess=' + tier.postProcess + ' quality=' + currentQuality);
-    // R32.54 DIAGNOSTIC: ?nopost → skip EffectComposer entirely, render direct
-    const _dp = new URLSearchParams(window.location.search);
-    if (_dp.has('nopost')) {
-        console.log('[R32.54-DIAG] nopost: EffectComposer disabled, direct render');
-        composer = null;
-        return;
-    }
-    if (!tier.postProcess) {
-        console.log('[R32.82] initPostProcessing BAILED: tier.postProcess is falsy (' + tier.postProcess + ')');
-        composer = null;
-        return;
-    }
-    // R29.2 defensive: hard-fail with a clear message if init order regresses.
-    // Without these guards, an undefined scene/camera passed to RenderPass causes
-    // a cryptic `Cannot read properties of undefined (reading 'parent')` deep
-    // inside three.module.js on every frame — we lost an hour to that exact
-    // failure mode. Fail loud at init time instead.
-    if (!scene)    throw new Error('[R29.2] initPostProcessing called before initScene()');
-    if (!camera)   throw new Error('[R29.2] initPostProcessing called before initStateViews() — camera is undefined');
-    if (!renderer) throw new Error('[R29.2] initPostProcessing called before initRenderer() — renderer is undefined');
-    composer = new EffectComposer(renderer);
-    composer.setPixelRatio(tier.pixelRatio);
-    const renderPass = new RenderPass(scene, camera);
-    composer.addPass(renderPass);
-    // R32.23: selective-bloom-via-threshold (Visual Cohesion #2.7). Instead of
-    // a heavy two-pass layer-masked bloom (which requires per-frame material
-    // swaps across thousands of grass blades), we lift the HDR threshold so
-    // only genuinely emissive surfaces (muzzle flash, jet flame, hit
-    // indicators, lit panels) ever exceed it. Net result: bloom looks
-    // selective without paying the perf cost of selective rendering.
-    // Was: (res, 0.4 strength, 0.6 radius, 0.85 threshold)
-    bloomPass = new UnrealBloomPass(new THREE.Vector2(window.innerWidth, window.innerHeight), 0.30, 0.45, 0.92);
-    bloomPass.enabled = true;   // R32.81: night-adaptive bloom — driven by DayNight cycle
-    composer.addPass(bloomPass);
-    // R32.65.2: SMAA removed — smooth terrain + smooth normals make it unnecessary
-    if (tier.postProcess === 'full') {
-        gradePass = new ShaderPass(makeVignetteAndGradeShader());
-        composer.addPass(gradePass);
-    }
-    composer.addPass(new OutputPass());
-    console.log('[R32.81] Post-processing initialized: composer=' + !!composer + ' bloomPass=' + !!bloomPass + ' bloomEnabled=' + bloomPass.enabled + ' strength=' + bloomPass.strength);
-    window.__tribesBloom = bloomPass;
-    window.__tribesComposer = composer;
-}
-
-// R32.22: build a procedural cinematic 3D LUT (32^3) packed into a 1024x32
-// horizontal strip texture. Cool-shadow / warm-highlight "modern war film"
-// grade. Generated once at startup and bound as `tLUT` in the grade shader.
-function _buildCinematicLUT(THREE) {
-    const SIZE = 32;
-    const W = SIZE * SIZE;     // 1024
-    const H = SIZE;            // 32
-    const data = new Uint8Array(W * H * 4);
-    for (let bIdx = 0; bIdx < SIZE; bIdx++) {
-        for (let gIdx = 0; gIdx < SIZE; gIdx++) {
-            for (let rIdx = 0; rIdx < SIZE; rIdx++) {
-                // Input color in [0,1].
-                let r = rIdx / (SIZE - 1);
-                let g = gIdx / (SIZE - 1);
-                let b = bIdx / (SIZE - 1);
-                const luma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-                // Cool shadows: lift blue in dark regions.
-                const shadow = 1.0 - Math.min(1, luma * 2.5);
-                b += 0.045 * shadow;
-                r -= 0.012 * shadow;
-                // Warm highlights: push red+green where bright.
-                const highlight = Math.max(0, (luma - 0.6) / 0.4);
-                r += 0.055 * highlight;
-                g += 0.030 * highlight;
-                b -= 0.020 * highlight;
-                // Mild S-curve contrast (smoothstep-style).
-                r = r * r * (3 - 2 * r);
-                g = g * g * (3 - 2 * g);
-                b = b * b * (3 - 2 * b);
-                r = r * 0.92 + 0.04;
-                g = g * 0.92 + 0.04;
-                b = b * 0.92 + 0.04;
-                // Light global desaturation toward cinematic neutral.
-                const finalLuma = 0.2126 * r + 0.7152 * g + 0.0722 * b;
-                const desat = 0.08;
-                r = r * (1 - desat) + finalLuma * desat;
-                g = g * (1 - desat) + finalLuma * desat;
-                b = b * (1 - desat) + finalLuma * desat;
-                // Pack: x = rIdx + bIdx*SIZE, y = gIdx.
-                const x = rIdx + bIdx * SIZE;
-                const y = gIdx;
-                const i = (y * W + x) * 4;
-                data[i + 0] = Math.max(0, Math.min(255, Math.round(r * 255)));
-                data[i + 1] = Math.max(0, Math.min(255, Math.round(g * 255)));
-                data[i + 2] = Math.max(0, Math.min(255, Math.round(b * 255)));
-                data[i + 3] = 255;
-            }
-        }
-    }
-    const tex = new THREE.DataTexture(data, W, H, THREE.RGBAFormat);
-    tex.minFilter = THREE.LinearFilter;
-    tex.magFilter = THREE.LinearFilter;
-    tex.wrapS = THREE.ClampToEdgeWrapping;
-    tex.wrapT = THREE.ClampToEdgeWrapping;
-    tex.generateMipmaps = false;
-    tex.needsUpdate = true;
-    return tex;
-}
-
-function makeVignetteAndGradeShader() {
-    // R32.25.1 HOTFIX: reverted to safe pass-through grade. Previous R32.22-25
-    // shader (LUT + tilt-shift + grain composition) caused a black framebuffer
-    // on user's machine — likely shader compile failure or a sampler bind that
-    // didn't survive ShaderPass init. This restores the pre-R32.22 R32.7 grade
-    // shader (vignette + warm-shadow + desat + film grain), which was known
-    // working. LUT + tilt-shift will return as a separate, opt-in module.
-    return {
-        uniforms: {
-            tDiffuse: { value: null },
-            vignetteIntensity: { value: 0.18 },
-            warmth: { value: 0.06 },
-            desaturation: { value: 0.10 },
-            grain: { value: 0.012 },
-            time: { value: 0.0 },
-        },
-        vertexShader: /* glsl */`
-            varying vec2 vUv;
-            void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
-        `,
-        fragmentShader: /* glsl */`
-            uniform sampler2D tDiffuse;
-            uniform float vignetteIntensity;
-            uniform float warmth;
-            uniform float desaturation;
-            uniform float grain;
-            uniform float time;
-            varying vec2 vUv;
-
-            float hash(vec2 p) {
-                return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453);
-            }
-
-            void main(){
-                vec4 c = texture2D(tDiffuse, vUv);
-
-                float gray = dot(c.rgb, vec3(0.299, 0.587, 0.114));
-                c.rgb = mix(c.rgb, vec3(gray), desaturation);
-                float lum = (c.r + c.g + c.b) / 3.0;
-                float shadowMask = 1.0 - smoothstep(0.0, 0.5, lum);
-                c.r += warmth * shadowMask;
-                c.b -= warmth * shadowMask;
-
-                vec2 uv = vUv - 0.5;
-                float v = 1.0 - dot(uv, uv) * vignetteIntensity * 4.0;
-                c.rgb *= v;
-
-                float n = hash(vUv * vec2(1920.0, 1080.0) + vec2(time, time * 1.7));
-                c.rgb += (n - 0.5) * grain;
-
-                gl_FragColor = c;
-            }
-        `,
-    };
-}
 
 // ============================================================
 // Camera + state views
@@ -4258,7 +4083,7 @@ function applyQuality(newQuality) {
         if (sunLight.shadow.map) { sunLight.shadow.map.dispose(); sunLight.shadow.map = null; }
     }
     // Rebuild post-processing chain
-    initPostProcessing();
+    PostProcess.rebuild(readQualityFromSettings(), currentQuality);
     onResize();
     console.log('[R18] Quality switched to ' + newQuality);
 }
@@ -5037,16 +4862,10 @@ function loop() {
     // R32.169: Day/Night cycle tick — updates DayNight.sunDir, light colors,
     // fog, exposure, env intensity. Cheap (a few math ops + Color.lerp).
     try { DayNight.update(); } catch(e) { /* keep loop alive */ }
-    // R32.81: night-adaptive bloom — off during day, ramps up at dusk, full at night
+    // R32.203: post-processing update (night-adaptive bloom + film grain) delegated to module
     try {
         const dm = (typeof DayNight !== 'undefined') ? DayNight.dayMix : 1.0;
-        if (bloomPass) {
-            // dayMix: 1=noon, 0=midnight. Bloom activates below 0.5 (dusk)
-            const nightBloom = dm < 0.15 ? 1.0 : (dm > 0.5 ? 0.0 : (0.5 - dm) / 0.35);
-            bloomPass.enabled = nightBloom > 0.01;
-            bloomPass.strength = 0.55 * nightBloom;   // max 0.55 at full night
-            bloomPass.threshold = 0.92 - 0.15 * nightBloom; // lower threshold at night → more glow
-        }
+        PostProcess.update(dm);
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
@@ -5082,10 +4901,7 @@ function loop() {
         if (window.Minimap && window.Minimap.update) window.Minimap.update();
     }
 
-    // R32.22: tick gradePass time uniform so the cinematic film grain animates.
-    if (gradePass && gradePass.material && gradePass.material.uniforms && gradePass.material.uniforms.time) {
-        gradePass.material.uniforms.time.value = (gradePass.material.uniforms.time.value + 0.05) % 10000.0;
-    }
+    // R32.203: gradePass time tick now handled by PostProcess.update() above
 
     // R32.156: cohesion tick removed — camera breathing was disabled (dead code),
     // mood bed doesn't need per-frame tick. renderer_cohesion.js deleted.
@@ -5109,8 +4925,7 @@ function loop() {
         if (u && u.uTime) u.uTime.value = t;
     }
 
-    if (composer) composer.render();
-    else renderer.render(scene, camera);
+    PostProcess.render(); // R32.203: delegates to composer or falls back to direct render
 
     // R30.0 / R32.43: one-shot diagnostic dump, extracted to separate function
     if (!_r30Diagnosed) { _r30Diagnosed = true; _runFirstFrameDiagnostic(); }
@@ -5133,7 +4948,7 @@ function loop() {
             // get true call count, then re-enable. Or just note that calls ≤ 2 with
             // composer active is likely an artifact — the real geometry draw calls
             // happen in the RenderPass before bloom/output compositing.
-            const composerActive = !!composer;
+            const composerActive = PostProcess.isActive();
             const callsNote = composerActive ? ' (+ composer bloom passes not counted; geometry draws in RenderPass)' : '';
             console.log('[R18] ' + fps + 'fps, ' + info.calls + ' draw calls' + callsNote + ', ' + info.triangles + ' tris, quality=' + currentQuality
                         + ' | cam=(' + cp.x.toFixed(0) + ',' + cp.y.toFixed(0) + ',' + cp.z.toFixed(0) + ')'
@@ -5152,11 +4967,7 @@ function onResize() {
     const w = window.innerWidth;
     const h = window.innerHeight;
     renderer.setSize(w, h, false);
-    if (composer) composer.setSize(w, h);
-    // R32.24: keep tilt-shift's pixel-stride uniform in sync with viewport.
-    if (gradePass && gradePass.material && gradePass.material.uniforms && gradePass.material.uniforms.resolution) {
-        gradePass.material.uniforms.resolution.value.set(w, h);
-    }
+    PostProcess.resize(w, h); // R32.203: handles composer + gradePass resolution
     if (camera) {
         camera.aspect = w / h;
         camera.updateProjectionMatrix();
