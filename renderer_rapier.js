@@ -87,6 +87,12 @@ const CG_PLAYER_GROUPS = (0xFFFC << 16) | 0x0001; // member=group0, filter=all e
 let _colliderCount = 0;
 let _trimeshTriCount = 0;
 
+// R32.176: Collider lifecycle tracking — Map<entityId, {collider, body}[]>
+// Keys: 'terrain', 'building:<index>', 'model:<name|id>'
+// Each entry is an array because a single entity (e.g. an interior model)
+// may produce multiple trimesh colliders from its sub-meshes.
+const _colliderRegistry = new Map();
+
 // ============================================================
 // Init
 // ============================================================
@@ -199,8 +205,11 @@ function createTerrainCollider(heightData, size, worldScale) {
     // R32.162: Put terrain in its own collision group so character controller ignores it.
     // WASM handles all terrain clamping; Rapier should only resolve building/interior collisions.
     colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_TERRAIN_MEMBERSHIP);
-    world.createCollider(colliderDesc, body);
+    const collider = world.createCollider(colliderDesc, body);
     _colliderCount++;
+
+    // R32.176: Track terrain collider for lifecycle management
+    _colliderRegistry.set('terrain', [{ collider, body }]);
 
     console.log(`[R32.104] Terrain heightfield: ${nrows}×${ncols}, span=${totalSpan.toFixed(0)}m, ${(performance.now() - t0).toFixed(1)}ms`);
 }
@@ -245,7 +254,10 @@ function createBuildingColliders() {
         const colliderDesc = RAPIER.ColliderDesc.cuboid(hx, hy, hz);
         // R32.162: Building collision group — interacts with player
         colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_BUILDING_MEMBERSHIP);
-        world.createCollider(colliderDesc, body);
+        const collider = world.createCollider(colliderDesc, body);
+
+        // R32.176: Track building collider for removal on destruction/map change
+        _colliderRegistry.set(`building:${b}`, [{ collider, body }]);
         added++;
     }
 
@@ -292,6 +304,7 @@ function rapierRegisterModelCollision(root, worldMatrix, entityId) {
     for (const m of colMeshes) m.visible = false;
 
     let totalMeshes = 0, totalTris = 0;
+    const entityEntries = [];  // R32.176: collect collider+body pairs for lifecycle tracking
 
     for (const mesh of sources) {
         const geo = mesh.geometry;
@@ -334,7 +347,8 @@ function rapierRegisterModelCollision(root, worldMatrix, entityId) {
         if (colliderDesc) {
             // R32.162: Interior collision group — same as buildings, interacts with player
             colliderDesc.setCollisionGroups((0xFFFF << 16) | CG_BUILDING_MEMBERSHIP);
-            world.createCollider(colliderDesc, body);
+            const collider = world.createCollider(colliderDesc, body);
+            entityEntries.push({ collider, body });  // R32.176: track for lifecycle
             _colliderCount++;
             totalMeshes++;
             totalTris += numTris;
@@ -344,6 +358,18 @@ function rapierRegisterModelCollision(root, worldMatrix, entityId) {
 
     const dt = (performance.now() - t0).toFixed(1);
     console.log(`[R32.104] registerModelCollision → Rapier: ${totalMeshes} meshes, ${totalTris} tris, ${dt}ms`);
+
+    // R32.176: Track colliders by entity ID for removal
+    if (entityEntries.length > 0) {
+        const key = entityId || `model:${root.name || root.uuid || totalMeshes}`;
+        const existing = _colliderRegistry.get(key);
+        if (existing) {
+            existing.push(...entityEntries);
+        } else {
+            _colliderRegistry.set(key, entityEntries);
+        }
+    }
+
     return { meshCount: totalMeshes, triCount: totalTris };
 }
 
