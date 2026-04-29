@@ -2181,7 +2181,7 @@ extern "C" void mainLoop(){
             if(maxAcc>1.0f)maxAcc=1.0f;
             float targetSpd=moveDir.len()>0.01f?ad.maxFwdSpeed*g_tunePlayerSpeed:0;
             Vec3 md=moveDir.normalized();
-            float effMaxAcc=maxAcc*g_tuneGroundFriction;if(effMaxAcc>1.0f)effMaxAcc=1.0f;
+            float effMaxAcc=maxAcc*g_tuneGroundFriction;
             me.vel.x+=(md.x*targetSpd-me.vel.x)*effMaxAcc;
             me.vel.z+=(md.z*targetSpd-me.vel.z)*effMaxAcc;
             if(me.vel.y<0)me.vel.y=0;
