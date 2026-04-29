@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<base href="../">
 <title>Buildings — Isolated Test Harness</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -43,8 +44,8 @@ canvas{display:block}
 <script type="importmap">
 {
   "imports": {
-    "three": "../vendor/three/r170/three.module.js",
-    "three/addons/": "../vendor/three/r170/addons/"
+    "three": "./vendor/three/r170/three.module.js",
+    "three/addons/": "./vendor/three/r170/addons/"
   }
 }
 </script>
@@ -88,7 +89,7 @@ canvas{display:block}
 <script type="module">
 import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
-import * as Buildings from '../renderer_buildings.js';
+import * as Buildings from './renderer_buildings.js';
 
 // ── Logging ──
 const logEl = document.getElementById('log');
@@ -178,7 +179,7 @@ let rapierWorld = null;
 
 async function initRapier() {
     console.log('Loading Rapier WASM...');
-    RAPIER = await import('../vendor/rapier/rapier.mjs');
+    RAPIER = await import('./vendor/rapier/rapier.mjs');
     if (typeof RAPIER.init === 'function') await RAPIER.init();
     rapierWorld = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
     console.log('Rapier ready');
