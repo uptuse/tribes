@@ -3,6 +3,33 @@
 // Replaces hand-rolled collision (resolvePlayerBuildingCollision,
 // resolvePlayerInteriorCollision) with Rapier 3D character controller.
 //
+// @ai-contract
+// PURPOSE: Rapier physics facade — terrain heightfield, building AABB,
+//          interior trimesh colliders, and character controller resolution.
+// SERVES: Scale (vast terrain collision), Aliveness (physical world interaction)
+// DEPENDS_ON: vendor/rapier/rapier.mjs (Rapier WASM, v0.19.3)
+// DEPENDS_ON: Module (Emscripten WASM) — player state, building data via HEAPF32
+// EXPOSES: window.RapierPhysics { initRapierPhysics, createTerrainCollider,
+//          createBuildingColliders, registerModelCollision, stepPlayerCollision,
+//          resetPlayerPosition, removeCollider, removeAllBuildings,
+//          removeAllModels, destroy, getPhysicsInfo }
+// PATTERN: IIFE + window.* facade (legacy — migrate to ES module per Item 24)
+// PERF_BUDGET: stepPlayerCollision < 0.5ms/frame; world.step() with zero
+//              dynamic bodies; broadphase update is the real cost.
+// QUALITY_TIERS: N/A — physics runs identically on all tiers
+// COORDINATE_SPACE: world (meters), Y-up
+// LIFECYCLE: init → create colliders → per-frame step → removeCollider/destroy
+//            Colliders tracked in _colliderRegistry Map<entityId, {collider,body}[]>
+//            Keys: 'terrain', 'building:<idx>', 'model:<name>'
+//            destroy() frees ALL resources; must call initRapierPhysics() again after.
+//
+// NEVER: create a collider without tracking it in _colliderRegistry
+// NEVER: call world.step() outside stepPlayerCollision (one step per frame)
+// ALWAYS: use removeCollider/removeAllBuildings/destroy for cleanup
+// ALWAYS: pass entityId to registerModelCollision for lifecycle tracking
+// BEFORE_MODIFY: read docs/lessons-learned.md, docs/patterns.md
+// @end-ai-contract
+//
 // Architecture:
 //   WASM tick() handles all game physics (gravity, skiing, jetting, etc.)
 //   and still does pos += vel*dt + terrain clamp. The old collision
@@ -237,9 +264,10 @@ function createBuildingColliders() {
  *
  * @param {THREE.Object3D} root - Root scene graph node
  * @param {THREE.Matrix4} [worldMatrix] - Optional override world matrix
+ * @param {string} [entityId] - Optional entity identifier for lifecycle tracking
  * @returns {{ meshCount: number, triCount: number }}
  */
-function rapierRegisterModelCollision(root, worldMatrix) {
+function rapierRegisterModelCollision(root, worldMatrix, entityId) {
     if (!world || !RAPIER) {
         console.warn('[R32.104] registerModelCollision: Rapier not ready, falling back to no-op');
         return { meshCount: 0, triCount: 0 };
@@ -468,6 +496,131 @@ function resetPlayerPosition(x, y, z) {
 }
 
 // ============================================================
+// R32.173: Collider Lifecycle Management
+// ============================================================
+
+/**
+ * Remove all colliders (and their rigid bodies) for a given entity ID.
+ * Entity IDs follow the convention:
+ *   'terrain'          — the heightfield collider
+ *   'building:<index>' — a building AABB cuboid
+ *   'model:<name>'     — one or more trimesh colliders from registerModelCollision
+ *
+ * @param {string} entityId - The entity key used when the collider was created
+ * @returns {number} Number of colliders removed
+ */
+function removeCollider(entityId) {
+    if (!world) return 0;
+    const entries = _colliderRegistry.get(entityId);
+    if (!entries) return 0;
+
+    let removed = 0;
+    for (const entry of entries) {
+        try {
+            if (entry.collider) {
+                world.removeCollider(entry.collider, true); // true = wake up touching bodies
+            }
+            if (entry.body) {
+                world.removeRigidBody(entry.body);
+            }
+            removed++;
+        } catch (e) {
+            console.warn(`[R32.173] removeCollider(${entityId}): error freeing`, e);
+        }
+    }
+
+    _colliderRegistry.delete(entityId);
+    _colliderCount -= removed;
+    return removed;
+}
+
+/**
+ * Remove ALL building colliders. Useful on map change.
+ * @returns {number} Number of colliders removed
+ */
+function removeAllBuildings() {
+    if (!world) return 0;
+    let total = 0;
+    const toRemove = [];
+    for (const key of _colliderRegistry.keys()) {
+        if (key.startsWith('building:')) {
+            toRemove.push(key);
+        }
+    }
+    for (const key of toRemove) {
+        total += removeCollider(key);
+    }
+    console.log(`[R32.173] removeAllBuildings: ${total} colliders removed`);
+    return total;
+}
+
+/**
+ * Remove ALL model (interior/trimesh) colliders. Useful on map change.
+ * @returns {number} Number of colliders removed
+ */
+function removeAllModels() {
+    if (!world) return 0;
+    let total = 0;
+    const toRemove = [];
+    for (const key of _colliderRegistry.keys()) {
+        if (key.startsWith('model:')) {
+            toRemove.push(key);
+        }
+    }
+    for (const key of toRemove) {
+        total += removeCollider(key);
+    }
+    console.log(`[R32.173] removeAllModels: ${total} colliders removed`);
+    return total;
+}
+
+/**
+ * Full teardown — free ALL Rapier resources.
+ * Call on map change or session end.
+ * After destroy(), initRapierPhysics() must be called again to use physics.
+ */
+function destroy() {
+    if (!world) return;
+    console.log('[R32.173] Destroying Rapier physics world...');
+
+    // Remove all tracked colliders + bodies
+    for (const key of [..._colliderRegistry.keys()]) {
+        removeCollider(key);
+    }
+    _colliderRegistry.clear();
+
+    // Remove player collider + body
+    try {
+        if (playerCollider) world.removeCollider(playerCollider, false);
+        if (playerRigidBody) world.removeRigidBody(playerRigidBody);
+    } catch (e) {
+        console.warn('[R32.173] destroy: error removing player', e);
+    }
+    playerCollider = null;
+    playerRigidBody = null;
+
+    // Free the character controller
+    if (characterController) {
+        try { characterController.free(); } catch (e) { /* already freed */ }
+        characterController = null;
+    }
+
+    // Free the world
+    try { world.free(); } catch (e) { /* already freed */ }
+    world = null;
+
+    // Reset state
+    initialized = false;
+    initPromise = null;
+    hasLastPos = false;
+    lastCorrectedPos = { x: 0, y: 100, z: 0 };
+    _colliderCount = 0;
+    _trimeshTriCount = 0;
+
+    console.log('[R32.173] Rapier physics world destroyed');
+}
+
+// ============================================================
 // Diagnostics
 // ============================================================
 function getPhysicsInfo() {
@@ -475,6 +628,7 @@ function getPhysicsInfo() {
         initialized,
         colliderCount: _colliderCount,
         trimeshTriCount: _trimeshTriCount,
+        trackedEntities: _colliderRegistry.size,
         worldBodies: world ? world.bodies.len() : 0,
         worldColliders: world ? world.colliders.len() : 0
     };
@@ -490,6 +644,11 @@ window.RapierPhysics = {
     registerModelCollision: rapierRegisterModelCollision,
     stepPlayerCollision,
     resetPlayerPosition,
+    // R32.173: Collider lifecycle management
+    removeCollider,
+    removeAllBuildings,
+    removeAllModels,
+    destroy,
     getPhysicsInfo
 };
 
