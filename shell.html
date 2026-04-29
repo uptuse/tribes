@@ -3141,7 +3141,7 @@
       if(!Module._setSettings)return;
       var j='{"sensitivity":'+ST.sensitivity+',"fov":'+ST.fov+',"renderDist":'+ST.renderDist
            +',"jetToggle":'+(ST.jetToggle?'true':'false')+',"invertY":'+(ST.invertY?'true':'false')+'}';
-      Module._setSettings(j);
+      Module._setPhysicsTuning(_physTune.gravity,_physTune.jetForce,_physTune.jetEnergy,_physTune.friction,_physTune.speed);
     }
     function applyCrosshair(){
       var col=XHAIR_COLORS[ST.crosshairColor]||'#C4A14C';
@@ -3316,7 +3316,52 @@
         el.classList.toggle('active',tabs[i]===tab);
       });
     }
-    function openSettings(){
+    // ── Phase-A Live Editor: Physics Tuning ──────────────────────────────────
+    var _physTune = { gravity:20, jetForce:1, jetEnergy:1, friction:1, speed:1 };
+    var _mapEditorActive = false;
+    function applyPhysicsTuning(){
+      _physTune.gravity   = parseFloat(document.getElementById('p-gravity').value);
+      _physTune.jetForce  = parseFloat(document.getElementById('p-jetforce').value);
+      _physTune.jetEnergy = parseFloat(document.getElementById('p-jetenergy').value);
+      _physTune.friction  = parseFloat(document.getElementById('p-friction').value);
+      _physTune.speed     = parseFloat(document.getElementById('p-speed').value);
+      if(!Module||!Module._setPhysicsTuning)return;
+      Module._setPhysicsTuning(_physTune.gravity,_physTune.jetForce,_physTune.jetEnergy,_physTune.friction,_physTune.speed);
+    }
+    function resetPhysicsTuning(){
+      _physTune={gravity:20,jetForce:1,jetEnergy:1,friction:1,speed:1};
+      var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
+      var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};
+      for(var id in d){var el=document.getElementById(id);if(el)el.value=d[id];sVal(id+'-v',(l[id]===' m/s²'?d[id]:parseFloat(d[id]).toFixed(2))+l[id]);}
+      applyPhysicsTuning();
+    }
+    function saveTuning(){
+      var out={_comment:'Phase-A physics tuning — paste values into C++ constants',
+        tuneGravity:_physTune.gravity,tuneJetForce:_physTune.jetForce,
+        tuneJetEnergyDrain:_physTune.jetEnergy,tuneGroundFriction:_physTune.friction,
+        tunePlayerSpeed:_physTune.speed};
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([JSON.stringify(out,null,2)],{type:'application/json'}));
+      a.download='firewolf_physics_tuning.json';document.body.appendChild(a);a.click();a.remove();
+    }
+    function toggleMapEditMode(on){
+      _mapEditorActive=on;
+      var btn=document.getElementById('p-savemap');if(btn)btn.disabled=!on;
+      if(window.__tribesSetMapEditMode)window.__tribesSetMapEditMode(on);
+    }
+    function saveMapLayout(){
+      if(!window.__tribesGetBuildingOverrides){alert('Open in-game first.');return;}
+      var a=document.createElement('a');
+      a.href=URL.createObjectURL(new Blob([JSON.stringify(window.__tribesGetBuildingOverrides(),null,2)],{type:'application/json'}));
+      a.download='raindance_layout_overrides.json';document.body.appendChild(a);a.click();a.remove();
+    }
+    document.addEventListener('DOMContentLoaded',function(){
+      var d={'p-gravity':20,'p-jetforce':1,'p-jetenergy':1,'p-friction':1,'p-speed':1};
+      var l={'p-gravity':' m/s²','p-jetforce':'×','p-jetenergy':'×','p-friction':'×','p-speed':'×'};
+      for(var id in d){var el=document.getElementById(id);if(el){el.value=d[id];sVal(id+'-v',(l[id]===' m/s²'?d[id]:parseFloat(d[id]).toFixed(2))+l[id]);}}
+    });
+    // ─────────────────────────────────────────────────────────────────────────
+        function openSettings(){
       populateSettingsUI();
       document.getElementById('settings-modal').classList.add('active');
     }

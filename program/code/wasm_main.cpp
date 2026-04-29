@@ -119,12 +119,23 @@ extern "C" void setSettings(const char*json){
     g_renderDistMul=(float)sGetF(json,"renderDist",1.0);
     g_jetToggle=sGetB(json,"jetToggle",false);
     g_invertY=sGetB(json,"invertY",false);
-    // Phase-A Live Editor physics overrides (ignored when key absent)
-    g_tuneGravity        =(float)sGetF(json,"tuneGravity",        g_tuneGravity);
-    g_tuneJetForce       =(float)sGetF(json,"tuneJetForce",        g_tuneJetForce);
-    g_tuneJetEnergyDrain =(float)sGetF(json,"tuneJetEnergyDrain",  g_tuneJetEnergyDrain);
-    g_tuneGroundFriction =(float)sGetF(json,"tuneGroundFriction",  g_tuneGroundFriction);
-    g_tunePlayerSpeed    =(float)sGetF(json,"tunePlayerSpeed",     g_tunePlayerSpeed);
+    // NOTE: physics tuning is now handled exclusively by setPhysicsTuning() below.
+    // DO NOT add tuneGravity etc. here — mixing them into setSettings() caused
+    // camera angle shifts when sliders were dragged (stale ST.fov/sensitivity
+    // values were being re-applied to the C++ physics state mid-frame).
+}
+
+// Phase-A: dedicated physics tuning function — takes 5 floats directly.
+// Isolated from setSettings() so that slider interaction NEVER touches
+// g_fov, g_mouseSensitivity, g_renderDistMul, etc.
+extern "C" void setPhysicsTuning(float gravity, float jetForce,
+                                  float jetEnergyDrain, float groundFriction,
+                                  float playerSpeed){
+    if(gravity        > 0) g_tuneGravity        = gravity;
+    if(jetForce       > 0) g_tuneJetForce        = jetForce;
+    if(jetEnergyDrain > 0) g_tuneJetEnergyDrain  = jetEnergyDrain;
+    if(groundFriction > 0) g_tuneGroundFriction  = groundFriction;
+    if(playerSpeed    > 0) g_tunePlayerSpeed     = playerSpeed;
 }
 
 static const int TSIZE=RAINDANCE_SIZE; // 257
