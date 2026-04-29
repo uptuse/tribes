@@ -1,87 +1,81 @@
-# Tribes-Style Third-Person Camera Specification
+# Tribes-Style Third-Person Camera Specification (Revised)
 
 **Author:** Manus AI
 **Date:** 2026-04-29
-**Status:** Draft — authorizes Claude to replace the current rigid chase-cam in `renderer_camera.js` with an orbital, speed-aware, collision-safe third-person camera.
+**Status:** Draft — replaces the previous speculative draft with a specification grounded in verified Tribes 2 documentation and gameplay analysis.
 
 ## 1. Purpose and North Star
 
-Firewolf's current third-person view (see `firewolf_current_1_skiing.png` and `firewolf_current_3_jet_airborne.png` in `docs/camera_references/`) is a rigid chase-cam: the camera sits at a fixed offset directly behind the player, translating in world-space as the player moves. Mouse-look pans the view but does not reposition the camera around the player, and the framing centers the model in the middle of the screen with no sense of lag, speed, or situational awareness.
+Firewolf's current third-person view is a rigid chase-cam: the camera sits at a fixed offset directly behind the player, translating in world-space as the player moves. The goal of this specification is to align the camera's behavior with the authentic feel of the late 90s / early 2000s era, specifically targeting the mechanics of Tribes 2 (2001).
 
-The north star for Firewolf's camera is Tribes 1 (1998) and Tribes 2 (2001) — specifically the third-person mode many players used during skiing, flag-carrying, and duels. That camera is characterized by four qualities that the current implementation lacks: the camera **orbits** the player (it is not a decal attached behind them), it **lags slightly** under acceleration, it **zooms out** as speed increases, and it **avoids clipping** into terrain. Reference frames for all four qualities are included in `docs/camera_references/`. Asheron's Call (`tribes_ref_6_asherons_call_dungeon.webp`) is included as a secondary reference for the same era's over-the-shoulder framing conventions.
+A deep research pass into Tribes 2 gameplay footage, the official Prima Strategy Guide, and the TribesNext modding community revealed that the authentic Tribes 2 camera is **not** a modern orbital camera [1] [2]. The nostalgia for "orbital" motion often conflates the stock chase-cam with a separate, specific feature called "Freelook." This document defines both the stock chase-cam behavior and the Freelook mechanic that must be implemented to achieve the true classic feel.
 
-## 2. Static Framing
+## 2. Static Framing and Distance
 
-When the player is stationary and the mouse is idle, the camera sits roughly **3–4 meters behind** the player's root and roughly **1.5 meters above** the ground plane the player is standing on, pitched down by ~8° so the reticle rests near the horizon. The player model should occupy the lower third of the frame, offset slightly left-of-center (roughly 35–40% from the left edge) so the reticle and a clear sight line to the right of the model are preserved. The weapon should be held at the hip or slung at the side as in `tribes_ref_3_T2_rifle_standing.png` and `tribes_ref_5_T2_flag_carry.png`, not raised into an aim pose — raised-weapon framing belongs to first-person mode only.
+The stock Tribes 2 third-person camera (referred to as "Exterior View") is a rigid chase camera. It does not use an over-the-shoulder offset; it is perfectly centered behind the player model [1].
 
-| Parameter | Default | Notes |
+When the player is stationary, the camera sits approximately 1.5 meters (5 feet) behind the player's root and slightly above head height, pitched downward at a shallow angle so the reticle rests near the horizon [3]. The weapon is held at the hip or slung at the side, not raised into an active aiming posture [1].
+
+The perceived distance of the camera in Tribes 2 is heavily coupled to the Field of View (FOV) setting [2]. Because the physical distance is relatively close (~1.5m), players often increased their FOV (default 90) to pull the camera "further back" visually.
+
+| Parameter | Authentic Value | Notes |
 |---|---|---|
-| Follow distance (idle) | 3.5 m | `window._tribesCamDist` |
-| Camera height above feet | 1.5 m | `window._tribesCamHeight` |
-| Horizontal offset from player center | +0.35 m to the right | Shoulder offset, not rotation |
-| Resting pitch | −8° | Relative to horizon |
-| Model screen anchor | ~38% from left, ~65% from top | Tunable; target "Tribes 2 look" |
+| Follow distance | ~1.5 m (5 ft) | Fixed physical distance [3] |
+| Horizontal offset | 0.0 m | Perfectly centered [1] |
+| Height | Slightly above head | Shallow downward pitch [1] |
+| Weapon posture | At hip / side | Never raised in 3P [1] |
 
-## 3. Orbital Rotation — the Behavior That Cannot Be Screenshotted
+## 3. The Core Mechanic: Rigid Chase vs. Freelook
 
-This is the single most important piece of the spec and the behavior that distinguishes a Tribes camera from the current chase-cam. **Mouse input must rotate the camera around the player, not pan the player's view cone.**
+The most critical distinction for the Firewolf implementation is understanding how mouse movement affects the camera and the player model. Tribes 2 uses two distinct modes:
 
-Concretely, the camera's position is expressed in spherical coordinates centered on the player's chest: a yaw angle, a pitch angle, and a follow distance. Horizontal mouse motion (delta-X) adds to the yaw; vertical mouse motion (delta-Y) adds to the pitch; the follow distance is driven by speed (see §4) and collision (see §5). Every frame, the camera's world position is recomputed as `player + spherical(yaw, pitch, distance)`, and the camera's look-at target is the player's chest plus a small forward bias of roughly 2 meters in the aim direction so the reticle lands where the player is facing rather than on the back of their head.
+### Default Mode: Rigid Chase
+In the default third-person view, horizontal mouse movement (yaw) rotates the **player's body**, and the camera follows that rotation rigidly [1]. The camera does not orbit the player; rather, the player turns, and the camera, anchored to the player's back, swings with them. From the player's perspective, the world spins around them while their avatar's back remains centered in the frame.
 
-When the player moves horizontally with the mouse, the camera physically sweeps through an arc — at the extreme, a full 180° sweep should place the camera in front of the player facing back at them, with the model filling the lower-center of the frame and the environment visible beyond. The player's **body** yaws to align with the aim direction over roughly 150 ms of smoothing, so the model is never seen facing perpendicular to the camera for more than a fraction of a second during a hard mouse turn; this is the "torso follows look" behavior visible in Tribes 2 flag-carrier footage. The feet and locomotion animation continue to orient with the velocity vector, which produces the characteristic strafe-run silhouette where the upper body is twisted relative to the legs.
+### Freelook Mode (The "Orbital" Illusion)
+The illusion of an orbital camera comes from the "Freelook" feature [3] [4]. When Freelook is engaged (typically by holding a specific key), mouse movement decouples the camera's look direction from the player's trajectory and facing.
+*   The player's body continues moving and facing in its original direction.
+*   The camera orbits around the player, allowing the user to look at the front of their armor or check behind them while skiing forward [2] [3].
+*   Releasing the Freelook key snaps the camera back to the default rigid chase position behind the player.
 
-Vertical mouse motion pitches the camera up and down **around** the player rather than tilting in place. Looking up lowers the camera and angles it upward so the player's silhouette is framed against the sky; looking down raises the camera and angles it downward so the player's feet and the terrain immediately below are visible. Pitch should clamp at approximately +80° and −80° to prevent the camera from crossing through the player's head or the ground plane.
+Firewolf must implement this dual-mode system: a rigid chase by default, and a bindable Freelook key that enables orbital camera movement without altering player aim or velocity.
 
-## 4. Speed-Based Dynamics
+## 4. Dynamics and Smoothing (Angular Lag)
 
-Two dynamic qualities give Tribes its distinctive sense of speed and must be reproduced. The first is **spring-damped follow**: the camera does not lock rigidly to the player's position but trails on a critically-damped spring with a natural frequency of roughly 6 Hz and a damping ratio near 1.0. When the player accelerates from a standstill into a ski or fires the jetpack (compare `firewolf_current_1_skiing.png` and `tribes_ref_4_T2_skiing_snow.png`), the player model should be seen to pull ahead of the camera by up to half a meter before the camera catches up, and when the player brakes or collides with terrain, the camera should overshoot forward past the ideal distance by a comparable amount before settling. This spring also smooths the vertical component, which is essential on Raindance's rolling hills — without damping, the camera visibly pops every time the player crests a rise.
+Modern third-person cameras use continuous spring damping to create a sense of weight and speed. Authentic Tribes 2 does not use continuous spring damping or speed-based zoom-outs [1].
 
-The second dynamic quality is a **speed-proportional zoom-out**. The follow distance should scale linearly with the player's horizontal speed from the 3.5 m idle baseline up to a cap near 6.0 m at top skiing speed, with a smoothing time constant of roughly 500 ms so the zoom is felt as a gradual pull-back rather than a twitchy jitter. This mirrors Tribes 2's behavior and serves a gameplay purpose: at high speed, peripheral awareness and terrain prediction matter more than a tight read on the character model.
+However, the Torque engine (which powered Tribes 2) does have a mechanism for camera smoothing: the chasecam update interval [2]. By default, the camera transform updates frequently, snapping tightly to the player. But this interval is configurable via script. Increasing the interval causes the camera to update less frequently, meaning the player can turn slightly before the camera "catches up" on its next update tick [2].
 
-| Quality | Parameter | Value |
-|---|---|---|
-| Spring frequency | ω_n | ~6 Hz |
-| Damping ratio | ζ | ~1.0 (critical) |
-| Zoom distance at 0 m/s | d_min | 3.5 m |
-| Zoom distance at top speed | d_max | 6.0 m |
-| Zoom smoothing time constant | τ | ~500 ms |
-| Body yaw smoothing time | — | ~150 ms |
+For Firewolf, we will approximate this feel using a slight angular interpolation (lerp) on the camera's yaw, rather than a strict frame-skip, to maintain visual smoothness while providing the characteristic "loose" feel of the classic engine.
+
+*   **Angular Lag:** Apply a ~50-100ms smoothing factor to the camera's yaw rotation relative to the player's body rotation.
+*   **No Speed Zoom:** The camera distance remains fixed at ~1.5m regardless of skiing or jetting speed [1].
+*   **No Positional Spring:** The camera's position rigidly follows the player's root position; only the rotation has slight lag.
 
 ## 5. Collision Avoidance
 
-The camera must never clip through terrain, buildings, or other solid geometry. On every frame, after computing the ideal camera position in spherical coordinates, cast a ray (or a short-swept sphere of radius ~0.3 m to smooth over small bumps) from the player's chest outward to the ideal camera position. If the ray hits geometry before reaching the ideal distance, place the camera at the hit point minus a small offset (roughly 0.2 m) along the ray, preserving the yaw and pitch. The visual effect is that the camera "pushes in" toward the player when the player skis under a bridge, runs along a cliff face, or backs into a base wall, and smoothly pulls back out when the occluder clears.
+In stock Tribes 2, the third-person camera can and will clip through walls and terrain if the player backs into them [1]. There is no dynamic "push-in" collision avoidance.
 
-The collision cast should use the same Rapier static-geometry layer the player capsule uses, and it should be explicitly excluded from colliding with the player's own capsule and vehicle hull. When multiple rays fail (i.e., the camera cannot find any clear position behind the player), the fallback is to place the camera at the minimum safe distance (~1.2 m) and continue the rotation; this case is rare but happens inside small rooms and must not cause the camera to teleport or flicker.
+For Firewolf, the Director must make a design choice:
+*   **Option A (Strict Authenticity):** Allow the camera to clip through geometry.
+*   **Option B (Modern QoL):** Implement a simple raycast from the player's head to the camera's ideal position. If an occlusion occurs, move the camera forward along the ray to the hit point (minus a small ~0.2m padding).
 
-## 6. First-Person / Third-Person Integration
+Given that clipping is generally considered a bug in modern contexts, **Option B is recommended** unless strict 2001 authenticity is demanded.
 
-The existing V-key toggle between first-person and third-person (visible in `firewolf_current_2_first_person.png` and `firewolf_current_4_first_person_editor.png`) should be preserved. The transition from 1P to 3P should interpolate the camera position from the head bone to the orbital position over ~200 ms, and the reverse should be symmetric. During the transition the crosshair, HUD, and weapon raise state should not visibly glitch — if a weapon animation is mid-firing, the 3P transition should not restart it.
+## 6. Implementation Hooks
 
-Importantly, the 3P orbital logic must not leak into 1P. In first-person, mouse-look rotates the head/aim vector directly, as it does today; the orbital code path is only active when `View === ThirdPerson`.
+The relevant module is `renderer_camera.js`.
 
-## 7. Implementation Hooks
+1.  Retain `window._tribesCamDist` and set the default to 1.5.
+2.  Retain `window._tribesCamHeight` and set the default to slightly above the player model's head.
+3.  Add a `Freelook` boolean state, toggled via a new keybind (e.g., Left Alt).
+4.  When `Freelook` is false, mouse delta updates player aim/yaw, and the camera lerps to match player yaw over ~50ms.
+5.  When `Freelook` is true, mouse delta updates camera yaw *independently* of player aim/yaw.
+6.  (Recommended) Implement a basic raycast collision check against the static geometry layer to prevent the camera from clipping into walls.
 
-The relevant module is `renderer_camera.js`. The globals `window._tribesCamDist` and `window._tribesCamHeight` are already exposed for tuning and should be retained; new globals `window._tribesCamYawLag`, `window._tribesCamZoomCap`, and `window._tribesCamCollisionPad` should be added and wired into the editor tuning panel so the Director can A/B tune them live during development. Yaw and pitch state should be stored in module-scope variables and updated from the same pointer-lock delta stream that currently drives first-person aim, so that switching between 1P and 3P feels continuous.
+## References
 
-The spring step should be integrated at the render rate using a stable semi-implicit Euler step (`v += (-ω² * (pos - target) - 2ζω * v) * dt; pos += v * dt`) rather than a naïve lerp, because the render loop runs at variable dt during WASM reloads and lerp-based smoothing visibly shudders on frame spikes.
-
-## 8. Reference Images
-
-All referenced images are stored under `docs/camera_references/` and committed with this spec:
-
-| File | Era | Purpose |
-|---|---|---|
-| `tribes_ref_1_melee_interior.png` | Tribes 1 | Indoor 3P framing, weapon-at-side posture |
-| `tribes_ref_2_ss_tribes_running.png` | Tribes 1 | Running silhouette, model lower-left of frame |
-| `tribes_ref_3_T2_rifle_standing.png` | Tribes 2 | Canonical static 3P framing with rifle |
-| `tribes_ref_4_T2_skiing_snow.png` | Tribes 2 | Skiing at speed, zoomed-out camera |
-| `tribes_ref_5_T2_flag_carry.png` | Tribes 2 | Flag carrier with torso-follows-look twist |
-| `tribes_ref_6_asherons_call_dungeon.webp` | Asheron's Call (2001) | Same-era third-person framing reference |
-| `firewolf_current_1_skiing.png` | Firewolf (current) | Current 3P skiing — for comparison |
-| `firewolf_current_2_first_person.png` | Firewolf (current) | Current 1P — reference for 1P→3P transition |
-| `firewolf_current_3_jet_airborne.png` | Firewolf (current) | Current 3P jetting — note no zoom-out |
-| `firewolf_current_4_first_person_editor.png` | Firewolf (current) | Current 1P with editor panel open |
-
-## 9. Acceptance Criteria
-
-The new camera is considered complete when all of the following are simultaneously true during a skiing run across Raindance with a full mouse-look pass: the camera orbits smoothly through 360° of yaw without clipping; the player model stays roughly in the lower-left third of the frame; the follow distance visibly stretches from ~3.5 m to ~6 m between standstill and peak ski speed; the camera pushes in and back out when the player passes under the crystal tower's lower arches; and the 1P↔3P toggle completes without a visible snap. The existing editor Shift+Enter tuning panel should expose distance, height, spring stiffness, zoom cap, and collision padding as live sliders so the Director can dial in the final feel without a rebuild.
+[1] Tribes 2 Gameplay - Wilderzone. YouTube. https://www.youtube.com/watch?v=WPBIixEdBDs
+[2] TribesNext Forum - "Further back 3rd person script". https://www.tribesnext.com/forum/discussion/3052/further-back-3rd-person-script
+[3] Tribes Wiki - Functions (Tribes 2). https://tribes.fandom.com/wiki/Functions_(Tribes_2)
+[4] Prima's Official Strategy Guide - Tribes 2. https://archive.org/download/Tribes_2_Prima_Official_eGuide/Tribes_2_Prima_Official_eGuide.pdf
