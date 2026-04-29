@@ -1012,9 +1012,11 @@ function _tickTelemetry(t) {
             const idx = Module._getLocalPlayerIdx();
             if (idx >= 0 && _ctx.playerView && _ctx.playerStride) {
                 const o = idx * _ctx.playerStride;
-                const vx = _ctx.playerView[o + 4] || 0;
-                const vy = _ctx.playerView[o + 5] || 0;
-                const vz = _ctx.playerView[o + 6] || 0;
+                // R32.158: Fixed velocity offsets — was reading o+4,o+5,o+6 (yaw, padding, vx)
+                // Correct layout: o+6=vx, o+7=vy, o+8=vz (matches client/player_state.js PV constants)
+                const vx = _ctx.playerView[o + 6] || 0;
+                const vy = _ctx.playerView[o + 7] || 0;
+                const vz = _ctx.playerView[o + 8] || 0;
                 speed = Math.sqrt(vx*vx + vy*vy + vz*vz);
             }
         } catch (e) {}
