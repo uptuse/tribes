@@ -75,7 +75,8 @@ import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?
 import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
-import * as PostFX from './client/post_fx.js?v=2';        // Phase-C: visual playground
+// Phase-C post_fx import removed — caused black-screen via composer pass splice.
+// Re-implement without touching the live EffectComposer pass list.
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -339,8 +340,7 @@ export async function start() {
         }
     } catch (e) { console.warn('[R32.20] Toonify pass failed:', e && e.message ? e.message : e); }
 
-    // Phase-C: visual playground — wire FX passes into the existing composer
-    try { PostFX.initPostFX(composer); } catch(e) { console.warn('[PhaseC] initPostFX failed:', e); }
+    // Phase-C: initPostFX removed — see comment at top of imports
 
     // Phase-B: initialise level editor and load entity markers from WASM
     import('./client/level_editor.js').then(mod => {
@@ -5129,7 +5129,6 @@ function loop() {
         if (u && u.uTime) u.uTime.value = t;
     }
 
-    try { PostFX.tickPostFX(t); } catch(e) { /* cosmetic — keep loop alive */ }
     if (composer) composer.render();
     else renderer.render(scene, camera);
 
