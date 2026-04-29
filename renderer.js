@@ -70,7 +70,7 @@ import * as THREE from 'three';
 // R32.63: THREE.Sky removed — replaced by custom procedural sky dome in renderer_sky.js
 // R32.203: post-processing imports moved to renderer_postprocess.js
 import * as PostProcess from './renderer_postprocess.js?v=203';
-import * as Particles from './renderer_particles.js?v=233';
+import * as Particles from './renderer_particles.js?v=272';
 import * as Terrain from './renderer_terrain.js?v=232'; // R32.232: extracted terrain
 import * as Interiors from './renderer_interiors.js?v=233'; // R32.233: extracted interiors
 import * as Camera from './renderer_camera.js?v=234'; // R32.234: extracted camera
@@ -82,7 +82,7 @@ import * as Polish from './renderer_polish.js?v=240'; // R32.240: completed weat
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=272'; // R32.272: cache bust for jet bone export
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 
@@ -235,6 +235,7 @@ export async function start() {
             getParticleView: () => particleView ? { view: particleView, stride: particleStride } : null,
             getProjectileCount: () => Module._getProjectileStateCount ? Module._getProjectileStateCount() : 0,
             getQualityTier: () => QUALITY_TIERS[currentQuality],
+            getJetBonePos: (idx, armor, out) => { try { return Characters.getJetBoneWorldPos(idx, armor, out); } catch(e) { return false; } },
             sampleTerrainH: Terrain.sampleHeight,
             htData: Terrain.getHeightmap().data, htSize: Terrain.getHeightmap().size, htScale: Terrain.getHeightmap().scale,
         });

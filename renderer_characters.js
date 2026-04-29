@@ -40,6 +40,9 @@ let _footOffset = 0;
 
 const _chars = new Array(16).fill(null);
 
+// R32.272: Jet exhaust bone attachment — distance behind back surface per armor type
+const JET_BONE_OFFSETS = [0.25, 0.30, 0.38]; // 0=light, 1=medium, 2=heavy
+
 // ── Public API ──────────────────────────────────────────────
 
 export function init(targetScene) {
@@ -140,12 +143,20 @@ function _createInstance() {
         }
     });
 
+    // R32.272: Cache mixamorigSpine1 bone for jet exhaust particle attachment
+    let jetBone = null;
+    model.traverse(child => {
+        if (child.isBone && child.name === 'mixamorigSpine1') {
+            jetBone = child;
+        }
+    });
+
     // Do NOT set model.scale — the GLB armature already has the correct
     // 0.01 scale (Mixamo cm→m). setScalar(1.0) would OVERWRITE it.
 
     _scene.add(model);
 
-    return { model, mixer, clips, activeClip: null, activeAction: null };
+    return { model, mixer, clips, activeClip: null, activeAction: null, jetBone };
 }
 
 function _playClip(inst, name, opts = {}) {
@@ -233,5 +244,28 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
+}
+
+// ── Jet exhaust bone position API (R32.272) ─────────────────
+/**
+ * Get world-space jet exhaust emission point for a player.
+ * Returns true if a rigged bone was available, false if not (remote player / 1P mode).
+ * When false, caller should use fallback position from playerView.
+ * @param {number} playerIdx - player slot index (0-15)
+ * @param {number} armorType - 0=light, 1=medium, 2=heavy
+ * @param {THREE.Vector3} outVec3 - output world position
+ * @returns {boolean}
+ */
+export function getJetBoneWorldPos(playerIdx, armorType, outVec3) {
+    const char = _chars[playerIdx];
+    if (!char || !char.model.visible || !char.jetBone) return false;
+    char.jetBone.getWorldPosition(outVec3);
+    // Offset behind the back surface using model's Y rotation
+    const dist = JET_BONE_OFFSETS[armorType] || 0.30;
+    const rotY = char.model.rotation.y;
+    // Model forward = (sin(rotY), 0, cos(rotY)); back = negative
+    outVec3.x -= Math.sin(rotY) * dist;
+    outVec3.z -= Math.cos(rotY) * dist;
+    return true;
 }
 

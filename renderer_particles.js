@@ -1,13 +1,17 @@
 /**
  * @ai-contract
  * MODULE: renderer_particles.js
- * PURPOSE: Unified particle systems — ski sparks, projectile trails, explosion FX, WASM-synced particles, night fairies
+ * PURPOSE: Unified particle systems — ski sparks, projectile trails, explosion FX, WASM-synced particles, night fairies, jet exhaust
  * IMPORTS: Three.js
  * EXPORTS: { init, update, dispose, emit, triggerExplosion, syncWASMParticles }
  * EXPOSES: window.__generatorPositions (via interior lights — NOT in this module)
  * LIFECYCLE: init(deps) → update(dt, t) per frame → emit(type, pos, params) on events → dispose() on teardown
  * OWNER: Aliveness (particles are visual feedback for movement, combat, atmosphere)
  * EXTRACTED FROM: renderer.js R32.233 (was lines ~3335-4860)
+ * JET_EXHAUST: R32.272 — two-layer bone-attached system (core glow + wake trail).
+ *   Requires deps.getJetBonePos(idx, armor, outVec3) for bone attachment.
+ *   Falls back to playerView position + yaw offset if bone unavailable.
+ *   Quality: LOW = core only, MEDIUM+ = core + wake.
  */
 
 import * as THREE from 'three';
@@ -193,6 +197,35 @@ let _skiPool = null;
 let _trailPool = null;
 let _sparkPool = null;
 
+// Jet exhaust (R32.272) — two-layer system: core glow + wake trail
+let _jetCore = null;     // { points, pos, alpha, size, color }
+let _jetWake = null;     // { points, pos, vel, age, maxAge, alpha, size, color, teamIdx, nextSlot }
+const _jetState = [];    // per-player: { wasJetting, jetStartTime }
+const _JET_MAX_CORE = 16;
+const _JET_MAX_WAKE = 192;
+
+// Jet exhaust team colors [R, G, B] — from Ive's design spec
+const _JET_TEAM_COLORS = [
+    { // 0: Blood Eagle
+        coreFringe: [1.0, 0.42, 0.21],  wakeBorn: [1.0, 0.55, 0.26],  wakeTerm: [0.55, 0.48, 0.42],
+    },
+    { // 1: Diamond Sword
+        coreFringe: [0.30, 0.65, 1.0],  wakeBorn: [0.42, 0.72, 1.0],  wakeTerm: [0.48, 0.55, 0.55],
+    },
+    { // 2: Phoenix
+        coreFringe: [1.0, 0.70, 0.0],   wakeBorn: [1.0, 0.80, 0.27],  wakeTerm: [0.55, 0.52, 0.41],
+    },
+    { // 3: Starwolf
+        coreFringe: [0.40, 1.0, 0.40],  wakeBorn: [0.53, 1.0, 0.53],  wakeTerm: [0.48, 0.55, 0.48],
+    },
+];
+const _JET_CORE_WHITE = [1.0, 0.98, 0.94]; // #FFFAF0 hot white
+
+// Unified pools
+let _skiPool = null;
+let _trailPool = null;
+let _sparkPool = null;
+
 // WASM-synced particles (legacy — reads from HEAPF32)
 let _wasmParticleSystem = null;
 let _wasmParticleGeom = null;
@@ -346,7 +379,10 @@ export function init(deps) {
         _initNightFairies(deps);
     }
 
-    console.log('[R32.233] Particle systems initialized: ski, trails, sparks, explosions, fairies');
+    // --- Jet exhaust (R32.272) ---
+    _initJetExhaust();
+
+    console.log('[R32.272] Particle systems initialized: ski, trails, sparks, explosions, fairies, jet exhaust');
 }
 
 function _initWASMParticles(deps) {
@@ -561,6 +597,371 @@ function _createHeightmapTexture(htData, htSize) {
 }
 
 
+    tex.wrapT = THREE.ClampToEdgeWrapping;
+    tex.needsUpdate = true;
+    return tex;
+}
+
+
+// ============================================================
+// Jet exhaust (R32.272) — Spine1 bone-attached, two-layer design
+// Core: persistent bright nozzle glow (sizeAttenuation: false, beacon)
+// Wake: short-lived exhaust trail (inverse-velocity, size expansion, color desaturation)
+// ============================================================
+
+const _jetEmitPos = new THREE.Vector3();
+
+function _initJetExhaust() {
+    // ── Core: 1 persistent point per jetting player ──
+    const corePos   = new Float32Array(_JET_MAX_CORE * 3);
+    const coreAlpha = new Float32Array(_JET_MAX_CORE);
+    const coreSize  = new Float32Array(_JET_MAX_CORE);
+    const coreColor = new Float32Array(_JET_MAX_CORE * 3);
+    for (let i = 0; i < _JET_MAX_CORE; i++) {
+        corePos[i * 3 + 1] = -9999;
+        coreAlpha[i] = 0;
+        coreSize[i] = 0;
+    }
+    const coreGeo = new THREE.BufferGeometry();
+    coreGeo.setAttribute('position', new THREE.Float32BufferAttribute(corePos, 3).setUsage(THREE.DynamicDrawUsage));
+    coreGeo.setAttribute('aAlpha', new THREE.Float32BufferAttribute(coreAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    coreGeo.setAttribute('aSize', new THREE.Float32BufferAttribute(coreSize, 1).setUsage(THREE.DynamicDrawUsage));
+    coreGeo.setAttribute('aColor', new THREE.Float32BufferAttribute(coreColor, 3).setUsage(THREE.DynamicDrawUsage));
+
+    const coreMat = new THREE.ShaderMaterial({
+        vertexShader: `
+            attribute float aAlpha;
+            attribute float aSize;
+            attribute vec3 aColor;
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                vAlpha = aAlpha;
+                vColor = aColor;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aSize;
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.0, 0.5, r);
+                vec3 hotWhite = vec3(1.0, 0.98, 0.94);
+                vec3 col = mix(vColor, hotWhite, soft * soft);
+                gl_FragColor = vec4(col, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    const corePoints = new THREE.Points(coreGeo, coreMat);
+    corePoints.frustumCulled = false;
+    corePoints.renderOrder = 102;
+    _scene.add(corePoints);
+
+    _jetCore = { points: corePoints, pos: corePos, alpha: coreAlpha, size: coreSize, color: coreColor };
+
+    // ── Wake: particle stream with velocity, expansion, desaturation ──
+    const wakePos   = new Float32Array(_JET_MAX_WAKE * 3);
+    const wakeAlpha = new Float32Array(_JET_MAX_WAKE);
+    const wakeSize  = new Float32Array(_JET_MAX_WAKE);
+    const wakeColor = new Float32Array(_JET_MAX_WAKE * 3);
+    // CPU-only arrays
+    const wakeVel     = new Float32Array(_JET_MAX_WAKE * 3);
+    const wakeAge     = new Float32Array(_JET_MAX_WAKE);
+    const wakeMaxAge  = new Float32Array(_JET_MAX_WAKE);
+    const wakeBornR   = new Float32Array(_JET_MAX_WAKE);
+    const wakeBornG   = new Float32Array(_JET_MAX_WAKE);
+    const wakeBornB   = new Float32Array(_JET_MAX_WAKE);
+    const wakeTermR   = new Float32Array(_JET_MAX_WAKE);
+    const wakeTermG   = new Float32Array(_JET_MAX_WAKE);
+    const wakeTermB   = new Float32Array(_JET_MAX_WAKE);
+
+    for (let i = 0; i < _JET_MAX_WAKE; i++) {
+        wakePos[i * 3 + 1] = -9999;
+        wakeAlpha[i] = 0;
+        wakeAge[i] = 0;
+    }
+
+    const wakeGeo = new THREE.BufferGeometry();
+    wakeGeo.setAttribute('position', new THREE.Float32BufferAttribute(wakePos, 3).setUsage(THREE.DynamicDrawUsage));
+    wakeGeo.setAttribute('aAlpha', new THREE.Float32BufferAttribute(wakeAlpha, 1).setUsage(THREE.DynamicDrawUsage));
+    wakeGeo.setAttribute('aSize', new THREE.Float32BufferAttribute(wakeSize, 1).setUsage(THREE.DynamicDrawUsage));
+    wakeGeo.setAttribute('aColor', new THREE.Float32BufferAttribute(wakeColor, 3).setUsage(THREE.DynamicDrawUsage));
+
+    const wakeMat = new THREE.ShaderMaterial({
+        vertexShader: `
+            attribute float aAlpha;
+            attribute float aSize;
+            attribute vec3 aColor;
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                vAlpha = aAlpha;
+                vColor = aColor;
+                vec4 mv = modelViewMatrix * vec4(position, 1.0);
+                gl_PointSize = aSize * 120.0 / max(1.0, -mv.z);
+                gl_Position = projectionMatrix * mv;
+            }
+        `,
+        fragmentShader: `
+            varying float vAlpha;
+            varying vec3 vColor;
+            void main() {
+                float r = length(gl_PointCoord - vec2(0.5));
+                if (r > 0.5) discard;
+                float soft = 1.0 - smoothstep(0.15, 0.5, r);
+                gl_FragColor = vec4(vColor, soft * vAlpha);
+            }
+        `,
+        transparent: true,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+
+    const wakePoints = new THREE.Points(wakeGeo, wakeMat);
+    wakePoints.frustumCulled = false;
+    wakePoints.renderOrder = 99;
+    _scene.add(wakePoints);
+
+    _jetWake = {
+        points: wakePoints, pos: wakePos, vel: wakeVel,
+        age: wakeAge, maxAge: wakeMaxAge,
+        alpha: wakeAlpha, size: wakeSize, color: wakeColor,
+        bornR: wakeBornR, bornG: wakeBornG, bornB: wakeBornB,
+        termR: wakeTermR, termG: wakeTermG, termB: wakeTermB,
+        nextSlot: 0,
+    };
+
+    // Init per-player jet state
+    for (let i = 0; i < 16; i++) {
+        _jetState[i] = { wasJetting: false, jetStartTime: 0 };
+    }
+
+    console.log('[R32.272] Jet exhaust initialized: core=' + _JET_MAX_CORE + ' wake=' + _JET_MAX_WAKE);
+}
+
+function _emitJetWakeParticle(wx, wy, wz, vx, vy, vz, lifetime, bornR, bornG, bornB, termR, termG, termB) {
+    if (!_jetWake) return;
+    const w = _jetWake;
+    // Scan for dead slot
+    for (let t = 0; t < 16; t++) {
+        if (w.age[w.nextSlot] <= 0) break;
+        w.nextSlot = (w.nextSlot + 1) % _JET_MAX_WAKE;
+    }
+    const i = w.nextSlot;
+    w.pos[i*3]   = wx;
+    w.pos[i*3+1] = wy;
+    w.pos[i*3+2] = wz;
+    w.vel[i*3]   = vx;
+    w.vel[i*3+1] = vy;
+    w.vel[i*3+2] = vz;
+    w.age[i]     = lifetime;
+    w.maxAge[i]  = lifetime;
+    w.alpha[i]   = 0.7;
+    w.size[i]    = 0.15;
+    w.color[i*3]   = bornR;
+    w.color[i*3+1] = bornG;
+    w.color[i*3+2] = bornB;
+    w.bornR[i] = bornR; w.bornG[i] = bornG; w.bornB[i] = bornB;
+    w.termR[i] = termR; w.termG[i] = termG; w.termB[i] = termB;
+    w.nextSlot = (w.nextSlot + 1) % _JET_MAX_WAKE;
+}
+
+function _tickJetWake(dt) {
+    if (!_jetWake) return;
+    const w = _jetWake;
+    const GRAVITY = 2.0;
+    const DRAG = 0.92;
+    for (let i = 0; i < _JET_MAX_WAKE; i++) {
+        if (w.age[i] <= 0) continue;
+        w.age[i] -= dt;
+        if (w.age[i] <= 0) {
+            w.age[i] = 0;
+            w.pos[i*3+1] = -9999;
+            w.alpha[i] = 0;
+            w.size[i] = 0;
+            continue;
+        }
+        // Normalized age: 0 at born → 1 at death
+        const t = 1.0 - (w.age[i] / w.maxAge[i]);
+        const sqrtT = Math.sqrt(t);
+
+        // Velocity integration + gravity + drag
+        w.vel[i*3+1] -= GRAVITY * dt;
+        w.vel[i*3]   *= DRAG;
+        w.vel[i*3+1] *= DRAG;
+        w.vel[i*3+2] *= DRAG;
+        w.pos[i*3]   += w.vel[i*3]   * dt;
+        w.pos[i*3+1] += w.vel[i*3+1] * dt;
+        w.pos[i*3+2] += w.vel[i*3+2] * dt;
+
+        // Opacity: fast initial fade (0.7→0.15 in first 30%), slow tail (0.15→0 in last 70%)
+        if (t < 0.3) {
+            w.alpha[i] = 0.7 + (0.15 - 0.7) * (t / 0.3);
+        } else {
+            w.alpha[i] = 0.15 * (1.0 - (t - 0.3) / 0.7);
+        }
+
+        // Size expansion: 0.15 → 0.6 with sqrt curve (fast initial expand)
+        w.size[i] = 0.15 + (0.6 - 0.15) * sqrtT;
+
+        // Color desaturation: team color → warm/cool grey
+        w.color[i*3]   = w.bornR[i] + (w.termR[i] - w.bornR[i]) * sqrtT;
+        w.color[i*3+1] = w.bornG[i] + (w.termG[i] - w.bornG[i]) * sqrtT;
+        w.color[i*3+2] = w.bornB[i] + (w.termB[i] - w.bornB[i]) * sqrtT;
+    }
+    w.points.geometry.attributes.position.needsUpdate = true;
+    w.points.geometry.attributes.aAlpha.needsUpdate = true;
+    w.points.geometry.attributes.aSize.needsUpdate = true;
+    w.points.geometry.attributes.aColor.needsUpdate = true;
+}
+
+function _updateJetExhaust(dt, t) {
+    if (!_jetCore || !_deps) return;
+    const pv = _deps.getPlayerView();
+    if (!pv) return;
+    const { view: playerView, stride: playerStride } = pv;
+    const maxPlayers = _deps.MAX_PLAYERS || 16;
+    const isLowQuality = _deps.getQualityTier && _deps.getQualityTier().particleCap <= 256;
+
+    for (let p = 0; p < maxPlayers; p++) {
+        const o = p * playerStride;
+        const visible = playerView[o + 18] > 0.5;
+        const alive   = playerView[o + 13] > 0.5;
+        const jetting = playerView[o + 14] > 0.5;
+        const teamIdx = (playerView[o + 11] | 0);
+        const armor   = (playerView[o + 12] | 0);
+        const vx = playerView[o + 6];
+        const vy = playerView[o + 7];
+        const vz = playerView[o + 8];
+        const yaw = playerView[o + 4];
+        const speed = Math.sqrt(vx*vx + vy*vy + vz*vz);
+
+        const st = _jetState[p] || (_jetState[p] = { wasJetting: false, jetStartTime: 0 });
+        const isJetting = visible && alive && jetting;
+
+        // Detect ignition (jet just started)
+        if (isJetting && !st.wasJetting) {
+            st.jetStartTime = t;
+        }
+        st.wasJetting = isJetting;
+
+        // ── Core update ──
+        if (isJetting) {
+            // Get emission position: try bone, fall back to playerView + offset
+            let gotBone = false;
+            if (_deps.getJetBonePos) {
+                gotBone = _deps.getJetBonePos(p, armor, _jetEmitPos);
+            }
+            if (!gotBone) {
+                // Fallback: player position + yaw-based back offset + spine height
+                const rotY = -yaw + Math.PI;
+                const dist = [0.25, 0.30, 0.38][armor] || 0.30;
+                _jetEmitPos.set(
+                    playerView[o] - Math.sin(rotY) * dist,
+                    playerView[o + 1] - 1.0, // approx spine1 height
+                    playerView[o + 2] - Math.cos(rotY) * dist
+                );
+            }
+
+            // Core position
+            _jetCore.pos[p*3]   = _jetEmitPos.x;
+            _jetCore.pos[p*3+1] = _jetEmitPos.y;
+            _jetCore.pos[p*3+2] = _jetEmitPos.z;
+            _jetCore.alpha[p] = 1.0;
+
+            // Core color: 80% hot white + 20% team fringe
+            const tc = _JET_TEAM_COLORS[teamIdx] || _JET_TEAM_COLORS[0];
+            _jetCore.color[p*3]   = _JET_CORE_WHITE[0] * 0.8 + tc.coreFringe[0] * 0.2;
+            _jetCore.color[p*3+1] = _JET_CORE_WHITE[1] * 0.8 + tc.coreFringe[1] * 0.2;
+            _jetCore.color[p*3+2] = _JET_CORE_WHITE[2] * 0.8 + tc.coreFringe[2] * 0.2;
+
+            // Core size: ignition snap → hover pulse → steady thrust
+            const jetAge = t - st.jetStartTime;
+            let coreSize = 12.0;
+            if (jetAge < 0.1) {
+                // Ignition: 1.4× for first 100ms, ease back
+                const ignT = jetAge / 0.1;
+                coreSize = 12.0 * (1.4 - 0.4 * ignT * ignT); // quadratic ease-out
+            } else if (speed < 3.0) {
+                // Hover: gentle 3.5Hz pulse ±8%
+                coreSize = 12.0 * (1.0 + 0.08 * Math.sin(t * 3.5 * 6.2832));
+            }
+            // else: full thrust = steady 12px
+            _jetCore.size[p] = coreSize;
+
+            // ── Wake emission (skip on LOW quality) ──
+            if (!isLowQuality && _jetWake) {
+                const emRate = (jetAge < 0.1) ? 100 : 35; // 3× during ignition burst
+                const emitCount = Math.floor(emRate * dt + Math.random()); // stochastic
+
+                for (let e = 0; e < emitCount; e++) {
+                    // Emit velocity: inverse of player velocity + downward bias
+                    let evx, evy, evz;
+                    if (speed > 0.5) {
+                        const invSpeed = 4.0 / speed;
+                        evx = -vx * invSpeed + (Math.random() - 0.5) * 0.5;
+                        evy = -vy * invSpeed - 1.5 + (Math.random() - 0.5) * 0.3;
+                        evz = -vz * invSpeed + (Math.random() - 0.5) * 0.5;
+                    } else {
+                        // Hovering: mostly downward
+                        evx = (Math.random() - 0.5) * 1.0;
+                        evy = -3.0 + (Math.random() - 0.5) * 0.5;
+                        evz = (Math.random() - 0.5) * 1.0;
+                    }
+                    const lifetime = 0.25 + Math.random() * 0.10; // 0.25-0.35s
+                    _emitJetWakeParticle(
+                        _jetEmitPos.x + (Math.random()-0.5) * 0.08,
+                        _jetEmitPos.y + (Math.random()-0.5) * 0.08,
+                        _jetEmitPos.z + (Math.random()-0.5) * 0.08,
+                        evx, evy, evz, lifetime,
+                        tc.wakeBorn[0], tc.wakeBorn[1], tc.wakeBorn[2],
+                        tc.wakeTerm[0], tc.wakeTerm[1], tc.wakeTerm[2]
+                    );
+                }
+            }
+        } else {
+            // Jets OFF: instant snap to zero — no fade
+            _jetCore.pos[p*3+1] = -9999;
+            _jetCore.alpha[p] = 0;
+            _jetCore.size[p] = 0;
+        }
+    }
+
+    // Update core GPU buffers
+    _jetCore.points.geometry.attributes.position.needsUpdate = true;
+    _jetCore.points.geometry.attributes.aAlpha.needsUpdate = true;
+    _jetCore.points.geometry.attributes.aSize.needsUpdate = true;
+    _jetCore.points.geometry.attributes.aColor.needsUpdate = true;
+
+    // Tick wake particles
+    _tickJetWake(dt);
+}
+
+function _disposeJetExhaust() {
+    if (_jetCore) {
+        _jetCore.points.geometry.dispose();
+        _jetCore.points.material.dispose();
+        if (_jetCore.points.parent) _jetCore.points.parent.remove(_jetCore.points);
+        _jetCore = null;
+    }
+    if (_jetWake) {
+        _jetWake.points.geometry.dispose();
+        _jetWake.points.material.dispose();
+        if (_jetWake.points.parent) _jetWake.points.parent.remove(_jetWake.points);
+        _jetWake = null;
+    }
+    _jetState.length = 0;
+}
+
+
 // ============================================================
 // Per-frame update
 // ============================================================
@@ -597,6 +998,9 @@ export function update(dt, t) {
         u.uCamPos.value.copy(_camera.position);
         u.uOpacity.value = 1.0;
     }
+
+    // R32.272: Jet exhaust — bone-attached, two-layer
+    _updateJetExhaust(dt, t);
 }
 
 /**
@@ -824,5 +1228,6 @@ export function dispose() {
     _wasmColors = null;
     _wasmSizes = null;
     _prevParticleAge = null;
-    console.log('[R32.233] All particle systems disposed');
+    _disposeJetExhaust();
+    console.log('[R32.272] All particle systems disposed');
 }
