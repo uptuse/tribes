@@ -16,3 +16,8 @@ tribes.js.bak
 tribes.wasm.bak
 tribes.js.bak
 tribes.wasm.bak
+
+# Large model source files (use LFS or keep local)
+assets/models/source/*.zip
+assets/models/source/iron_wolf_juggernaut/
+assets/models/source/wolf_sentinel_full/

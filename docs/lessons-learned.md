@@ -56,3 +56,76 @@ The grounding code always subtracted 1.8, correct for terrain but wrong for buil
 **Fix:** What was done
 **Rule:** What to always do going forward
 ```
+
+
+---
+
+## 6. Night Ambient Color Typo (R32.153 audit)
+**Issue:** Night terrain is lit with garbage color — wrong RGB values at night.
+**Root cause:** `0x3040608` (7 hex digits) should be `0x304060` (6 hex digits). JavaScript parses `0x3040608` as `0x03040608`, which shifts all color channels by 4 bits.
+**Fix:** Change to `0x304060` at renderer.js L596.
+**Rule:** Always verify hex color literals are exactly 6 digits (3 bytes). JavaScript won't warn you — it silently interprets the wrong value.
+
+---
+
+## 7. HDRI/DayNight Exposure Race (R32.153 audit)
+**Issue:** Exposure/environment intensity flickers non-deterministically — sometimes the scene is too bright at night.
+**Root cause:** The HDRI load callback sets `renderer.toneMappingExposure = 1.15` and `scene.environmentIntensity = 1.45`. DayNight.update() sets different values based on time of day. Whichever runs last wins. On slow connections, HDRI loads after DayNight has been running, overwriting the exposure.
+**Fix:** Remove exposure/environmentIntensity writes from the HDRI callback. Let DayNight own those values exclusively.
+**Rule:** Never have two systems write the same uniform/property. Pick one owner.
+
+---
+
+## 8. Remote Players Always Hidden (R32.153 audit)
+**Issue:** ALL non-local players are invisible. Multiplayer character rendering appears broken.
+**Root cause:** renderer.js L3777: `if (i !== localIdx) { mesh.visible = false; continue; }` — explicitly hides every remote player. This was a single-player test hack that shipped.
+**Fix:** Remove the early-continue for remote players. Implement proper visibility (LOD, frustum culling) instead.
+**Rule:** Never ship test hacks. If you need a debug flag, use a URL parameter (`?single=true`), not a hardcoded early-return.
+
+---
+
+## 9. tribes.js Is Generated Code (R32.153 audit)
+**Issue:** Audit plan incorrectly described tribes.js as containing the game state machine, HUD, settings, and input handling.
+**Root cause:** tribes.js is 100% Emscripten-generated WASM bootstrap glue. The actual game bridge (~4,500 lines) lives in index.html.
+**Fix:** Updated audit plan. Documented in system-map.md.
+**Rule:** Always read the first 50 lines of a file before describing what it does. File names can mislead.
+
+---
+
+## 10. Rapier Dual-Physics Desync (R32.153 audit)
+**Issue:** Players jitter at building doorways, sink through floors intermittently.
+**Root cause:** WASM tick() moves the player, then Rapier resolves collisions and writes back a corrected position — but WASM's velocity is never updated to match. Next frame, WASM integrates from the corrected position with the old (wrong) velocity, immediately re-penetrating.
+**Fix:** Refactor Rapier to collision query oracle (shape casts only). WASM owns all movement and velocity. Rapier reports contacts, not positions.
+**Rule:** Never have two physics systems disagree about where something is. One system writes position, others query.
+
+---
+
+## 11. Telemetry Reads Wrong Stride Offsets (R32.153 audit)
+**Issue:** F3 telemetry HUD displays wrong speed values.
+**Root cause:** renderer_polish.js reads `playerView[o+4]` as velocity X, but offset 4 is actually Yaw. Velocity X is at offset 6. Wrong since R32.7.
+**Fix:** Change offsets 4/5/6 to 6/7/8 in `_tickTelemetry()`. Better: import named constants from a shared module.
+**Rule:** Never use magic numbers for struct offsets. Create a shared constants file used by all consumers.
+
+---
+
+## 12. Flag Z Dropped in Wire Decode (R32.153 audit)
+**Issue:** Flag position Z is always 0 in multiplayer — flags render at ground level regardless of actual 3D position.
+**Root cause:** client/wire.js flag decode hardcodes Z to 0. The binary format only transmits 2D flag position (X, Z in world), dropping the Y component.
+**Fix:** Add flag Y to wire format, or reconstruct Y from terrain height at (X, Z) on the client.
+**Rule:** Every spatial entity needs full 3D position. If bandwidth is tight, reconstruct from terrain, but never silently drop a coordinate.
+
+---
+
+## 13. network.js start() Not Idempotent (R32.153 audit)
+**Issue:** Calling `start()` twice creates a ghost WebSocket alongside the active one.
+**Root cause:** No guard against double-call. Each call opens a new WebSocket without closing the previous.
+**Fix:** Add `if (_ws && _ws.readyState !== WebSocket.CLOSED) return;` guard at top of `start()`.
+**Rule:** Network connection functions must be idempotent. Guard against double-init.
+
+---
+
+## 14. Ping = Clock Offset, Not RTT (R32.153 audit)
+**Issue:** Displayed ping value is meaningless — shows client/server clock drift, not actual round-trip time.
+**Root cause:** `ping = msg.serverTs - msg.clientTs`. Server and client clocks aren't synchronized, so this computes the time zone difference, not latency.
+**Fix:** Use proper RTT measurement: `rtt = now - sentTs` where sentTs is recorded when the ping was sent.
+**Rule:** RTT requires round-trip measurement from the same clock. Never subtract timestamps from different machines.

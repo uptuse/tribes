@@ -1,0 +1,246 @@
+{
+  "total": 23,
+  "ok": 23,
+  "failed": 0,
+  "models": [
+    {
+      "name": "esmall2",
+      "source": "esmall2.0.dis",
+      "dig": "Esmall2-00.dig",
+      "verts": 1274,
+      "tris": 2281,
+      "materials": 23,
+      "file": "assets/glb/esmall2.glb",
+      "size_kb": 77.6,
+      "status": "OK"
+    },
+    {
+      "name": "betower2",
+      "source": "BETower2.0.dis",
+      "dig": "BETower2-00.dig",
+      "verts": 458,
+      "tris": 924,
+      "materials": 27,
+      "file": "assets/glb/betower2.glb",
+      "size_kb": 37.0,
+      "status": "OK"
+    },
+    {
+      "name": "iobservation",
+      "source": "iobservation.0.dis",
+      "dig": "iobservation-00.dig",
+      "verts": 48,
+      "tris": 108,
+      "materials": 5,
+      "file": "assets/glb/iobservation.glb",
+      "size_kb": 5.8,
+      "status": "OK"
+    },
+    {
+      "name": "cube",
+      "source": "cube.0.dis",
+      "dig": "cube-00.dig",
+      "verts": 18,
+      "tris": 32,
+      "materials": 3,
+      "file": "assets/glb/cube.glb",
+      "size_kb": 3.0,
+      "status": "OK"
+    },
+    {
+      "name": "bunker4",
+      "source": "bunker4.0.dis",
+      "dig": "bunker4-00.dig",
+      "verts": 124,
+      "tris": 240,
+      "materials": 10,
+      "file": "assets/glb/bunker4.glb",
+      "size_kb": 11.5,
+      "status": "OK"
+    },
+    {
+      "name": "swsfloatingpad2",
+      "source": "swsfloatingpad2.0.dis",
+      "dig": "swsfloatingpad2-00.dig",
+      "verts": 36,
+      "tris": 68,
+      "materials": 7,
+      "file": "assets/glb/swsfloatingpad2.glb",
+      "size_kb": 5.8,
+      "status": "OK"
+    },
+    {
+      "name": "expbridge",
+      "source": "expbridge.0.dis",
+      "dig": "EXPBRIDGE-00.dig",
+      "verts": 388,
+      "tris": 796,
+      "materials": 7,
+      "file": "assets/glb/expbridge.glb",
+      "size_kb": 25.3,
+      "status": "OK"
+    },
+    {
+      "name": "mis_ob1",
+      "source": "mis_ob1.0.dis",
+      "dig": "mis_ob1-00.dig",
+      "verts": 40,
+      "tris": 88,
+      "materials": 3,
+      "file": "assets/glb/mis_ob1.glb",
+      "size_kb": 4.4,
+      "status": "OK"
+    },
+    {
+      "name": "mis_ob2",
+      "source": "mis_ob2.0.dis",
+      "dig": "mis_ob2-00.dig",
+      "verts": 70,
+      "tris": 136,
+      "materials": 3,
+      "file": "assets/glb/mis_ob2.glb",
+      "size_kb": 5.9,
+      "status": "OK"
+    },
+    {
+      "name": "mis_ob3",
+      "source": "mis_ob3.0.dis",
+      "dig": "mis_ob3-00.dig",
+      "verts": 38,
+      "tris": 72,
+      "materials": 3,
+      "file": "assets/glb/mis_ob3.glb",
+      "size_kb": 4.1,
+      "status": "OK"
+    },
+    {
+      "name": "lrock3",
+      "source": "lrock3.0.dis",
+      "dig": "lrock3-00.dig",
+      "verts": 14,
+      "tris": 24,
+      "materials": 3,
+      "file": "assets/glb/lrock3.glb",
+      "size_kb": 2.8,
+      "status": "OK"
+    },
+    {
+      "name": "lrock6",
+      "source": "lrock6.0.dis",
+      "dig": "lrock6-00.dig",
+      "verts": 51,
+      "tris": 94,
+      "materials": 3,
+      "file": "assets/glb/lrock6.glb",
+      "size_kb": 4.9,
+      "status": "OK"
+    },
+    {
+      "name": "lrock1",
+      "source": "lrock1.0.dis",
+      "dig": "lrock1-00.dig",
+      "verts": 67,
+      "tris": 126,
+      "materials": 3,
+      "file": "assets/glb/lrock1.glb",
+      "size_kb": 5.7,
+      "status": "OK"
+    },
+    {
+      "name": "lrock4",
+      "source": "lrock4.0.dis",
+      "dig": "lrock4-00.dig",
+      "verts": 36,
+      "tris": 66,
+      "materials": 3,
+      "file": "assets/glb/lrock4.glb",
+      "size_kb": 4.0,
+      "status": "OK"
+    },
+    {
+      "name": "lrock5",
+      "source": "lrock5.0.dis",
+      "dig": "lrock5-00.dig",
+      "verts": 58,
+      "tris": 106,
+      "materials": 4,
+      "file": "assets/glb/lrock5.glb",
+      "size_kb": 5.2,
+      "status": "OK"
+    },
+    {
+      "name": "dssfloatingpad",
+      "source": "DSSfloatingPad.0.dis",
+      "dig": "DSSfloatingPad-00.dig",
+      "verts": 88,
+      "tris": 172,
+      "materials": 8,
+      "file": "assets/glb/dssfloatingpad.glb",
+      "size_kb": 8.2,
+      "status": "OK"
+    },
+    {
+      "name": "chaingun",
+      "source": "chaingun.DTS",
+      "verts": 308,
+      "tris": 386,
+      "file": "assets/glb/chaingun.glb",
+      "size_kb": 15.5,
+      "status": "OK"
+    },
+    {
+      "name": "discb",
+      "source": "discb.DTS",
+      "verts": 48,
+      "tris": 52,
+      "file": "assets/glb/discb.glb",
+      "size_kb": 3.4,
+      "status": "OK"
+    },
+    {
+      "name": "grenade",
+      "source": "grenade.DTS",
+      "verts": 20,
+      "tris": 32,
+      "file": "assets/glb/grenade.glb",
+      "size_kb": 2.3,
+      "status": "OK"
+    },
+    {
+      "name": "harmor",
+      "source": "harmor.DTS",
+      "verts": 522,
+      "tris": 576,
+      "file": "assets/glb/harmor.glb",
+      "size_kb": 24.4,
+      "status": "OK"
+    },
+    {
+      "name": "larmor",
+      "source": "larmor.dts",
+      "verts": 875,
+      "tris": 970,
+      "file": "assets/glb/larmor.glb",
+      "size_kb": 40.0,
+      "status": "OK"
+    },
+    {
+      "name": "marmor",
+      "source": "marmor.dts",
+      "verts": 1326,
+      "tris": 1159,
+      "file": "assets/glb/marmor.glb",
+      "size_kb": 56.4,
+      "status": "OK"
+    },
+    {
+      "name": "tower",
+      "source": "tower.DTS",
+      "verts": 108,
+      "tris": 168,
+      "file": "assets/glb/tower.glb",
+      "size_kb": 6.7,
+      "status": "OK"
+    }
+  ]
+}

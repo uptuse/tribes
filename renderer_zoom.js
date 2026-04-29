@@ -188,13 +188,8 @@
         _buildOverlay();
         _bindInput();
 
-        // Self-driven tick — do not depend on any other module
-        function _raf() {
-            try { tick(); } catch (e) { console.warn('[ZoomFX] tick error:', e); }
-            requestAnimationFrame(_raf);
-        }
-        requestAnimationFrame(_raf);
-
+        // R32.167: No self-driven RAF loop. renderer.js calls ZoomFX.tick()
+        // from its main render loop, keeping all animation on one RAF.
         if (window.DEBUG_LOGS) console.log('[ZoomFX] ready — RMB hold for 2× weapon zoom, Z to cycle 1×/2×/4×');
     }
 

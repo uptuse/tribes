@@ -4254,6 +4254,7 @@ function syncCamera() {
     // active or transitioning, use a tight threshold so smoothing reads.
     let zoomActive = false;
     if (window.ZoomFX) {
+        window.ZoomFX.tick();   // R32.167: drive ZoomFX from main loop (no self-RAF)
         fov = fov * window.ZoomFX.getFovMultiplier();
         zoomActive = window.ZoomFX.isActive();
     }
