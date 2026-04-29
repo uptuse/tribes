@@ -3,7 +3,7 @@
     "gridUnit": 4.0,
     "floorHeight": 4.25,
     "basePath": "assets/buildings/kenney-modular/",
-    "notes": "All dimensions in meters. gridSize is in grid units (1 unit = 4m). colliders are relative to piece origin."
+    "notes": "All dimensions in meters. gridSize is in grid units (1 unit = 4m XZ, 4.25m Y). Collider pos is relative to piece origin (assumed center). Wall thickness 0.2m. Openings indicate fully-open faces (no wall collider on that side). Rooms have 4m-wide doorway gaps centered on each opening face."
   },
   "pieces": {
     "corridor": {
@@ -11,10 +11,10 @@
       "gridSize": [1, 1, 1],
       "bounds": [4.0, 4.25, 4.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [4.0, 0.2, 4.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" },
-        { "type": "box", "pos": [-2.0, 2.125, 0], "size": [0.2, 4.25, 4.0], "role": "wall" },
-        { "type": "box", "pos": [2.0, 2.125, 0], "size": [0.2, 4.25, 4.0], "role": "wall" }
+        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
+        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
+        { "type": "box", "pos": [2.0, 2.125, 0],   "size": [0.2, 4.25, 4.0], "role": "wall" }
       ],
       "openings": ["+z", "-z"]
     },
@@ -23,8 +23,10 @@
       "gridSize": [1, 1, 1],
       "bounds": [4.0, 4.25, 4.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [4.0, 0.2, 4.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
+        { "type": "box", "pos": [0, 2.125, 2.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
       ],
       "openings": ["-z", "+x"]
     },
@@ -33,8 +35,11 @@
       "gridSize": [1, 1, 1],
       "bounds": [4.0, 4.25, 4.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [4.0, 0.2, 4.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
+        { "type": "box", "pos": [0, 2.125, 2.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [2.0, 2.125, 0],   "size": [0.2, 4.25, 4.0], "role": "wall" },
+        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
       ],
       "openings": ["-z"]
     },
@@ -43,7 +48,7 @@
       "gridSize": [1, 1, 1],
       "bounds": [4.0, 4.05, 4.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [4.0, 0.2, 4.0], "role": "floor" },
+        { "type": "box", "pos": [0, 0, 0],    "size": [4.0, 0.2, 4.0], "role": "floor" },
         { "type": "box", "pos": [0, 4.05, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" }
       ],
       "openings": ["+x", "-x", "+z", "-z"]
@@ -53,8 +58,9 @@
       "gridSize": [1, 1, 1],
       "bounds": [4.0, 4.25, 4.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [4.0, 0.2, 4.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [4.0, 0.2, 4.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],        "size": [4.0, 0.2, 4.0],  "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0],      "size": [4.0, 0.2, 4.0],  "role": "ceiling" },
+        { "type": "box", "pos": [-2.0, 2.125, 0],  "size": [0.2, 4.25, 4.0], "role": "wall" }
       ],
       "openings": ["+x", "-z", "+z"]
     },
@@ -63,8 +69,10 @@
       "gridSize": [2, 1, 2],
       "bounds": [8.0, 4.25, 8.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [8.0, 0.2, 8.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [8.0, 0.2, 8.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],        "size": [8.0, 0.2, 8.0],  "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0],      "size": [8.0, 0.2, 8.0],  "role": "ceiling" },
+        { "type": "box", "pos": [-4.0, 2.125, 0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
+        { "type": "box", "pos": [4.0, 2.125, 0],   "size": [0.2, 4.25, 8.0], "role": "wall" }
       ],
       "openings": ["+z", "-z"]
     },
@@ -73,8 +81,20 @@
       "gridSize": [3, 1, 3],
       "bounds": [12.0, 4.25, 12.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [12.0, 0.2, 12.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [12.0, 0.2, 12.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],   "size": [12.0, 0.2, 12.0], "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0], "size": [12.0, 0.2, 12.0], "role": "ceiling" },
+
+        { "type": "box", "pos": [6.0, 2.125, -4.0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
+        { "type": "box", "pos": [6.0, 2.125, 4.0],   "size": [0.2, 4.25, 4.0], "role": "wall" },
+
+        { "type": "box", "pos": [-6.0, 2.125, -4.0], "size": [0.2, 4.25, 4.0], "role": "wall" },
+        { "type": "box", "pos": [-6.0, 2.125, 4.0],  "size": [0.2, 4.25, 4.0], "role": "wall" },
+
+        { "type": "box", "pos": [-4.0, 2.125, 6.0],  "size": [4.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [4.0, 2.125, 6.0],   "size": [4.0, 4.25, 0.2], "role": "wall" },
+
+        { "type": "box", "pos": [-4.0, 2.125, -6.0], "size": [4.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [4.0, 2.125, -6.0],  "size": [4.0, 4.25, 0.2], "role": "wall" }
       ],
       "openings": ["+x", "-x", "+z", "-z"]
     },
@@ -83,8 +103,20 @@
       "gridSize": [5, 1, 5],
       "bounds": [20.0, 4.25, 20.0],
       "colliders": [
-        { "type": "box", "pos": [0, 0, 0], "size": [20.0, 0.2, 20.0], "role": "floor" },
-        { "type": "box", "pos": [0, 4.25, 0], "size": [20.0, 0.2, 20.0], "role": "ceiling" }
+        { "type": "box", "pos": [0, 0, 0],   "size": [20.0, 0.2, 20.0], "role": "floor" },
+        { "type": "box", "pos": [0, 4.25, 0], "size": [20.0, 0.2, 20.0], "role": "ceiling" },
+
+        { "type": "box", "pos": [10.0, 2.125, -6.0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
+        { "type": "box", "pos": [10.0, 2.125, 6.0],   "size": [0.2, 4.25, 8.0], "role": "wall" },
+
+        { "type": "box", "pos": [-10.0, 2.125, -6.0], "size": [0.2, 4.25, 8.0], "role": "wall" },
+        { "type": "box", "pos": [-10.0, 2.125, 6.0],  "size": [0.2, 4.25, 8.0], "role": "wall" },
+
+        { "type": "box", "pos": [-6.0, 2.125, 10.0],  "size": [8.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [6.0, 2.125, 10.0],   "size": [8.0, 4.25, 0.2], "role": "wall" },
+
+        { "type": "box", "pos": [-6.0, 2.125, -10.0], "size": [8.0, 4.25, 0.2], "role": "wall" },
+        { "type": "box", "pos": [6.0, 2.125, -10.0],  "size": [8.0, 4.25, 0.2], "role": "wall" }
       ],
       "openings": ["+x", "-x", "+z", "-z"]
     },
@@ -93,7 +125,16 @@
       "gridSize": [1, 2, 2],
       "bounds": [4.0, 8.75, 8.20],
       "colliders": [
-        { "type": "box", "pos": [0, 4.375, 0], "size": [4.0, 0.3, 8.2], "role": "ramp" }
+        { "type": "box", "pos": [0, 0.15, -3.5875],    "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 1.244, -2.5625],    "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 2.338, -1.5375],    "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 3.431, -0.5125],    "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 4.525, 0.5125],     "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 5.619, 1.5375],     "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 6.713, 2.5625],     "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [0, 7.806, 3.5875],     "size": [4.0, 0.3, 1.025], "role": "step" },
+        { "type": "box", "pos": [2.0, 4.375, 0],        "size": [0.2, 8.75, 8.2],  "role": "wall" },
+        { "type": "box", "pos": [-2.0, 4.375, 0],       "size": [0.2, 8.75, 8.2],  "role": "wall" }
       ],
       "openings": ["-z", "+z"]
     },
