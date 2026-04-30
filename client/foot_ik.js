@@ -37,6 +37,10 @@ export const FootIK = {
     if (!inst?.model || !onGround || skiing) return;
     const terrain = window.__terrainMesh;
     if (!terrain) return;
+    // Throttle to 10Hz — raycasts against terrain are expensive at 60Hz
+    if (!inst._ikFrame) inst._ikFrame = 0;
+    inst._ikFrame = (inst._ikFrame + 1) % 6;
+    if (inst._ikFrame !== 0) return;
 
     let bones = _cache.get(inst);
     if (!bones) {

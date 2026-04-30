@@ -132,12 +132,16 @@ export const Locomotion = {
   /** L5: procedural pelvis bob — call after mixer.update, before FootIK */
   pelvisBob(inst, speed, clipPhase) {
     if (!inst?.model || clipPhase < 0 || speed < 0.5) return;
-    let pelvis = null;
-    inst.model.traverse(obj => {
-      if (pelvis) return;
-      const n = obj.name.toLowerCase();
-      if (n.includes('hips') || n.includes('pelvis') || n.includes('root')) pelvis = obj;
-    });
+    // Cache pelvis bone — traverse is expensive, don't do it every frame
+    if (!inst._pelvisBone) {
+      inst.model.traverse(obj => {
+        if (inst._pelvisBone) return;
+        const n = obj.name.toLowerCase();
+        if (n.includes('hips') || n.includes('pelvis')) inst._pelvisBone = obj;
+      });
+      if (!inst._pelvisBone) { inst._pelvisBone = null; return; }
+    }
+    const pelvis = inst._pelvisBone;
     if (!pelvis) return;
     const amp = Math.min(speed / 11, 1) * 0.03;   // 0→3cm
     const hip = Math.min(speed / 11, 1) * 0.018;  // 0→1.8cm lateral

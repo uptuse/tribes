@@ -257,7 +257,9 @@ const QUALITY_TIERS = {
     high:   { shadowMap: 2048, postProcess: 'bloom', particleCap: 1024, pixelRatio: 1.0 },
     ultra:  { shadowMap: 2048, postProcess: 'full', particleCap: 1024, pixelRatio: Math.min(window.devicePixelRatio, 2) }
 };
-let currentQuality = 'high'; // default; updated from window.ST below
+// Allow ?quality=low/medium/high/ultra in URL for quick override
+const _qParam = new URLSearchParams(window.location.search).get('quality');
+let currentQuality = (_qParam && QUALITY_TIERS[_qParam]) ? _qParam : 'high';
 
 function readQualityFromSettings() {
     if (window.ST && window.ST.graphicsQuality && QUALITY_TIERS[window.ST.graphicsQuality]) {
@@ -5655,6 +5657,17 @@ function loop() {
 
     _frameCount++;
     const now = performance.now();
+    // Auto-quality: if sustained FPS < 25 for 5s, step down one tier
+    if (now - _lastDiagTime > 5000) {
+        const fps = _frameCount / ((now - _lastDiagTime) / 1000);
+        if (fps < 25 && currentQuality !== 'low') {
+            const steps = ['ultra','high','medium','low'];
+            const next  = steps[Math.min(steps.indexOf(currentQuality) + 1, 3)];
+            console.log(`[Perf] FPS ${fps.toFixed(0)} < 25 — dropping quality ${currentQuality} → ${next}`);
+            applyQuality(next);
+            if (window.ST) { window.ST.graphicsQuality = next; try { localStorage.setItem('tribes_settings_v1', JSON.stringify(window.ST)); } catch(e){} }
+        }
+    }
     if (now - _lastDiagTime > 5000) {
         if (window.DEBUG_LOGS) {
             const fps = Math.round(_frameCount / ((now - _lastDiagTime) / 1000));

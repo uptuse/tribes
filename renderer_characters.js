@@ -259,11 +259,12 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         Locomotion.skiUpdate(char, skiing, speed, turnInput, dt);
         Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
-        // L5: pelvis bob (before IK so IK can correct above it)
-        const phase = window.__locoPhase ?? -1;
-        Locomotion.pelvisBob(char, speed, phase);
-        // L4: foot IK — plant feet on terrain after animation + pelvis bob
-        FootIK.update(char, !jetting && speed < 40, skiing);
+        // L5+L4: only run on local player — too expensive for all characters
+        if (i === localIdx) {
+            const phase = window.__locoPhase ?? -1;
+            Locomotion.pelvisBob(char, speed, phase);
+            FootIK.update(char, !jetting && speed < 40, skiing);
+        }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
