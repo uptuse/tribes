@@ -1552,7 +1552,9 @@ extern "C" void spawnDummy(){
     p.pos      = {dx, getH(dx, dz) + 1.0f, dz};
     snprintf(p.name, sizeof(p.name), "Dummy");
     g_dummySlot = slot;
-    printf("[Dummy] Spawned at (%.1f, %.1f, %.1f) team=%d HP=%.0f\n",
+    // Skip warmup so all weapons deal damage immediately in test mode
+    g_matchState = 1; g_warmupTimer = 0;
+    printf("[Dummy] Spawned at (%.1f, %.1f, %.1f) team=%d HP=%.0f — match active\n",
            p.pos.x, p.pos.y, p.pos.z, p.team, p.health);
 }
 
