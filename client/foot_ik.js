@@ -10,9 +10,7 @@
 
 import * as THREE from 'three';
 
-const _ray    = new THREE.Raycaster();
 const _origin = new THREE.Vector3();
-const _down   = new THREE.Vector3(0, -1, 0);
 
 // Typical Mixamo foot bone names (case-insensitive match)
 const LEFT_FOOT_NAMES  = ['leftfoot', 'left_foot', 'lfoot', 'foot_l', 'mixamorigLeftFoot'];
@@ -37,10 +35,7 @@ export const FootIK = {
     if (!inst?.model || !onGround || skiing) return;
     const terrain = window.__terrainMesh;
     if (!terrain) return;
-    // Throttle to 10Hz — raycasts against terrain are expensive at 60Hz
-    if (!inst._ikFrame) inst._ikFrame = 0;
-    inst._ikFrame = (inst._ikFrame + 1) % 6;
-    if (inst._ikFrame !== 0) return;
+    // Heightmap lookup is O(1) — no throttle needed
 
     let bones = _cache.get(inst);
     if (!bones) {
@@ -69,21 +64,30 @@ function _findBones(model) {
   return (map.lFoot && map.rFoot) ? map : null;
 }
 
+function _sampleTerrainHeight(wx, wz) {
+  // Direct heightmap lookup — O(1), no raycast against 131K triangles
+  if (!window.Module?._getHeightmapPtr) return null;
+  try {
+    const TSCALE = Module._getHeightmapWorldScale?.() ?? 8;
+    const TSIZE  = Module._getHeightmapSize?.() ?? 257;
+    const hPtr   = Module._getHeightmapPtr();
+    const hmap   = new Float32Array(Module.HEAPF32.buffer, hPtr, TSIZE * TSIZE);
+    const gx     = Math.max(0, Math.min(TSIZE-1, Math.round(wx / TSCALE + TSIZE * 0.5)));
+    const gz     = Math.max(0, Math.min(TSIZE-1, Math.round(wz / TSCALE + TSIZE * 0.5)));
+    return hmap[gz * TSIZE + gx];
+  } catch(e) { return null; }
+}
+
 function _applyFootIK(footBone, lowerLeg, terrain) {
   if (!footBone) return;
 
-  // World position of foot after animation
   footBone.updateWorldMatrix(true, false);
   _origin.setFromMatrixPosition(footBone.matrixWorld);
-  _origin.y += 0.30; // start cast above foot
 
-  _ray.set(_origin, _down);
-  _ray.far = 0.60;
+  const terrainY = _sampleTerrainHeight(_origin.x, _origin.z);
+  if (terrainY === null) return;
 
-  const hits = _ray.intersectObject(terrain, false);
-  if (!hits.length) return;
-
-  const desiredY = hits[0].point.y + FOOT_OFFSET;
+  const desiredY = terrainY + FOOT_OFFSET;
   const currentY = _origin.y - 0.30;
   const delta    = desiredY - currentY;
 
