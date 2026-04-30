@@ -1878,7 +1878,13 @@ static void populateRenderState(){
         r.pos[0]=p.pos.x; r.pos[1]=p.pos.y; r.pos[2]=p.pos.z;
         r.vel[0]=p.vel.x; r.vel[1]=p.vel.y; r.vel[2]=p.vel.z;
         // Type derived from color (rough heuristic, R18 will use proper type)
-        r.type=p.active?(p.r>0.7f&&p.g<0.3f?3.0f:(p.r>0.7f&&p.g>0.5f?0.0f:4.0f)):0.0f;
+        // type 3=explosion, 0=jet, 4=spark/other
+        // Blue particles (disc blast) also count as explosion
+        r.type=p.active?(
+            (p.r>0.7f&&p.g<0.3f)?3.0f:          // orange/red → explosion
+            (p.b>0.7f&&p.r<0.3f)?3.0f:           // blue → explosion (disc)
+            (p.r>0.7f&&p.g>0.5f)?0.0f:4.0f       // yellow→jet, else spark
+        ):0.0f;
         r.age=p.active?p.life:0.0f;
     }
 
@@ -2430,8 +2436,14 @@ extern "C" void mainLoop(){
         bool hit=hitPlayer||expired||hitBuilding||hitTerrain;
         if(hit){
             if(w.explosionRadius>0){
-                spawnBurst(projs[i].pos,30,1.5f,25,1,0.6f,0.1f,0.5f);
-                spawnBurst(projs[i].pos,15,1,10,1,0.9f,0.5f,0.3f);
+                if(projs[i].weapon==WPN_DISC){
+                    // Blue-white disc explosion — classified as type 3 by JS heuristic
+                    spawnBurst(projs[i].pos,35,2.0f,30,0.1f,0.5f,1.0f,0.6f);
+                    spawnBurst(projs[i].pos,20,1.2f,15,0.6f,0.8f,1.0f,0.5f);
+                }else{
+                    spawnBurst(projs[i].pos,30,1.5f,25,1,0.6f,0.1f,0.5f);
+                    spawnBurst(projs[i].pos,15,1,10,1,0.9f,0.5f,0.3f);
+                }
                 // Radius damage
                 for(int j=0;j<MAX_PLAYERS;j++){
                     if(!players[j].active||!players[j].alive)continue;

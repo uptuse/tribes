@@ -2975,10 +2975,11 @@ function initProjectiles() {
     }
 
     // Disc meshes — flat spinning cylinders for WPN_DISC (type 2)
-    const discGeom = new THREE.CylinderGeometry(0.40, 0.40, 0.06, 20);
+    // Torus: unmistakably a ring at any angle, unlike a cylinder which reads as a circle
+    const discGeom = new THREE.TorusGeometry(0.30, 0.07, 10, 28);
     const discMat  = new THREE.MeshStandardMaterial({
-        color: 0x88CCFF, emissive: 0x1144FF, emissiveIntensity: 4.0,
-        roughness: 0.1, metalness: 0.95,
+        color: 0x88CCFF, emissive: 0x1155FF, emissiveIntensity: 3.5,
+        roughness: 0.1, metalness: 0.9,
     });
     for (let i = 0; i < MAX_PROJECTILES; i++) {
         const mesh = new THREE.Mesh(discGeom, discMat);
@@ -3866,7 +3867,7 @@ function syncProjectiles() {
             disc.visible   = true;
             disc.position.set(px, py, pz);
             // Spin around Y; tilt ~25° on X so it reads as a frisbee in flight
-            disc.rotation.set(0.42, now * 14.0, 0, 'YXZ');
+            disc.rotation.set(Math.PI * 0.5, 0, now * 14.0, 'ZYX'); // spin on Z, face toward camera
         } else {
             // All other weapons: standard sphere
             if (disc) disc.visible = false;
