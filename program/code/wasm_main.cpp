@@ -2523,6 +2523,12 @@ extern "C" void mainLoop(){
 
     // Update bots
     for(int i=0;i<MAX_PLAYERS;i++)if(players[i].active&&players[i].isBot)updateBot(i,dt);
+    // Dummy respawn: auto-respawn 3s after death so it's always available as a target
+    static float dummyDeadTimer=0;
+    if(g_dummySlot>=0 && players[g_dummySlot].active && !players[g_dummySlot].alive){
+        dummyDeadTimer+=dt;
+        if(dummyDeadTimer>=3.0f){ dummyDeadTimer=0; spawnDummy(); }
+    } else { dummyDeadTimer=0; }
     updateTurrets(dt);
     updateGenerators(dt);
 
