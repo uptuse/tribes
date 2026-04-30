@@ -2975,10 +2975,10 @@ function initProjectiles() {
     }
 
     // Disc meshes — flat spinning cylinders for WPN_DISC (type 2)
-    const discGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.055, 20);
+    const discGeom = new THREE.CylinderGeometry(0.40, 0.40, 0.06, 20);
     const discMat  = new THREE.MeshStandardMaterial({
-        color: 0xAADDFF, emissive: 0x2255FF, emissiveIntensity: 2.5,
-        roughness: 0.15, metalness: 0.9,
+        color: 0x88CCFF, emissive: 0x1144FF, emissiveIntensity: 4.0,
+        roughness: 0.1, metalness: 0.95,
     });
     for (let i = 0; i < MAX_PROJECTILES; i++) {
         const mesh = new THREE.Mesh(discGeom, discMat);
