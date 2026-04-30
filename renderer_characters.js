@@ -46,10 +46,39 @@ let _demoSpawned = false;
 
 // ── Public API ──────────────────────────────────────────────
 
+// All available rigged character models
+const CHARACTER_MODELS = [
+    { id: 'crimson_sentinel',  label: 'Crimson Sentinel',  path: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb'    },
+    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb'    },
+    { id: 'wolf_sentinel',     label: 'Wolf Sentinel',     path: './assets/models/wolf_sentinel_rigged.glb'    },
+];
+window.__characterModels = CHARACTER_MODELS;
+let _currentModelIdx = 0;
+
+export function switchCharacter(idxOrId) {
+    const idx = typeof idxOrId === 'number' ? idxOrId
+        : CHARACTER_MODELS.findIndex(m => m.id === idxOrId);
+    if (idx < 0 || idx >= CHARACTER_MODELS.length || idx === _currentModelIdx) return;
+    _currentModelIdx = idx;
+    // Clear cached state so init reloads
+    _gltf = null; _loaded = false; _footOffset = 0;
+    Object.keys(_chars).forEach(k => { if (_chars[k]) { _scene?.remove(_chars[k].model); } });
+    Object.keys(_chars).forEach(k => delete _chars[k]);
+    if (_demo) { _scene?.remove(_demo.model); _demo = null; _demoSpawned = false; }
+    _init(_scene);
+    console.log('[Characters] Switched to', CHARACTER_MODELS[idx].label);
+}
+
 export function init(targetScene) {
     _scene = targetScene;
+    _init(targetScene);
+}
+
+function _init(targetScene) {
     const loader = new GLTFLoader();
-    loader.load('./assets/models/crimson_sentinel_rigged.glb', (gltf) => {
+    const model  = CHARACTER_MODELS[_currentModelIdx];
+    loader.load(model.path, (gltf) => {
         _gltf = gltf;
         _loaded = true;
 

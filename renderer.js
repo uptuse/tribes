@@ -72,7 +72,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=150'; // R32.143: cache bust
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 import * as PostFX from './client/post_fx.js?v=3';        // Phase-C: visual playground
@@ -493,6 +493,8 @@ export async function start() {
         // Start EventBus
         EventBus.load();
         initGamepad();
+        // Expose character switcher for the editor panel
+        window.__switchCharacter = Characters.switchCharacter;
         console.log('[Shell] Unified editor shell ready — 12 modes');
     } catch(e) { console.warn('[Shell] Init failed:', e); }
 

@@ -74,11 +74,39 @@ function onExit() {
 
 function buildPalette(root) {
   const body = root;
-  
-  
-  // footer: = 'Pick a clip and drag it onto the timeline.';
+  body.innerHTML = '';
 
-  body.innerHTML = `<div class="fw-section-label">Clips</div>`;
+  // Character picker
+  const models = window.__characterModels ?? [];
+  if (models.length > 1) {
+    const sec = document.createElement('div'); sec.className = 'fw-section-label'; sec.textContent = 'Character'; body.appendChild(sec);
+    models.forEach((m, idx) => {
+      const item = document.createElement('div');
+      item.className = 'fw-asset-item';
+      item.dataset.id = m.id;
+      item.innerHTML = `<span class="fw-asset-icon">🧍</span><span class="fw-asset-label">${m.label}</span>`;
+      item.addEventListener('click', () => {
+        if (window.__switchCharacter) {
+          window.__switchCharacter(idx);
+          log(`Character: ${m.label} — loading…`);
+          // Re-wire rig once loaded
+          setTimeout(() => {
+            if (Characters?.getRig) {
+              const rig = Characters.getRig();
+              if (rig) setCharacterRig(rig.skeleton, rig.clips);
+            }
+          }, 2000);
+        }
+        document.querySelectorAll('#fw-palette-host .fw-asset-item[data-id]').forEach(el => {
+          el.classList.toggle('active', el.dataset.id === m.id);
+        });
+      });
+      body.appendChild(item);
+    });
+    const sep = document.createElement('div'); sep.className = 'fw-separator'; body.appendChild(sep);
+  }
+
+  const sec2 = document.createElement('div'); sec2.className = 'fw-section-label'; sec2.textContent = 'Clips'; body.appendChild(sec2);
   _refreshClipLibrary(body);
 }
 
