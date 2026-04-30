@@ -26,6 +26,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
+import { Locomotion } from './client/locomotion.js?v=1';
 
 let _gltf = null;
 let _scene = null;
@@ -248,6 +249,8 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         else if (speed > 0.5) clip = 'run';
 
         _playClip(char, clip, { once: clip === 'death' });
+        // L1: speed-matched timeScale so feet plant at all speeds, not slide
+        Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
