@@ -1538,34 +1538,43 @@ static void assignBotRole(int pi){
     else{p.botRole=0;}                 // default offense
 }
 
-// Dummy bot (botRole==99): stationary training target, no AI, no respawn.
-// Takes all damage normally. Use for testing weapons and splash radius.
-static int g_dummySlot = -1;
+// Dummy bots (botRole==99): stationary training targets, no AI.
+// Slots 1–10 reserved. Spread in a line near the red flag base.
+#define DUMMY_COUNT 10
+static int g_dummySlots[DUMMY_COUNT];
+static bool g_dummiesActive = false;
 
-extern "C" void spawnDummy(){
-    // Use slot 1 (first bot slot). Place at red flag base, enemy team.
-    const int slot = 1;
+static void spawnOneDummy(int slot, float wx, float wz, int enemyTeam){
     Player&p = players[slot];
     memset(&p, 0, sizeof(Player));
     p.active   = true;
     p.isBot    = true;
-    p.botRole  = 99;               // sentinel: updateBot skips all AI
-    p.team     = 1 - players[localPlayer].team;  // enemy team
+    p.botRole  = 99;
+    p.team     = enemyTeam;
     p.armor    = ARMOR_HEAVY;
     p.alive    = true;
     p.health   = armors[ARMOR_HEAVY].maxDamage;
     p.energy   = armors[ARMOR_HEAVY].maxEnergy;
     p.curWeapon= WPN_DISC;
-    // Place at red flag base (team 0) + offset, snapped to terrain height
-    Vec3 base  = flags[0].homePos;
-    float dx   = base.x + 8.0f, dz = base.z;
-    p.pos      = {dx, getH(dx, dz) + 1.0f, dz};
-    snprintf(p.name, sizeof(p.name), "Dummy");
-    g_dummySlot = slot;
-    // Skip warmup so all weapons deal damage immediately in test mode
+    p.pos      = {wx, getH(wx, wz) + 1.0f, wz};
+    snprintf(p.name, sizeof(p.name), "T%d", slot);
+}
+
+extern "C" void spawnDummy(){
+    int enemyTeam = 1 - players[localPlayer].team;
+    Vec3 base     = flags[0].homePos;
+    // Place 10 targets in a line 8m apart, starting 6m from the red flag
+    for(int i=0;i<DUMMY_COUNT;i++){
+        int slot = i + 1;
+        if(slot >= MAX_PLAYERS) break;
+        g_dummySlots[i] = slot;
+        float wx = base.x + 6.0f + i * 8.0f;
+        float wz = base.z;
+        spawnOneDummy(slot, wx, wz, enemyTeam);
+    }
+    g_dummiesActive = true;
     g_matchState = 1; g_warmupTimer = 0;
-    printf("[Dummy] Spawned at (%.1f, %.1f, %.1f) team=%d HP=%.0f — match active\n",
-           p.pos.x, p.pos.y, p.pos.z, p.team, p.health);
+    printf("[Dummy] Spawned %d training targets near red base — match active\n", DUMMY_COUNT);
 }
 
 static void updateBot(int pi,float dt){
@@ -2541,12 +2550,26 @@ extern "C" void mainLoop(){
 
     // Update bots
     for(int i=0;i<MAX_PLAYERS;i++)if(players[i].active&&players[i].isBot)updateBot(i,dt);
-    // Dummy respawn: auto-respawn 3s after death so it's always available as a target
-    static float dummyDeadTimer=0;
-    if(g_dummySlot>=0 && players[g_dummySlot].active && !players[g_dummySlot].alive){
-        dummyDeadTimer+=dt;
-        if(dummyDeadTimer>=3.0f){ dummyDeadTimer=0; spawnDummy(); }
-    } else { dummyDeadTimer=0; }
+    // Dummy respawn: auto-respawn each dead target 3s after death
+    static float dummyDeadTimers[DUMMY_COUNT]={};
+    if(g_dummiesActive){
+        for(int di=0;di<DUMMY_COUNT;di++){
+            int slot=g_dummySlots[di];
+            if(slot<1||slot>=MAX_PLAYERS||!players[slot].active) continue;
+            if(!players[slot].alive){
+                dummyDeadTimers[di]+=dt;
+                if(dummyDeadTimers[di]>=3.0f){
+                    dummyDeadTimers[di]=0;
+                    // Respawn in place
+                    Player&p=players[slot];
+                    p.alive=true;
+                    p.health=armors[ARMOR_HEAVY].maxDamage;
+                    p.energy=armors[ARMOR_HEAVY].maxEnergy;
+                    p.pos.y=getH(p.pos.x,p.pos.z)+1.0f;
+                }
+            } else { dummyDeadTimers[di]=0; }
+        }
+    }
     updateTurrets(dt);
     updateGenerators(dt);
 

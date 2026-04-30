@@ -141,62 +141,75 @@ const PROJ_COLORS = [
 const _tmpVec = new THREE.Vector3();
 
 // ── Dummy health bar (projected world → screen) ────────────────────────────
-const _dummyBar = (() => {
+// HP display scale: internal values are ~1.32 max; multiply by 100 for legible numbers
+const HP_SCALE   = 100;
+const DUMMY_COUNT = 10;  // slots 1-10
+const _dummyBars = [];   // one bar element per dummy slot
+const _dummyV3   = new THREE.Vector3();
+let   _dummyMaxHp = 0;
+
+// Build one reusable bar per slot
+for (let i = 0; i < DUMMY_COUNT; i++) {
     const wrap = document.createElement('div');
-    wrap.id = 'dummy-health-wrap';
     wrap.style.cssText = `
         position:fixed; display:none; pointer-events:none; z-index:500;
-        transform:translate(-50%, 0); text-align:center;`;
+        transform:translate(-50%,0); text-align:center; min-width:72px;`;
     wrap.innerHTML = `
-        <div style="font-family:'Roboto Mono',monospace;font-size:11px;color:#ff4444;
-            text-shadow:0 0 4px #000,0 0 4px #000;margin-bottom:3px;letter-spacing:1px;">DUMMY</div>
-        <div style="width:80px;height:7px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.3);border-radius:2px;overflow:hidden;">
-            <div id="dummy-health-fill" style="height:100%;background:#ff3333;width:100%;transition:width 80ms linear;"></div>
+        <div class="dbar-name" style="font-family:'Roboto Mono',monospace;font-size:10px;
+            color:#ff6644;text-shadow:0 0 4px #000;margin-bottom:2px;letter-spacing:1px">T${i+1}</div>
+        <div style="width:72px;height:6px;background:rgba(0,0,0,0.6);
+            border:1px solid rgba(255,255,255,0.25);border-radius:2px;overflow:hidden;">
+            <div class="dbar-fill" style="height:100%;background:#33cc33;width:100%;
+                transition:width 80ms linear;"></div>
         </div>
-        <div id="dummy-health-text" style="font-family:'Roboto Mono',monospace;font-size:10px;
-            color:#ffaaaa;text-shadow:0 0 4px #000;margin-top:2px;"></div>`;
+        <div class="dbar-text" style="font-family:'Roboto Mono',monospace;font-size:9px;
+            color:#ffccaa;text-shadow:0 0 4px #000;margin-top:1px;"></div>`;
     document.body.appendChild(wrap);
-    return wrap;
-})();
+    _dummyBars.push(wrap);
+}
 
-const _dummyV3 = new THREE.Vector3();
-let _dummyMaxHp = 0;
 function _syncDummyHealthBar() {
-    if (!playerView || !playerStride || !camera) { _dummyBar.style.display = 'none'; return; }
-    // Dummy is always slot 1
-    const o    = 1 * playerStride;
-    const alive = playerView[o + 13] > 0.5;
-    const botRole = playerView[o + 19] | 0;  // 99 = dummy sentinel
-    if (!alive || botRole !== 99) { _dummyBar.style.display = 'none'; return; }
+    if (!playerView || !playerStride || !camera) return;
 
-    const px = playerView[o], py = playerView[o + 1], pz = playerView[o + 2];
-    const hp = playerView[o + 9];
+    for (let i = 0; i < DUMMY_COUNT; i++) {
+        const slot = i + 1;
+        const bar  = _dummyBars[i];
+        const o    = slot * playerStride;
 
-    // Track max HP seen (set on first frame)
-    if (_dummyMaxHp < 1 || hp > _dummyMaxHp) _dummyMaxHp = hp;
+        const botRole = playerView[o + 19] | 0;
+        const alive   = playerView[o + 13] > 0.5;
 
-    // Project world position to screen
-    _dummyV3.set(px, py + 3.2, pz);   // float above head
-    _dummyV3.project(camera);
+        if (botRole !== 99 || !alive) { bar.style.display = 'none'; continue; }
 
-    // Outside view frustum — hide
-    if (_dummyV3.z > 1 || Math.abs(_dummyV3.x) > 1.2 || Math.abs(_dummyV3.y) > 1.2) {
-        _dummyBar.style.display = 'none'; return;
+        const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
+        const hp = playerView[o + 9];
+
+        // Track global max HP once
+        if (_dummyMaxHp < 0.1) _dummyMaxHp = hp;
+
+        // Project to screen
+        _dummyV3.set(px, py + 3.0, pz);
+        _dummyV3.project(camera);
+
+        if (_dummyV3.z > 1 || Math.abs(_dummyV3.x) > 1.15 || Math.abs(_dummyV3.y) > 1.15) {
+            bar.style.display = 'none'; continue;
+        }
+
+        const sx = ( _dummyV3.x * 0.5 + 0.5) * window.innerWidth;
+        const sy = (-_dummyV3.y * 0.5 + 0.5) * window.innerHeight;
+
+        bar.style.display = 'block';
+        bar.style.left    = sx + 'px';
+        bar.style.top     = sy + 'px';
+
+        const pct  = _dummyMaxHp > 0 ? Math.max(0, hp / _dummyMaxHp) : 1;
+        const fill = bar.querySelector('.dbar-fill');
+        const text = bar.querySelector('.dbar-text');
+        fill.style.width      = (pct * 100).toFixed(1) + '%';
+        fill.style.background = pct > 0.5 ? '#33cc33' : pct > 0.25 ? '#ffaa00' : '#ff3333';
+        // Show HP × 100 so values look like a real game (e.g. 132 / 132 HP)
+        text.textContent = Math.round(hp * HP_SCALE) + ' / ' + Math.round(_dummyMaxHp * HP_SCALE) + ' HP';
     }
-
-    const sx = ( _dummyV3.x * 0.5 + 0.5) * window.innerWidth;
-    const sy = (-_dummyV3.y * 0.5 + 0.5) * window.innerHeight;
-
-    _dummyBar.style.display = 'block';
-    _dummyBar.style.left = sx + 'px';
-    _dummyBar.style.top  = sy + 'px';
-
-    const pct = _dummyMaxHp > 0 ? Math.max(0, hp / _dummyMaxHp) : 1;
-    document.getElementById('dummy-health-fill').style.width = (pct * 100).toFixed(1) + '%';
-    document.getElementById('dummy-health-fill').style.background =
-        pct > 0.5 ? '#33cc33' : pct > 0.25 ? '#ffaa00' : '#ff3333';
-    document.getElementById('dummy-health-text').textContent =
-        Math.max(0, Math.round(hp)).toFixed(0) + ' / ' + Math.round(_dummyMaxHp).toFixed(0) + ' HP';
 }
 const _aimPoint3P = { x: 0, y: 0, z: 0 };    // R32.43: persistent aim-point (no per-frame alloc)
 const _flagStateByTeam = [0, 0];               // R32.43: persistent flag state (no per-frame alloc)
