@@ -24,9 +24,9 @@ let _onConnected = null;
 
 // ── Server URL (when local server is running) ──────────────────────
 // Try same-origin first (game served from local server), then localhost:3000.
-let _serverUrl = undefined; // undefined = not yet detected; null = not found; '' or url = found
+let _serverUrl = undefined; // undefined/null = not found (retries); '' or url = found
 async function _getServerUrl() {
-  if (_serverUrl !== undefined) return _serverUrl;
+  if (_serverUrl) return _serverUrl; // only cache success, always retry on failure
   // Try same-origin first (game served from local server)
   try {
     const r = await fetch('/api/ping');
