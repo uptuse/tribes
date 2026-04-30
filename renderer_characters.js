@@ -27,6 +27,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as skeletonClone } from 'three/addons/utils/SkeletonUtils.js';
 import { Locomotion } from './client/locomotion.js?v=1';
+import { FootIK }    from './client/foot_ik.js?v=1';
 
 let _gltf = null;
 let _scene = null;
@@ -250,8 +251,19 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
 
         _playClip(char, clip, { once: clip === 'death' });
         // L1: speed-matched timeScale so feet plant at all speeds, not slide
+        // L6: ski posture — crouch + lean. turnInput approximated from yaw delta.
+        const yaw = playerView[o + 4];
+        if (!char._prevYaw) char._prevYaw = yaw;
+        const turnInput = Math.max(-1, Math.min(1, (yaw - char._prevYaw) / (dt * 2.5)));
+        char._prevYaw = yaw;
+        Locomotion.skiUpdate(char, skiing, speed, turnInput, dt);
         Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
+        // L5: pelvis bob (before IK so IK can correct above it)
+        const phase = window.__locoPhase ?? -1;
+        Locomotion.pelvisBob(char, speed, phase);
+        // L4: foot IK — plant feet on terrain after animation + pelvis bob
+        FootIK.update(char, !jetting && speed < 40, skiing);
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }

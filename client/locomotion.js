@@ -88,6 +88,63 @@ export const Locomotion = {
     }
   },
 
+  /** L6: ski posture — crouching, lean into turns, emit ski_compress events */
+  skiUpdate(inst, skiing, speed, turnInput, dt) {
+    if (!inst?.model) return;
+
+    // Find pelvis / hips
+    let pelvis = null;
+    inst.model.traverse(obj => {
+      if (pelvis) return;
+      const n = obj.name.toLowerCase();
+      if (n.includes('hips') || n.includes('pelvis')) pelvis = obj;
+    });
+
+    // Crouch target: pelvis drops 8cm while skiing
+    if (!inst._skiCrouch) inst._skiCrouch = 0;
+    const crouchTarget = skiing ? -0.08 : 0;
+    inst._skiCrouch += (crouchTarget - inst._skiCrouch) * Math.min(1, dt * 8); // ~10-frame ease
+
+    if (pelvis) {
+      pelvis.position.y += inst._skiCrouch;
+      // Roll upper body into the turn direction (5-15°)
+      if (skiing) {
+        const rollTarget = turnInput * 0.12;
+        if (!inst._skiRoll) inst._skiRoll = 0;
+        inst._skiRoll += (rollTarget - inst._skiRoll) * Math.min(1, dt * 5);
+        pelvis.rotation.z += inst._skiRoll;
+      }
+    }
+
+    // Periodic ski_compress event while skiing at speed
+    if (skiing && speed > 5) {
+      if (!inst._skiCompressTimer) inst._skiCompressTimer = 0;
+      inst._skiCompressTimer += dt;
+      if (inst._skiCompressTimer > 0.1) {  // 10 Hz
+        inst._skiCompressTimer = 0;
+        window.__eventBusFire?.('player.on_ski_compress', 0, 0, 0);
+      }
+    } else {
+      if (inst) inst._skiCompressTimer = 0;
+    }
+  },
+
+  /** L5: procedural pelvis bob — call after mixer.update, before FootIK */
+  pelvisBob(inst, speed, clipPhase) {
+    if (!inst?.model || clipPhase < 0 || speed < 0.5) return;
+    let pelvis = null;
+    inst.model.traverse(obj => {
+      if (pelvis) return;
+      const n = obj.name.toLowerCase();
+      if (n.includes('hips') || n.includes('pelvis') || n.includes('root')) pelvis = obj;
+    });
+    if (!pelvis) return;
+    const amp = Math.min(speed / 11, 1) * 0.03;   // 0→3cm
+    const hip = Math.min(speed / 11, 1) * 0.018;  // 0→1.8cm lateral
+    pelvis.position.y += Math.sin(clipPhase * Math.PI * 2) * amp;
+    pelvis.rotation.y += Math.sin(clipPhase * Math.PI * 2 + Math.PI / 2) * 0.035; // counter-rotation
+  },
+
   /** Clean up state for a removed instance */
   remove(inst) { _state.delete(inst); },
 };
