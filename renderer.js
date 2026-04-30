@@ -179,7 +179,7 @@ function _syncDummyHealthBar() {
         const botRole = playerView[o + 19] | 0;
         const alive   = playerView[o + 13] > 0.5;
 
-        if (botRole !== 99 || !alive) { bar.style.display = 'none'; continue; }
+        if (botRole !== 99) { bar.style.display = 'none'; continue; }
 
         const px = playerView[o], py = playerView[o+1], pz = playerView[o+2];
         const hp = playerView[o + 9];
@@ -202,12 +202,23 @@ function _syncDummyHealthBar() {
         bar.style.left    = sx + 'px';
         bar.style.top     = sy + 'px';
 
-        const pct  = _dummyMaxHp > 0 ? Math.max(0, hp / _dummyMaxHp) : 1;
         const fill = bar.querySelector('.dbar-fill');
         const text = bar.querySelector('.dbar-text');
+        const name = bar.querySelector('.dbar-name');
+
+        if (!alive) {
+            // Dead — show greyed bar so you know it's respawning, not gone
+            fill.style.width      = '100%';
+            fill.style.background = '#444';
+            text.textContent      = 'respawning…';
+            name.style.color      = '#888';
+            continue;
+        }
+
+        name.style.color = '#ff6644';
+        const pct = _dummyMaxHp > 0 ? Math.max(0, hp / _dummyMaxHp) : 1;
         fill.style.width      = (pct * 100).toFixed(1) + '%';
         fill.style.background = pct > 0.5 ? '#33cc33' : pct > 0.25 ? '#ffaa00' : '#ff3333';
-        // Show HP × 100 so values look like a real game (e.g. 132 / 132 HP)
         text.textContent = Math.round(hp * HP_SCALE) + ' / ' + Math.round(_dummyMaxHp * HP_SCALE) + ' HP';
     }
 }

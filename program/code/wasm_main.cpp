@@ -1954,17 +1954,20 @@ extern "C" void setGameSettings(int team,int armor,int botCount,int scoreLimit,i
     g_scoreLimit=scoreLimit>0?scoreLimit:5;
     g_timeLimit=timeLimit;
     g_roundTimer=(float)timeLimit;
-    // Reset match state for new game
     g_matchState=0;g_warmupTimer=15.0f;
     teamScore[0]=teamScore[1]=0;
     memset(g_warnedTime,0,sizeof(g_warnedTime));
     memset(g_spawnProtect,0,sizeof(g_spawnProtect));
-    // Re-assign bot teams (simple split)
+    // Re-assign bot teams
     int botsPerTeam=botCount/2;
     for(int i=1;i<MAX_PLAYERS;i++){
         players[i].active=(i<=botCount);
         if(players[i].active)players[i].team=(i<=botsPerTeam)?team:(1-team);
     }
+    // When no bots are requested, always spawn the 10 training targets.
+    // Called synchronously here so flag positions (set by initBuildings) are
+    // guaranteed ready — no race with setTimeout on the JS side.
+    if(botCount==0) spawnDummy();
 }
 
 extern "C" void updateScoreboard(){
@@ -2558,7 +2561,7 @@ extern "C" void mainLoop(){
             if(slot<1||slot>=MAX_PLAYERS||!players[slot].active) continue;
             if(!players[slot].alive){
                 dummyDeadTimers[di]+=dt;
-                if(dummyDeadTimers[di]>=3.0f){
+                if(dummyDeadTimers[di]>=1.5f){
                     dummyDeadTimers[di]=0;
                     // Respawn in place
                     Player&p=players[slot];
