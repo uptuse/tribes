@@ -563,7 +563,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 22:12</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 22:38</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -3123,6 +3123,7 @@
         var mod = await import('./client/browser_host.js?v=1');
         var code = await mod.host(function(sock) {
           import('./client/network.js').then(function(net) {
+            clearTimeout(window._webrtcTimeout);
             net.injectSocket(sock);
             net.start();
             _applyWebRTCTeam();
@@ -3150,8 +3151,38 @@
     async function webrtcFinalise() {
       var ans = document.getElementById('rtc-answer-in').value.trim();
       if (!ans || !window._webrtcMod) return;
-      try { await window._webrtcMod.finalise(ans); }
-      catch(e) { showToast('Connection failed: ' + e.message, 3000); }
+      _showWebRTCModal(
+        '<h3 style="color:#88DD88;margin-bottom:12px;">Connecting…</h3>' +
+        '<div style="font-size:2em;margin-bottom:12px">⏳</div>' +
+        '<p style="font-size:0.82em;color:#7A6A4A;">Establishing peer connection. This takes 5–15 seconds.</p>' +
+        '<p id="rtc-status" style="font-size:0.78em;color:#9A8A6A;margin-top:8px;"></p>' +
+        '<button class="btn btn-back" style="margin-top:14px" onclick="_closeWebRTCModal();showToast(\'Cancelled\',1500)">Cancel</button>'
+      );
+      var status = function(msg) { var el=document.getElementById('rtc-status'); if(el) el.textContent=msg; };
+      // Timeout — if no connection after 15s, tell the user
+      var timeout = setTimeout(function() {
+        _showWebRTCModal(
+          '<h3 style="color:#ff6644;margin-bottom:10px;">Connection timed out</h3>' +
+          '<p style="font-size:0.82em;color:#7A6A4A;margin-bottom:12px;">The two browsers couldn\'t reach each other directly. This usually means your router blocks device-to-device traffic (AP isolation).</p>' +
+          '<p style="font-size:0.82em;color:#9A8A6A;margin-bottom:14px;">Try: router admin → disable "AP isolation" or "client isolation".</p>' +
+          '<button class="btn btn-back" onclick="_closeWebRTCModal()">Close</button>'
+        );
+      }, 15000);
+      try {
+        status('Setting remote description…');
+        await window._webrtcMod.finalise(ans);
+        status('Waiting for ICE…');
+        // onConnected fires in browser_host.js when channel opens — clears timeout there
+        window._webrtcTimeout = timeout;
+      } catch(e) {
+        clearTimeout(timeout);
+        _showWebRTCModal(
+          '<h3 style="color:#ff6644;margin-bottom:10px;">Failed</h3>' +
+          '<p style="font-size:0.82em;color:#7A6A4A;margin-bottom:12px;">' + e.message + '</p>' +
+          '<p style="font-size:0.78em;color:#9A8A6A;">Make sure you pasted the full code with no extra spaces.</p>' +
+          '<button class="btn btn-back" onclick="_closeWebRTCModal()">Close</button>'
+        );
+      }
     }
 
     async function webrtcJoin() {
