@@ -90,6 +90,7 @@ static bool  g_jetToggle=false;
 static bool  g_invertY=false;
 static bool  g_jetActive=false; // for toggle mode state
 static bool  g_freelook=false;  // Freelook: freeze player aim, JS orbits camera
+static bool  g_paused=false;    // Editor shell: skip physics tick when editing
 
 // Phase-A Live Editor: runtime physics tuning overrides.
 // Multipliers (1.0 = stock) except g_tuneGravity which is absolute m/s².
@@ -116,6 +117,7 @@ static bool sGetB(const char*j,const char*k,bool d){
     return d;
 }
 extern "C" void setFreelook(int on){ g_freelook = (on != 0); }
+extern "C" void pause(int on){ g_paused = (on != 0); }
 extern "C" void setSettings(const char*json){
     g_mouseSensitivity=(float)sGetF(json,"sensitivity",1.0);
     g_fov=(float)sGetF(json,"fov",90.0);
@@ -516,6 +518,36 @@ static bool loadLayoutJSON(const char* path) {
     return true;
 }
 
+// Load layout from a JSON string (hot-reload from editor export).
+static bool loadLayoutJSONStr(const char* buf){
+    if(!buf||!buf[0]) return false;
+    g_layoutEntityCount = 0;
+    const char* p = buf;
+    while ((p = strstr(p, "\"type\":")) != nullptr && g_layoutEntityCount < 256) {
+        LayoutEntity& e = g_layoutEntities[g_layoutEntityCount];
+        jsonGetStr(p, e.type, sizeof(e.type));
+        const char* obj = p;
+        const char* tp = jsonFindKey(obj, "team"); e.team = tp ? jsonGetInt(tp, -1) : -1;
+        const char* pp = jsonFindKey(obj, "world_pos");
+        if (pp) jsonGetVec3(strchr(pp,':'), e.x, e.y, e.z); else { e.x=e.y=e.z=0; }
+        const char* rp = jsonFindKey(obj, "world_rot_y");
+        e.rot_y = rp ? jsonGetFloat(rp, 0) : 0;
+        g_layoutEntityCount++; p += 7;
+    }
+    printf("[Shell] reloadBuildings: %d entities\n", g_layoutEntityCount);
+    return g_layoutEntityCount > 0;
+}
+extern "C" void reloadBuildings(const char* json, int /*len*/){
+    if(!json||json[0]=='\0') return;
+    numBuildings = 0;
+    g_layoutLoaded = loadLayoutJSONStr(json);
+}
+extern "C" void teleportPlayer(float x, float y, float z){
+    if(localPlayer>=0&&localPlayer<MAX_PLAYERS&&players[localPlayer].active){
+        players[localPlayer].pos={x,y,z};
+        players[localPlayer].vel={0,0,0};
+    }
+}
 static void initBuildings() {
     numBuildings = 0;
 
@@ -2132,10 +2164,12 @@ static double g_physicsAccum=0;
 
 extern "C" void mainLoop(){
     double now=emscripten_get_now()/1000.0;
-    double t0=emscripten_get_now();  // D3: physics timing start
+    double t0=emscripten_get_now();
     float dt=(lastTime>0)?(float)(now-lastTime):TICK;
     if(dt>0.05f)dt=0.05f;
     lastTime=now;gameTime+=dt;frameCount++;
+    // Editor shell: skip all physics/game-logic when paused; only update render state.
+    if(g_paused){ populateRenderState(); return; }
 
     Player&me=players[localPlayer];
 

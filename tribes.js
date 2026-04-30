@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp1ltxzyt8.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpu1r4fh0i.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp1ltxzyt8.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmphy_krmfo.js
+// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpu1r4fh0i.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpmpwgi76i.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmphy_krmfo.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp13iltnwt.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpmpwgi76i.js
+// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpy5yyb9ym.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmp13iltnwt.js
+  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpy5yyb9ym.js
 
 
 var arguments_ = [];
@@ -6436,31 +6436,34 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  348564: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 348637: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 348707: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 348754: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 348801: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 348853: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
- 348910: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 348968: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349026: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349075: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349127: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349176: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 349358: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349420: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349482: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 349532: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349588: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 349640: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 349729: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348596: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348669: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348739: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 348786: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348833: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348885: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 348942: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349000: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349058: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349107: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349159: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349208: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349390: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349452: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349514: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349564: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349620: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349672: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349761: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
 var _setFreelook = Module['_setFreelook'] = makeInvalidEarlyAccess('_setFreelook');
+var _pause = Module['_pause'] = makeInvalidEarlyAccess('_pause');
 var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings');
 var _setPhysicsTuning = Module['_setPhysicsTuning'] = makeInvalidEarlyAccess('_setPhysicsTuning');
+var _reloadBuildings = Module['_reloadBuildings'] = makeInvalidEarlyAccess('_reloadBuildings');
+var _teleportPlayer = Module['_teleportPlayer'] = makeInvalidEarlyAccess('_teleportPlayer');
 var _dtsChaingunVC = Module['_dtsChaingunVC'] = makeInvalidEarlyAccess('_dtsChaingunVC');
 var _dtsChaingunIC = Module['_dtsChaingunIC'] = makeInvalidEarlyAccess('_dtsChaingunIC');
 var _dtsChaingunV = Module['_dtsChaingunV'] = makeInvalidEarlyAccess('_dtsChaingunV');
@@ -6536,8 +6539,11 @@ var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['setFreelook'] != 'undefined', 'missing Wasm export: setFreelook');
+  assert(typeof wasmExports['pause'] != 'undefined', 'missing Wasm export: pause');
   assert(typeof wasmExports['setSettings'] != 'undefined', 'missing Wasm export: setSettings');
   assert(typeof wasmExports['setPhysicsTuning'] != 'undefined', 'missing Wasm export: setPhysicsTuning');
+  assert(typeof wasmExports['reloadBuildings'] != 'undefined', 'missing Wasm export: reloadBuildings');
+  assert(typeof wasmExports['teleportPlayer'] != 'undefined', 'missing Wasm export: teleportPlayer');
   assert(typeof wasmExports['dtsChaingunVC'] != 'undefined', 'missing Wasm export: dtsChaingunVC');
   assert(typeof wasmExports['dtsChaingunIC'] != 'undefined', 'missing Wasm export: dtsChaingunIC');
   assert(typeof wasmExports['dtsChaingunV'] != 'undefined', 'missing Wasm export: dtsChaingunV');
@@ -6609,8 +6615,11 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
   _setFreelook = Module['_setFreelook'] = createExportWrapper('setFreelook', 1);
+  _pause = Module['_pause'] = createExportWrapper('pause', 1);
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
   _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 6);
+  _reloadBuildings = Module['_reloadBuildings'] = createExportWrapper('reloadBuildings', 2);
+  _teleportPlayer = Module['_teleportPlayer'] = createExportWrapper('teleportPlayer', 3);
   _dtsChaingunVC = Module['_dtsChaingunVC'] = createExportWrapper('dtsChaingunVC', 0);
   _dtsChaingunIC = Module['_dtsChaingunIC'] = createExportWrapper('dtsChaingunIC', 0);
   _dtsChaingunV = Module['_dtsChaingunV'] = createExportWrapper('dtsChaingunV', 0);

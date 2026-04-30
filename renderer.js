@@ -76,6 +76,18 @@ import * as Characters from './renderer_characters.js?v=149'; // R32.143: cache 
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 import * as PostFX from './client/post_fx.js?v=3';        // Phase-C: visual playground
+import { Shell }           from './client/shell.js?v=1';
+import { EditorTuning }    from './client/editor_tuning.js?v=1';
+import { EditorAssets }    from './client/editor_assets.js?v=1';
+import { EditorBuildings, initBuildingsEditor } from './client/editor_buildings.js?v=1';
+import { EditorAnimations, setCharacterRig }    from './client/editor_animations.js?v=1';
+import { EditorTerrain }   from './client/editor_terrain.js?v=1';
+import { EditorMaterials, initMaterials } from './client/editor_materials.js?v=1';
+import { EditorTriggers, initTriggers }   from './client/editor_triggers.js?v=1';
+import { EditorAudio }     from './client/editor_audio.js?v=1';
+import { EditorVFX, initVFX }             from './client/editor_vfx.js?v=1';
+import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
+import { EditorBindings }  from './client/editor_bindings.js?v=1';
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -229,7 +241,13 @@ export async function start() {
     initCustomModels(); // R32.57: load custom GLB models
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
-    try { Characters.init(scene); } catch(e) { console.warn('[R32.109] Characters init failed:', e); } // R32.109: rigged GLB characters
+    try {
+        Characters.init(scene).then?.(() => {
+            // Wire the loaded rig into the animation editor
+            const rig = Characters.getRig?.();
+            if (rig) setCharacterRig(rig.skeleton, rig.clips);
+        });
+    } catch(e) { console.warn('[R32.109] Characters init failed:', e); }
     initProjectiles();
     initFlags();
     initParticles();
@@ -353,6 +371,29 @@ export async function start() {
     // DTS weapon viewmodels — read geometry exported from C++ during DTS load
     try { initDTSWeaponModels(); } catch(e) { console.warn('[DTS] initDTSWeaponModels failed:', e); }
     _initFreelook();
+
+    // ── Editor Shell ──────────────────────────────────────────────
+    try {
+        window.__terrainMesh = terrainMesh;
+        initBuildingsEditor(scene, camera, terrainMesh);
+        initMaterials(scene);
+        initTriggers(scene);
+        initVFX(scene);
+        initAI(scene);
+        Shell.init(camera, renderer, scene);
+        Shell.registerMode('edit-tuning',     EditorTuning);
+        Shell.registerMode('edit-assets',     EditorAssets);
+        Shell.registerMode('edit-buildings',  EditorBuildings);
+        Shell.registerMode('edit-animations', EditorAnimations);
+        Shell.registerMode('edit-terrain',    EditorTerrain);
+        Shell.registerMode('edit-materials',  EditorMaterials);
+        Shell.registerMode('edit-triggers',   EditorTriggers);
+        Shell.registerMode('edit-audio',      EditorAudio);
+        Shell.registerMode('edit-vfx',        EditorVFX);
+        Shell.registerMode('edit-ai',         EditorAI);
+        Shell.registerMode('edit-bindings',   EditorBindings);
+        console.log('[Shell] Unified editor shell ready — 12 modes');
+    } catch(e) { console.warn('[Shell] Init failed:', e); }
 
     // Phase-B: initialise level editor and load entity markers from WASM
     import('./client/level_editor.js').then(mod => {
