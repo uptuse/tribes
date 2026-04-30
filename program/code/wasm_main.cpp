@@ -1500,8 +1500,37 @@ static void assignBotRole(int pi){
     else{p.botRole=0;}                 // default offense
 }
 
+// Dummy bot (botRole==99): stationary training target, no AI, no respawn.
+// Takes all damage normally. Use for testing weapons and splash radius.
+static int g_dummySlot = -1;
+
+extern "C" void spawnDummy(){
+    // Use slot 1 (first bot slot). Place at red flag base, enemy team.
+    const int slot = 1;
+    Player&p = players[slot];
+    memset(&p, 0, sizeof(Player));
+    p.active   = true;
+    p.isBot    = true;
+    p.botRole  = 99;               // sentinel: updateBot skips all AI
+    p.team     = 1 - players[localPlayer].team;  // enemy team
+    p.armor    = ARMOR_HEAVY;
+    p.alive    = true;
+    p.health   = armors[ARMOR_HEAVY].maxDamage;
+    p.energy   = armors[ARMOR_HEAVY].maxEnergy;
+    p.curWeapon= WPN_DISC;
+    // Place at red flag base (team 0) + small forward offset so it's visible
+    Vec3 base  = flags[0].homePos;
+    p.pos      = {base.x + 5.0f, base.y + 0.5f, base.z};
+    snprintf(p.name, sizeof(p.name), "Dummy");
+    g_dummySlot = slot;
+    printf("[Dummy] Spawned at (%.1f, %.1f, %.1f) team=%d HP=%.0f\n",
+           p.pos.x, p.pos.y, p.pos.z, p.team, p.health);
+}
+
 static void updateBot(int pi,float dt){
     Player&p=players[pi];
+    // Stationary dummy — skip all AI, let physics/damage handle it naturally
+    if(p.botRole==99) return;
     // Respawn handling
     if(!p.alive){
         static float respawnTimers[8]={};

@@ -4148,9 +4148,7 @@ function syncParticles() {
                     Polish.spawnShockwave(scene, new THREE.Vector3(px, py, pz), 1.0);
                     // R32.74: enhanced explosion fireball + sparks
                     triggerExplosion(px, py, pz, 1.0);
-                    // R32.45: FOV punch when explosion is within 30m of camera
-                    const dx = px - camera.position.x, dy = py - camera.position.y, dz = pz - camera.position.z;
-                    if (dx * dx + dy * dy + dz * dz < 900) _fovPunchExtra = 2.5;
+                    // Screen shake removed from here — now driven by local player HP delta only
                 } catch (e) {}
             }
         }
@@ -4265,6 +4263,17 @@ function syncCamera() {
     if (!Number.isFinite(localIdx) || localIdx < 0 || localIdx >= MAX_PLAYERS) return;
     const o = localIdx * playerStride;
     const px = playerView[o], py = playerView[o + 1], pz = playerView[o + 2];
+
+    // Screen shake only when LOCAL player takes damage — track HP delta each frame
+    const _hp = playerView[o + 9];
+    if (typeof syncCamera._prevHp === 'number' && playerView[o + 13] > 0.5) {
+        const dmg = syncCamera._prevHp - _hp;
+        if (dmg > 0.5) {                          // took a real hit
+            _fovPunchExtra += Math.min(dmg * 0.08, 4.0);  // scale with damage, cap at 4°
+            _kick.vRx     -= Math.min(dmg * 0.006, 0.18); // viewmodel kick too
+        }
+    }
+    syncCamera._prevHp = _hp;
     const pitch = playerView[o + 3];
     const yaw   = playerView[o + 4];
 

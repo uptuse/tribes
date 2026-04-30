@@ -35,7 +35,7 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
 "_dtsChaingunVC","_dtsChaingunIC","_dtsChaingunV","_dtsChaingunN","_dtsChaingunI",
 "_dtsDiscVC","_dtsDiscIC","_dtsDiscV","_dtsDiscN","_dtsDiscI",
 "_dtsGrenadeVC","_dtsGrenadeIC","_dtsGrenadeV","_dtsGrenadeN","_dtsGrenadeI",
-"_pause","_teleportPlayer","_reloadBuildings","_writeHeightmapPatch"]' \
+"_pause","_teleportPlayer","_reloadBuildings","_writeHeightmapPatch","_spawnDummy"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 # R29: _setRenderMode must stay in EXPORTED_FUNCTIONS above — required for Three.js cutover.
 
