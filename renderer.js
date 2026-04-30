@@ -5469,7 +5469,12 @@ function loop() {
     else renderer.render(scene, camera);
 
     // R30.0 / R32.43: one-shot diagnostic dump, extracted to separate function
-    if (!_r30Diagnosed) { _r30Diagnosed = true; _runFirstFrameDiagnostic(); }
+    if (!_r30Diagnosed) {
+        _r30Diagnosed = true;
+        _runFirstFrameDiagnostic();
+        // Dismiss the "PREPARING BATTLEFIELD" overlay now that the first real frame painted
+        try { if (window.__rendererReady) window.__rendererReady(); } catch(e) {}
+    }
 
     _frameCount++;
     const now = performance.now();

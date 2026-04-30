@@ -545,6 +545,17 @@
     <div class="load-bar-bg"><div class="load-bar" id="load-bar"></div></div>
     <div class="load-text" id="load-text">Initializing engine...</div>
   </div>
+  <!-- Renderer prep overlay — shown while Three.js builds the scene after WASM loads -->
+  <div id="renderer-prep" style="
+    display:none; position:fixed; inset:0; z-index:500;
+    background:#000; align-items:center; justify-content:center;
+    flex-direction:column; gap:10px;
+    transition:opacity 0.4s ease;">
+    <div style="font-family:'Barlow Condensed',monospace;color:#FFD479;font-size:1.1em;letter-spacing:2px;">PREPARING BATTLEFIELD</div>
+    <div style="width:120px;height:2px;background:rgba(255,212,121,0.2);border-radius:1px;overflow:hidden">
+      <div id="prep-bar" style="height:100%;background:#FFD479;width:0%;transition:width 0.3s ease;"></div>
+    </div>
+  </div>
 
   <!-- Game Canvas -->
   <canvas id="canvas" oncontextmenu="event.preventDefault()" tabindex="-1"></canvas>
@@ -552,7 +563,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 18:04</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 18:14</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -1849,6 +1860,14 @@
       applySettings(); // apply all settings including audio now that AE is up
       showScreen(null);gameStarted=true;
       canvas.style.visibility='visible';
+      // Show prep overlay while Three.js builds the scene (dismissed by renderer on first frame)
+      var prep = document.getElementById('renderer-prep');
+      if(prep){ prep.style.display='flex'; prep.style.opacity='1'; }
+      // Animate the prep bar so it feels alive
+      var bar=document.getElementById('prep-bar'); var pct=0;
+      window._prepInterval=setInterval(function(){
+        pct=Math.min(pct+2,90); if(bar)bar.style.width=pct+'%';
+      },50);
       document.getElementById('hud').classList.add('active');
       // R24: show gear icon + connection-quality bars in-match
       document.getElementById('hud-gear').classList.add('show');
@@ -3911,7 +3930,7 @@
           } else {
             console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
           }
-          import('./renderer.js?v=shell2').then(function(m){
+          import('./renderer.js?v=shell3').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
             if(typeof m.start === 'function'){
               m.start();
@@ -3920,6 +3939,18 @@
               console.error('[R29] renderer.js has no start() export');
             }
             // Auto-start directly into the game — no home screen
+            window.__rendererReady = function(){
+              // Called by renderer.js on first rendered frame
+              var prep=document.getElementById('renderer-prep');
+              if(!prep) return;
+              clearInterval(window._prepInterval);
+              var bar=document.getElementById('prep-bar');
+              if(bar) bar.style.width='100%';
+              setTimeout(function(){
+                prep.style.opacity='0';
+                setTimeout(function(){ prep.style.display='none'; }, 400);
+              }, 150);
+            };
             startGame();
           }).catch(function(err){
             console.error('[R29] renderer.js import FAILED:', err);
