@@ -23,12 +23,22 @@ let _chan = null;   // RTCDataChannel (host-created)
 let _onConnected = null;
 
 // ── Server URL (when local server is running) ──────────────────────
-// We try the local server first for short codes. Falls back to raw SDP.
-async function _serverBase() {
+// Try same-origin first (game served from local server), then localhost:3000.
+let _serverUrl = null;
+async function _getServerUrl() {
+  if (_serverUrl !== null) return _serverUrl;
+  // Same-origin (game opened from http://192.168.68.112:3000)
   try {
     const r = await fetch('/api/signal/offer', { method:'OPTIONS' });
-    return r.ok || r.status === 204 ? '' : null; // same origin = ''
-  } catch { return null; }
+    if (r.ok || r.status === 204) { _serverUrl = ''; return ''; }
+  } catch {}
+  // GitHub Pages / external — try local server directly
+  try {
+    const r = await fetch('http://localhost:3000/api/signal/offer', { method:'OPTIONS' });
+    if (r.ok || r.status === 204) { _serverUrl = 'http://localhost:3000'; return 'http://localhost:3000'; }
+  } catch {}
+  _serverUrl = null;
+  return null;
 }
 
 // ── Host side ──────────────────────────────────────────────────────
@@ -43,28 +53,30 @@ export async function host(onConnected) {
   await _waitForICE(_pc);
 
   // Try server for short code, fall back to raw SDP
-  try {
-    const r = await fetch('/api/signal/offer', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ offer: _pc.localDescription }),
-    });
-    if (r.ok) {
-      const { code } = await r.json();
-      // Poll for answer in background
-      _pollForAnswer(code);
-      return code;  // short code like "WOLF42"
-    }
-  } catch {}
+  const base = await _getServerUrl();
+  if (base !== null) {
+    try {
+      const r = await fetch(base + '/api/signal/offer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ offer: _pc.localDescription }),
+      });
+      if (r.ok) {
+        const { code } = await r.json();
+        _pollForAnswer(base, code);
+        return code;
+      }
+    } catch {}
+  }
 
   // Fallback: raw base64 SDP
   return _encode(_pc.localDescription);
 }
 
-function _pollForAnswer(code) {
+function _pollForAnswer(base, code) {
   const interval = setInterval(async () => {
     try {
-      const r = await fetch('/api/signal/answer/' + code);
+      const r = await fetch(base + '/api/signal/answer/' + code);
       const d = await r.json();
       if (d.answer) {
         clearInterval(interval);
@@ -72,7 +84,7 @@ function _pollForAnswer(code) {
       }
     } catch {}
   }, 1000);
-  setTimeout(() => clearInterval(interval), 120000); // stop after 2 min
+  setTimeout(() => clearInterval(interval), 120000);
 }
 
 // Host calls this when server is NOT available (manual raw-SDP flow)
@@ -92,7 +104,9 @@ export async function join(offerCode, onConnected) {
   let offerSDP;
 
   if (isShortCode) {
-    const r = await fetch('/api/signal/offer/' + offerCode);
+    const base = await _getServerUrl();
+    if (!base && base !== '') throw new Error('Local server not reachable — make sure start-server.command is running');
+    const r = await fetch(base + '/api/signal/offer/' + offerCode);
     if (!r.ok) throw new Error('Room not found — check the code');
     const { offer } = await r.json();
     offerSDP = offer;
@@ -106,8 +120,8 @@ export async function join(offerCode, onConnected) {
   await _waitForICE(_pc);
 
   if (isShortCode) {
-    // Post answer back via server — host is polling, no manual step needed
-    await fetch('/api/signal/answer/' + offerCode, {
+    const base = await _getServerUrl() ?? '';
+    await fetch(base + '/api/signal/answer/' + offerCode, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ answer: _pc.localDescription }),
