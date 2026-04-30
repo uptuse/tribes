@@ -26,10 +26,15 @@ fi
 IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "unknown")
 
 echo ""
-echo "  YOUR URL:  http://localhost:3000"
+echo "  ┌─────────────────────────────────────────────────────┐"
+echo "  │  Open THIS on YOUR computer (enables short codes):  │"
+echo "  │  http://localhost:3000                              │"
+echo "  │                                                     │"
 if [ "$IP" != "unknown" ]; then
-  echo "  KIDS URL:  http://$IP:3000  ← type this on their device"
+echo "  │  Kids/friends type this on THEIR device:            │"
+echo "  │  http://$IP:3000                         │"
 fi
+echo "  └─────────────────────────────────────────────────────┘"
 echo ""
 echo "  Keep this window open while playing."
 echo "  Press Ctrl+C to stop the server."
