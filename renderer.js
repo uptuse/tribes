@@ -88,6 +88,7 @@ let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
+let discMeshes = [];  // parallel array — flat spinning disc for WPN_DISC (type 2)
 let flagMeshes = [];
 let buildingMeshes = [];
 let weaponHand;             // small box mesh attached at local-player view position
@@ -2972,6 +2973,19 @@ function initProjectiles() {
         scene.add(mesh);
         projectileMeshes.push(mesh);
     }
+
+    // Disc meshes — flat spinning cylinders for WPN_DISC (type 2)
+    const discGeom = new THREE.CylinderGeometry(0.28, 0.28, 0.055, 20);
+    const discMat  = new THREE.MeshStandardMaterial({
+        color: 0xAADDFF, emissive: 0x2255FF, emissiveIntensity: 2.5,
+        roughness: 0.15, metalness: 0.9,
+    });
+    for (let i = 0; i < MAX_PROJECTILES; i++) {
+        const mesh = new THREE.Mesh(discGeom, discMat);
+        mesh.visible = false;
+        scene.add(mesh);
+        discMeshes.push(mesh);
+    }
 }
 
 function initFlags() {
@@ -3832,19 +3846,37 @@ function _updateViewmodelSway(dt) {
 
 function syncProjectiles() {
     const count = Module._getProjectileStateCount();
+    const now = performance.now() * 0.001;
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-        const mesh = projectileMeshes[i];
-        if (i >= count) { mesh.visible = false; continue; }
+        const sphere = projectileMeshes[i];
+        const disc   = discMeshes[i];
+        if (i >= count) { sphere.visible = false; if (disc) disc.visible = false; continue; }
         const o = i * projectileStride;
         const alive = projectileView[o + 9] > 0.5;
-        mesh.visible = alive;
-        if (!alive) continue;
-        mesh.position.set(projectileView[o], projectileView[o + 1], projectileView[o + 2]);
-        const type = projectileView[o + 6] | 0;
-        const color = PROJ_COLORS[type] ?? 0xFFFFFF;
-        if (mesh.material.color.getHex() !== color) {
-            mesh.material.color.setHex(color);
-            mesh.material.emissive.setHex(color);
+        const type  = projectileView[o + 6] | 0;
+        const isDisc = (type === 2);
+
+        if (!alive) { sphere.visible = false; if (disc) disc.visible = false; continue; }
+
+        const px = projectileView[o], py = projectileView[o + 1], pz = projectileView[o + 2];
+
+        if (isDisc && disc) {
+            // Disc: flat spinning cylinder, sphere hidden
+            sphere.visible = false;
+            disc.visible   = true;
+            disc.position.set(px, py, pz);
+            // Spin around Y; tilt ~25° on X so it reads as a frisbee in flight
+            disc.rotation.set(0.42, now * 14.0, 0, 'YXZ');
+        } else {
+            // All other weapons: standard sphere
+            if (disc) disc.visible = false;
+            sphere.visible = true;
+            sphere.position.set(px, py, pz);
+            const color = PROJ_COLORS[type] ?? 0xFFFFFF;
+            if (sphere.material.color.getHex() !== color) {
+                sphere.material.color.setHex(color);
+                sphere.material.emissive.setHex(color);
+            }
         }
     }
 }
@@ -4606,7 +4638,7 @@ function initProjectileTrails() {
 const _TRAIL_RGB = [
     [1.0, 1.0, 1.0],   // 0 blaster (white)
     [1.0, 0.93, 0.25],  // 1 chaingun (yellow)
-    [0.7, 0.85, 1.0],   // 2 disc (blueish white)
+    [0.45, 0.75, 1.0],  // 2 disc (bright electric blue)
     [0.3, 0.5, 0.19],   // 3 grenade (green)
     [1.0, 0.38, 0.13],  // 4 plasma (orange)
     [1.0, 0.63, 0.25],  // 5 mortar (warm orange)
@@ -4656,8 +4688,9 @@ function updateProjectileTrails(dt) {
         const o = p * projectileStride;
         if (projectileView[o + 9] < 0.5) continue; // not alive
         const type = projectileView[o + 6] | 0;
-        // Emit 1 trail particle per projectile per frame
         _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
+        // Disc gets a second trail particle for a denser blue ribbon
+        if (type === 2) _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
     }
 
     _trailPoints.geometry.attributes.position.needsUpdate = true;
