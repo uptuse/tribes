@@ -90,6 +90,7 @@ import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
 import { EditorBindings }  from './client/editor_bindings.js?v=1';
 import { EditorLighting }  from './client/editor_lighting.js?v=1';
 import { EventBus }        from './client/event_bus.js?v=1';
+import { initGamepad, tickGamepad } from './client/gamepad.js?v=1';
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -464,6 +465,7 @@ export async function start() {
         window.__THREE = THREE;
         // Start EventBus
         EventBus.load();
+        initGamepad();
         console.log('[Shell] Unified editor shell ready — 12 modes');
     } catch(e) { console.warn('[Shell] Init failed:', e); }
 
@@ -5559,9 +5561,10 @@ function loop() {
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
-        const now = t; // R32.43: reuse t from loop() top — same performance.now()*0.001
+        const now = t;
         const dt = _lastTickTime > 0 ? Math.min(0.1, now - _lastTickTime) : 1/60;
         _lastTickTime = now;
+        try { tickGamepad(dt); } catch(e) {}  // gamepad input before physics
         polish.tick(dt, t);
         // R32.13-manus: combat FX tick (muzzle flash decay, tracer fade)
         if (window.CombatFX && window.CombatFX.update) window.CombatFX.update(dt);

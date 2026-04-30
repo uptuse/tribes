@@ -92,6 +92,11 @@ static bool  g_jetActive=false; // for toggle mode state
 static bool  g_freelook=false;  // Freelook: freeze player aim, JS orbits camera
 static bool  g_paused=false;    // Editor shell: skip physics tick when editing
 
+// Gamepad synthetic input — written by JS each frame, consumed in playerUpdate
+static float g_gpFwd=0, g_gpSide=0;   // movement axes [-1..1]
+static float g_gpLookDX=0, g_gpLookDY=0; // look delta (accumulated, cleared after use)
+static int   g_gpBtns=0;   // bitmask: bit0=fire bit1=jet/jump bit2=ski bit3=reload
+
 // Phase-A Live Editor: runtime physics tuning overrides.
 // Multipliers (1.0 = stock) except g_tuneGravity which is absolute m/s².
 static float g_tuneGravity        = 20.0f; // absolute m/s² (was local 20.0f per R31.3)
@@ -118,6 +123,11 @@ static bool sGetB(const char*j,const char*k,bool d){
 }
 extern "C" void setFreelook(int on){ g_freelook = (on != 0); }
 extern "C" void pause(int on){ g_paused = (on != 0); }
+extern "C" void setGamepadInput(float fwd, float side, float lookDX, float lookDY, int btns){
+    g_gpFwd=fwd; g_gpSide=side;
+    g_gpLookDX+=lookDX; g_gpLookDY+=lookDY; // accumulate, same as mouse
+    g_gpBtns=btns;
+}
 extern "C" void setSettings(const char*json){
     g_mouseSensitivity=(float)sGetF(json,"sensitivity",1.0);
     g_fov=(float)sGetF(json,"fov",90.0);
@@ -2268,13 +2278,18 @@ extern "C" void mainLoop(){
     Player&me=players[localPlayer];
 
     // --- Input ---
-    // g_freelook: JS is orbiting camera; freeze player aim so mouse only moves the view.
     if(!g_freelook){
-        me.yaw+=mDX*0.003f*g_mouseSensitivity;
-        me.pitch-=(g_invertY?-1.0f:1.0f)*mDY*0.003f*g_mouseSensitivity;
+        // Mouse + gamepad right stick both contribute to look
+        me.yaw  +=(mDX+g_gpLookDX)*0.003f*g_mouseSensitivity;
+        me.pitch-=(g_invertY?-1.0f:1.0f)*(mDY+g_gpLookDY)*0.003f*g_mouseSensitivity;
         if(me.pitch>1.4f)me.pitch=1.4f;if(me.pitch<-1.4f)me.pitch=-1.4f;
     }
-    mDX=mDY=0;
+    mDX=mDY=g_gpLookDX=g_gpLookDY=0;
+    // Gamepad buttons: bit0=fire, bit1=jet/jump, bit2=ski
+    if(g_gpBtns&1) fireWeapon(localPlayer);
+    if(g_gpBtns&2) keys[32]=1; // jet/jump = Space
+    if(g_gpBtns&4) keys[16]=1; // ski = Shift
+    else if(!(keys[16])){}; // don't force ski off if keyboard holds it
 
     // Toggle third person (V key)
     static bool vWas=false;
@@ -2336,11 +2351,12 @@ extern "C" void mainLoop(){
         Vec3 flatFwd={sinf(me.yaw),0,-cosf(me.yaw)};
         const ArmorData&ad=armors[me.armor];
 
+        // Merge gamepad movement axes (left stick) with keyboard
         Vec3 moveDir={0,0,0};
-        if(keys[87]||keys[38])moveDir+=flatFwd;
-        if(keys[83]||keys[40])moveDir+=flatFwd*-1;
-        if(keys[65]||keys[37])moveDir+=right*-1;
-        if(keys[68]||keys[39])moveDir+=right;
+        if(keys[87]||keys[38]||g_gpFwd>0.15f) moveDir+=flatFwd*(keys[87]||keys[38]?1:g_gpFwd);
+        if(keys[83]||keys[40]||g_gpFwd<-0.15f)moveDir+=flatFwd*(keys[83]||keys[40]?-1:g_gpFwd);
+        if(keys[65]||keys[37]||g_gpSide<-0.15f)moveDir+=right*(keys[65]||keys[37]?-1:g_gpSide);
+        if(keys[68]||keys[39]||g_gpSide>0.15f) moveDir+=right*(keys[68]||keys[39]?1:g_gpSide);
 
         float th=getH(me.pos.x,me.pos.z);
         float groundDist=me.pos.y-th;
