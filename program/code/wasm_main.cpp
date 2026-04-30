@@ -626,9 +626,37 @@ static void initBuildings() {
     }
 }
 
-// R32.103: building collision now handled by Rapier in JS
+// AABB player-building collision. Rapier in JS was never fully active;
+// restored here so walking through buildings works correctly.
 static bool resolvePlayerBuildingCollision(Vec3& pos, Vec3& vel, float playerRadius, float playerHeight) {
-    return false;
+    bool hit = false;
+    for (int i = 0; i < numBuildings; i++) {
+        const Building& bld = buildings[i];
+        if (bld.isRock) continue;
+        // Expand AABB by player capsule
+        float minX = bld.pos.x - bld.halfSize.x - playerRadius;
+        float maxX = bld.pos.x + bld.halfSize.x + playerRadius;
+        float minY = bld.pos.y - bld.halfSize.y;
+        float maxY = bld.pos.y + bld.halfSize.y + playerHeight;
+        float minZ = bld.pos.z - bld.halfSize.z - playerRadius;
+        float maxZ = bld.pos.z + bld.halfSize.z + playerRadius;
+        if (pos.x <= minX || pos.x >= maxX) continue;
+        if (pos.y <= minY || pos.y >= maxY) continue;
+        if (pos.z <= minZ || pos.z >= maxZ) continue;
+        // Push out along shortest penetration axis
+        float dxL = pos.x - minX, dxR = maxX - pos.x;
+        float dyB = pos.y - minY, dyT = maxY - pos.y;
+        float dzL = pos.z - minZ, dzR = maxZ - pos.z;
+        float dx = dxL < dxR ? -dxL : dxR;
+        float dy = dyB < dyT ? -dyB : dyT;
+        float dz = dzL < dzR ? -dzL : dzR;
+        float adx = fabsf(dx), ady = fabsf(dy), adz = fabsf(dz);
+        if      (adx <= ady && adx <= adz) { pos.x += dx; vel.x = 0; }
+        else if (adz <= ady)               { pos.z += dz; vel.z = 0; }
+        else { pos.y += dy; if (dy > 0.0f) { vel.y = 0; } }
+        hit = true;
+    }
+    return hit;
 }
 
 static bool projectileHitsInterior(Vec3 pos); // forward declaration
@@ -1518,9 +1546,10 @@ extern "C" void spawnDummy(){
     p.health   = armors[ARMOR_HEAVY].maxDamage;
     p.energy   = armors[ARMOR_HEAVY].maxEnergy;
     p.curWeapon= WPN_DISC;
-    // Place at red flag base (team 0) + small forward offset so it's visible
+    // Place at red flag base (team 0) + offset, snapped to terrain height
     Vec3 base  = flags[0].homePos;
-    p.pos      = {base.x + 5.0f, base.y + 0.5f, base.z};
+    float dx   = base.x + 8.0f, dz = base.z;
+    p.pos      = {dx, getH(dx, dz) + 1.0f, dz};
     snprintf(p.name, sizeof(p.name), "Dummy");
     g_dummySlot = slot;
     printf("[Dummy] Spawned at (%.1f, %.1f, %.1f) team=%d HP=%.0f\n",

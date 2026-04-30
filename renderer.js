@@ -136,6 +136,65 @@ const PROJ_COLORS = [
 
 // Reused tmp objects
 const _tmpVec = new THREE.Vector3();
+
+// ── Dummy health bar (projected world → screen) ────────────────────────────
+const _dummyBar = (() => {
+    const wrap = document.createElement('div');
+    wrap.id = 'dummy-health-wrap';
+    wrap.style.cssText = `
+        position:fixed; display:none; pointer-events:none; z-index:500;
+        transform:translate(-50%, 0); text-align:center;`;
+    wrap.innerHTML = `
+        <div style="font-family:'Roboto Mono',monospace;font-size:11px;color:#ff4444;
+            text-shadow:0 0 4px #000,0 0 4px #000;margin-bottom:3px;letter-spacing:1px;">DUMMY</div>
+        <div style="width:80px;height:7px;background:rgba(0,0,0,0.6);border:1px solid rgba(255,255,255,0.3);border-radius:2px;overflow:hidden;">
+            <div id="dummy-health-fill" style="height:100%;background:#ff3333;width:100%;transition:width 80ms linear;"></div>
+        </div>
+        <div id="dummy-health-text" style="font-family:'Roboto Mono',monospace;font-size:10px;
+            color:#ffaaaa;text-shadow:0 0 4px #000;margin-top:2px;"></div>`;
+    document.body.appendChild(wrap);
+    return wrap;
+})();
+
+const _dummyV3 = new THREE.Vector3();
+let _dummyMaxHp = 0;
+function _syncDummyHealthBar() {
+    if (!playerView || !playerStride || !camera) { _dummyBar.style.display = 'none'; return; }
+    // Dummy is always slot 1
+    const o    = 1 * playerStride;
+    const alive = playerView[o + 13] > 0.5;
+    const botRole = playerView[o + 19] | 0;  // 99 = dummy sentinel
+    if (!alive || botRole !== 99) { _dummyBar.style.display = 'none'; return; }
+
+    const px = playerView[o], py = playerView[o + 1], pz = playerView[o + 2];
+    const hp = playerView[o + 9];
+
+    // Track max HP seen (set on first frame)
+    if (_dummyMaxHp < 1 || hp > _dummyMaxHp) _dummyMaxHp = hp;
+
+    // Project world position to screen
+    _dummyV3.set(px, py + 3.2, pz);   // float above head
+    _dummyV3.project(camera);
+
+    // Outside view frustum — hide
+    if (_dummyV3.z > 1 || Math.abs(_dummyV3.x) > 1.2 || Math.abs(_dummyV3.y) > 1.2) {
+        _dummyBar.style.display = 'none'; return;
+    }
+
+    const sx = ( _dummyV3.x * 0.5 + 0.5) * window.innerWidth;
+    const sy = (-_dummyV3.y * 0.5 + 0.5) * window.innerHeight;
+
+    _dummyBar.style.display = 'block';
+    _dummyBar.style.left = sx + 'px';
+    _dummyBar.style.top  = sy + 'px';
+
+    const pct = _dummyMaxHp > 0 ? Math.max(0, hp / _dummyMaxHp) : 1;
+    document.getElementById('dummy-health-fill').style.width = (pct * 100).toFixed(1) + '%';
+    document.getElementById('dummy-health-fill').style.background =
+        pct > 0.5 ? '#33cc33' : pct > 0.25 ? '#ffaa00' : '#ff3333';
+    document.getElementById('dummy-health-text').textContent =
+        Math.max(0, Math.round(hp)).toFixed(0) + ' / ' + Math.round(_dummyMaxHp).toFixed(0) + ' HP';
+}
 const _aimPoint3P = { x: 0, y: 0, z: 0 };    // R32.43: persistent aim-point (no per-frame alloc)
 const _flagStateByTeam = [0, 0];               // R32.43: persistent flag state (no per-frame alloc)
 
@@ -2343,12 +2402,33 @@ async function initInteriorShapes() {
         }
 
         // R32.99: Unified collision — use registerModelCollision() for all geometry.
-        // The Three.js meshes already have correct world transforms via parent chain:
-        // scene → interiorShapesGroup → outer(worldPos+rot) → mesh(-90°X)
-        // Force matrixWorld update since collision registers before first render.
         interiorShapesGroup.updateMatrixWorld(true);
         const colInfo = registerModelCollision(interiorShapesGroup);
         console.log('[R32.99] Interior collision via registerModelCollision:', colInfo);
+
+        // Player-building collision: send per-mesh AABBs to C++ via appendInteriorShapeAABBs.
+        // resolvePlayerBuildingCollision() was a stub (Rapier never landed); now restored.
+        // Each entry: [minX, minY, minZ, maxX, maxY, maxZ]
+        if (Module._appendInteriorShapeAABBs && Module._malloc && Module.HEAPF32) {
+            const aabbs = [];
+            const _box = new THREE.Box3();
+            interiorShapesGroup.traverse(obj => {
+                if (!obj.isMesh || !obj.geometry) return;
+                // Skip rock geometry — no solid collision needed
+                if (obj.parent?.userData?.fileName?.toLowerCase().includes('rock')) return;
+                _box.setFromObject(obj);
+                if (_box.isEmpty()) return;
+                aabbs.push(_box.min.x, _box.min.y, _box.min.z, _box.max.x, _box.max.y, _box.max.z);
+            });
+            if (aabbs.length > 0) {
+                const count = aabbs.length / 6;
+                const ptr   = Module._malloc(aabbs.length * 4);
+                Module.HEAPF32.set(new Float32Array(aabbs), ptr / 4);
+                Module._appendInteriorShapeAABBs(count, ptr);
+                Module._free(ptr);
+                console.log('[Collision] Sent', count, 'building AABBs to C++ player collision');
+            }
+        }
     } catch (e) {
         console.error('[R32.1] initInteriorShapes failed', e);
     }
@@ -5414,6 +5494,7 @@ function loop() {
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
+    _syncDummyHealthBar();
     // R32.109: Rigged GLB character sync — overlays Mixamo-rigged models on
     // top of procedural player meshes for local 3P + demo character.
     try { Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes); } catch(e) { /* keep loop alive */ }
