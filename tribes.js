@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmprdr00c7j.js
+// include: /tmp/tmpl5oprdtg.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmprdr00c7j.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpp5zgahr8.js
+// end include: /tmp/tmpl5oprdtg.js
+// include: /tmp/tmpjr9ep90s.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmpp5zgahr8.js
-// include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmph31azdds.js
+  // end include: /tmp/tmpjr9ep90s.js
+// include: /tmp/tmp1z1by2na.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /var/folders/f2/5f85qmzd0fx6tjwv4tgffl8m0000gn/T/tmph31azdds.js
+  // end include: /tmp/tmp1z1by2na.js
 
 
 var arguments_ = [];
@@ -6458,7 +6458,6 @@ var ASM_CONSTS = {
 };
 
 // Imports from the Wasm binary.
-var _setFreelook = Module['_setFreelook'] = makeInvalidEarlyAccess('_setFreelook');
 var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings');
 var _setPhysicsTuning = Module['_setPhysicsTuning'] = makeInvalidEarlyAccess('_setPhysicsTuning');
 var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
@@ -6492,10 +6491,6 @@ var _isReady = Module['_isReady'] = makeInvalidEarlyAccess('_isReady');
 var _getThirdPerson = Module['_getThirdPerson'] = makeInvalidEarlyAccess('_getThirdPerson');
 var _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = makeInvalidEarlyAccess('_appendInteriorShapeAABBs');
 var _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = makeInvalidEarlyAccess('_setLocalAimPoint3P');
-var _getLayoutEntityCount = Module['_getLayoutEntityCount'] = makeInvalidEarlyAccess('_getLayoutEntityCount');
-var _isLayoutLoaded = Module['_isLayoutLoaded'] = makeInvalidEarlyAccess('_isLayoutLoaded');
-var _getLayoutEntity = Module['_getLayoutEntity'] = makeInvalidEarlyAccess('_getLayoutEntity');
-var _setLayoutEntityPos = Module['_setLayoutEntityPos'] = makeInvalidEarlyAccess('_setLayoutEntityPos');
 var _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = makeInvalidEarlyAccess('_appendInteriorMeshTris');
 var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
 var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
@@ -6520,7 +6515,6 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
-  assert(typeof wasmExports['setFreelook'] != 'undefined', 'missing Wasm export: setFreelook');
   assert(typeof wasmExports['setSettings'] != 'undefined', 'missing Wasm export: setSettings');
   assert(typeof wasmExports['setPhysicsTuning'] != 'undefined', 'missing Wasm export: setPhysicsTuning');
   assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
@@ -6554,10 +6548,6 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['getThirdPerson'] != 'undefined', 'missing Wasm export: getThirdPerson');
   assert(typeof wasmExports['appendInteriorShapeAABBs'] != 'undefined', 'missing Wasm export: appendInteriorShapeAABBs');
   assert(typeof wasmExports['setLocalAimPoint3P'] != 'undefined', 'missing Wasm export: setLocalAimPoint3P');
-  assert(typeof wasmExports['getLayoutEntityCount'] != 'undefined', 'missing Wasm export: getLayoutEntityCount');
-  assert(typeof wasmExports['isLayoutLoaded'] != 'undefined', 'missing Wasm export: isLayoutLoaded');
-  assert(typeof wasmExports['getLayoutEntity'] != 'undefined', 'missing Wasm export: getLayoutEntity');
-  assert(typeof wasmExports['setLayoutEntityPos'] != 'undefined', 'missing Wasm export: setLayoutEntityPos');
   assert(typeof wasmExports['appendInteriorMeshTris'] != 'undefined', 'missing Wasm export: appendInteriorMeshTris');
   assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
   assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
@@ -6578,7 +6568,6 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
-  _setFreelook = Module['_setFreelook'] = createExportWrapper('setFreelook', 1);
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
   _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 5);
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
@@ -6612,10 +6601,6 @@ function assignWasmExports(wasmExports) {
   _getThirdPerson = Module['_getThirdPerson'] = createExportWrapper('getThirdPerson', 0);
   _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = createExportWrapper('appendInteriorShapeAABBs', 2);
   _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = createExportWrapper('setLocalAimPoint3P', 3);
-  _getLayoutEntityCount = Module['_getLayoutEntityCount'] = createExportWrapper('getLayoutEntityCount', 0);
-  _isLayoutLoaded = Module['_isLayoutLoaded'] = createExportWrapper('isLayoutLoaded', 0);
-  _getLayoutEntity = Module['_getLayoutEntity'] = createExportWrapper('getLayoutEntity', 6);
-  _setLayoutEntityPos = Module['_setLayoutEntityPos'] = createExportWrapper('setLayoutEntityPos', 4);
   _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = createExportWrapper('appendInteriorMeshTris', 8);
   _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
   _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);
