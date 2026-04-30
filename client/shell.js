@@ -306,6 +306,14 @@ function _modeLabel(id) { return MODE_FLAT.find(m => m.id === id)?.label ?? id; 
 export function togglePanel() {
   _state.panelOpen = !_state.panelOpen;
   document.getElementById('fw-panel')?.classList.toggle('open', _state.panelOpen);
+  if (_state.panelOpen) {
+    // Release pointer lock so mouse can reach the panel controls
+    if (document.exitPointerLock) document.exitPointerLock();
+  } else if (_state.mode === 'play' && window.gameStarted) {
+    // Re-acquire pointer lock when panel closes and we're in Play
+    const canvas = document.getElementById('canvas');
+    if (canvas) canvas.requestPointerLock();
+  }
 }
 
 function _toggleHelp() {
