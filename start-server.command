@@ -14,13 +14,21 @@ if [ ! -d "node_modules/ws" ]; then
   npm install --silent
 fi
 
+# Kill any previous instance on port 3000
+OLD=$(lsof -ti:3000 2>/dev/null)
+if [ -n "$OLD" ]; then
+  echo "  Stopping previous server (PID $OLD)..."
+  kill "$OLD" 2>/dev/null
+  sleep 0.5
+fi
+
 # Detect local IP
 IP=$(ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo "unknown")
 
 echo ""
-echo "  YOUR URL:  http://localhost:8080"
+echo "  YOUR URL:  http://localhost:3000"
 if [ "$IP" != "unknown" ]; then
-  echo "  KIDS URL:  http://$IP:8080  ← type this on their device"
+  echo "  KIDS URL:  http://$IP:3000  ← type this on their device"
 fi
 echo ""
 echo "  Keep this window open while playing."
