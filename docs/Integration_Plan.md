@@ -70,7 +70,21 @@ This is a major architectural shift. We will execute it incrementally. **Do not 
 2. **Move Logic:** Create `client/editor_map.js`. Port the terrain raycasting and prop instantiation.
 3. **Live Context:** The map editor no longer needs to load the `raindance_heights.bin` or `canonical.json` — it just raycasts against the live `terrainMesh` the game already built.
 
-### Milestone 4: Hot-Reloading WASM State
+### Milestone 4: Port the Animation Editor
+**Goal:** Bring `assets/models/animation_editor.html` into the main game shell. Selecting a clip in the library loads its keyframes into the live player rig; edits apply immediately and playback previews on-character.
+
+**Non-negotiable:** the existing animation editor must land in the final product — it is not optional, and it is not to be re-implemented from scratch. Absorb what is there.
+
+1. **Open and profile the file first.** Before writing any code, read `assets/models/animation_editor.html` end to end and document: rendering stack (vanilla Three.js vs. something else), clip data format (JSON shape, bone naming convention, keyframe representation), how it loads the skeleton (GLTF, DTS, custom), and whether it uses `THREE.AnimationMixer` or a hand-rolled interpolator. Note the result in a comment at the top of the new `client/editor_animations.js`.
+2. **Decide integration path based on step 1:**
+   - *If the editor is vanilla Three.js and uses `AnimationMixer`:* port the DOM (timeline, clip library, keyframe scrubber) into hidden `div`s in `index.html`, and port the logic into `client/editor_animations.js` the same way the map and building editors were ported. The editor will drive the live player rig directly — no separate scene.
+   - *If the editor uses a different rendering stack or a bespoke skeleton loader:* build a thin adapter layer. The adapter must translate clip data from the editor's internal format into `THREE.AnimationClip` objects that the main game's `AnimationMixer` can play, and round-trip edits back. Do not replace the editor's UI; only bridge its data.
+   - *If the editor is incompatible enough that neither path is tractable in reasonable time:* stop and flag this explicitly before continuing — do not silently reimplement.
+3. **Live context:** the animation editor no longer needs its own skeleton file or scene — it drives the main game's live player rig. The game pauses physics on mode entry (same as other editors) but keeps the character rendered so edits are visible against the actual terrain and lighting.
+4. **Clip library maps action to animation:** the clip list is the action vocabulary (IDLE, RUN, SKI, JET, FIRE_DISC, DEATH, etc.). Selecting a clip loads its keyframes into the scrubber; editing commits back to the clip's JSON on save. This is the editor's source of truth for what the game plays when it asks the character to do an action.
+5. **Hot-reload:** on switch back to Play, the modified clip map is handed to the main `AnimationMixer` so the next invocation of that action plays the edited motion immediately, without a rebuild.
+
+### Milestone 5: Hot-Reloading WASM State
 **Goal:** When switching from Edit back to Play, the C++ engine needs to know about the new walls/props so collision works.
 
 1. **Serialize:** On switch to Play, `editor_buildings.js` generates a new `layouts.json` string from the live scene graph.
