@@ -5,8 +5,13 @@
 import { log } from './shell.js';
 
 const DEFAULT_BINDINGS = [
-  { event_id: 'disc_launcher.on_fire',   reactions: [] },
-  { event_id: 'disc_launcher.on_impact', reactions: [] },
+  { event_id: 'disc_launcher.on_fire',        reactions: [] },
+  { event_id: 'disc_launcher.on_impact',      reactions: [] },
+  { event_id: 'player.on_footstep_left',      reactions: [] },
+  { event_id: 'player.on_footstep_right',     reactions: [] },
+  { event_id: 'player.on_landing_soft',       reactions: [] },
+  { event_id: 'player.on_landing_hard',       reactions: [] },
+  { event_id: 'player.on_ski_compress',       reactions: [] },
   { event_id: 'chaingun.on_fire',        reactions: [] },
   { event_id: 'mortar.on_fire',          reactions: [] },
   { event_id: 'mortar.on_impact',        reactions: [] },
