@@ -340,8 +340,20 @@ function _bindKeys() {
     const active = document.activeElement;
     const inInput = active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA');
 
-    // Shift+Enter — toggle panel
-    if (e.key === 'Enter' && e.shiftKey) { e.preventDefault(); togglePanel(); return; }
+    // Shift+Enter — toggle panel (or return to Play if in edit mode)
+    if (e.key === 'Enter' && e.shiftKey) {
+      e.preventDefault();
+      if (_state.mode !== 'play') { switchMode('play'); }
+      else { togglePanel(); }
+      return;
+    }
+
+    // Esc — if in any edit mode, go straight back to Play
+    if (e.key === 'Escape' && _state.mode !== 'play') {
+      e.preventDefault(); e.stopPropagation();
+      switchMode('play');
+      return;
+    }
 
     // H — help
     if ((e.key === 'h' || e.key === 'H') && !inInput) { _toggleHelp(); return; }

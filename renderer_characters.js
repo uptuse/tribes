@@ -172,6 +172,13 @@ function _createInstance() {
     if (!_gltf) return null;
 
     const model = skeletonClone(_gltf.scene);
+
+    // Mixamo FBX→GLB pipeline sometimes embeds a -90° X root rotation.
+    // Detect and correct it so the character stands upright.
+    if (Math.abs(model.rotation.x + Math.PI / 2) < 0.01) {
+        model.rotation.x = 0;
+    }
+
     const mixer = new THREE.AnimationMixer(model);
 
     const clips = {};

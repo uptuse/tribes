@@ -336,11 +336,12 @@ export async function start() {
         // Poll until loaded, then wire the rig into the animation editor.
         const _pollRig = setInterval(() => {
             if (!Characters.isLoaded()) return;
-            // Pass localIdx so getRig() returns the rendered instance skeleton, not the template
+            clearInterval(_pollRig);
+            // Try live instance first (3P), fall back to template (1P / preview)
             const li  = Module._getLocalPlayerIdx?.() ?? 0;
-            const rig = Characters.getRig?.(li);
-            if (rig) { clearInterval(_pollRig); setCharacterRig(rig.skeleton, rig.clips); }
-        }, 500);
+            const rig = Characters.getRig?.(li) ?? Characters.getRig?.(-1);
+            if (rig) setCharacterRig(rig.skeleton, rig.clips);
+        }, 800);
     } catch(e) { console.warn('[R32.109] Characters init failed:', e); }
     initProjectiles();
     initFlags();

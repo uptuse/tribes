@@ -62,13 +62,17 @@ export function setCharacterRig(skeleton, clips) {
 function onEnter() {
   _buildTimeline();
   document.getElementById('fw-timeline')?.classList.add('open');
+  // Push the right panel up so timeline doesn't hide the character picker
+  const panel = document.getElementById('fw-panel');
+  if (panel) panel.style.paddingBottom = '225px';
   _updateTimecodeEl();
 }
 
 function onExit() {
   _stopPlayback();
   document.getElementById('fw-timeline')?.classList.remove('open');
-  // Restore bind pose so character returns to idle
+  const panel = document.getElementById('fw-panel');
+  if (panel) panel.style.paddingBottom = '';
   if (_skeleton) _resetToBindPose();
 }
 

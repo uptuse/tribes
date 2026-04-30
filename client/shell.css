@@ -372,6 +372,9 @@
 /* ════════════════════════════════════════════════════════════
    TIMELINE (Animate mode)
 ═══════════════════════════════════════════════════════════ */
+/* leave room for the timeline when it's open */
+#fw-panel { padding-bottom: 0; transition: padding-bottom var(--dur-panel) var(--ease-ui); }
+
 #fw-timeline {
   position: absolute; bottom: 0; left: 0; right: 0;
   height: 220px;
