@@ -4054,7 +4054,7 @@ function syncCamera() {
     const is3P = (Module._getThirdPerson && Module._getThirdPerson()) ? true : false;
 
     // ── Init persistent state on first frame ──────────────────
-    if (!window._tribes3PCam) window._tribes3PCam = { dist: 4.0, height: 1.2 };
+    if (!window._tribes3PCam) window._tribes3PCam = { dist: 4.0, height: 1.2, pitchOffset: 0.0 };
     if (typeof window._tribesCamDist !== 'number') {
         window._tribesCamDist   = is3P ? window._tribes3PCam.dist : 0.0;
         window._tribesCamHeight = is3P ? window._tribes3PCam.height : 1.7;
@@ -4136,7 +4136,8 @@ function syncCamera() {
             camera.position.set(cx, cy, cz);
             // Rotation: current player aim — crosshair stays accurate while
             // the camera position is still swinging into place.
-            camera.rotation.set(pitch, -yaw, 0, 'YXZ');
+            const pOff = window._tribes3PCam.pitchOffset || 0;
+            camera.rotation.set(pitch + pOff, -yaw, 0, 'YXZ');
         }
     } else {
         // 1P
