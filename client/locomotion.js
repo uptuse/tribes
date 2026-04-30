@@ -13,6 +13,19 @@
 
 import * as THREE from 'three';
 
+// Cached pelvis bone lookup — traverse is expensive, only do it once per instance
+function _getPelvisBone(inst) {
+  if (inst._pelvisBone !== undefined) return inst._pelvisBone; // null = not found
+  let found = null;
+  inst.model.traverse(obj => {
+    if (found) return;
+    const n = obj.name.toLowerCase();
+    if (n.includes('hips') || n.includes('pelvis')) found = obj;
+  });
+  inst._pelvisBone = found; // cached; null means absent, won't traverse again
+  return found;
+}
+
 // Natural ground speed of each clip (measured or estimated from GLB)
 const NATURAL_SPEED = {
   run:  3.8,
@@ -91,14 +104,7 @@ export const Locomotion = {
   /** L6: ski posture — crouching, lean into turns, emit ski_compress events */
   skiUpdate(inst, skiing, speed, turnInput, dt) {
     if (!inst?.model) return;
-
-    // Find pelvis / hips
-    let pelvis = null;
-    inst.model.traverse(obj => {
-      if (pelvis) return;
-      const n = obj.name.toLowerCase();
-      if (n.includes('hips') || n.includes('pelvis')) pelvis = obj;
-    });
+    const pelvis = _getPelvisBone(inst);
 
     // Crouch target: pelvis drops 8cm while skiing
     if (!inst._skiCrouch) inst._skiCrouch = 0;
@@ -132,16 +138,7 @@ export const Locomotion = {
   /** L5: procedural pelvis bob — call after mixer.update, before FootIK */
   pelvisBob(inst, speed, clipPhase) {
     if (!inst?.model || clipPhase < 0 || speed < 0.5) return;
-    // Cache pelvis bone — traverse is expensive, don't do it every frame
-    if (!inst._pelvisBone) {
-      inst.model.traverse(obj => {
-        if (inst._pelvisBone) return;
-        const n = obj.name.toLowerCase();
-        if (n.includes('hips') || n.includes('pelvis')) inst._pelvisBone = obj;
-      });
-      if (!inst._pelvisBone) { inst._pelvisBone = null; return; }
-    }
-    const pelvis = inst._pelvisBone;
+    const pelvis = _getPelvisBone(inst);
     if (!pelvis) return;
     const amp = Math.min(speed / 11, 1) * 0.03;   // 0→3cm
     const hip = Math.min(speed / 11, 1) * 0.018;  // 0→1.8cm lateral
