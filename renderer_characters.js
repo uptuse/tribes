@@ -48,10 +48,19 @@ let _demoSpawned = false;
 
 // All available rigged character models
 const CHARACTER_MODELS = [
-    { id: 'crimson_sentinel',  label: 'Crimson Sentinel',  path: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb'    },
-    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb'    },
-    { id: 'wolf_sentinel',     label: 'Wolf Sentinel',     path: './assets/models/wolf_sentinel_rigged.glb'    },
+    { id: 'crimson_sentinel',   label: 'Crimson Sentinel',   path: './assets/models/crimson_sentinel_rigged.glb'   },
+    { id: 'auric_phoenix',      label: 'Auric Phoenix',      path: './assets/models/auric_phoenix_rigged.glb'      },
+    { id: 'crimson_titan',      label: 'Crimson Titan',      path: './assets/models/crimson_titan_rigged.glb'      },
+    { id: 'wolf_sentinel',      label: 'Wolf Sentinel',      path: './assets/models/wolf_sentinel_rigged.glb'      },
+    { id: 'aegis_sentinel',     label: 'Aegis Sentinel',     path: './assets/models/aegis_sentinel_rigged.glb'     },
+    { id: 'crimson_warforged',  label: 'Crimson Warforged',  path: './assets/models/crimson_warforged_rigged.glb'  },
+    { id: 'emerald_sentinel',   label: 'Emerald Sentinel',   path: './assets/models/emerald_sentinel_rigged.glb'   },
+    { id: 'golden_phoenix',     label: 'Golden Phoenix',     path: './assets/models/golden_phoenix_rigged.glb'     },
+    { id: 'iron_wolf',          label: 'Iron Wolf',          path: './assets/models/iron_wolf_rigged.glb'          },
+    { id: 'midnight_sentinel',  label: 'Midnight Sentinel',  path: './assets/models/midnight_sentinel_rigged.glb'  },
+    { id: 'neon_wolf',          label: 'Neon Wolf',          path: './assets/models/neon_wolf_rigged.glb'          },
+    { id: 'obsidian_vanguard',  label: 'Obsidian Vanguard',  path: './assets/models/obsidian_vanguard_rigged.glb'  },
+    { id: 'violet_phoenix',     label: 'Violet Phoenix',     path: './assets/models/violet_phoenix_rigged.glb'     },
 ];
 window.__characterModels = CHARACTER_MODELS;
 let _currentModelIdx = 0;
@@ -131,13 +140,21 @@ function _init(targetScene) {
 
 export function isLoaded() { return _loaded; }
 
-// Returns the skeleton + clips for the animation editor to drive.
-// The GLB loads asynchronously; call this after isLoaded() is true.
-export function getRig() {
-    if (!_gltf) return null;
-    const tmpModel = _gltf.scene;
+// Returns the local player's RENDERED instance skeleton + clips.
+// Must use the cloned instance, not the template — posing the template
+// has no visible effect because rendered characters are skeletonClone() copies.
+export function getRig(localIdx) {
+    if (!_gltf || !_loaded) return null;
+    // Prefer the live local player instance (what the camera sees in 3P)
+    const inst = _chars[localIdx ?? -1];
+    if (inst?.model) {
+        let skeleton = null;
+        inst.model.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
+        if (skeleton) return { skeleton, clips: _gltf.animations };
+    }
+    // Fallback: template skeleton (only useful for clip preview without a live character)
     let skeleton = null;
-    tmpModel.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
+    _gltf.scene.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
     return skeleton ? { skeleton, clips: _gltf.animations } : null;
 }
 

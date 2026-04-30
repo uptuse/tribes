@@ -80,7 +80,7 @@ import { Shell }           from './client/shell.js?v=1';
 import { EditorTuning }    from './client/editor_tuning.js?v=1';
 import { EditorAssets }    from './client/editor_assets.js?v=1';
 import { EditorBuildings, initBuildingsEditor } from './client/editor_buildings.js?v=1';
-import { EditorAnimations, setCharacterRig }    from './client/editor_animations.js?v=1';
+import { EditorAnimations, setCharacterRig }    from './client/editor_animations.js?v=2';
 import { EditorTerrain }   from './client/editor_terrain.js?v=1';
 import { EditorMaterials, initMaterials } from './client/editor_materials.js?v=1';
 import { EditorTriggers, initTriggers }   from './client/editor_triggers.js?v=1';
@@ -336,9 +336,10 @@ export async function start() {
         // Poll until loaded, then wire the rig into the animation editor.
         const _pollRig = setInterval(() => {
             if (!Characters.isLoaded()) return;
-            clearInterval(_pollRig);
-            const rig = Characters.getRig?.();
-            if (rig) setCharacterRig(rig.skeleton, rig.clips);
+            // Pass localIdx so getRig() returns the rendered instance skeleton, not the template
+            const li  = Module._getLocalPlayerIdx?.() ?? 0;
+            const rig = Characters.getRig?.(li);
+            if (rig) { clearInterval(_pollRig); setCharacterRig(rig.skeleton, rig.clips); }
         }, 500);
     } catch(e) { console.warn('[R32.109] Characters init failed:', e); }
     initProjectiles();
@@ -495,6 +496,7 @@ export async function start() {
         initGamepad();
         // Expose character switcher for the editor panel
         window.__switchCharacter = Characters.switchCharacter;
+        window.__Characters      = Characters; // editor_animations.js needs getRig()
         console.log('[Shell] Unified editor shell ready — 12 modes');
     } catch(e) { console.warn('[Shell] Init failed:', e); }
 

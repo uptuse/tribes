@@ -78,10 +78,19 @@ function buildPalette(root) {
 
   // Character picker — hardcoded list matches renderer_characters.js CHARACTER_MODELS
   const models = window.__characterModels ?? [
-    { id: 'crimson_sentinel', label: 'Crimson Sentinel' },
-    { id: 'auric_phoenix',    label: 'Auric Phoenix'    },
-    { id: 'crimson_titan',    label: 'Crimson Titan'    },
-    { id: 'wolf_sentinel',    label: 'Wolf Sentinel'    },
+    { id: 'crimson_sentinel',  label: 'Crimson Sentinel'  },
+    { id: 'auric_phoenix',     label: 'Auric Phoenix'     },
+    { id: 'crimson_titan',     label: 'Crimson Titan'     },
+    { id: 'wolf_sentinel',     label: 'Wolf Sentinel'     },
+    { id: 'aegis_sentinel',    label: 'Aegis Sentinel'    },
+    { id: 'crimson_warforged', label: 'Crimson Warforged' },
+    { id: 'emerald_sentinel',  label: 'Emerald Sentinel'  },
+    { id: 'golden_phoenix',    label: 'Golden Phoenix'    },
+    { id: 'iron_wolf',         label: 'Iron Wolf'         },
+    { id: 'midnight_sentinel', label: 'Midnight Sentinel' },
+    { id: 'neon_wolf',         label: 'Neon Wolf'         },
+    { id: 'obsidian_vanguard', label: 'Obsidian Vanguard' },
+    { id: 'violet_phoenix',    label: 'Violet Phoenix'    },
   ];
   if (models.length > 1) {
     const sec = document.createElement('div'); sec.className = 'fw-section-label'; sec.textContent = 'Character'; body.appendChild(sec);
@@ -94,13 +103,15 @@ function buildPalette(root) {
         if (window.__switchCharacter) {
           window.__switchCharacter(idx);
           log(`Character: ${m.label} — loading…`);
-          // Re-wire rig once loaded
-          setTimeout(() => {
-            if (Characters?.getRig) {
-              const rig = Characters.getRig();
-              if (rig) setCharacterRig(rig.skeleton, rig.clips);
-            }
-          }, 2000);
+          // Re-wire rig from rendered instance once the new model loads
+          const poll = setInterval(() => {
+            const getRig = window.__Characters?.getRig ?? window.Characters?.getRig;
+            if (!getRig) return;
+            const li  = window.Module?._getLocalPlayerIdx?.() ?? 0;
+            const rig = getRig(li);
+            if (rig) { clearInterval(poll); setCharacterRig(rig.skeleton, rig.clips); log(`Rig wired: ${m.label}`); }
+          }, 500);
+          setTimeout(() => clearInterval(poll), 8000);
         }
         document.querySelectorAll('#fw-palette-host .fw-asset-item[data-id]').forEach(el => {
           el.classList.toggle('active', el.dataset.id === m.id);
