@@ -88,6 +88,7 @@ import { EditorAudio }     from './client/editor_audio.js?v=1';
 import { EditorVFX, initVFX }             from './client/editor_vfx.js?v=1';
 import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
 import { EditorBindings }  from './client/editor_bindings.js?v=1';
+import { EditorLighting }  from './client/editor_lighting.js?v=1';
 import { EventBus }        from './client/event_bus.js?v=1';
 
 // --- Module state ---
@@ -439,6 +440,8 @@ export async function start() {
     // ── Editor Shell ──────────────────────────────────────────────
     try {
         window.__terrainMesh = terrainMesh;
+        // Expose lights and scene for the Lighting editor
+        window.__lights = { sun: sunLight, hemi: hemiLight, moon: moonLight, scene };
         initBuildingsEditor(scene, camera, terrainMesh);
         initMaterials(scene);
         initTriggers(scene);
@@ -456,6 +459,7 @@ export async function start() {
         Shell.registerMode('edit-vfx',        EditorVFX);
         Shell.registerMode('edit-ai',         EditorAI);
         Shell.registerMode('edit-bindings',   EditorBindings);
+        Shell.registerMode('edit-lighting',   EditorLighting);
         // Expose THREE for editor modules that need it without a direct import
         window.__THREE = THREE;
         // Start EventBus
@@ -3820,6 +3824,7 @@ function initStateViews() {
     const buf = Module.HEAPF32.buffer;
     playerStride = Module._getPlayerStateStride();
     playerView = new Float32Array(buf, Module._getPlayerStatePtr(), MAX_PLAYERS * playerStride);
+    window.playerView = playerView; window.playerStride = playerStride; // editor_terrain camera presets
     projectileStride = Module._getProjectileStateStride();
     projectileView = new Float32Array(buf, Module._getProjectileStatePtr(), MAX_PROJECTILES * projectileStride);
     particleStride = Module._getParticleStateStride();

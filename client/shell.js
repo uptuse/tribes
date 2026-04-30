@@ -51,6 +51,7 @@ const MODE_ROWS = [
     { id: 'edit-vfx',         label: 'Effects',  desc: "Pick an effect, then click the ground to set one off.",                            tip: "Try Test Fire to drop one in front of you." },
     { id: 'edit-ai',          label: 'Bots',     desc: "Pick what the bot should do, then click the ground to drop it.",                   tip: "Patrol walks a route. Guard stays close." },
     { id: 'edit-bindings',    label: 'Bindings', desc: "Connect events to sounds and effects without code.",                               tip: "Click an event, then drag a sound or effect onto it." },
+    { id: 'edit-lighting',    label: 'Light',    desc: "Adjust sun direction, ambient brightness, fog, and material appearance.",          tip: "Changes are live — switch to Play to see the full day/night effect." },
   ],
 ];
 const MODE_FLAT = MODE_ROWS.flat();
