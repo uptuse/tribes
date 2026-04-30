@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpl5oprdtg.js
+// include: /tmp/tmpy5i_xvjv.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /tmp/tmpl5oprdtg.js
-// include: /tmp/tmpjr9ep90s.js
+// end include: /tmp/tmpy5i_xvjv.js
+// include: /tmp/tmp687qstbx.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpjr9ep90s.js
-// include: /tmp/tmp1z1by2na.js
+  // end include: /tmp/tmp687qstbx.js
+// include: /tmp/tmphbku9j0w.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmp1z1by2na.js
+  // end include: /tmp/tmphbku9j0w.js
 
 
 var arguments_ = [];
@@ -6569,7 +6569,7 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
-  _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 5);
+  _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 6);
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
   _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
