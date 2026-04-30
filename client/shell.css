@@ -270,33 +270,15 @@
 .fw-btn-start:hover { color: var(--ink); border-color: oklch(0.22 0.015 60 / 0.30); }
 
 /* ════════════════════════════════════════════════════════════
-   LEFT PALETTE (per-mode)
+   PALETTE HOST — lives inside the right panel (single column)
 ═══════════════════════════════════════════════════════════ */
-.fw-palette {
-  position: absolute; top: 50px; left: 10px; bottom: 10px;
-  width: 220px;
-  pointer-events: auto;
-  display: flex; flex-direction: column;
-  transform: translateX(calc(-100% - 12px));
-  transition: transform var(--dur-panel) var(--ease-ui);
-  z-index: 10;
-}
-.fw-palette.open { transform: translateX(0); }
-
-.fw-palette-header {
-  padding: 9px 12px;
-  border-bottom: 1px solid var(--hairline);
-  font-size: 11px; font-weight: 500;
-  color: var(--ink-dim);
-  flex-shrink: 0;
-}
-.fw-palette-body { flex: 1; overflow-y: auto; padding: 8px; }
-.fw-palette-footer {
+.fw-palette-host {
+  flex: 1;
+  overflow-y: auto;
   padding: 8px 10px;
   border-top: 1px solid var(--hairline);
-  font-size: 11px; color: var(--ink-faint);
-  flex-shrink: 0;
 }
+.fw-palette-host:empty { display: none; }
 
 /* ════════════════════════════════════════════════════════════
    SLIDER PRIMITIVE (verbatim from prototype)

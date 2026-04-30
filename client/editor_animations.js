@@ -73,10 +73,10 @@ function onExit() {
 }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-animations');
-  const footer = root.querySelector('#fw-palette-footer-edit-animations');
-  if (!body) return;
-  footer.textContent = 'Pick a clip and drag it onto the timeline.';
+  const body = root;
+  
+  
+  // footer: = 'Pick a clip and drag it onto the timeline.';
 
   body.innerHTML = `<div class="fw-section-label">Clips</div>`;
   _refreshClipLibrary(body);

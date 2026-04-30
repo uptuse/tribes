@@ -24,10 +24,10 @@ function onEnter()  { document.addEventListener('click', _onClick); }
 function onExit()   { document.removeEventListener('click', _onClick); }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-materials');
-  const footer = root.querySelector('#fw-palette-footer-edit-materials');
-  if (!body) return;
-  footer.textContent = 'Pick a colour, then click any wall to recolour it.';
+  const body = root;
+  
+  
+  // footer: = 'Pick a colour, then click any wall to recolour it.';
 
   body.innerHTML = `<div class="fw-section-label">Colours</div>`;
   const swatchRow = document.createElement('div'); swatchRow.className = 'fw-swatches';

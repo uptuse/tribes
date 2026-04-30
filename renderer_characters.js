@@ -100,6 +100,16 @@ export function init(targetScene) {
 
 export function isLoaded() { return _loaded; }
 
+// Returns the skeleton + clips for the animation editor to drive.
+// The GLB loads asynchronously; call this after isLoaded() is true.
+export function getRig() {
+    if (!_gltf) return null;
+    const tmpModel = _gltf.scene;
+    let skeleton = null;
+    tmpModel.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
+    return skeleton ? { skeleton, clips: _gltf.animations } : null;
+}
+
 export function sync(t, playerView, playerStride, localIdx, playerMeshes) {
     if (!_loaded) return;
     const dt = _lastT > 0 ? Math.min(0.1, t - _lastT) : 1 / 60;

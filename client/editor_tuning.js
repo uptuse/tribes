@@ -19,11 +19,8 @@ function onEnter() {}
 function onExit() {}
 
 function buildPalette(root) {
-  const body   = root.querySelector(`#fw-palette-body-edit-tuning`);
-  const footer = root.querySelector(`#fw-palette-footer-edit-tuning`);
-  if (!body) return;
-
-  footer.textContent = 'Changes apply live. Switch to Play to feel the difference.';
+  const body = root;
+  root.innerHTML = ''; // clear on each mount
 
   const sliderDefs = [
     { key: 'gravity',   label: 'Gravity',      min: 5,   max: 40,  step: 0.5, unit: 'm/s²', fmt: v => v.toFixed(1) },

@@ -29,10 +29,10 @@ function onEnter() {}
 function onExit() {}
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-audio');
-  const footer = root.querySelector('#fw-palette-footer-edit-audio');
-  if (!body) return;
-  footer.textContent = 'Pick a sound and hit play to hear it.';
+  const body = root;
+  
+  
+  // footer: = 'Pick a sound and hit play to hear it.';
 
   body.innerHTML = `<div class="fw-section-label">Sound events</div>`;
   EVENTS.forEach(ev => {

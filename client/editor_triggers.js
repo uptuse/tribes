@@ -36,10 +36,10 @@ function clearScene() {
 }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-triggers');
-  const footer = root.querySelector('#fw-palette-footer-edit-triggers');
-  if (!body) return;
-  footer.textContent = 'Pick what should happen, then click the ground to mark a spot.';
+  const body = root;
+  
+  
+  // footer: = 'Pick what should happen, then click the ground to mark a spot.';
 
   body.innerHTML = `<div class="fw-section-label">Event type</div>`;
   KINDS.forEach(k => {

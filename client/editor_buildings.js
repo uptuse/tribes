@@ -59,10 +59,10 @@ function clearScene() {
 }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-buildings');
-  const footer = root.querySelector('#fw-palette-footer-edit-buildings');
-  if (!body) return;
-  footer.textContent = 'Pick a piece, click the ground to place. R to rotate.';
+  const body = root;
+  
+  
+  // footer: = 'Pick a piece, click the ground to place. R to rotate.';
 
   body.innerHTML = `<div class="fw-section-label">Pieces</div>`;
   PIECES.forEach(piece => {

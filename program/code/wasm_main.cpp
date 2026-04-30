@@ -146,6 +146,10 @@ extern "C" void setPhysicsTuning(float gravity, float jetForce,
 
 static const int TSIZE=RAINDANCE_SIZE; // 257
 static const float TSCALE=8.0f; // 8 meters per terrain cell (Tribes default)
+
+// Mutable heightmap copy — initialized from RAINDANCE_HEIGHTS at startup.
+// The Sculpt editor writes into this array via writeHeightmapPatch().
+static float g_heights[RAINDANCE_SIZE][RAINDANCE_SIZE];
 static const float THEIGHT=RAINDANCE_HEIGHT_MAX;
 // Map origin: the heightmap grid (0,0) maps to world (0,0).
 // Mission coords are in Tribes world space. Flags at roughly (-220,22) and (-379,641).
@@ -168,8 +172,8 @@ static float getH(float wx,float wz){
     float fx=tx-ix,fz=tz-iz;
     if(fx<0)fx=0; if(fx>1)fx=1;
     if(fz<0)fz=0; if(fz>1)fz=1;
-    return RAINDANCE_HEIGHTS[iz][ix]*(1-fx)*(1-fz)+RAINDANCE_HEIGHTS[iz][ix+1]*fx*(1-fz)+
-           RAINDANCE_HEIGHTS[iz+1][ix]*(1-fx)*fz+RAINDANCE_HEIGHTS[iz+1][ix+1]*fx*fz;
+    return g_heights[iz][ix]*(1-fx)*(1-fz)+g_heights[iz][ix+1]*fx*(1-fz)+
+           g_heights[iz+1][ix]*(1-fx)*fz+g_heights[iz+1][ix+1]*fx*fz;
 }
 
 static Vec3 getNorm(float wx,float wz){
@@ -546,6 +550,36 @@ extern "C" void teleportPlayer(float x, float y, float z){
     if(localPlayer>=0&&localPlayer<MAX_PLAYERS&&players[localPlayer].active){
         players[localPlayer].pos={x,y,z};
         players[localPlayer].vel={0,0,0};
+    }
+}
+// Sculpt editor — stamp a Gaussian brush onto the mutable heightmap.
+// modeFlag: 0=raise, 1=lower, 2=smooth, 3=flatten
+extern "C" void writeHeightmapPatch(int cx, int cy, int radius, float strength, int modeFlag){
+    if(cx<0||cy<0||cx>=TSIZE||cy>=TSIZE) return;
+    float targetH = g_heights[cy][cx]; // for flatten mode
+    for(int dz=-radius;dz<=radius;dz++){
+        for(int dx=-radius;dx<=radius;dx++){
+            int nx=cx+dx, nz=cy+dz;
+            if(nx<1||nz<1||nx>=TSIZE-1||nz>=TSIZE-1) continue;
+            float dist=sqrtf((float)(dx*dx+dz*dz));
+            if(dist>radius) continue;
+            float gauss=expf(-0.5f*(dist/((float)radius*0.5f))*(dist/((float)radius*0.5f)));
+            float s=strength*gauss;
+            float&h=g_heights[nz][nx];
+            switch(modeFlag){
+                case 0: h+=s; break;          // raise
+                case 1: h-=s; break;          // lower
+                case 2: {                      // smooth: average with neighbours
+                    float avg=(g_heights[nz-1][nx]+g_heights[nz+1][nx]+
+                                g_heights[nz][nx-1]+g_heights[nz][nx+1])*0.25f;
+                    h+=(avg-h)*s;
+                } break;
+                case 3: h+=(targetH-h)*s; break; // flatten toward picked height
+            }
+            // Clamp to reasonable terrain range
+            if(h<1.0f) h=1.0f;
+            if(h>200.0f) h=200.0f;
+        }
     }
 }
 static void initBuildings() {
@@ -2019,7 +2053,7 @@ extern "C" {
     int    getBuildingCount()        { return g_rBuildingCount; }
     int    getBuildingStride()       { return sizeof(RenderBuilding)/4; }
 
-    float* getHeightmapPtr()         { return (float*)RAINDANCE_HEIGHTS; }
+    float* getHeightmapPtr()         { return (float*)g_heights; }
     int    getHeightmapCount()       { return RAINDANCE_SIZE*RAINDANCE_SIZE; }
     int    getHeightmapSize()        { return RAINDANCE_SIZE; }
     float  getHeightmapWorldScale()  { return TSCALE; }
@@ -3008,6 +3042,11 @@ int main(){
 
     flags[0]={flag0World,flag0World,0,true,false,-1,0,0};
     flags[1]={flag1World,flag1World,1,true,false,-1,0,0};
+
+    // Copy const heightmap to mutable g_heights for Sculpt editor
+    for(int z=0;z<RAINDANCE_SIZE;z++)
+        for(int x=0;x<RAINDANCE_SIZE;x++)
+            g_heights[z][x]=RAINDANCE_HEIGHTS[z][x];
 
     initBuildings();
     initNavGrid();

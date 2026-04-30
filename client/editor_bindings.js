@@ -25,10 +25,10 @@ function onEnter() {}
 function onExit()  {}
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-bindings');
-  const footer = root.querySelector('#fw-palette-footer-edit-bindings');
-  if (!body) return;
-  footer.textContent = 'Click an event, then drag a sound or effect onto it.';
+  const body = root;
+  
+  
+  // footer: = 'Click an event, then drag a sound or effect onto it.';
 
   _renderBindings(body);
 }

@@ -88,6 +88,7 @@ import { EditorAudio }     from './client/editor_audio.js?v=1';
 import { EditorVFX, initVFX }             from './client/editor_vfx.js?v=1';
 import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
 import { EditorBindings }  from './client/editor_bindings.js?v=1';
+import { EventBus }        from './client/event_bus.js?v=1';
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -242,11 +243,15 @@ export async function start() {
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
     initPlayers();
     try {
-        Characters.init(scene).then?.(() => {
-            // Wire the loaded rig into the animation editor
+        Characters.init(scene);
+        // Characters.init is synchronous but GLB loads async.
+        // Poll until loaded, then wire the rig into the animation editor.
+        const _pollRig = setInterval(() => {
+            if (!Characters.isLoaded()) return;
+            clearInterval(_pollRig);
             const rig = Characters.getRig?.();
             if (rig) setCharacterRig(rig.skeleton, rig.clips);
-        });
+        }, 500);
     } catch(e) { console.warn('[R32.109] Characters init failed:', e); }
     initProjectiles();
     initFlags();
@@ -392,6 +397,10 @@ export async function start() {
         Shell.registerMode('edit-vfx',        EditorVFX);
         Shell.registerMode('edit-ai',         EditorAI);
         Shell.registerMode('edit-bindings',   EditorBindings);
+        // Expose THREE for editor modules that need it without a direct import
+        window.__THREE = THREE;
+        // Start EventBus
+        EventBus.load();
         console.log('[Shell] Unified editor shell ready — 12 modes');
     } catch(e) { console.warn('[Shell] Init failed:', e); }
 

@@ -24,10 +24,10 @@ function onEnter()  { document.addEventListener('click', _onClick); }
 function onExit()   { document.removeEventListener('click', _onClick); }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-vfx');
-  const footer = root.querySelector('#fw-palette-footer-edit-vfx');
-  if (!body) return;
-  footer.textContent = 'Pick an effect, then click the ground to set one off.';
+  const body = root;
+  
+  
+  // footer: = 'Pick an effect, then click the ground to set one off.';
 
   body.innerHTML = `<div class="fw-section-label">Effects</div>`;
   PRESETS.forEach(p => {

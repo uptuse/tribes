@@ -34,10 +34,10 @@ function clearScene() {
 }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-assets');
-  const footer = root.querySelector('#fw-palette-footer-edit-assets');
-  if (!body) return;
-  footer.textContent = 'Pick an asset, then click the ground to drop it.';
+  const body = root;
+  
+  
+  // footer: = 'Pick an asset, then click the ground to drop it.';
 
   body.innerHTML = `<div class="fw-section-label">Assets</div>`;
   ASSET_TYPES.forEach(type => {

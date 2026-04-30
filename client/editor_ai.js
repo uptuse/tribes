@@ -28,10 +28,10 @@ function clearScene() {
 }
 
 function buildPalette(root) {
-  const body   = root.querySelector('#fw-palette-body-edit-ai');
-  const footer = root.querySelector('#fw-palette-footer-edit-ai');
-  if (!body) return;
-  footer.textContent = 'Pick behaviour, then click the ground to drop a bot.';
+  const body = root;
+  
+  
+  // footer: = 'Pick behaviour, then click the ground to drop a bot.';
 
   body.innerHTML = `<div class="fw-section-label">Behaviour</div>`;
   BEHAVIOURS.forEach(b => {

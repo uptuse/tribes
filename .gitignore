@@ -21,3 +21,5 @@ tribes.wasm.bak
 assets/models/source/*.zip
 assets/models/source/iron_wolf_juggernaut/
 assets/models/source/wolf_sentinel_full/
+.claude/settings.json
+client/_legacy/
