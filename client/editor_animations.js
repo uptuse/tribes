@@ -76,8 +76,13 @@ function buildPalette(root) {
   const body = root;
   body.innerHTML = '';
 
-  // Character picker
-  const models = window.__characterModels ?? [];
+  // Character picker — hardcoded list matches renderer_characters.js CHARACTER_MODELS
+  const models = window.__characterModels ?? [
+    { id: 'crimson_sentinel', label: 'Crimson Sentinel' },
+    { id: 'auric_phoenix',    label: 'Auric Phoenix'    },
+    { id: 'crimson_titan',    label: 'Crimson Titan'    },
+    { id: 'wolf_sentinel',    label: 'Wolf Sentinel'    },
+  ];
   if (models.length > 1) {
     const sec = document.createElement('div'); sec.className = 'fw-section-label'; sec.textContent = 'Character'; body.appendChild(sec);
     models.forEach((m, idx) => {
