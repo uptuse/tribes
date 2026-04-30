@@ -349,6 +349,9 @@ export async function start() {
 
     // Phase-C: visual playground FX passes
     try { PostFX.initPostFX(composer); } catch(e) { console.warn('[PhaseC] initPostFX failed:', e); }
+
+    // DTS weapon viewmodels — read geometry exported from C++ during DTS load
+    try { initDTSWeaponModels(); } catch(e) { console.warn('[DTS] initDTSWeaponModels failed:', e); }
     _initFreelook();
 
     // Phase-B: initialise level editor and load entity markers from WASM
@@ -3030,6 +3033,84 @@ function initFlags() {
     }
 }
 
+// ── DTS → Three.js geometry builder ────────────────────────────────────────
+// Reads the flat buffers exported by C++ and returns a BufferGeometry.
+function _buildDTSGeometry(vcFn, icFn, vFn, nFn, iFn) {
+    const vc = Module[vcFn]();
+    const ic = Module[icFn]();
+    if (!vc || !ic) return null;
+    const vPtr = Module[vFn]();
+    const nPtr = Module[nFn]();
+    const iPtr = Module[iFn]();
+    const pos  = new Float32Array(Module.HEAPF32.buffer, vPtr, vc * 3).slice();
+    const norm = new Float32Array(Module.HEAPF32.buffer, nPtr, vc * 3).slice();
+    const idx  = new Int32Array (Module.HEAP32.buffer,  iPtr, ic).slice();
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(pos,  3));
+    geom.setAttribute('normal',   new THREE.BufferAttribute(norm, 3));
+    geom.setIndex(new THREE.BufferAttribute(new Uint32Array(idx),  1));
+    geom.computeBoundingSphere();
+    return geom;
+}
+
+// Shared DTS material — metallic grey, matches Tribes aesthetic
+const _dtsMat = new THREE.MeshStandardMaterial({
+    color: 0x8a9aaa, roughness: 0.35, metalness: 0.80,
+});
+
+// Per-weapon DTS meshes; populated once WASM is ready (after initWeaponViewmodel)
+const _dtsModels = {};   // { chaingun: Mesh|null, disc: Mesh|null, grenade: Mesh|null }
+
+function initDTSWeaponModels() {
+    const specs = [
+        { key: 'chaingun', vcFn: '_dtsChaingunVC', icFn: '_dtsChaingunIC',
+          vFn: '_dtsChaingunV', nFn: '_dtsChaingunN', iFn: '_dtsChaingunI',
+          // Position in camera space: right, down, forward; scale; rotation
+          pos: [0.18, -0.20, -0.32], rot: [0.0, 0.0, 0.0], scale: 0.018 },
+        { key: 'disc',     vcFn: '_dtsDiscVC',     icFn: '_dtsDiscIC',
+          vFn: '_dtsDiscV',     nFn: '_dtsDiscN',     iFn: '_dtsDiscI',
+          pos: [0.14, -0.18, -0.30], rot: [0.0, 0.0, 0.0], scale: 0.020 },
+        { key: 'grenade',  vcFn: '_dtsGrenadeVC',  icFn: '_dtsGrenadeIC',
+          vFn: '_dtsGrenadeV',  nFn: '_dtsGrenadeN',  iFn: '_dtsGrenadeI',
+          pos: [0.14, -0.20, -0.28], rot: [0.0, 0.0, 0.0], scale: 0.022 },
+    ];
+    for (const s of specs) {
+        try {
+            const geom = _buildDTSGeometry(s.vcFn, s.icFn, s.vFn, s.nFn, s.iFn);
+            if (!geom) { console.warn('[DTS] ' + s.key + ': no geometry'); continue; }
+            const mesh = new THREE.Mesh(geom, _dtsMat.clone());
+            mesh.scale.setScalar(s.scale);
+            mesh.position.set(...s.pos);
+            mesh.rotation.set(...s.rot);
+            mesh.frustumCulled = false;
+            mesh.castShadow = false;
+            _dtsModels[s.key] = mesh;
+            console.log('[DTS] ' + s.key + ' viewmodel ready — '
+                + geom.attributes.position.count + ' verts');
+        } catch(e) {
+            console.warn('[DTS] ' + s.key + ' build failed:', e);
+        }
+    }
+}
+
+// Map C++ weapon type index → DTS model key
+const _WEAPON_DTS_KEY = ['', 'chaingun', 'disc', 'grenade', '', '', '', '', ''];
+
+// Call every frame in syncCamera to swap the visible DTS model
+function _syncWeaponModel(curWpn) {
+    if (!weaponHand) return;
+    const want = _WEAPON_DTS_KEY[curWpn] || null;
+    for (const [key, mesh] of Object.entries(_dtsModels)) {
+        if (!mesh) continue;
+        const shouldShow = (key === want);
+        if (shouldShow && mesh.parent !== weaponHand) {
+            weaponHand.add(mesh);
+        } else if (!shouldShow && mesh.parent === weaponHand) {
+            weaponHand.remove(mesh);
+        }
+    }
+}
+
 function initWeaponViewmodel() {
     // R32.13: proper sci-fi rifle viewmodel + first-person arms.
     // Tribes-flavored energy carbine: angular polymer chassis, exposed energy cell,
@@ -4292,9 +4373,11 @@ function syncCamera() {
     }
 
     // R31.7.1: weapon viewmodel — visible only in true 1P (camDist near 0).
-    // Was 0.5 in R31.7 which left it visible for the first ~0.5m of 3P transition
-    // then SUDDENLY hid it; users perceived this as "weapon disappeared".
     if (weaponHand) weaponHand.visible = (camDist < 0.3);
+
+    // Swap DTS weapon model based on current weapon selection
+    const _curWpn = playerView[o + 16] | 0;
+    _syncWeaponModel(_curWpn);
 
     // R31.7.1: feed the world aim-point we computed above into the C++ aim-
     // convergence override (Claude shipped C1 in commit 32b4b41 / R31.7).

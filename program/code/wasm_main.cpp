@@ -898,6 +898,67 @@ struct GPUModel {
 static LoadedModel mdlLightArmor, mdlMediumArmor, mdlHeavyArmor;
 static LoadedModel mdlDisc, mdlChaingun, mdlGrenade, mdlTower;
 
+// Flat geometry buffers exported to Three.js for weapon viewmodels.
+// xyz per vertex (DTS→GL coord conversion applied), then triangle indices.
+// Populated from the LoadedModel data before it is freed.
+#define DTS_JS_VMAX 24000
+#define DTS_JS_IMAX 96000
+struct DTSExport {
+    float v[DTS_JS_VMAX * 3];  // x,y,z already in GL/Three.js space
+    float n[DTS_JS_VMAX * 3];  // nx,ny,nz
+    int   idx[DTS_JS_IMAX];
+    int   vc, ic;               // vertex count, index count
+    bool  ready;
+};
+static DTSExport g_dtsChaingun, g_dtsDisc, g_dtsGrenade;
+
+static void flattenDTS(const LoadedModel& m, DTSExport& out) {
+    out.vc = 0; out.ic = 0; out.ready = false;
+    for (const auto& mesh : m.meshes) {
+        int base = out.vc;
+        for (int i = 0; i < mesh.vertexCount && out.vc < DTS_JS_VMAX; i++) {
+            float dx = mesh.vertices[i*3+0] + mesh.offsetX;
+            float dy = mesh.vertices[i*3+1] + mesh.offsetY;
+            float dz = mesh.vertices[i*3+2] + mesh.offsetZ;
+            // DTS (X=right,Y=fwd,Z=up) → GL/Three.js (X=right,Y=up,Z=bwd)
+            out.v[out.vc*3+0] =  dx;
+            out.v[out.vc*3+1] =  dz;
+            out.v[out.vc*3+2] =  dy;
+            float dnx = mesh.normals.size()>i*3+2 ? mesh.normals[i*3+0] : 0;
+            float dny = mesh.normals.size()>i*3+2 ? mesh.normals[i*3+1] : 0;
+            float dnz = mesh.normals.size()>i*3+2 ? mesh.normals[i*3+2] : 0;
+            out.n[out.vc*3+0] =  dnx;
+            out.n[out.vc*3+1] =  dnz;
+            out.n[out.vc*3+2] =  dny;
+            out.vc++;
+        }
+        for (int i = 0; i < (int)mesh.indices.size() && out.ic < DTS_JS_IMAX; i++)
+            out.idx[out.ic++] = base + (int)mesh.indices[i];
+    }
+    out.ready = true;
+}
+
+// JS-visible getters
+extern "C" {
+    int   dtsChaingunVC(){ return g_dtsChaingun.ready ? g_dtsChaingun.vc : 0; }
+    int   dtsChaingunIC(){ return g_dtsChaingun.ready ? g_dtsChaingun.ic : 0; }
+    float* dtsChaingunV(){ return g_dtsChaingun.v; }
+    float* dtsChaingunN(){ return g_dtsChaingun.n; }
+    int*   dtsChaingunI(){ return g_dtsChaingun.idx; }
+
+    int   dtsDiscVC(){ return g_dtsDisc.ready ? g_dtsDisc.vc : 0; }
+    int   dtsDiscIC(){ return g_dtsDisc.ready ? g_dtsDisc.ic : 0; }
+    float* dtsDiscV(){ return g_dtsDisc.v; }
+    float* dtsDiscN(){ return g_dtsDisc.n; }
+    int*   dtsDiscI(){ return g_dtsDisc.idx; }
+
+    int   dtsGrenadeVC(){ return g_dtsGrenade.ready ? g_dtsGrenade.vc : 0; }
+    int   dtsGrenadeIC(){ return g_dtsGrenade.ready ? g_dtsGrenade.ic : 0; }
+    float* dtsGrenadeV(){ return g_dtsGrenade.v; }
+    float* dtsGrenadeN(){ return g_dtsGrenade.n; }
+    int*   dtsGrenadeI(){ return g_dtsGrenade.idx; }
+}
+
 // GPU handles
 static GPUModel gpuArmor[3];   // indexed by ArmorType
 static GPUModel gpuDisc;
@@ -2872,14 +2933,24 @@ int main(){
         gpuTower.valid = false;
     }
 
-    // Also load chaingun and grenade models for future use
+    // Load chaingun + grenade and flatten for Three.js export
     {
         LoadedModel mdlTemp;
-        if(loadDTS("/assets/tribes/chaingun.DTS", mdlTemp))
-            printf("[DTS] Chaingun loaded (%d meshes)\n", (int)mdlTemp.meshes.size());
-        if(loadDTS("/assets/tribes/grenade.DTS", mdlTemp))
-            printf("[DTS] Grenade loaded (%d meshes)\n", (int)mdlTemp.meshes.size());
+        if(loadDTS("/assets/tribes/chaingun.DTS", mdlTemp)){
+            flattenDTS(mdlTemp, g_dtsChaingun);
+            printf("[DTS] Chaingun: %d verts, %d idx exported for Three.js\n",
+                   g_dtsChaingun.vc, g_dtsChaingun.ic);
+        }
+        if(loadDTS("/assets/tribes/grenade.DTS", mdlTemp)){
+            flattenDTS(mdlTemp, g_dtsGrenade);
+            printf("[DTS] Grenade: %d verts, %d idx exported for Three.js\n",
+                   g_dtsGrenade.vc, g_dtsGrenade.ic);
+        }
     }
+    // Flatten disc model before freeing
+    flattenDTS(mdlDisc, g_dtsDisc);
+    printf("[DTS] Disc: %d verts, %d idx exported for Three.js\n",
+           g_dtsDisc.vc, g_dtsDisc.ic);
 
     // Free source model data (GPU buffers retain the geometry)
     mdlLightArmor.meshes.clear();
