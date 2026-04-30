@@ -3246,23 +3246,55 @@ function initDTSWeaponModels() {
 }
 
 // Map C++ weapon index → DTS model key ('' = no DTS model, use procedural)
-const _WEAPON_DTS_KEY = ['', 'chaingun', 'disc', 'grenade', '', '', '', '', ''];
+// DTS viewmodels disabled — procedural model used for all weapons.
+const _WEAPON_DTS_KEY = ['', '', '', '', '', '', '', '', ''];
+
+// Per-weapon frame colours and names for the procedural viewmodel
+const _WPN_META = [
+  { color: 0x7a5028, name: 'Blaster'          },  // 0 warm brown
+  { color: 0x2a5a28, name: 'Chaingun'          },  // 1 military green
+  { color: 0x1a3a88, name: 'Spinfusor'         },  // 2 deep blue
+  { color: 0x3a4a18, name: 'Grenade Launcher'  },  // 3 olive
+  { color: 0x8a1a1a, name: 'Plasma Gun'        },  // 4 dark red
+  { color: 0x3a3a3a, name: 'Mortar'            },  // 5 charcoal
+  { color: 0x101010, name: 'Laser Rifle'       },  // 6 near-black
+  { color: 0x4a1a6a, name: 'ELF Gun'           },  // 7 purple
+  { color: 0x1a5a3a, name: 'Repair'            },  // 8 teal
+];
+let _wpnFrameMat = null;  // set in initWeaponViewmodel, mutated on weapon switch
+
+// Weapon name label — small discrete overlay near the weapon
+const _wpnLabel = (() => {
+    const el = document.createElement('div');
+    el.style.cssText = `
+        position:fixed; bottom:72px; right:22px; z-index:500;
+        font-family:'Barlow Condensed',monospace; font-size:13px;
+        color:rgba(255,255,255,0.55); letter-spacing:1px;
+        text-shadow:0 1px 3px rgba(0,0,0,0.9);
+        pointer-events:none; display:none;`;
+    document.body.appendChild(el);
+    return el;
+})();
+let _lastWpnIdx = -1;
 
 function _syncWeaponModel(curWpn) {
-    const want = _WEAPON_DTS_KEY[curWpn] || null;
-    let anyVisible = false;
-    for (const [key, mesh] of Object.entries(_dtsModels)) {
-        mesh.visible = (key === want);
-        if (mesh.visible) anyVisible = true;
-    }
-    // Hide the procedural weapon body when a DTS model is active;
-    // show it when we fall back (blaster, plasma, etc.)
-    if (weaponHand) {
-        weaponHand.children.forEach(c => {
-            c.visible = !anyVisible;
-        });
-    }
-    _dtsActive = anyVisible;
+    // DTS disabled — procedural only. Just tint the frame and update the label.
+    if (weaponHand) weaponHand.children.forEach(c => { c.visible = true; });
+
+    // Only update on weapon change
+    if (curWpn === _lastWpnIdx) return;
+    _lastWpnIdx = curWpn;
+
+    const meta = _WPN_META[curWpn] ?? _WPN_META[0];
+
+    // Tint the frame material to distinguish each weapon
+    if (_wpnFrameMat) _wpnFrameMat.color.setHex(meta.color);
+
+    // Show weapon name
+    _wpnLabel.textContent = meta.name.toUpperCase();
+    _wpnLabel.style.display = 'block';
+    clearTimeout(_wpnLabel._hideTimer);
+    _wpnLabel._hideTimer = setTimeout(() => { _wpnLabel.style.display = 'none'; }, 2000);
 }
 
 function initWeaponViewmodel() {
@@ -3271,6 +3303,7 @@ function initWeaponViewmodel() {
     // holographic sight, muzzle brake, vented barrel shroud, ergonomic foregrip.
     // All procedural Three.js primitives — no GLB load needed.
     const matFrame = new THREE.MeshStandardMaterial({ color: 0x2c2e34, roughness: 0.55, metalness: 0.4 });
+    _wpnFrameMat = matFrame;  // exposed so _syncWeaponModel can tint per weapon
     const matMetal = new THREE.MeshStandardMaterial({ color: 0x9aa2ad, roughness: 0.30, metalness: 0.85 });
     const matDark  = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.65, metalness: 0.20 });
     const matAccent = new THREE.MeshStandardMaterial({ color: 0xc8a050, roughness: 0.35, metalness: 0.85 }); // brass-tan
@@ -3467,7 +3500,15 @@ function initWeaponViewmodel() {
     group.rotation.set(-0.05, 0.06, 0.0);
     group.traverse(child => {
         child.frustumCulled = false;
-        if (child.isMesh) child.castShadow = false;  // viewmodel shouldn't cast shadows
+        if (!child.isMesh) return;
+        child.castShadow = false;
+        // Arms/gloves always draw on top of the gun body so they never clip behind it.
+        // depthTest:false only on the skin/glove meshes, not the gun itself.
+        const mat = child.material;
+        if (mat === matSkin || mat === matGlove || mat === matAccent) {
+            child.renderOrder = 2;
+            mat.depthTest = false;
+        }
     });
 
     weaponHand = group;
