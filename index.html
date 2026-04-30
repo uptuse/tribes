@@ -563,7 +563,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 18:18</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 18:21</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -1099,11 +1099,23 @@
 
   <!-- ESC pause menu -->
   <div id="escmenu">
-    <div class="panel" style="text-align:center;min-width:220px;">
+    <div class="panel" style="text-align:center;min-width:240px;">
       <h3>Paused</h3>
       <button class="btn" onclick="resumeGame()" style="margin-top:10px;">Resume</button>
       <button class="btn" onclick="openSettings()">Options</button>
+      <button class="btn" onclick="showHostCard()" style="background:rgba(255,212,121,0.12);border-color:#D4A030;color:#FFD479;">🎮 Host for family</button>
       <button class="btn btn-back" onclick="leaveMatch()">Leave Match</button>
+    </div>
+  </div>
+
+  <!-- Host card — shows local IP for kids to connect -->
+  <div id="host-card" style="display:none;position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.75);align-items:center;justify-content:center;">
+    <div class="panel" style="max-width:380px;width:90%;text-align:center;padding:24px 28px;">
+      <h3 style="color:#FFD479;margin-bottom:4px;">Host for family</h3>
+      <p style="font-size:0.82em;color:#7A6A4A;margin-bottom:16px;">Run <code style="background:rgba(255,255,255,0.07);padding:2px 6px;border-radius:3px;color:#FFD479;">start-server.command</code> on your Mac, then share this URL:</p>
+      <div id="host-url" style="font-family:'Roboto Mono',monospace;font-size:1.05em;color:#FFD479;background:rgba(255,212,121,0.08);border:1px solid rgba(255,212,121,0.3);border-radius:4px;padding:10px 14px;margin-bottom:16px;letter-spacing:0.5px;">detecting...</div>
+      <p style="font-size:0.78em;color:#5A4A2A;margin-bottom:18px;">Kids open that URL on any device on your WiFi. Keep the Terminal window open while playing.</p>
+      <button class="btn" onclick="document.getElementById('host-card').style.display='none';resumeGame()">Got it — resume game</button>
     </div>
   </div>
 
@@ -3051,6 +3063,27 @@
       gameStarted=false;
       document.exitPointerLock();
       showScreen('mainmenu');
+    }
+    function showHostCard(){
+      document.getElementById('escmenu').classList.remove('active');
+      var card = document.getElementById('host-card');
+      card.style.display = 'flex';
+      // Detect local IP via WebRTC (works without a server)
+      var urlEl = document.getElementById('host-url');
+      try {
+        var pc = new RTCPeerConnection({iceServers:[]});
+        pc.createDataChannel('');
+        pc.createOffer().then(function(o){ return pc.setLocalDescription(o); });
+        pc.onicecandidate = function(e){
+          if(!e||!e.candidate) return;
+          var m = /([0-9]{1,3}\.){3}[0-9]{1,3}/.exec(e.candidate.candidate);
+          if(m && !m[0].startsWith('127.')){
+            urlEl.textContent = 'http://' + m[0] + ':8080';
+            pc.close();
+          }
+        };
+        setTimeout(function(){ if(urlEl.textContent==='detecting...') urlEl.textContent='http://localhost:8080'; }, 2000);
+      } catch(e){ urlEl.textContent = 'http://localhost:8080'; }
     }
     function resumeGame(){
       document.getElementById('escmenu').classList.remove('active');
