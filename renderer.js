@@ -88,7 +88,14 @@ let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
-let discMeshes = [];  // parallel array — flat spinning disc for WPN_DISC (type 2)
+let discMeshes  = [];  // WPN_DISC (type 2) — spinning torus
+let chainMeshes = [];  // WPN_CHAINGUN (type 1) — tracer streak
+
+// Recoil spring state — applied on top of sway in updateWeaponHand()
+const _kick = { rx: 0, pz: 0, vRx: 0, vPz: 0 };
+let _prevProjAlive = null;   // previous-frame alive flags for fire-event detection
+const _kickZ = new THREE.Vector3(0, 0, 1); // reused for tracer quaternion
+const _kickQ  = new THREE.Quaternion();
 let flagMeshes = [];
 let buildingMeshes = [];
 let weaponHand;             // small box mesh attached at local-player view position
@@ -2956,26 +2963,21 @@ function animatePlayer(mesh, vx, vz, jetting, skiing, t, alive) {
 // Projectiles, flags, weapon viewmodel
 // ============================================================
 function initProjectiles() {
-    // R32.159: Share one geometry + one material across all 256 projectile meshes.
-    // Was: 256 × new SphereGeometry + 256 × new MeshStandardMaterial (~10MB GPU).
-    // Now: 1 geometry + 1 material shared by reference (~40KB GPU).
-    const sharedGeom = new THREE.SphereGeometry(0.20, 10, 8);
-    const sharedMat = new THREE.MeshStandardMaterial({
-        color: 0xFFFFFF,
-        emissive: 0xFFFFFF,
-        emissiveIntensity: 1.5,
-        roughness: 0.4,
-        metalness: 0.1,
-    });
+    // Per-slot materials so weapons can be coloured independently without
+    // fighting over one shared material when multiple types are airborne.
+    const sphereGeom = new THREE.SphereGeometry(0.20, 10, 8);
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-        const mesh = new THREE.Mesh(sharedGeom, sharedMat);
+        const mat  = new THREE.MeshStandardMaterial({
+            color: 0xFFFFFF, emissive: 0xFFFFFF, emissiveIntensity: 1.5,
+            roughness: 0.4, metalness: 0.1,
+        });
+        const mesh = new THREE.Mesh(sphereGeom, mat);
         mesh.visible = false;
         scene.add(mesh);
         projectileMeshes.push(mesh);
     }
 
-    // Disc meshes — flat spinning cylinders for WPN_DISC (type 2)
-    // Torus: unmistakably a ring at any angle, unlike a cylinder which reads as a circle
+    // Disc — spinning torus (hole makes it unmistakable from any angle)
     const discGeom = new THREE.TorusGeometry(0.30, 0.07, 10, 28);
     const discMat  = new THREE.MeshStandardMaterial({
         color: 0x88CCFF, emissive: 0x1155FF, emissiveIntensity: 3.5,
@@ -2986,6 +2988,19 @@ function initProjectiles() {
         mesh.visible = false;
         scene.add(mesh);
         discMeshes.push(mesh);
+    }
+
+    // Chaingun — thin stretched box aligned to velocity direction (tracer streak)
+    const chainGeom = new THREE.BoxGeometry(0.015, 0.015, 0.55);
+    const chainMat  = new THREE.MeshStandardMaterial({
+        color: 0xFFFF88, emissive: 0xFFEE00, emissiveIntensity: 4.0,
+        roughness: 0.1, metalness: 0.0,
+    });
+    for (let i = 0; i < MAX_PROJECTILES; i++) {
+        const mesh = new THREE.Mesh(chainGeom, chainMat);
+        mesh.visible = false;
+        scene.add(mesh);
+        chainMeshes.push(mesh);
     }
 }
 
@@ -3837,46 +3852,110 @@ function _updateViewmodelSway(dt) {
     const idleY = Math.cos(s.bobPhase * 0.6) * 0.005 * idleAmt;
 
     // Apply
+    // Recoil spring: decay velocity, apply to pose, restore to base
+    _kick.vRx *= 0.78; _kick.vPz *= 0.78;
+    _kick.rx  += _kick.vRx; _kick.rx *= 0.70;
+    _kick.pz  += _kick.vPz; _kick.pz *= 0.70;
+
     weaponHand.position.x = b.px + jitterX + idleX;
     weaponHand.position.y = b.py + jitterY + bobY  + idleY - s.jetDip * 0.05;
-    weaponHand.position.z = b.pz;
-    weaponHand.rotation.x = b.rx + s.jetDip + s.skiLean;
+    weaponHand.position.z = b.pz + _kick.pz;
+    weaponHand.rotation.x = b.rx + s.jetDip + s.skiLean + _kick.rx;
     weaponHand.rotation.y = b.ry;
     weaponHand.rotation.z = b.rz + bobR;
 }
 
+// Per-type sphere colours + emissive intensity
+const _SPHERE_COLOR = [
+    { c: 0xFFEECC, e: 0xFFBB44, i: 2.0 },  // 0 blaster  — warm white
+    { c: 0xFFFF99, e: 0xFFDD00, i: 3.0 },  // 1 chaingun — bright yellow (fallback if no tracer)
+    { c: 0x88CCFF, e: 0x2255FF, i: 3.5 },  // 2 disc     — (overridden by torus mesh)
+    { c: 0x4F8030, e: 0x2A5010, i: 1.5 },  // 3 grenade  — dark olive
+    { c: 0xFF5500, e: 0xFF2200, i: 3.0 },  // 4 plasma   — hot orange-red
+    { c: 0x554433, e: 0x221A0E, i: 0.8 },  // 5 mortar   — dark charcoal (heavy shell)
+    { c: 0xFF2222, e: 0xFF0000, i: 4.0 },  // 6 laser
+    { c: 0x8888FF, e: 0x4444FF, i: 3.0 },  // 7 elf
+    { c: 0x44FF88, e: 0x22AA44, i: 2.0 },  // 8 repair
+];
+
+function _applyWeaponKick(type) {
+    // Viewmodel recoil: velocity impulse, spring decays in update loop
+    switch (type) {
+        case 2: _kick.vRx -= 0.10; _kick.vPz -= 0.045; _fovPunchExtra += 1.5; break; // disc
+        case 5: _kick.vRx -= 0.20; _kick.vPz -= 0.08;  _fovPunchExtra += 3.0; break; // mortar
+        case 1: _kick.vRx -= 0.02; _kick.vPz -= 0.008; _fovPunchExtra += 0.4; break; // chaingun
+        case 4: _kick.vRx -= 0.05; _kick.vPz -= 0.018; _fovPunchExtra += 0.8; break; // plasma
+        default:_kick.vRx -= 0.03; _kick.vPz -= 0.01;  _fovPunchExtra += 0.5; break;
+    }
+}
+
 function syncProjectiles() {
     const count = Module._getProjectileStateCount();
-    const now = performance.now() * 0.001;
+    const now   = performance.now() * 0.001;
+    if (!_prevProjAlive) _prevProjAlive = new Uint8Array(MAX_PROJECTILES);
+
     for (let i = 0; i < MAX_PROJECTILES; i++) {
         const sphere = projectileMeshes[i];
         const disc   = discMeshes[i];
-        if (i >= count) { sphere.visible = false; if (disc) disc.visible = false; continue; }
-        const o = i * projectileStride;
-        const alive = projectileView[o + 9] > 0.5;
-        const type  = projectileView[o + 6] | 0;
-        const isDisc = (type === 2);
+        const chain  = chainMeshes[i];
+        const wasAlive = _prevProjAlive[i];
 
-        if (!alive) { sphere.visible = false; if (disc) disc.visible = false; continue; }
-
-        const px = projectileView[o], py = projectileView[o + 1], pz = projectileView[o + 2];
-
-        if (isDisc && disc) {
-            // Disc: flat spinning cylinder, sphere hidden
+        if (i >= count) {
             sphere.visible = false;
-            disc.visible   = true;
+            if (disc)  disc.visible  = false;
+            if (chain) chain.visible = false;
+            _prevProjAlive[i] = 0;
+            continue;
+        }
+
+        const o     = i * projectileStride;
+        const alive = projectileView[o + 9] > 0.5;
+        _prevProjAlive[i] = alive ? 1 : 0;
+
+        if (!alive) {
+            sphere.visible = false;
+            if (disc)  disc.visible  = false;
+            if (chain) chain.visible = false;
+            continue;
+        }
+
+        // Fire detection — rising edge = new projectile spawned this frame
+        if (!wasAlive) _applyWeaponKick(projectileView[o + 6] | 0);
+
+        const px = projectileView[o],     py = projectileView[o + 1], pz = projectileView[o + 2];
+        const vx = projectileView[o + 3], vy = projectileView[o + 4], vz = projectileView[o + 5];
+        const type = projectileView[o + 6] | 0;
+
+        if (type === 2 && disc) {
+            // Disc: spinning torus
+            sphere.visible = false; if (chain) chain.visible = false;
+            disc.visible = true;
             disc.position.set(px, py, pz);
-            // Spin around Y; tilt ~25° on X so it reads as a frisbee in flight
-            disc.rotation.set(Math.PI * 0.5, 0, now * 14.0, 'ZYX'); // spin on Z, face toward camera
+            disc.rotation.set(Math.PI * 0.5, 0, now * 14.0, 'ZYX');
+
+        } else if (type === 1 && chain) {
+            // Chaingun: invisible sphere, bright tracer aligned to velocity
+            sphere.visible = false; if (disc) disc.visible = false;
+            chain.visible = true;
+            chain.position.set(px, py, pz);
+            const spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
+            if (spd > 0.1) {
+                _tmpVec.set(vx/spd, vy/spd, vz/spd);
+                _kickQ.setFromUnitVectors(_kickZ, _tmpVec);
+                chain.quaternion.copy(_kickQ);
+            }
+
         } else {
-            // All other weapons: standard sphere
-            if (disc) disc.visible = false;
+            // All other weapons: coloured sphere
+            if (disc)  disc.visible  = false;
+            if (chain) chain.visible = false;
             sphere.visible = true;
             sphere.position.set(px, py, pz);
-            const color = PROJ_COLORS[type] ?? 0xFFFFFF;
-            if (sphere.material.color.getHex() !== color) {
-                sphere.material.color.setHex(color);
-                sphere.material.emissive.setHex(color);
+            const cfg = _SPHERE_COLOR[type] || _SPHERE_COLOR[0];
+            if (sphere.material.color.getHex() !== cfg.c) {
+                sphere.material.color.setHex(cfg.c);
+                sphere.material.emissive.setHex(cfg.e);
+                sphere.material.emissiveIntensity = cfg.i;
             }
         }
     }
@@ -4641,8 +4720,8 @@ const _TRAIL_RGB = [
     [1.0, 0.93, 0.25],  // 1 chaingun (yellow)
     [0.45, 0.75, 1.0],  // 2 disc (bright electric blue)
     [0.3, 0.5, 0.19],   // 3 grenade (green)
-    [1.0, 0.38, 0.13],  // 4 plasma (orange)
-    [1.0, 0.63, 0.25],  // 5 mortar (warm orange)
+    [1.0, 0.25, 0.05],  // 4 plasma — hot red-orange
+    [0.35, 0.32, 0.28], // 5 mortar — grey smoke
     [1.0, 0.25, 0.25],  // 6
     [0.5, 0.63, 1.0],   // 7
     [0.25, 1.0, 0.5],   // 8
@@ -4690,8 +4769,9 @@ function updateProjectileTrails(dt) {
         if (projectileView[o + 9] < 0.5) continue; // not alive
         const type = projectileView[o + 6] | 0;
         _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
-        // Disc gets a second trail particle for a denser blue ribbon
-        if (type === 2) _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
+        // Disc, plasma, mortar get extra particles for denser trails
+        if (type === 2 || type === 4 || type === 5)
+            _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
     }
 
     _trailPoints.geometry.attributes.position.needsUpdate = true;

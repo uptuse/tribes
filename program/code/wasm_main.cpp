@@ -98,6 +98,7 @@ static float g_tuneJetForce       = 1.0f;  // × armors[].jetForce
 static float g_tuneJetEnergyDrain = 1.0f;  // × armors[].jetEnergyDrain
 static float g_tuneGroundFriction = 1.0f;  // × ground deceleration coefficient
 static float g_tunePlayerSpeed    = 1.0f;  // × armors[].maxFwdSpeed
+static float g_tuneKickback      = 1.0f;  // × weapon kickback impulse
 
 static double sGetF(const char*j,const char*k,double d){
     char s[64];snprintf(s,sizeof(s),"\"%s\":",k);
@@ -132,12 +133,13 @@ extern "C" void setSettings(const char*json){
 // g_fov, g_mouseSensitivity, g_renderDistMul, etc.
 extern "C" void setPhysicsTuning(float gravity, float jetForce,
                                   float jetEnergyDrain, float groundFriction,
-                                  float playerSpeed){
+                                  float playerSpeed, float kickback){
     if(gravity        > 0) g_tuneGravity        = gravity;
     if(jetForce       > 0) g_tuneJetForce        = jetForce;
     if(jetEnergyDrain > 0) g_tuneJetEnergyDrain  = jetEnergyDrain;
     if(groundFriction > 0) g_tuneGroundFriction  = groundFriction;
     if(playerSpeed    > 0) g_tunePlayerSpeed     = playerSpeed;
+    if(kickback       > 0) g_tuneKickback        = kickback;
 }
 
 static const int TSIZE=RAINDANCE_SIZE; // 257
@@ -1222,7 +1224,7 @@ static void fireWeapon(int pi){
     if(w.usesAmmo)p.ammo[p.curWeapon]--;
     else p.energy-=w.energyCost;
     p.fireCooldown=w.fireTime+w.reloadTime;
-    if(w.kickback>0)p.vel-=fwd*(w.kickback*0.01f);
+    if(w.kickback>0)p.vel-=fwd*(w.kickback*0.01f*g_tuneKickback);
     // Fire sound (local player only — UI bus, not positional)
     if(pi==localPlayer){
         int sndId=p.curWeapon; // weapon enum matches sound slot 0-8
@@ -2437,12 +2439,18 @@ extern "C" void mainLoop(){
         if(hit){
             if(w.explosionRadius>0){
                 if(projs[i].weapon==WPN_DISC){
-                    // Blue-white disc explosion — classified as type 3 by JS heuristic
+                    // Blue-white disc explosion (r<0.3, b>0.7 → JS type-3 heuristic)
                     spawnBurst(projs[i].pos,35,2.0f,30,0.1f,0.5f,1.0f,0.6f);
-                    spawnBurst(projs[i].pos,20,1.2f,15,0.6f,0.8f,1.0f,0.5f);
+                    spawnBurst(projs[i].pos,20,1.2f,15,0.05f,0.3f,1.0f,0.5f);
+                }else if(projs[i].weapon==WPN_MORTAR){
+                    // Heavy mortar — massive orange-red fireball (r>0.7, g<0.3 → type 3)
+                    spawnBurst(projs[i].pos,60,3.0f,40,1.0f,0.2f,0.0f,0.8f);
+                    spawnBurst(projs[i].pos,40,2.0f,25,0.9f,0.1f,0.0f,0.6f);
+                    spawnBurst(projs[i].pos,30,1.5f,15,0.4f,0.35f,0.3f,0.7f); // smoke
                 }else{
-                    spawnBurst(projs[i].pos,30,1.5f,25,1,0.6f,0.1f,0.5f);
-                    spawnBurst(projs[i].pos,15,1,10,1,0.9f,0.5f,0.3f);
+                    // Generic explosion — orange-red so JS heuristic fires (r>0.7, g<0.3)
+                    spawnBurst(projs[i].pos,30,1.5f,25,1.0f,0.15f,0.0f,0.5f);
+                    spawnBurst(projs[i].pos,15,1.0f,10,0.9f,0.1f,0.0f,0.4f);
                 }
                 // Radius damage
                 for(int j=0;j<MAX_PLAYERS;j++){
@@ -2456,7 +2464,7 @@ extern "C" void mainLoop(){
                         Vec3 pushDir=(players[j].pos-projs[i].pos);
                         if(pushDir.len()<0.1f) pushDir={0,1,0};
                         pushDir=pushDir.normalized();
-                        float impulse=w.kickback*falloff/armors[players[j].armor].mass;
+                        float impulse=w.kickback*falloff*g_tuneKickback/armors[players[j].armor].mass;
                         pushDir=pushDir*impulse*0.15f;
                         pushDir.y+=impulse*0.12f; // extra upward kick for disc jumping
                         players[j].vel+=pushDir;
