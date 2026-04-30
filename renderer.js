@@ -3058,57 +3058,77 @@ const _dtsMat = new THREE.MeshStandardMaterial({
     color: 0x8a9aaa, roughness: 0.35, metalness: 0.80,
 });
 
-// Per-weapon DTS meshes; populated once WASM is ready (after initWeaponViewmodel)
-const _dtsModels = {};   // { chaingun: Mesh|null, disc: Mesh|null, grenade: Mesh|null }
+// Per-weapon DTS meshes; added directly to camera (sibling of weaponHand)
+// so they don't inherit the procedural model's children.
+const _dtsModels = {};   // key → THREE.Mesh
+let _dtsActive = false;  // true when a DTS model is visible
 
 function initDTSWeaponModels() {
     const specs = [
-        { key: 'chaingun', vcFn: '_dtsChaingunVC', icFn: '_dtsChaingunIC',
-          vFn: '_dtsChaingunV', nFn: '_dtsChaingunN', iFn: '_dtsChaingunI',
-          // Position in camera space: right, down, forward; scale; rotation
-          pos: [0.18, -0.20, -0.32], rot: [0.0, 0.0, 0.0], scale: 0.018 },
-        { key: 'disc',     vcFn: '_dtsDiscVC',     icFn: '_dtsDiscIC',
-          vFn: '_dtsDiscV',     nFn: '_dtsDiscN',     iFn: '_dtsDiscI',
-          pos: [0.14, -0.18, -0.30], rot: [0.0, 0.0, 0.0], scale: 0.020 },
-        { key: 'grenade',  vcFn: '_dtsGrenadeVC',  icFn: '_dtsGrenadeIC',
-          vFn: '_dtsGrenadeV',  nFn: '_dtsGrenadeN',  iFn: '_dtsGrenadeI',
-          pos: [0.14, -0.20, -0.28], rot: [0.0, 0.0, 0.0], scale: 0.022 },
+        { key: 'chaingun',
+          vcFn: '_dtsChaingunVC', icFn: '_dtsChaingunIC',
+          vFn:  '_dtsChaingunV',  nFn:  '_dtsChaingunN', iFn: '_dtsChaingunI' },
+        { key: 'disc',
+          vcFn: '_dtsDiscVC',     icFn: '_dtsDiscIC',
+          vFn:  '_dtsDiscV',      nFn:  '_dtsDiscN',     iFn: '_dtsDiscI' },
+        { key: 'grenade',
+          vcFn: '_dtsGrenadeVC',  icFn: '_dtsGrenadeIC',
+          vFn:  '_dtsGrenadeV',   nFn:  '_dtsGrenadeN',  iFn: '_dtsGrenadeI' },
     ];
     for (const s of specs) {
         try {
             const geom = _buildDTSGeometry(s.vcFn, s.icFn, s.vFn, s.nFn, s.iFn);
-            if (!geom) { console.warn('[DTS] ' + s.key + ': no geometry'); continue; }
+            if (!geom) { console.warn('[DTS] ' + s.key + ': no geometry exported'); continue; }
+
+            // Auto-scale: fit the model's longest axis to 0.45m (weapon-sized)
+            geom.computeBoundingBox();
+            const sz = new THREE.Vector3();
+            geom.boundingBox.getSize(sz);
+            const maxDim = Math.max(sz.x, sz.y, sz.z) || 1;
+            const autoScale = 0.45 / maxDim;
+
             const mesh = new THREE.Mesh(geom, _dtsMat.clone());
-            mesh.scale.setScalar(s.scale);
-            mesh.position.set(...s.pos);
-            mesh.rotation.set(...s.rot);
+            mesh.scale.setScalar(autoScale);
+
+            // Position in camera-local space: lower-right, in front
+            // (added to camera, so units are metres relative to camera origin)
+            mesh.position.set(0.18, -0.20, -0.35);
+            mesh.rotation.set(-0.05, 0.06, 0.0);
             mesh.frustumCulled = false;
-            mesh.castShadow = false;
+            mesh.castShadow    = false;
+            mesh.visible       = false;
+
             _dtsModels[s.key] = mesh;
+            // Add to camera so it always follows the view
+            camera.add(mesh);
+
             console.log('[DTS] ' + s.key + ' viewmodel ready — '
-                + geom.attributes.position.count + ' verts');
+                + geom.attributes.position.count + ' verts, autoScale=' + autoScale.toFixed(4)
+                + ' (bbox ' + sz.x.toFixed(2) + 'x' + sz.y.toFixed(2) + 'x' + sz.z.toFixed(2) + ')');
         } catch(e) {
             console.warn('[DTS] ' + s.key + ' build failed:', e);
         }
     }
 }
 
-// Map C++ weapon type index → DTS model key
+// Map C++ weapon index → DTS model key ('' = no DTS model, use procedural)
 const _WEAPON_DTS_KEY = ['', 'chaingun', 'disc', 'grenade', '', '', '', '', ''];
 
-// Call every frame in syncCamera to swap the visible DTS model
 function _syncWeaponModel(curWpn) {
-    if (!weaponHand) return;
     const want = _WEAPON_DTS_KEY[curWpn] || null;
+    let anyVisible = false;
     for (const [key, mesh] of Object.entries(_dtsModels)) {
-        if (!mesh) continue;
-        const shouldShow = (key === want);
-        if (shouldShow && mesh.parent !== weaponHand) {
-            weaponHand.add(mesh);
-        } else if (!shouldShow && mesh.parent === weaponHand) {
-            weaponHand.remove(mesh);
-        }
+        mesh.visible = (key === want);
+        if (mesh.visible) anyVisible = true;
     }
+    // Hide the procedural weapon body when a DTS model is active;
+    // show it when we fall back (blaster, plasma, etc.)
+    if (weaponHand) {
+        weaponHand.children.forEach(c => {
+            c.visible = !anyVisible;
+        });
+    }
+    _dtsActive = anyVisible;
 }
 
 function initWeaponViewmodel() {
@@ -4373,11 +4393,15 @@ function syncCamera() {
     }
 
     // R31.7.1: weapon viewmodel — visible only in true 1P (camDist near 0).
-    if (weaponHand) weaponHand.visible = (camDist < 0.3);
+    const _in1P = (camDist < 0.3);
+    if (weaponHand) weaponHand.visible = _in1P;
 
-    // Swap DTS weapon model based on current weapon selection
+    // Swap DTS weapon model; also hide in 3P
     const _curWpn = playerView[o + 16] | 0;
     _syncWeaponModel(_curWpn);
+    for (const mesh of Object.values(_dtsModels)) {
+        if (mesh.visible && !_in1P) mesh.visible = false;
+    }
 
     // R31.7.1: feed the world aim-point we computed above into the C++ aim-
     // convergence override (Claude shipped C1 in commit 32b4b41 / R31.7).
