@@ -90,7 +90,8 @@ import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
 import { EditorBindings }  from './client/editor_bindings.js?v=1';
 import { EditorLighting }  from './client/editor_lighting.js?v=1';
 import { EventBus }        from './client/event_bus.js?v=1';
-import { initGamepad, tickGamepad } from './client/gamepad.js?v=1';
+import { initGamepad, tickGamepad }   from './client/gamepad.js?v=1';
+import { CameraGrounding }             from './client/camera_grounding.js?v=1';
 
 // --- Module state ---
 let scene, camera, renderer, composer;
@@ -5551,6 +5552,19 @@ function loop() {
     syncParticles();
     syncTurretBarrels(t);
     syncCamera();
+    // L2: footstrike bob + landing kick on top of syncCamera's result
+    try {
+        const li = Module._getLocalPlayerIdx();
+        if (Number.isFinite(li) && li >= 0 && playerView) {
+            const oo   = li * playerStride;
+            const spd  = Math.hypot(playerView[oo+6], playerView[oo+8]);
+            const velY = playerView[oo+7];
+            const onGround = playerView[oo+15] < 0.5 && spd > 0; // rough: not skiing + moving
+            // Use locomotion clip phase if available
+            const phase = window.__locoPhase ?? -1;
+            CameraGrounding.update(camera, spd, velY, 1/60, onGround, phase);
+        }
+    } catch(e) {}
     if (_rainEnabled) updateRain(1 / 60, camera.position); // R32.201: skip when rain not allocated
     // R32.141: Old jet exhaust disabled — mesh flames on character model instead
     try { updateSkiParticles(1/60); } catch (e) { /* cosmetic — keep loop alive */ }

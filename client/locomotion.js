@@ -60,6 +60,7 @@ export const Locomotion = {
     if (nat > 0.1 && clip.duration > 0) {
       const phase = (action.time % clip.duration) / clip.duration;
 
+      window.__locoPhase = phase;  // shared with camera_grounding.js
       const nearLeft  = Math.abs(phase - LEFT_STRIKE)  < STRIKE_WINDOW;
       const nearRight = Math.abs(phase - RIGHT_STRIKE) < STRIKE_WINDOW;
 
