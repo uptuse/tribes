@@ -14,8 +14,10 @@ Do not start coding until you have read both of the following documents end-to-e
    - GitHub: https://github.com/uptuse/tribes/blob/master/docs/Integration_Plan.md
    - Read **all twelve sections**. Do not skip Sections 5, 8, 9, 10, 11, 12 — those are the parts that the original plan didn't cover and that took the most effort to land.
 
-2. **Interaction prototype `firewolf_shell_sim` (the visual + UX reference).** This is a sketch-fidelity React prototype of the unified shell. It is not the production code — it is the *visual specification*. The look, the layout, the color palette, the typography, the wordmark, the welcome card, the top bar, the 12-tile mode grid, the slider primitive, the plain-English label voice — all of these are locked and must be ported as-is. Section 10.4 of the Integration Plan lists the five surfaces that are explicitly forbidden from being redesigned during the initial port.
-   - The prototype is currently in Manus-internal storage; see the working sandbox URL below for the live preview, and ask the operator for a GitHub mirror if you need source access.
+2. **Prototype reference files (the visual + UX exemplars).** Five files extracted from the React prototype `firewolf_shell_sim` are bundled in the tribes repo so you can read them directly. They are not the production code — they are the *visual specification*. The look, the layout, the color palette, the typography, the wordmark, the welcome card, the top bar, the 12-tile mode grid, the slider primitive, the plain-English label voice — all of these are locked and must be ported as-is. Section 10.4 of the Integration Plan lists the five surfaces that are explicitly forbidden from being redesigned during the initial port.
+   - GitHub: https://github.com/uptuse/tribes/blob/master/docs/PROTOTYPE_REFERENCE_FILES.md
+   - Contains: `index.css` (design tokens), `Wordmark.tsx`, `TopBar.tsx`, `HelpOverlay.tsx`, `ShellPanel.tsx`, and the `Slider` primitive. The bundle's header explains how to adapt them from React + Tailwind to the production vanilla JS / Three.js stack.
+   - A live sandbox preview of the prototype is also available at the URL in the table below for visual reference, but the bundle is the source of truth.
 
 ## Your priorities, in order
 
@@ -28,9 +30,10 @@ Do not start coding until you have read both of the following documents end-to-e
 
 ## What to ask the operator before you start
 
-- The GitHub URL of the `firewolf_shell_sim` prototype (or the source code zipped, or shared sandbox access). You need it to copy `Wordmark.tsx`, `TopBar.tsx`, `HelpOverlay.tsx`, `ShellPanel.tsx`, and the slider primitive verbatim.
-- Access to the existing Firewolf C++ source so you can extend the WASM hot-reload entry-point table in Section 6 (the `Module._reload*` functions).
-- Confirmation of which branch to commit to (`master` is the default) and whether to open milestones as PRs or commit directly.
+- *(Resolved)* Prototype source: now bundled at `docs/PROTOTYPE_REFERENCE_FILES.md` in this same repo. No external fetch needed.
+- *(Resolved)* C++ access: confirmed at `program/code/wasm_main.cpp` — proceed.
+- *(Resolved)* Branch: commit directly to `master`.
+- Confirm whether to open milestones as PRs (recommended for review) or commit directly to `master`. Default to PRs unless told otherwise.
 
 ## Working agreement
 
@@ -45,7 +48,7 @@ Do not start coding until you have read both of the following documents end-to-e
 |---|---|
 | Integration Plan v2 (spec) | https://github.com/uptuse/tribes/blob/master/docs/Integration_Plan.md |
 | Tribes repo (game source + docs) | https://github.com/uptuse/tribes |
-| Live prototype preview (sandbox) | https://3000-i1isb2gd8vflaquxkqm2e-14af83fe.us1.manus.computer |
-| Prototype source location (Manus-internal) | `/home/ubuntu/firewolf_shell_sim/` — request a GitHub export from the operator |
+| Prototype reference files (the source you need to copy) | https://github.com/uptuse/tribes/blob/master/docs/PROTOTYPE_REFERENCE_FILES.md |
+| Live prototype preview (sandbox, may expire) | https://3000-i1isb2gd8vflaquxkqm2e-14af83fe.us1.manus.computer |
 
 Acknowledge receipt with the one-paragraph summary described above, then list any blockers (missing repo access, missing prototype source, missing C++ access) before you write a single line of code.
