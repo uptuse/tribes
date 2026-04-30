@@ -20,7 +20,7 @@ const fs    = require('fs');
 const path  = require('path');
 const { WebSocketServer } = require('ws');
 
-const PORT    = 8080;
+const PORT    = 3000;
 const MAX_PL  = 8;
 
 // ── Lobby state ────────────────────────────────────────────

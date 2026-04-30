@@ -72,7 +72,7 @@ function getServerUrl() {
     if (explicit) return explicit + qs;
     if (window.__TRIBES_SERVER_URL) return window.__TRIBES_SERVER_URL + qs;
     const mode = params.get('multiplayer');
-    if (mode === 'local') return 'ws://localhost:8080/ws' + qs;
+    if (mode === 'local') return 'ws://localhost:3000/ws' + qs;
     if (mode === 'remote') {
         // Default fallback: derive from current host. Production builds should
         // set window.__TRIBES_SERVER_URL = 'wss://tribes-lobby.<your>.workers.dev/ws'
@@ -81,7 +81,7 @@ function getServerUrl() {
         console.warn('[NET] window.__TRIBES_SERVER_URL not set; using placeholder ' + fallback);
         return fallback + qs;
     }
-    return 'ws://localhost:8080/ws' + qs;
+    return 'ws://localhost:3000/ws' + qs;
 }
 
 function trackInbound(bytes) {
