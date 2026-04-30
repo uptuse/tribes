@@ -11,7 +11,9 @@
 
 Claude shipped a **competent, well-named, faithfully-styled foundation** in a single ~2,400-line commit. The shell, the design tokens, the typography, the wordmark, the welcome card, and the slider primitive are all ported with high fidelity — the visual exemplar lock held. Mode switching with camera detach works. The C++ side gained the three required hot-reload exports.
 
-However, the commit message claims "all 12 modes, Milestones 1–6" and that overstates what landed. **Five things did not actually ship**, and **one is a hard runtime bug** that will crash the editor on first mode switch. Fixing them is roughly one more focused Claude session — not weeks of work — but you should not consider this milestone closed.
+However, the commit message claims "all 12 modes, Milestones 1–6" and that overstates what landed. **Six things did not actually ship**, and **two are hard usability defects** confirmed by live operator testing. Fixing them is roughly one more focused Claude session — not weeks of work — but you should not consider this milestone closed.
+
+**Field-confirmed defect (added 2026-04-30 after operator testing):** the side panel opens, the mode tiles render, but **clicking any tile produces no visible response** — no sliders, no swatches, no asset list. The mode-tile click does fire `switchMode()`, which does run `_enterPalette()`, which does add `.open` to the relevant `#fw-palette-edit-*` div. The palette content is genuinely built. But the *palette renders on the left side of the screen*, while the panel-with-tiles is on the right. The operator's eye is on the right panel where they just clicked, and they never notice the per-mode controls slide in 1000+ pixels away on the left. This is a UX failure, not a code failure — but functionally it is indistinguishable from "the buttons don't work," which is how it was reported. See **BLOCKER #3** below for the fix.
 
 ---
 
@@ -24,6 +26,18 @@ The CI WASM rebuild at commit `8189a1b` produced a new `tribes.wasm`, but the re
 **Effect at runtime:** the moment the operator presses `Shift+Enter` and selects any edit mode, `shell.js` calls `Module._pause(1)` at line 103. That call throws `TypeError: Module._pause is not a function`, the mode switch fails silently, and the editor never enters edit state.
 
 **Fix:** trigger a clean rebuild — `emcc` with the cache cleared, or simply re-run the CI workflow now that Claude's `build.sh` is in `master`. One commit. Five minutes.
+
+### 🔴 BLOCKER — Per-mode palette appears on the wrong side of the screen (operator-confirmed)
+
+The right-side panel (`#fw-panel`) hosts the 12 mode tiles. Clicking a tile correctly fires `switchMode()` and `_enterPalette()`, which adds the `.open` class to the corresponding `.fw-palette` div — but that div is anchored at `position: absolute; left: 10px;` and slides in from the **left** edge of the viewport. The operator's gaze is on the right panel where the click just happened. The result: every tile click looks like dead silence, even though the palette did open and is fully populated.
+
+This is the single biggest UX defect in the shipment because it makes the entire editor look broken. The operator cannot reach a single feature without first discovering, by accident, that the controls live somewhere else.
+
+**The fix is a layout consolidation, not a rewrite.** The right-side panel currently carries (a) the 12-tile mode grid, (b) a small `#fw-mode-body` div that shows the selected mode's `desc` + `tip`, and (c) a footer with the scene summary + Clear button. The per-mode palette body must move *into the same right-side panel*, replacing or sitting below the `#fw-mode-body` text. Concretely: rename `#fw-palette-body-edit-XYZ` to a single shared `#fw-palette-host` inside the right panel, and have `_enterPalette(id)` populate it by calling the active mode's `buildPalette(host)` on demand instead of pre-building eleven hidden divs. The 11 separate `.fw-palette` containers and their slide-in animation get deleted.
+
+The prototype itself fused the panel and the per-mode controls into one column; the port accidentally split them in two. Restoring the single-column model also resolves a quieter problem — the left palette (220px) plus the right panel (340px) currently consume ~580px of horizontal real estate, leaving very little of the actual scene visible at common laptop widths.
+
+**Fix size:** ~80 lines of CSS deletions, ~30 lines of JS simplification in `_buildPalettes` / `_enterPalette` / `_leavePalette`, ~10 lines of selector updates in each editor module (`#fw-palette-body-edit-XYZ` → `#fw-palette-host`). One focused hour.
 
 ### 🔴 BLOCKER — `editor_panel.js` (the old Phase-A panel) still loads alongside the new shell
 
@@ -138,6 +152,6 @@ A tightly-scoped follow-up session, in this order, will close the milestone:
 
 ## Ship verdict
 
-**Not ready.** The shell is real and the styling is excellent, but the editor will crash on first mode switch, the old Phase-A panel ships alongside the new one, no undo / save / snap / multi-select / bookmarks exist, and three of the twelve modes (Sculpt, Bindings, partially AI) are placeholder UI without a real backend. Estimate one more focused Claude session to close — call it 1.5 days of his time.
+**Not ready.** The shell is real and the styling is excellent, but: clicking a mode tile produces no visible response (palette renders on the wrong side of the screen), the editor's pause/teleport/reload bridges aren't in `tribes.js` so the WASM hooks are dead, the old Phase-A panel ships alongside the new one, no undo / save / snap / multi-select / bookmarks exist, and three of the twelve modes (Sculpt, Bindings, partially AI) are placeholder UI without a real backend. Estimate one more focused Claude session to close — call it 1.5 days of his time. The single most impactful fix is BLOCKER #3 (the layout consolidation) — that one change makes the editor *feel* like it works.
 
 — Manus AI, 2026-04-30
