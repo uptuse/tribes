@@ -7,6 +7,9 @@ main = "worker.ts"
 compatibility_date = "2026-04-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Pinned to operator's Cloudflare account so deploys never go to the wrong account.
+account_id = "235d219adcfa2ea9b8a8218c72bb3068"
+
 # WebSocket hibernation API (free-tier-friendly when matches idle)
 # DO instances can sleep between WebSocket messages without losing state.
 [[durable_objects.bindings]]
