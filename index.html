@@ -563,7 +563,7 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 21:41</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">30 Apr - 21:50</div>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -1093,7 +1093,9 @@
       <h3>Paused</h3>
       <button class="btn" onclick="resumeGame()" style="margin-top:10px;">Resume</button>
       <button class="btn" onclick="openSettings()">Options</button>
-      <button class="btn" onclick="showHostCard()" style="background:rgba(255,212,121,0.12);border-color:#D4A030;color:#FFD479;">🎮 Host for family</button>
+      <button class="btn" onclick="showHostCard()" style="background:rgba(255,212,121,0.12);border-color:#D4A030;color:#FFD479;">🖥 Host (local server)</button>
+      <button class="btn" onclick="webrtcHost()" style="background:rgba(100,200,100,0.12);border-color:#4A8A4A;color:#88DD88;">🌐 Host (no server needed)</button>
+      <button class="btn" onclick="webrtcJoin()" style="background:rgba(100,150,200,0.12);border-color:#4A6A9A;color:#88AADD;">🔗 Join with code</button>
       <button class="btn btn-back" onclick="leaveMatch()">Leave Match</button>
     </div>
   </div>
@@ -3076,6 +3078,88 @@
         setTimeout(function(){ if(urlEl.textContent==='detecting...') urlEl.textContent='http://localhost:3000'; }, 2000);
       } catch(e){ urlEl.textContent = 'http://localhost:3000'; }
     }
+    // ── WebRTC browser-to-browser hosting ─────────────────────
+    var _webrtcModal = null;
+
+    function _showWebRTCModal(html) {
+      if (_webrtcModal) _webrtcModal.remove();
+      _webrtcModal = document.createElement('div');
+      _webrtcModal.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,0.82);display:flex;align-items:center;justify-content:center;';
+      _webrtcModal.innerHTML = '<div class="panel" style="max-width:460px;width:92%;padding:22px 24px;text-align:center">' + html + '</div>';
+      document.body.appendChild(_webrtcModal);
+      document.getElementById('escmenu').classList.remove('active');
+    }
+    function _closeWebRTCModal() { _webrtcModal && _webrtcModal.remove(); _webrtcModal = null; }
+
+    async function webrtcHost() {
+      _showWebRTCModal('<h3 style="color:#88DD88;margin-bottom:8px;">Host (no server needed)</h3><p style="font-size:0.82em;color:#7A6A4A;margin-bottom:12px;">Generating your invite code…</p>');
+      try {
+        var mod = await import('./client/browser_host.js?v=1');
+        var code = await mod.host(function(sock) {
+          // Connected! Inject socket and start network
+          import('./client/network.js').then(function(net) {
+            net.injectSocket(sock);
+            net.start();
+            _closeWebRTCModal();
+            resumeGame();
+            showToast('🟢 Player connected via browser link!', 3000);
+          });
+        });
+        _showWebRTCModal(
+          '<h3 style="color:#88DD88;margin-bottom:8px;">Share this code</h3>' +
+          '<p style="font-size:0.8em;color:#7A6A4A;margin-bottom:10px;">Send this to the other player. They click "Join with code" and paste it.</p>' +
+          '<textarea id="rtc-code-out" style="width:100%;height:80px;background:#0a0c10;color:#88DD88;border:1px solid #4A8A4A;border-radius:4px;padding:8px;font-family:monospace;font-size:0.72em;resize:none;" readonly>' + code + '</textarea>' +
+          '<button class="btn" style="margin-top:10px;width:48%" onclick="navigator.clipboard&&navigator.clipboard.writeText(document.getElementById(\'rtc-code-out\').value).then(function(){showToast(\'Copied!\',1500)})">Copy</button> ' +
+          '<button class="btn btn-back" style="margin-top:10px;width:48%" onclick="_closeWebRTCModal()">Cancel</button>' +
+          '<hr style="border-color:#2a2010;margin:14px 0"><p style="font-size:0.8em;color:#7A6A4A;margin-bottom:8px;">Once they send you their response code, paste it here:</p>' +
+          '<textarea id="rtc-answer-in" style="width:100%;height:60px;background:#0a0c10;color:#88AADD;border:1px solid #4A6A9A;border-radius:4px;padding:8px;font-family:monospace;font-size:0.72em;resize:none;" placeholder="Paste their response code here…"></textarea>' +
+          '<button class="btn" style="margin-top:8px;width:100%;background:rgba(100,200,100,0.15);border-color:#4A8A4A;color:#88DD88" onclick="webrtcFinalise()">Connect →</button>'
+        );
+        window._webrtcMod = mod;
+      } catch(e) { _showWebRTCModal('<h3 style="color:#ff4444">Failed</h3><p>' + e.message + '</p><button class="btn btn-back" onclick="_closeWebRTCModal()">Close</button>'); }
+    }
+
+    async function webrtcFinalise() {
+      var ans = document.getElementById('rtc-answer-in').value.trim();
+      if (!ans || !window._webrtcMod) return;
+      try { await window._webrtcMod.finalise(ans); }
+      catch(e) { showToast('Connection failed: ' + e.message, 3000); }
+    }
+
+    async function webrtcJoin() {
+      _showWebRTCModal(
+        '<h3 style="color:#88AADD;margin-bottom:8px;">Join with code</h3>' +
+        '<p style="font-size:0.8em;color:#7A6A4A;margin-bottom:10px;">Paste the host\'s invite code here:</p>' +
+        '<textarea id="rtc-offer-in" style="width:100%;height:80px;background:#0a0c10;color:#88DD88;border:1px solid #4A8A4A;border-radius:4px;padding:8px;font-family:monospace;font-size:0.72em;resize:none;" placeholder="Paste invite code here…"></textarea>' +
+        '<button class="btn" style="margin-top:10px;width:100%;background:rgba(100,150,200,0.15);border-color:#4A6A9A;color:#88AADD" onclick="webrtcDoJoin()">Generate response →</button>' +
+        '<button class="btn btn-back" style="margin-top:6px;width:100%" onclick="_closeWebRTCModal()">Cancel</button>'
+      );
+    }
+
+    async function webrtcDoJoin() {
+      var offer = document.getElementById('rtc-offer-in').value.trim();
+      if (!offer) return;
+      try {
+        var mod = await import('./client/browser_host.js?v=1');
+        var answerCode = await mod.join(offer, function(sock) {
+          import('./client/network.js').then(function(net) {
+            net.injectSocket(sock);
+            net.start();
+            _closeWebRTCModal();
+            resumeGame();
+            showToast('🟢 Connected to host!', 3000);
+          });
+        });
+        _showWebRTCModal(
+          '<h3 style="color:#88AADD;margin-bottom:8px;">Send this back to the host</h3>' +
+          '<p style="font-size:0.8em;color:#7A6A4A;margin-bottom:10px;">Copy this and send it to the person who hosted.</p>' +
+          '<textarea style="width:100%;height:80px;background:#0a0c10;color:#88AADD;border:1px solid #4A6A9A;border-radius:4px;padding:8px;font-family:monospace;font-size:0.72em;resize:none;" readonly>' + answerCode + '</textarea>' +
+          '<button class="btn" style="margin-top:10px;width:100%" onclick="navigator.clipboard&&navigator.clipboard.writeText(this.previousElementSibling.value).then(function(){showToast(\'Copied!\',1500)})">Copy response code</button>' +
+          '<p style="font-size:0.78em;color:#7A6A4A;margin-top:12px;">Waiting for the host to enter your response… the game will start automatically.</p>'
+        );
+      } catch(e) { showToast('Join failed: ' + e.message, 3000); }
+    }
+
     function resumeGame(){
       document.getElementById('escmenu').classList.remove('active');
       if(gameStarted)canvas.requestPointerLock();
@@ -3954,7 +4038,7 @@
           } else {
             console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
           }
-          import('./renderer.js?v=shell15').then(function(m){
+          import('./renderer.js?v=shell16').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
             if(typeof m.start === 'function'){
               m.start();

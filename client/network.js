@@ -23,6 +23,11 @@ window.__voiceSetPeerMutedDirect = voice.setPeerNumericMuted;
 window.__voiceClearPeerMutes = voice.clearPeerNumericMutes;
 
 let socket = null;
+let _injectedSocket = null;
+
+// Called by browser_host.js when a WebRTC DataChannel is ready.
+// network.start() will use this instead of opening a WebSocket.
+export function injectSocket(sockLike) { _injectedSocket = sockLike; }
 let connectedAt = 0;
 let lastMessageAt = 0;
 let myPlayerId = null;
@@ -116,14 +121,21 @@ export function start() {
     }
     stopInputLoop();
 
-    const url = getServerUrl();
-    log('connecting to ' + url);
-    try {
-        socket = new WebSocket(url);
+    if (_injectedSocket) {
+        socket = _injectedSocket;
         socket.binaryType = 'arraybuffer';
-    } catch (err) {
-        log('connect failed: ' + err.message);
-        return;
+        _injectedSocket = null;
+        log('using WebRTC data channel');
+    } else {
+        const url = getServerUrl();
+        log('connecting to ' + url);
+        try {
+            socket = new WebSocket(url);
+            socket.binaryType = 'arraybuffer';
+        } catch (err) {
+            log('connect failed: ' + err.message);
+            return;
+        }
     }
 
     socket.onopen = () => {

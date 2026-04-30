@@ -5569,7 +5569,8 @@ function loop() {
     } catch(e) { /* keep loop alive */ }
     try { updateCustomSky(t, DayNight.dayMix, DayNight.sunDir, camera.position); } catch(e) { /* keep loop alive */ }
     syncPlayers(t);
-    _syncDummyHealthBar();
+    // Throttle health bar projection to 15 Hz — project() is a matrix op, not needed at 60Hz
+    if ((_frameCount & 3) === 0) _syncDummyHealthBar();
     // R32.109: Rigged GLB character sync — overlays Mixamo-rigged models on
     // top of procedural player meshes for local 3P + demo character.
     try { Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes); } catch(e) { /* keep loop alive */ }
@@ -5597,7 +5598,8 @@ function loop() {
     try { updateProjectileTrails(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateExplosionFX(1/60); } catch (e) { /* cosmetic — keep loop alive */ }
     try { updateNightFairies(1/60, t); } catch (e) { console.error('[R32.84] sky fairy error:', e); }
-    try { updateInteriorLights(); } catch (e) { /* cosmetic — keep loop alive */ }
+    // Interior lights only need ~5 Hz updates (material lerp)
+    if ((_frameCount % 12) === 0) { try { updateInteriorLights(); } catch (e) {} }
 
     // R32.7 — polish tick (lightning, shake, FOV punch, splashes, smoke, HUD)
     if (polish) {
@@ -5657,13 +5659,13 @@ function loop() {
 
     _frameCount++;
     const now = performance.now();
-    // Auto-quality: if sustained FPS < 25 for 5s, step down one tier
+    // Auto-quality: if sustained FPS < 28 for 5s, step down one tier
     if (now - _lastDiagTime > 5000) {
         const fps = _frameCount / ((now - _lastDiagTime) / 1000);
-        if (fps < 25 && currentQuality !== 'low') {
+        if (fps < 28 && currentQuality !== 'low') {
             const steps = ['ultra','high','medium','low'];
             const next  = steps[Math.min(steps.indexOf(currentQuality) + 1, 3)];
-            console.log(`[Perf] FPS ${fps.toFixed(0)} < 25 — dropping quality ${currentQuality} → ${next}`);
+            console.log(`[Perf] FPS ${fps.toFixed(0)} < 28 — dropping quality ${currentQuality} → ${next}`);
             applyQuality(next);
             if (window.ST) { window.ST.graphicsQuality = next; try { localStorage.setItem('tribes_settings_v1', JSON.stringify(window.ST)); } catch(e){} }
         }

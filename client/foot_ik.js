@@ -64,18 +64,21 @@ function _findBones(model) {
   return (map.lFoot && map.rFoot) ? map : null;
 }
 
+// Cache heightmap view — re-use the typed array view across frames
+let _hmapView = null, _hmapTSIZE = 257, _hmapTSCALE = 8;
 function _sampleTerrainHeight(wx, wz) {
-  // Direct heightmap lookup — O(1), no raycast against 131K triangles
   if (!window.Module?._getHeightmapPtr) return null;
   try {
-    const TSCALE = Module._getHeightmapWorldScale?.() ?? 8;
-    const TSIZE  = Module._getHeightmapSize?.() ?? 257;
-    const hPtr   = Module._getHeightmapPtr();
-    const hmap   = new Float32Array(Module.HEAPF32.buffer, hPtr, TSIZE * TSIZE);
-    const gx     = Math.max(0, Math.min(TSIZE-1, Math.round(wx / TSCALE + TSIZE * 0.5)));
-    const gz     = Math.max(0, Math.min(TSIZE-1, Math.round(wz / TSCALE + TSIZE * 0.5)));
-    return hmap[gz * TSIZE + gx];
-  } catch(e) { return null; }
+    if (!_hmapView) {
+      _hmapTSCALE = Module._getHeightmapWorldScale?.() ?? 8;
+      _hmapTSIZE  = Module._getHeightmapSize?.() ?? 257;
+      const hPtr  = Module._getHeightmapPtr();
+      _hmapView   = new Float32Array(Module.HEAPF32.buffer, hPtr, _hmapTSIZE * _hmapTSIZE);
+    }
+    const gx = Math.max(0, Math.min(_hmapTSIZE-1, Math.round(wx / _hmapTSCALE + _hmapTSIZE * 0.5)));
+    const gz = Math.max(0, Math.min(_hmapTSIZE-1, Math.round(wz / _hmapTSCALE + _hmapTSIZE * 0.5)));
+    return _hmapView[gz * _hmapTSIZE + gx];
+  } catch(e) { _hmapView = null; return null; }
 }
 
 function _applyFootIK(footBone, lowerLeg, terrain) {
