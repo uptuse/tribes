@@ -24,18 +24,18 @@ let _onConnected = null;
 
 // ── Server URL (when local server is running) ──────────────────────
 // Try same-origin first (game served from local server), then localhost:3000.
-let _serverUrl = null;
+let _serverUrl = undefined; // undefined = not yet detected; null = not found; '' or url = found
 async function _getServerUrl() {
-  if (_serverUrl !== null) return _serverUrl;
-  // Same-origin (game opened from http://192.168.68.112:3000)
+  if (_serverUrl !== undefined) return _serverUrl;
+  // Try same-origin first (game served from local server)
   try {
-    const r = await fetch('/api/signal/offer', { method:'OPTIONS' });
-    if (r.ok || r.status === 204) { _serverUrl = ''; return ''; }
+    const r = await fetch('/api/ping');
+    if (r.ok) { _serverUrl = ''; return ''; }
   } catch {}
-  // GitHub Pages / external — try local server directly
+  // Try localhost directly (game on GitHub Pages, server still running locally)
   try {
-    const r = await fetch('http://localhost:3000/api/signal/offer', { method:'OPTIONS' });
-    if (r.ok || r.status === 204) { _serverUrl = 'http://localhost:3000'; return 'http://localhost:3000'; }
+    const r = await fetch('http://localhost:3000/api/ping');
+    if (r.ok) { _serverUrl = 'http://localhost:3000'; return 'http://localhost:3000'; }
   } catch {}
   _serverUrl = null;
   return null;

@@ -54,7 +54,12 @@ function _readBody(req, cb) {
   req.on('end', () => { try { cb(null, JSON.parse(body)); } catch(e) { cb(e); } });
 }
 
-const CORS = { 'Access-Control-Allow-Origin':'*', 'Content-Type':'application/json' };
+const CORS = {
+  'Access-Control-Allow-Origin':  '*',
+  'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  'Access-Control-Allow-Headers': 'Content-Type',
+  'Content-Type': 'application/json',
+};
 
 const httpServer = http.createServer((req, res) => {
   if (req.headers.upgrade?.toLowerCase() === 'websocket') return;
@@ -97,6 +102,7 @@ const httpServer = http.createServer((req, res) => {
     return;
   }
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
+  if (req.url === '/api/ping') { res.writeHead(200, CORS); res.end(JSON.stringify({ok:true})); return; }
 
   // ── Static files ────────────────────────────────────────────
   let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
