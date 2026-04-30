@@ -39,21 +39,72 @@ const MIME = {
   '.bin':  'application/octet-stream',
 };
 
+// ── WebRTC signaling store — host posts offer, joiner fetches it,
+//    joiner posts answer, host polls for it. Auto-expires after 2 min.
+const _signals = new Map(); // roomCode → { offer, answer, ts }
+
+function _roomCode() {
+  const words = ['WOLF','FIRE','DISC','SNOW','BLUE','IRON','APEX','NOVA','RUSH','GRID'];
+  return words[Math.floor(Math.random()*words.length)] + Math.floor(Math.random()*90+10);
+}
+
+function _readBody(req, cb) {
+  let body = '';
+  req.on('data', d => body += d);
+  req.on('end', () => { try { cb(null, JSON.parse(body)); } catch(e) { cb(e); } });
+}
+
+const CORS = { 'Access-Control-Allow-Origin':'*', 'Content-Type':'application/json' };
+
 const httpServer = http.createServer((req, res) => {
-  // WebSocket upgrade requests are handled by the ws server
   if (req.headers.upgrade?.toLowerCase() === 'websocket') return;
 
-  let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
-  // Strip query string
-  filePath = filePath.split('?')[0];
+  // ── WebRTC signaling API ────────────────────────────────────
+  if (req.method === 'POST' && req.url === '/api/signal/offer') {
+    _readBody(req, (err, body) => {
+      if (err) { res.writeHead(400, CORS); res.end('{}'); return; }
+      const code = _roomCode();
+      _signals.set(code, { offer: body.offer, answer: null, ts: Date.now() });
+      // Clean up old signals
+      for (const [k, v] of _signals) if (Date.now() - v.ts > 120000) _signals.delete(k);
+      res.writeHead(200, CORS);
+      res.end(JSON.stringify({ code }));
+    });
+    return;
+  }
+  if (req.method === 'GET' && req.url.startsWith('/api/signal/offer/')) {
+    const code = req.url.slice('/api/signal/offer/'.length);
+    const sig  = _signals.get(code);
+    res.writeHead(sig ? 200 : 404, CORS);
+    res.end(JSON.stringify(sig ? { offer: sig.offer } : { error: 'not found' }));
+    return;
+  }
+  if (req.method === 'POST' && req.url.startsWith('/api/signal/answer/')) {
+    const code = req.url.slice('/api/signal/answer/'.length);
+    _readBody(req, (err, body) => {
+      const sig = _signals.get(code);
+      if (!sig || err) { res.writeHead(404, CORS); res.end('{}'); return; }
+      sig.answer = body.answer;
+      res.writeHead(200, CORS); res.end('{}');
+    });
+    return;
+  }
+  if (req.method === 'GET' && req.url.startsWith('/api/signal/answer/')) {
+    const code = req.url.slice('/api/signal/answer/'.length);
+    const sig  = _signals.get(code);
+    res.writeHead(200, CORS);
+    res.end(JSON.stringify(sig?.answer ? { answer: sig.answer } : { waiting: true }));
+    return;
+  }
+  if (req.method === 'OPTIONS') { res.writeHead(204, CORS); res.end(); return; }
+
+  // ── Static files ────────────────────────────────────────────
+  let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url.split('?')[0]);
 
   fs.readFile(filePath, (err, data) => {
-    if (err) {
-      res.writeHead(404); res.end('Not found: ' + req.url); return;
-    }
+    if (err) { res.writeHead(404); res.end('Not found: ' + req.url); return; }
     const ext  = path.extname(filePath).toLowerCase();
     const mime = MIME[ext] || 'application/octet-stream';
-    // COOP/COEP headers required for SharedArrayBuffer (WASM threads)
     res.writeHead(200, {
       'Content-Type': mime,
       'Cross-Origin-Opener-Policy': 'same-origin',

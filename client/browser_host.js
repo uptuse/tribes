@@ -22,49 +22,100 @@ let _pc   = null;   // RTCPeerConnection
 let _chan = null;   // RTCDataChannel (host-created)
 let _onConnected = null;
 
+// ── Server URL (when local server is running) ──────────────────────
+// We try the local server first for short codes. Falls back to raw SDP.
+async function _serverBase() {
+  try {
+    const r = await fetch('/api/signal/offer', { method:'OPTIONS' });
+    return r.ok || r.status === 204 ? '' : null; // same origin = ''
+  } catch { return null; }
+}
+
 // ── Host side ──────────────────────────────────────────────────────
 export async function host(onConnected) {
   _onConnected = onConnected;
   _pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
-
-  // Create reliable + unreliable channels
   _chan = _pc.createDataChannel('game', { ordered: false, maxRetransmits: 0 });
   _setupChannel(_chan);
 
-  // Gather ICE candidates (wait for completion)
   const offer = await _pc.createOffer();
   await _pc.setLocalDescription(offer);
   await _waitForICE(_pc);
 
-  // Encode full SDP (with candidates) as compact base64
+  // Try server for short code, fall back to raw SDP
+  try {
+    const r = await fetch('/api/signal/offer', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ offer: _pc.localDescription }),
+    });
+    if (r.ok) {
+      const { code } = await r.json();
+      // Poll for answer in background
+      _pollForAnswer(code);
+      return code;  // short code like "WOLF42"
+    }
+  } catch {}
+
+  // Fallback: raw base64 SDP
   return _encode(_pc.localDescription);
 }
 
-// Host calls this with the answer code the joiner sent back
+function _pollForAnswer(code) {
+  const interval = setInterval(async () => {
+    try {
+      const r = await fetch('/api/signal/answer/' + code);
+      const d = await r.json();
+      if (d.answer) {
+        clearInterval(interval);
+        await _pc.setRemoteDescription(d.answer);
+      }
+    } catch {}
+  }, 1000);
+  setTimeout(() => clearInterval(interval), 120000); // stop after 2 min
+}
+
+// Host calls this when server is NOT available (manual raw-SDP flow)
 export async function finalise(answerCode) {
   const answer = _decode(answerCode);
   await _pc.setRemoteDescription(answer);
-  // connection will fire onConnected via _setupChannel's onopen
 }
 
 // ── Join side ──────────────────────────────────────────────────────
 export async function join(offerCode, onConnected) {
   _onConnected = onConnected;
   _pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  _pc.ondatachannel = (e) => { _chan = e.channel; _setupChannel(_chan); };
 
-  // Receive the data channel the host created
-  _pc.ondatachannel = (e) => {
-    _chan = e.channel;
-    _setupChannel(_chan);
-  };
+  // Short code (server path) vs raw SDP (fallback)
+  const isShortCode = offerCode.length < 20;
+  let offerSDP;
 
-  const offer = _decode(offerCode);
-  await _pc.setRemoteDescription(offer);
+  if (isShortCode) {
+    const r = await fetch('/api/signal/offer/' + offerCode);
+    if (!r.ok) throw new Error('Room not found — check the code');
+    const { offer } = await r.json();
+    offerSDP = offer;
+  } else {
+    offerSDP = _decode(offerCode);
+  }
+
+  await _pc.setRemoteDescription(offerSDP);
   const answer = await _pc.createAnswer();
   await _pc.setLocalDescription(answer);
   await _waitForICE(_pc);
 
-  return _encode(_pc.localDescription);
+  if (isShortCode) {
+    // Post answer back via server — host is polling, no manual step needed
+    await fetch('/api/signal/answer/' + offerCode, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ answer: _pc.localDescription }),
+    });
+    return null; // no code to send back — server handles it
+  }
+
+  return _encode(_pc.localDescription); // fallback: joiner must still send this back
 }
 
 // ── Shared channel setup ───────────────────────────────────────────
