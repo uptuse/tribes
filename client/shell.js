@@ -167,6 +167,11 @@ function _buildDOM() {
     ${_buildLog()}
     ${_buildTimeline()}`;
 
+  // Make panel draggable by its header
+  const panel  = root.querySelector('#fw-panel');
+  const handle = root.querySelector('.fw-panel-header');
+  if (panel && handle) _makeDraggable(panel, handle);
+
   root.querySelector('#fw-btn-help').addEventListener('click', _toggleHelp);
   root.querySelector('#fw-btn-panel').addEventListener('click', togglePanel);
   root.querySelector('#fw-help-close').addEventListener('click', _closeHelp);
@@ -206,6 +211,42 @@ function _buildTopBar() {
       </div>
     </div>
   </div>`;
+}
+
+// ── Draggable panel ────────────────────────────────────────────────────────
+function _makeDraggable(panel, handle) {
+  let ox = 0, oy = 0, startX = 0, startY = 0, dragging = false;
+
+  handle.style.cursor = 'grab';
+
+  handle.addEventListener('mousedown', e => {
+    if (e.button !== 0) return;
+    dragging = true;
+    // Switch from right-anchored to absolute positioning on first drag
+    if (!panel.style.right && !panel.dataset.dragged) {
+      const r = panel.getBoundingClientRect();
+      panel.style.right    = 'auto';
+      panel.style.left     = r.left + 'px';
+      panel.style.top      = r.top  + 'px';
+      panel.style.position = 'fixed';
+      panel.style.margin   = '0';
+    }
+    panel.dataset.dragged = '1';
+    startX = e.clientX - (parseInt(panel.style.left) || 0);
+    startY = e.clientY - (parseInt(panel.style.top)  || 0);
+    handle.style.cursor = 'grabbing';
+    e.preventDefault();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    panel.style.left = (e.clientX - startX) + 'px';
+    panel.style.top  = (e.clientY - startY) + 'px';
+  });
+
+  document.addEventListener('mouseup', () => {
+    if (dragging) { dragging = false; handle.style.cursor = 'grab'; }
+  });
 }
 
 function _buildPanel() {

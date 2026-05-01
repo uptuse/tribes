@@ -292,14 +292,16 @@ function _buildTimeline() {
     const collapsed = tl.dataset.collapsed === '1';
     if (collapsed) {
       tl.dataset.collapsed = '0';
+      tl.style.height      = '220px';
       if (area)  area.style.display  = '';
       if (panel) panel.style.paddingBottom = '225px';
-      btn.textContent = '▼'; btn.title = 'Minimise timeline';
+      btn.textContent = '▼'; btn.title = 'Minimise';
     } else {
       tl.dataset.collapsed = '1';
+      tl.style.height      = '38px';   // transport bar only
       if (area)  area.style.display  = 'none';
-      if (panel) panel.style.paddingBottom = '46px';
-      btn.textContent = '▲'; btn.title = 'Expand timeline';
+      if (panel) panel.style.paddingBottom = '44px';
+      btn.textContent = '▲'; btn.title = 'Expand';
     }
   });
 
