@@ -51,19 +51,20 @@ let _demoSpawned = false;
 // textureSrc = lod0 GLB = HD textures at ~12k poly, loaded in parallel
 // and transferred onto the rigged mesh in Three.js.
 const CHARACTER_MODELS = [
-    // textureSrc = 50k GLB — same mesh that was rigged, has full HD PBR textures
+    // crimson_sentinel has all 14 animations — used as animSrc for every other model
     { id: 'crimson_sentinel',  label: 'Crimson Sentinel',  path: './assets/models/crimson_sentinel_rigged.glb',  textureSrc: './assets/models/crimson_sentinel_50k.glb'  },
-    { id: 'aegis_sentinel',    label: 'Aegis Sentinel',    path: './assets/models/aegis_sentinel_rigged.glb',    textureSrc: './assets/models/aegis_sentinel_50k.glb'    },
-    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb',     textureSrc: './assets/models/auric_phoenix_50k.glb'     },
-    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb',     textureSrc: './assets/models/crimson_titan_50k.glb'     },
-    { id: 'crimson_warforged', label: 'Crimson Warforged', path: './assets/models/crimson_warforged_rigged.glb',  textureSrc: './assets/models/crimson_warforged_50k.glb' },
-    { id: 'emerald_sentinel',  label: 'Emerald Sentinel',  path: './assets/models/emerald_sentinel_rigged.glb',  textureSrc: './assets/models/emerald_sentinel_50k.glb'  },
-    { id: 'golden_phoenix',    label: 'Golden Phoenix',    path: './assets/models/golden_phoenix_rigged.glb',    textureSrc: './assets/models/golden_phoenix_50k.glb'    },
-    { id: 'iron_wolf',         label: 'Iron Wolf',         path: './assets/models/iron_wolf_rigged.glb',         textureSrc: './assets/models/iron_wolf_50k.glb'         },
-    { id: 'midnight_sentinel', label: 'Midnight Sentinel', path: './assets/models/midnight_sentinel_rigged.glb', textureSrc: './assets/models/midnight_sentinel_50k.glb' },
-    { id: 'neon_wolf',         label: 'Neon Wolf',         path: './assets/models/neon_wolf_rigged.glb',         textureSrc: './assets/models/neon_wolf_50k.glb'         },
-    { id: 'obsidian_vanguard', label: 'Obsidian Vanguard', path: './assets/models/obsidian_vanguard_rigged.glb', textureSrc: './assets/models/obsidian_vanguard_50k.glb' },
-    { id: 'violet_phoenix',    label: 'Violet Phoenix',    path: './assets/models/violet_phoenix_rigged.glb',    textureSrc: './assets/models/violet_phoenix_50k.glb'    },
+    // All non-crimson models: animSrc pulls the 14 animations from crimson
+    { id: 'aegis_sentinel',    label: 'Aegis Sentinel',    path: './assets/models/aegis_sentinel_rigged.glb',    textureSrc: './assets/models/aegis_sentinel_50k.glb',    animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb',     textureSrc: './assets/models/auric_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb',     textureSrc: './assets/models/crimson_titan_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'crimson_warforged', label: 'Crimson Warforged', path: './assets/models/crimson_warforged_rigged.glb',  textureSrc: './assets/models/crimson_warforged_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'emerald_sentinel',  label: 'Emerald Sentinel',  path: './assets/models/emerald_sentinel_rigged.glb',  textureSrc: './assets/models/emerald_sentinel_50k.glb',   animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'golden_phoenix',    label: 'Golden Phoenix',    path: './assets/models/golden_phoenix_rigged.glb',    textureSrc: './assets/models/golden_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'iron_wolf',         label: 'Iron Wolf',         path: './assets/models/iron_wolf_rigged.glb',         textureSrc: './assets/models/iron_wolf_50k.glb',          animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'midnight_sentinel', label: 'Midnight Sentinel', path: './assets/models/midnight_sentinel_rigged.glb', textureSrc: './assets/models/midnight_sentinel_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'neon_wolf',         label: 'Neon Wolf',         path: './assets/models/neon_wolf_rigged.glb',         textureSrc: './assets/models/neon_wolf_50k.glb',          animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'obsidian_vanguard', label: 'Obsidian Vanguard', path: './assets/models/obsidian_vanguard_rigged.glb', textureSrc: './assets/models/obsidian_vanguard_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+    { id: 'violet_phoenix',    label: 'Violet Phoenix',    path: './assets/models/violet_phoenix_rigged.glb',    textureSrc: './assets/models/violet_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
 ];
 window.__characterModels = CHARACTER_MODELS;
 let _currentModelIdx = 0;
@@ -110,14 +111,24 @@ function _init(targetScene) {
     const loader  = new GLTFLoader();
     const charDef = CHARACTER_MODELS[_currentModelIdx];
 
-    const rigLoad = new Promise((ok, fail) => loader.load(charDef.path, ok, undefined, fail));
-    const texLoad = charDef.textureSrc
+    const rigLoad  = new Promise((ok, fail) => loader.load(charDef.path, ok, undefined, fail));
+    const texLoad  = charDef.textureSrc
         ? new Promise((ok, fail) => loader.load(charDef.textureSrc, ok, undefined, fail))
         : Promise.resolve(null);
+    // animSrc: crimson sentinel's 14 clips shared across all characters.
+    // Works because all Mixamo rigs use identical bone naming.
+    const animLoad = charDef.animSrc
+        ? new Promise((ok, fail) => loader.load(charDef.animSrc, ok, undefined, fail))
+        : Promise.resolve(null);
 
-    Promise.all([rigLoad, texLoad])
-      .then(([gltf, texGltf]) => {
-        if (texGltf) _transferMaterials(gltf.scene, texGltf.scene);
+    Promise.all([rigLoad, texLoad, animLoad])
+      .then(([gltf, texGltf, animGltf]) => {
+        if (texGltf)  _transferMaterials(gltf.scene, texGltf.scene);
+        if (animGltf) {
+            // Replace the rig's single clip with the full 14-clip set
+            gltf.animations = animGltf.animations;
+            console.log(`[Characters] Injected ${animGltf.animations.length} animations from crimson sentinel`);
+        }
         _onLoad(gltf);
       })
       .catch(err => console.error('[Characters] Load failed:', err));
