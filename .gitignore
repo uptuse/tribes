@@ -25,3 +25,9 @@ assets/models/source/wolf_sentinel_full/
 client/_legacy/
 node_modules/
 package-lock.json
+.DS_Store
+assets/models/50k/
+assets/models/*.fbm/
+tools/obj_export/*.obj
+tools/obj_export/*.mtl
+tools/obj_export/*.zip

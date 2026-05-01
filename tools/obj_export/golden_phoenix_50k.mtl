@@ -1,0 +1,8 @@
+# Materials for golden_phoenix_50k
+
+newmtl mat_0
+Ka 1 1 1
+Kd 0.8 0.8 0.8
+Ks 0 0 0
+d 1
+Kd 1.0000 1.0000 1.0000
