@@ -70,13 +70,14 @@ const BASE = './assets/models/';
 // The remaining 6 (aegis, warforged, golden_phoenix, iron_wolf, neon_wolf,
 // violet_phoenix) were converted from the original unrigged FBX files in
 // assets/models/ — they have no skeleton. Re-add here once Mixamo-rigged.
+// auric_phoenix + crimson_titan removed — their rigged GLBs have 0 meshes
+// (downloaded from Mixamo as animation-only, no "With Skin"). Re-add once
+// re-exported with Format=FBX, Skin=With Skin from mixamo.com.
 const ROSTER = [
-    'crimson_sentinel',   // original hand-rigged
-    'auric_phoenix',      // tools/obj_export/auric_phoenix_50k.fbx
-    'crimson_titan',      // tools/obj_export/crimson_titan_50k.fbx
-    'emerald_sentinel',   // tools/obj_export/emerald_sentinel_50k.fbx
-    'midnight_sentinel',  // tools/obj_export/midnight_sentinel_50k.fbx
-    'obsidian_vanguard',  // tools/obj_export/obsidian_vanguard_50k.fbx
+    'crimson_sentinel',   // original hand-rigged — skinned ✅
+    'emerald_sentinel',   // Mixamo download — mesh, no skin
+    'midnight_sentinel',  // Mixamo download — mesh, no skin
+    'obsidian_vanguard',  // Mixamo download — mesh, no skin
 ];
 
 const CHARACTER_MODELS = ROSTER.map(id => ({
