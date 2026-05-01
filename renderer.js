@@ -3296,6 +3296,19 @@ const _WPN_META = [
 ];
 let _wpnFrameMat = null;  // set in initWeaponViewmodel, mutated on weapon switch
 
+// R32.278: GLB-backed viewmodel for Spinfusor (weapon idx 2).
+// Loads once async; swaps in/out via visibility on weapon change.
+// Parented under weaponHand so sway / kick / jet-dip are inherited for free.
+let _spinfusorGLB = null;           // THREE.Group — the loaded scene
+let _spinfusorReady = false;
+let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
+let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
+const _SPINFUSOR_TRANSFORM = {
+    position: new THREE.Vector3(0.05, -0.06, -0.32),
+    rotation: new THREE.Euler(0, Math.PI, 0, 'YXZ'), // barrel toward -Z in weaponHand space
+    scale: 0.18,
+};
+
 // Weapon name label — small discrete overlay near the weapon
 const _wpnLabel = (() => {
     const el = document.createElement('div');
@@ -3311,19 +3324,27 @@ const _wpnLabel = (() => {
 let _lastWpnIdx = -1;
 
 function _syncWeaponModel(curWpn) {
-    // DTS disabled — procedural only. Just tint the frame and update the label.
-    if (weaponHand) weaponHand.children.forEach(c => { c.visible = true; });
+    // R32.278: per-frame toggle so visibility stays correct even if the GLB
+    // finishes loading while the Spinfusor is already equipped.
+    const useGLB = (curWpn === 2 && _spinfusorReady);
+    if (weaponHand) weaponHand.children.forEach(c => {
+        if (c === _spinfusorGLB) return;   // GLB visibility owned by useGLB below
+        c.visible = !useGLB;
+    });
+    if (_spinfusorGLB) _spinfusorGLB.visible = useGLB;
 
-    // Only update on weapon change
+    // Route CombatFX muzzle anchor to whichever gun is active
+    window._weaponMuzzleAnchor = (useGLB && _spinfusorMuzzleAnchor)
+        ? _spinfusorMuzzleAnchor
+        : _proceduralMuzzleAnchor;
+
+    // Only update tint / label on actual weapon change
     if (curWpn === _lastWpnIdx) return;
     _lastWpnIdx = curWpn;
 
     const meta = _WPN_META[curWpn] ?? _WPN_META[0];
-
-    // Tint the frame material to distinguish each weapon
     if (_wpnFrameMat) _wpnFrameMat.color.setHex(meta.color);
 
-    // Show weapon name
     _wpnLabel.textContent = meta.name.toUpperCase();
     _wpnLabel.style.display = 'block';
     clearTimeout(_wpnLabel._hideTimer);
@@ -3545,8 +3566,58 @@ function initWeaponViewmodel() {
     });
 
     weaponHand = group;
-    // Expose muzzle anchor globally for CombatFX
+    // Hoist so _syncWeaponModel can route CombatFX to the right gun per-shot
+    _proceduralMuzzleAnchor = muzzleAnchor;
+    // Expose globally for CombatFX; _syncWeaponModel updates this per weapon change
     window._weaponMuzzleAnchor = muzzleAnchor;
+
+    // R32.278 Step 2: async GLB load for Spinfusor viewmodel.
+    // Parented under weaponHand (not camera) so sway / kick / jet-dip are inherited free.
+    const _spinfusorLoader = new GLTFLoader();
+    _spinfusorLoader.load(
+        './assets/weapons/aurora_pulse_blaster.glb',
+        (gltf) => {
+            const m = gltf.scene;
+            m.position.copy(_SPINFUSOR_TRANSFORM.position);
+            m.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
+            m.scale.setScalar(_SPINFUSOR_TRANSFORM.scale);
+            m.traverse((child) => {
+                if (!child.isMesh) return;
+                child.castShadow    = false;
+                child.receiveShadow = false;
+                child.frustumCulled = false;  // viewmodel always on screen
+                child.renderOrder   = 1;      // behind procedural arms (renderOrder 2)
+                if (child.material) {
+                    child.material.depthWrite = true;
+                    child.material.depthTest  = true;
+                }
+            });
+            // Muzzle anchor: compute model's local-space bbox to find barrel tip.
+            // Geometry bbox is in local space; union across all meshes.
+            const bboxLocal = new THREE.Box3();
+            m.traverse(ch => {
+                if (!ch.isMesh || !ch.geometry) return;
+                ch.geometry.computeBoundingBox();
+                bboxLocal.union(ch.geometry.boundingBox);
+            });
+            const anchor = new THREE.Object3D();
+            anchor.name = 'spinfusorMuzzle';
+            // After _SPINFUSOR_TRANSFORM.rotation.y = π the model's +Z local maps to
+            // weaponHand -Z (forward). Barrel tip is at local bboxLocal.max.z.
+            anchor.position.set(0, 0, bboxLocal.max.z);
+            m.add(anchor);
+            _spinfusorMuzzleAnchor = anchor;
+
+            m.visible   = false;   // hidden until Spinfusor is equipped
+            _spinfusorGLB = m;
+            weaponHand.add(m);     // sibling of procedural meshes inside weaponHand
+            _spinfusorReady = true;
+            console.log('[R32.278] Aurora Pulse Blaster loaded —',
+                new THREE.Box3().setFromObject(m).getSize(new THREE.Vector3()));
+        },
+        undefined,
+        (err) => console.warn('[R32.278] Aurora Pulse Blaster failed to load:', err)
+    );
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
 }
 
@@ -4407,8 +4478,9 @@ function _enterSpectator(deathX, deathY, deathZ) {
     if (el) el.classList.add('show');
     const bars = document.getElementById('spec-bars');
     if (bars) bars.classList.add('show');
-    // Hide weapon viewmodel
+    // Hide weapon viewmodel (cascade hides _spinfusorGLB too, but be explicit)
     if (weaponHand) weaponHand.visible = false;
+    if (_spinfusorGLB) _spinfusorGLB.visible = false;
 }
 function _exitSpectator() {
     _spec.active = false;
