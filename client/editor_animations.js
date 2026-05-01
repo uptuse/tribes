@@ -60,19 +60,21 @@ export function setCharacterRig(skeleton, clips) {
 }
 
 function onEnter() {
-  // Force the character to show in the scene even without 3P mode
   window.__characterPreview = true;
   _buildTimeline();
   document.getElementById('fw-timeline')?.classList.add('open');
   const panel = document.getElementById('fw-panel');
   if (panel) panel.style.paddingBottom = '225px';
   _updateTimecodeEl();
-  // Re-wire rig now that forceShow is on and sync() will create the instance
-  setTimeout(() => {
-    const li  = window.Module?._getLocalPlayerIdx?.() ?? 0;
-    const rig = window.__Characters?.getRig?.(li);
-    if (rig) setCharacterRig(rig.skeleton, rig.clips);
-  }, 800);
+  // Subscribe to rig changes — Characters calls us when a rig is ready
+  // (eliminates the 800ms setTimeout guess from the prior approach)
+  window.__Characters?.subscribeRigChange?.((skeleton, clips) => {
+    setCharacterRig(skeleton, clips);
+  });
+  // Wire immediately if rig is already loaded
+  const li  = window.Module?._getLocalPlayerIdx?.() ?? 0;
+  const rig = window.__Characters?.getRig?.(li);
+  if (rig) setCharacterRig(rig.skeleton, rig.clips);
 }
 
 function onExit() {
@@ -88,7 +90,8 @@ function buildPalette(root) {
   const body = root;
   body.innerHTML = '';
 
-  // Character picker — hardcoded list matches renderer_characters.js CHARACTER_MODELS
+  // Character picker — skinned models first, rigid ("preview only") below
+  const SKINNED_IDS = new Set(['crimson_sentinel', 'wolf_sentinel']); // Group A
   const models = window.__characterModels ?? [
     { id: 'crimson_sentinel',  label: 'Crimson Sentinel'  },
     { id: 'auric_phoenix',     label: 'Auric Phoenix'     },
@@ -105,25 +108,39 @@ function buildPalette(root) {
     { id: 'violet_phoenix',    label: 'Violet Phoenix'    },
   ];
   if (models.length > 1) {
-    const sec = document.createElement('div'); sec.className = 'fw-section-label'; sec.textContent = 'Character'; body.appendChild(sec);
-    models.forEach((m, idx) => {
+    // Skinned (fully animatable) section
+    const skinned = models.filter(m => SKINNED_IDS.has(m.id));
+    const rigid   = models.filter(m => !SKINNED_IDS.has(m.id));
+
+    if (skinned.length) {
+      const sec = document.createElement('div'); sec.className = 'fw-section-label';
+      sec.textContent = 'Animated characters'; body.appendChild(sec);
+    }
+    const allRows = [...skinned, ...rigid];
+
+    allRows.forEach((m, _) => {
+      const idx = models.indexOf(m);
+      const isRigid = !SKINNED_IDS.has(m.id);
+
+      // Insert "Preview only" header before first rigid entry
+      if (isRigid && allRows.indexOf(m) === skinned.length) {
+        const sec2 = document.createElement('div'); sec2.className = 'fw-section-label';
+        sec2.style.cssText = 'margin-top:8px';
+        sec2.textContent = 'Preview only — no live animation'; body.appendChild(sec2);
+      }
+
       const item = document.createElement('div');
       item.className = 'fw-asset-item';
       item.dataset.id = m.id;
-      item.innerHTML = `<span class="fw-asset-icon">🧍</span><span class="fw-asset-label">${m.label}</span>`;
+      const icon = isRigid ? '🧱' : '🧍';
+      item.innerHTML = `<span class="fw-asset-icon">${icon}</span><span class="fw-asset-label">${m.label}</span>`;
+      if (isRigid) item.style.opacity = '0.65';
+
       item.addEventListener('click', () => {
         if (window.__switchCharacter) {
           window.__switchCharacter(idx);
-          log(`Character: ${m.label} — loading…`);
-          // Re-wire rig from rendered instance once the new model loads
-          const poll = setInterval(() => {
-            const getRig = window.__Characters?.getRig ?? window.Characters?.getRig;
-            if (!getRig) return;
-            const li  = window.Module?._getLocalPlayerIdx?.() ?? 0;
-            const rig = getRig(li);
-            if (rig) { clearInterval(poll); setCharacterRig(rig.skeleton, rig.clips); log(`Rig wired: ${m.label}`); }
-          }, 500);
-          setTimeout(() => clearInterval(poll), 8000);
+          log(`Character: ${m.label}${isRigid ? ' (static — no animation)' : ' — loading…'}`);
+          // subscribeRigChange handles re-wiring when the model finishes loading
         }
         document.querySelectorAll('#fw-palette-host .fw-asset-item[data-id]').forEach(el => {
           el.classList.toggle('active', el.dataset.id === m.id);

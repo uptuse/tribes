@@ -72,7 +72,7 @@ import * as Polish from './renderer_polish.js';
 import { RGBELoader } from 'three/addons/loaders/RGBELoader.js'; // R31.2
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: custom model loading
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
-import * as Characters from './renderer_characters.js?v=150'; // R32.143: cache bust
+import * as Characters from './renderer_characters.js?v=277'; // R32.277: wrapper Group fix
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 import * as PostFX from './client/post_fx.js?v=3';        // Phase-C: visual playground
@@ -229,6 +229,7 @@ const _flagStateByTeam = [0, 0];               // R32.43: persistent flag state 
 // Diagnostic
 let _frameCount = 0;
 let _lastDiagTime = 0;
+let _charSyncErrT = 0; // §4e: rate-limit Characters.sync error logging
 let _r30Diagnosed = false;     // R30.0: dump scene contents exactly once on first real frame
 let _lastPlayerColors = new Array(MAX_PLAYERS).fill(-1);
 
@@ -335,14 +336,10 @@ export async function start() {
         Characters.init(scene);
         // Characters.init is synchronous but GLB loads async.
         // Poll until loaded, then wire the rig into the animation editor.
-        const _pollRig = setInterval(() => {
-            if (!Characters.isLoaded()) return;
-            clearInterval(_pollRig);
-            // Try live instance first (3P), fall back to template (1P / preview)
-            const li  = Module._getLocalPlayerIdx?.() ?? 0;
-            const rig = Characters.getRig?.(li) ?? Characters.getRig?.(-1);
-            if (rig) setCharacterRig(rig.skeleton, rig.clips);
-        }, 800);
+        // Use subscribeRigChange — deterministic, no timeout guessing
+        Characters.subscribeRigChange?.((skeleton, clips) => {
+            setCharacterRig(skeleton, clips);
+        });
     } catch(e) { console.warn('[R32.109] Characters init failed:', e); }
     initProjectiles();
     initFlags();
@@ -5580,7 +5577,12 @@ function loop() {
     if ((_frameCount & 3) === 0) _syncDummyHealthBar();
     // R32.109: Rigged GLB character sync — overlays Mixamo-rigged models on
     // top of procedural player meshes for local 3P + demo character.
-    try { Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes); } catch(e) { /* keep loop alive */ }
+    // §4e: rate-limited warn instead of silent swallow — errors are visible to the developer
+    try {
+        Characters.sync(t, playerView, playerStride, Module._getLocalPlayerIdx(), playerMeshes);
+    } catch(e) {
+        if (!_charSyncErrT || (t - _charSyncErrT > 5)) { console.warn('[Characters.sync]', e); _charSyncErrT = t; }
+    }
     syncProjectiles();
     syncFlags(t);
     syncParticles();

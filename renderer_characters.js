@@ -32,17 +32,25 @@ import { FootIK }    from './client/foot_ik.js?v=1';
 let _gltf = null;
 let _scene = null;
 let _loaded = false;
+let _kind = 'rigid';  // 'skinned' | 'rigid' — detected at load
 let _lastT = 0;
 
-// Grounding: after scaling, how far below model.position.y are the feet?
-// Computed on load so we can place model.position.y = playerY - _footOffset
-// and have feet exactly at playerY.
+// _footOffset is now per-instance (char.footOffset). Module-level var kept
+// only as a default while the first instance hasn't been created yet.
 let _footOffset = 0;
-let _modelScale = 1.0;
 
 const _chars = new Array(16).fill(null);
 let _demo = null;
 let _demoSpawned = false;
+
+// ── Rig-change subscription (§4d note) ────────────────────────────────────
+// editor_animations.js subscribes once; Characters calls it when a new rig
+// is ready, eliminating the 800ms setTimeout guess.
+const _rigSubscribers = [];
+export function subscribeRigChange(cb) { _rigSubscribers.push(cb); }
+function _notifyRigChange(skeleton, clips) {
+    _rigSubscribers.forEach(cb => { try { cb(skeleton, clips); } catch(e) {} });
+}
 
 // ── Public API ──────────────────────────────────────────────
 
@@ -88,9 +96,9 @@ export function switchCharacter(idxOrId) {
     _currentModelIdx = idx;
     // Clear cached state so init reloads
     _gltf = null; _loaded = false; _footOffset = 0;
-    Object.keys(_chars).forEach(k => { if (_chars[k]) { _scene?.remove(_chars[k].model); } });
+    Object.keys(_chars).forEach(k => { if (_chars[k]) { _scene?.remove(_chars[k].wrapper); } });
     Object.keys(_chars).forEach(k => delete _chars[k]);
-    if (_demo) { _scene?.remove(_demo.model); _demo = null; _demoSpawned = false; }
+    if (_demo) { _scene?.remove(_demo.wrapper); _demo = null; _demoSpawned = false; }
     _init(_scene);
     console.log('[Characters] Switched to', CHARACTER_MODELS[idx].label);
 }
@@ -156,113 +164,77 @@ function _init(targetScene) {
       .catch(err => console.error('[Characters] Load failed:', err));
 }
 
-// Normalise a freshly-loaded GLB scene to match the crimson sentinel baseline:
-//   • scale 0.01  (Mixamo cm→m; fbx2gltf models sometimes arrive at 1.0)
-//   • no spurious ±90° X rotation on root or first child
-// Called BEFORE foot-offset computation so all downstream math is consistent.
-function _normaliseScene(scene) {
-    const id = CHARACTER_MODELS[_currentModelIdx]?.id ?? '?';
-
-    // ── Scale ──────────────────────────────────────────────────────────
-    // Traverse until we find a node whose scale differs significantly from 1.
-    // If the entire hierarchy is at scale ≈ 1.0, the model is in centimetres
-    // and needs the standard Mixamo 0.01 correction.
-    let foundScale = false;
-    scene.traverse(obj => {
-        if (foundScale) return;
-        if (Math.abs(obj.scale.x - 0.01) < 0.005) { foundScale = true; } // already correct
-    });
-    if (!foundScale) {
-        // No 0.01 scale found anywhere — apply it at root level.
-        scene.scale.setScalar(0.01);
-        console.log(`[Characters:${id}] Applied 0.01 scale (was at 1.0 — cm→m correction)`);
-    }
-
-    // ── Rotation ───────────────────────────────────────────────────────
-    // fbx2gltf may embed ±π/2 on the scene root or its first child.
-    function _fixRot(obj) {
-        if (Math.abs(Math.abs(obj.rotation.x) - Math.PI / 2) < 0.05) {
-            console.log(`[Characters:${id}] Corrected rotation.x=${obj.rotation.x.toFixed(3)} on ${obj.name||'(unnamed)'}`);
-            obj.rotation.x = 0;
-        }
-    }
-    _fixRot(scene);
-    scene.children.forEach(_fixRot);
-
-    // Force world matrix update so getWorldPosition() is accurate below.
-    scene.updateWorldMatrix(true, true);
-}
-
 function _onLoad(gltf) { ((gltf) => {
-        // Normalise scale + rotation before anything else touches the scene.
-        _normaliseScene(gltf.scene);
+        // ── NEVER modify gltf.scene transforms. ─────────────────────────────
+        // Mixamo GLBs carry an intentional ±90°X double-fixup in the hierarchy
+        // (Armature +90°X, Hips child −90°X). Any code that zeros those transforms
+        // breaks the cancellation and causes face-down. The wrapper Group pattern
+        // in _createInstance isolates placement from internal coordinate fixups.
+        // (RCA §4b — see docs/CHARACTER_ANIMATE_RCA_R32_277.md)
+
+        // ── Kind detection ────────────────────────────────────────────────────
+        let hasSkin = false;
+        gltf.scene.traverse(obj => { if (obj.isSkinnedMesh) hasSkin = true; });
+        _kind = hasSkin ? 'skinned' : 'rigid';
+        console.log(`[Characters] Loaded kind=${_kind} id=${CHARACTER_MODELS[_currentModelIdx]?.id}`);
 
         _gltf = gltf;
         _loaded = true;
 
-        // R32.125: Strip ALL Hips position (root motion). Position is WASM-driven.
+        // R32.125: Strip Hips root-motion tracks. Position is WASM-driven.
         for (const clip of gltf.animations) {
-            clip.tracks = clip.tracks.filter(track => {
-                if (track.name.endsWith('.position') && track.name.includes('Hips')) {
-                    return false; // remove entirely
-                }
-                return true;
-            });
+            clip.tracks = clip.tracks.filter(track =>
+                !(track.name.endsWith('.position') && track.name.includes('Hips'))
+            );
         }
 
-        // R32.126: Compute foot offset — play one frame of idle to find how far
-        // below the origin the feet actually are, then use that to lift the model.
+        // Compute a reference foot offset from the template (used as fallback).
+        // Per-instance offsets are computed in _createInstance after the clone
+        // is in the scene, so world matrices are correct. (RCA §4c)
         {
-            const tmpModel = gltf.scene;
-            const tmpMixer = new THREE.AnimationMixer(tmpModel);
-            const idleClip = gltf.animations.find(c => c.name === 'idle') || gltf.animations[0];
-            if (idleClip) {
-                const action = tmpMixer.clipAction(idleClip);
-                action.play();
-                tmpMixer.update(1 / 60); // evaluate one frame
-                tmpModel.updateWorldMatrix(true, true);
-            }
-            // Find the lowest bone world position (should be a foot/toe bone)
+            gltf.scene.updateWorldMatrix(true, true);
             let lowestY = 0;
-            tmpModel.traverse(child => {
+            gltf.scene.traverse(child => {
                 if (child.isBone) {
                     const wp = new THREE.Vector3();
                     child.getWorldPosition(wp);
                     if (wp.y < lowestY) lowestY = wp.y;
                 }
             });
-            // Clamp to sane human range (0–1.5m) — prevents sky/underground
-            const rawOffset = lowestY < 0 ? -lowestY : 0;
-            _footOffset = Math.min(rawOffset, 1.5);
-            tmpMixer.stopAllAction();
-            tmpMixer.uncacheRoot(tmpModel);
-            console.log(`[R32.126] Foot offset from skeleton: ${_footOffset.toFixed(4)}m (lowest bone Y: ${lowestY.toFixed(4)})`);
+            _footOffset = Math.min(lowestY < 0 ? -lowestY : 0, 1.5);
+            console.log(`[Characters] Template foot offset: ${_footOffset.toFixed(4)}m`);
         }
 
-        console.log('[R32.120] Character loaded:', gltf.animations.length, 'clips');
-        for (const clip of gltf.animations) {
-            console.log(`  clip: ${clip.name} (${clip.duration.toFixed(2)}s, ${clip.tracks.length} tracks)`);
-        }
+        // Notify animation editor that a rig is ready
+        const skeleton = _findSkeleton(gltf.scene);
+        if (skeleton) _notifyRigChange(skeleton, gltf.animations);
+
+        console.log('[Characters] Clips:', gltf.animations.map(c => c.name).join(', '));
     })(gltf); }  // close _onLoad + IIFE
 
 export function isLoaded() { return _loaded; }
+export function getKind()   { return _kind; }
+
+function _findSkeleton(root) {
+    let sk = null;
+    root.traverse(c => { if (c.isSkinnedMesh && !sk) sk = c.skeleton; });
+    return sk;
+}
 
 // Returns the local player's RENDERED instance skeleton + clips.
 // Must use the cloned instance, not the template — posing the template
 // has no visible effect because rendered characters are skeletonClone() copies.
 export function getRig(localIdx) {
     if (!_gltf || !_loaded) return null;
-    // Prefer the live local player instance (what the camera sees in 3P)
+    // Use inner (the actual GLB content, not the wrapper) for skeleton lookup
     const inst = _chars[localIdx ?? -1];
-    if (inst?.model) {
-        let skeleton = null;
-        inst.model.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
-        if (skeleton) return { skeleton, clips: _gltf.animations };
+    if (inst?.inner) {
+        const sk = _findSkeleton(inst.inner);
+        if (sk) return { skeleton: sk, clips: _gltf.animations };
     }
-    // Fallback: template skeleton (only useful for clip preview without a live character)
-    let skeleton = null;
-    _gltf.scene.traverse(c => { if (c.isSkinnedMesh && !skeleton) skeleton = c.skeleton; });
-    return skeleton ? { skeleton, clips: _gltf.animations } : null;
+    // Fallback: template skeleton
+    const sk = _findSkeleton(_gltf.scene);
+    return sk ? { skeleton: sk, clips: _gltf.animations } : null;
 }
 
 export function sync(t, playerView, playerStride, localIdx, playerMeshes) {
@@ -278,20 +250,22 @@ export function sync(t, playerView, playerStride, localIdx, playerMeshes) {
 function _createInstance() {
     if (!_gltf) return null;
 
-    const model = skeletonClone(_gltf.scene);
-    // _normaliseScene already ran on _gltf.scene at load time, so the clone
-    // inherits the corrected scale and rotation. No further adjustment needed.
+    // ── §4b Wrapper Group pattern ─────────────────────────────────────────
+    // The inner clone keeps ALL internal transforms (Armature +90°X, Hips −90°X,
+    // scale nodes) exactly as the GLB author intended. NEVER call rotation.set()
+    // or scale.set() on `inner`. Only `wrapper` receives placement/facing.
+    const inner   = skeletonClone(_gltf.scene);
+    const wrapper = new THREE.Group();
+    wrapper.add(inner);
 
-    const mixer = new THREE.AnimationMixer(model);
+    // AnimationMixer targets `inner` so bone bindings resolve correctly
+    const mixer = new THREE.AnimationMixer(inner);
 
     const clips = {};
     for (const clip of _gltf.animations) clips[clip.name] = clip;
 
-    // R32.113: Material tuning for scene integration.
-    // The scene uses ACES tone mapping, warm-shadow color grading, 10% desat,
-    // and the terrain/buildings have low metalness (0.10) + moderate roughness.
-    // Meshy AI PBR textures are clean CG — dial them down to blend in.
-    model.traverse(child => {
+    // Material tuning for scene integration (ACES, warm grade, low metalness)
+    inner.traverse(child => {
         child.frustumCulled = false;
         if (child.isMesh || child.isSkinnedMesh) {
             child.castShadow = true;
@@ -306,22 +280,45 @@ function _createInstance() {
             }
         }
     });
+    wrapper.frustumCulled = false;
 
-    // Do NOT set model.scale — the GLB armature already has the correct
-    // 0.01 scale (Mixamo cm→m). setScalar(1.0) would OVERWRITE it.
+    // ── §4c Per-instance foot offset ──────────────────────────────────────
+    // Measure from the actual clone (correct scale/pose) not the template.
+    // For skinned: sample lowest bone world position after one idle frame.
+    // For rigid: use bounding box min Y.
+    _scene.add(wrapper); // must be in scene for getWorldPosition to work
+    inner.updateWorldMatrix(true, true);
 
-    _scene.add(model);
+    let instanceFootOffset = _footOffset; // fallback to template value
+    if (_kind === 'skinned') {
+        const tmpMixer = new THREE.AnimationMixer(inner);
+        const idleClip = _gltf.animations.find(c => c.name === 'idle') || _gltf.animations[0];
+        if (idleClip) {
+            tmpMixer.clipAction(idleClip).play();
+            tmpMixer.update(1 / 60);
+            inner.updateWorldMatrix(true, true);
+        }
+        let lowestY = 0;
+        inner.traverse(c => {
+            if (c.isBone) {
+                const wp = new THREE.Vector3();
+                c.getWorldPosition(wp);
+                if (wp.y < lowestY) lowestY = wp.y;
+            }
+        });
+        instanceFootOffset = Math.min(lowestY < 0 ? -lowestY : 0, 1.5);
+        tmpMixer.stopAllAction(); tmpMixer.uncacheRoot(inner);
+    } else {
+        const box = new THREE.Box3().setFromObject(inner);
+        instanceFootOffset = box.min.y < 0 ? Math.min(-box.min.y, 1.5) : 0;
+    }
+    console.log(`[Characters] Instance foot offset: ${instanceFootOffset.toFixed(4)}m (kind=${_kind})`);
 
-    // Ski particles handled in renderer.js (same pipeline as jet exhaust)
+    const flameL = null, flameR = null, skiBoard = null;
 
-    // Jet flames removed — particles only
-    const flameL = null;
-    const flameR = null;
-
-    // Ski board removed — particles only for ski effect
-    const skiBoard = null;
-
-    return { model, mixer, clips, activeClip: null, activeAction: null,
+    return { wrapper, inner, mixer, clips,
+             footOffset: instanceFootOffset,
+             activeClip: null, activeAction: null,
              flameL, flameR, skiBoard };
 }
 
@@ -388,28 +385,26 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         if (!char) return;
 
         if (playerMeshes[localIdx]) playerMeshes[localIdx].visible = false;
-        char.model.visible = true;
+        char.wrapper.visible = true;
 
-        char.model.position.set(
-            playerView[o],
-            _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset,
-            playerView[o + 2]
-        );
-        char.model.rotation.set(0, -playerView[o + 4] + Math.PI, 0, 'YXZ');
+        // §4b: Drive the WRAPPER for placement. Never touch char.inner rotation/position —
+        // those preserve the GLB's internal coordinate-frame fixups.
+        const groundY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]);
+        char.wrapper.position.set(playerView[o], groundY + char.footOffset, playerView[o + 2]);
+        char.wrapper.rotation.set(0, -playerView[o + 4] + Math.PI, 0, 'YXZ');
 
-        const speed = Math.hypot(playerView[o + 6], playerView[o + 8]);
+        const speed   = Math.hypot(playerView[o + 6], playerView[o + 8]);
         const jetting = playerView[o + 14] > 0.5;
         const skiing  = playerView[o + 15] > 0.5;
 
         let clip = 'idle';
         if (!alive) clip = 'death';
         else if (jetting) clip = 'jet';
-        else if (skiing) clip = 'ski';
+        else if (skiing)  clip = 'ski';
         else if (speed > 0.5) clip = 'run';
 
         _playClip(char, clip, { once: clip === 'death' });
-        // L1: speed-matched timeScale so feet plant at all speeds, not slide
-        // L6: ski posture — crouch + lean. turnInput approximated from yaw delta.
+
         const yaw = playerView[o + 4];
         if (!char._prevYaw) char._prevYaw = yaw;
         const turnInput = Math.max(-1, Math.min(1, (yaw - char._prevYaw) / (dt * 2.5)));
@@ -417,14 +412,12 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         Locomotion.skiUpdate(char, skiing, speed, turnInput, dt);
         Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
-        // L5+L4: only run on local player — too expensive for all characters
-        if (i === localIdx) {
-            const phase = window.__locoPhase ?? -1;
-            Locomotion.pelvisBob(char, speed, phase);
-            FootIK.update(char, !jetting && speed < 40, skiing);
-        }
+        // L5+L4 only on local player (was crashing with undefined `i` — fixed in 942d9c3)
+        const phase = window.__locoPhase ?? -1;
+        Locomotion.pelvisBob(char, speed, phase);
+        FootIK.update(char, !jetting && speed < 40, skiing);
     } else {
-        if (_chars[localIdx]) _chars[localIdx].model.visible = false;
+        if (_chars[localIdx]) _chars[localIdx].wrapper.visible = false;
     }
 }
 
@@ -442,7 +435,7 @@ function _spawnDemo(playerView, playerStride, localIdx) {
     _demo.baseX = playerView[o] + Math.sin(yaw) * 8;
     _demo.baseY = _groundY(playerView[o], playerView[o + 1], playerView[o + 2]) + _footOffset;
     _demo.baseZ = playerView[o + 2] + Math.cos(yaw) * 8;
-    _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
+    _demo.wrapper.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     _demo.time = 0;
 
     _playClip(_demo, 'idle');
@@ -460,39 +453,39 @@ function _updateDemo(t, dt) {
         clip = 'run';
         const angle = tt * 0.6;
         const r = 6;
-        _demo.model.position.set(
+        _demo.wrapper.position.set(
             _demo.baseX + Math.cos(angle) * r,
             _demo.baseY,
             _demo.baseZ + Math.sin(angle) * r
         );
-        _demo.model.rotation.y = -(angle + Math.PI * 0.5);
+        _demo.wrapper.rotation.y = -(angle + Math.PI * 0.5);
     } else if (cycle < 11) {
         clip = 'idle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
+        _demo.wrapper.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     } else if (cycle < 15) {
         clip = 'ski';
         const angle = tt * 1.0;
         const r = 10;
-        _demo.model.position.set(
+        _demo.wrapper.position.set(
             _demo.baseX + Math.cos(angle) * r,
             _demo.baseY,
             _demo.baseZ + Math.sin(angle) * r
         );
-        _demo.model.rotation.y = -(angle + Math.PI * 0.5);
+        _demo.wrapper.rotation.y = -(angle + Math.PI * 0.5);
     } else if (cycle < 18) {
         clip = 'jet';
         const jetPhase = (cycle - 15) / 3;
-        _demo.model.position.set(
+        _demo.wrapper.position.set(
             _demo.baseX,
             _demo.baseY + Math.sin(jetPhase * Math.PI) * 6,
             _demo.baseZ
         );
     } else if (cycle < 21) {
         clip = 'fire_rifle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
+        _demo.wrapper.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     } else {
         clip = 'idle';
-        _demo.model.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
+        _demo.wrapper.position.set(_demo.baseX, _demo.baseY, _demo.baseZ);
     }
 
     _playClip(_demo, clip);
