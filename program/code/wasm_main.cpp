@@ -2592,6 +2592,7 @@ extern "C" void mainLoop(){
             }
         }
 
+        Vec3 prevPos=projs[i].pos;
         projs[i].pos+=projs[i].vel*dt;
         projs[i].life-=dt;
         float ph=getH(projs[i].pos.x,projs[i].pos.z);
@@ -2599,11 +2600,23 @@ extern "C" void mainLoop(){
         bool hitBuilding=projectileHitsBuilding(projs[i].pos);
         bool expired=projs[i].life<=0;
         bool hitPlayer=false;
-        // Check player hits
+        // Check player hits — swept sphere to prevent tunneling at high muzzle velocities.
+        // Chaingun at 425 m/s moves 7m/frame; a point check would miss 1m-radius hit spheres.
         if(!hitTerrain&&!hitBuilding&&!expired)for(int j=0;j<MAX_PLAYERS;j++){
             if(!players[j].active||!players[j].alive)continue;
-            float d=(players[j].pos+Vec3(0,1.2f,0)-projs[i].pos).lenSq();
+            Vec3 center=players[j].pos+Vec3(0,1.2f,0);
             float hitR=armors[players[j].armor].hitW+0.5f;
+            // Closest point on the frame's travel segment [prevPos → pos] to sphere center
+            Vec3 seg=projs[i].pos-prevPos;
+            float segLenSq=seg.lenSq();
+            float d;
+            if(segLenSq>0.001f){
+                float t=(center-prevPos).dot(seg)/segLenSq;
+                if(t<0)t=0; if(t>1)t=1;
+                d=(center-(prevPos+seg*t)).lenSq();
+            }else{
+                d=(center-projs[i].pos).lenSq();
+            }
             if(d<hitR*hitR){
                 damagePlayer(j,w.damage,projs[i].ownerTeam);
                 // D1 R31.6: when local player is hit, fire damage-source callback

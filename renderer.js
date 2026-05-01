@@ -3160,8 +3160,8 @@ function initProjectiles() {
         discMeshes.push(mesh);
     }
 
-    // Chaingun — thin stretched box aligned to velocity direction (tracer streak)
-    const chainGeom = new THREE.BoxGeometry(0.015, 0.015, 0.55);
+    // Chaingun — tracer streak aligned to velocity. Wider than a real bullet so it's visible.
+    const chainGeom = new THREE.BoxGeometry(0.06, 0.06, 0.9);
     const chainMat  = new THREE.MeshStandardMaterial({
         color: 0xFFFF88, emissive: 0xFFEE00, emissiveIntensity: 4.0,
         roughness: 0.1, metalness: 0.0,
@@ -4230,7 +4230,13 @@ function syncProjectiles() {
         }
 
         // Fire detection — rising edge = new projectile spawned this frame
-        if (!wasAlive) _applyWeaponKick(projectileView[o + 6] | 0);
+        if (!wasAlive) {
+            const _ftype = projectileView[o + 6] | 0;
+            _applyWeaponKick(_ftype);
+            // Chaingun: trigger muzzle flash + screen-space tracer (CombatFX)
+            // The in-world chain mesh is only 15mm wide; without this, shots are invisible.
+            if (_ftype === 1 && window.CombatFX) window.CombatFX.fire();
+        }
 
         const px = projectileView[o],     py = projectileView[o + 1], pz = projectileView[o + 2];
         const vx = projectileView[o + 3], vy = projectileView[o + 4], vz = projectileView[o + 5];
