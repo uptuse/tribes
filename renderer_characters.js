@@ -104,8 +104,10 @@ function _init(targetScene) {
 
         // R32.126: Compute foot offset — play one frame of idle to find how far
         // below the origin the feet actually are, then use that to lift the model.
+        // CRITICAL: clone the scene for measurement so we don't leave the template
+        // posed mid-idle. Otherwise the next skeletonClone() inherits a posed skeleton.
         {
-            const tmpModel = gltf.scene;
+            const tmpModel = skeletonClone(gltf.scene);
             const tmpMixer = new THREE.AnimationMixer(tmpModel);
             const idleClip = gltf.animations.find(c => c.name === 'idle') || gltf.animations[0];
             if (idleClip) {
@@ -126,6 +128,7 @@ function _init(targetScene) {
             _footOffset = lowestY < 0 ? -lowestY : 0;
             tmpMixer.stopAllAction();
             tmpMixer.uncacheRoot(tmpModel);
+            // tmpModel goes out of scope and gets GC'd — gltf.scene is untouched
             console.log(`[R32.126] Foot offset from skeleton: ${_footOffset.toFixed(4)}m (lowest bone Y: ${lowestY.toFixed(4)})`);
         }
 
@@ -173,11 +176,25 @@ function _createInstance() {
 
     const model = skeletonClone(_gltf.scene);
 
-    // Mixamo FBX→GLB pipeline sometimes embeds a -90° X root rotation.
-    // Detect and correct it so the character stands upright.
-    if (Math.abs(model.rotation.x + Math.PI / 2) < 0.01) {
+    // Mixamo FBX→GLB pipeline sometimes embeds a ±90° X root rotation that leaves the
+    // model face-down or face-up. Detect either polarity and zero it out so the character
+    // stands upright. Some Meshy exports use rotation on the armature child instead of
+    // root, so walk one level down too.
+    const RAD90 = Math.PI / 2;
+    const _isNear = (a, b) => Math.abs(a - b) < 0.05;
+    if (_isNear(model.rotation.x, -RAD90) || _isNear(model.rotation.x, RAD90)) {
         model.rotation.x = 0;
     }
+    // Walk the immediate children — sometimes the rotation is on Armature/Scene
+    model.traverse(child => {
+        if (child === model) return;
+        if (_isNear(child.rotation.x, -RAD90) || _isNear(child.rotation.x, RAD90)) {
+            // Only zero out armature-level wrappers, never bones (isBone === true)
+            if (!child.isBone && !child.isSkinnedMesh) {
+                child.rotation.x = 0;
+            }
+        }
+    });
 
     const mixer = new THREE.AnimationMixer(model);
 
@@ -314,12 +331,11 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         Locomotion.skiUpdate(char, skiing, speed, turnInput, dt);
         Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
-        // L5+L4: only run on local player — too expensive for all characters
-        if (i === localIdx) {
-            const phase = window.__locoPhase ?? -1;
-            Locomotion.pelvisBob(char, speed, phase);
-            FootIK.update(char, !jetting && speed < 40, skiing);
-        }
+        // L5+L4: pelvis bob + foot IK on the local player.
+        // _syncLocalPlayer always runs for the local player, so no idx guard needed.
+        const phase = window.__locoPhase ?? -1;
+        Locomotion.pelvisBob(char, speed, phase);
+        FootIK.update(char, !jetting && speed < 40, skiing);
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
