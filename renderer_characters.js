@@ -47,9 +47,23 @@ let _demoSpawned = false;
 // ── Public API ──────────────────────────────────────────────
 
 // All available rigged character models
-// Only the verified working rigged model. Others pending texture fix.
+// Rigged GLB = skeleton + animations from Mixamo (no textures).
+// textureSrc = lod0 GLB = HD textures at ~12k poly, loaded in parallel
+// and transferred onto the rigged mesh in Three.js.
 const CHARACTER_MODELS = [
-    { id: 'crimson_sentinel', label: 'Crimson Sentinel', path: './assets/models/crimson_sentinel_rigged.glb' },
+    // textureSrc = 50k GLB — same mesh that was rigged, has full HD PBR textures
+    { id: 'crimson_sentinel',  label: 'Crimson Sentinel',  path: './assets/models/crimson_sentinel_rigged.glb',  textureSrc: './assets/models/crimson_sentinel_50k.glb'  },
+    { id: 'aegis_sentinel',    label: 'Aegis Sentinel',    path: './assets/models/aegis_sentinel_rigged.glb',    textureSrc: './assets/models/aegis_sentinel_50k.glb'    },
+    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb',     textureSrc: './assets/models/auric_phoenix_50k.glb'     },
+    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb',     textureSrc: './assets/models/crimson_titan_50k.glb'     },
+    { id: 'crimson_warforged', label: 'Crimson Warforged', path: './assets/models/crimson_warforged_rigged.glb',  textureSrc: './assets/models/crimson_warforged_50k.glb' },
+    { id: 'emerald_sentinel',  label: 'Emerald Sentinel',  path: './assets/models/emerald_sentinel_rigged.glb',  textureSrc: './assets/models/emerald_sentinel_50k.glb'  },
+    { id: 'golden_phoenix',    label: 'Golden Phoenix',    path: './assets/models/golden_phoenix_rigged.glb',    textureSrc: './assets/models/golden_phoenix_50k.glb'    },
+    { id: 'iron_wolf',         label: 'Iron Wolf',         path: './assets/models/iron_wolf_rigged.glb',         textureSrc: './assets/models/iron_wolf_50k.glb'         },
+    { id: 'midnight_sentinel', label: 'Midnight Sentinel', path: './assets/models/midnight_sentinel_rigged.glb', textureSrc: './assets/models/midnight_sentinel_50k.glb' },
+    { id: 'neon_wolf',         label: 'Neon Wolf',         path: './assets/models/neon_wolf_rigged.glb',         textureSrc: './assets/models/neon_wolf_50k.glb'         },
+    { id: 'obsidian_vanguard', label: 'Obsidian Vanguard', path: './assets/models/obsidian_vanguard_rigged.glb', textureSrc: './assets/models/obsidian_vanguard_50k.glb' },
+    { id: 'violet_phoenix',    label: 'Violet Phoenix',    path: './assets/models/violet_phoenix_rigged.glb',    textureSrc: './assets/models/violet_phoenix_50k.glb'    },
 ];
 window.__characterModels = CHARACTER_MODELS;
 let _currentModelIdx = 0;
@@ -73,10 +87,43 @@ export function init(targetScene) {
     _init(targetScene);
 }
 
+function _transferMaterials(riggedScene, texScene) {
+    const srcMats = [];
+    texScene.traverse(obj => {
+        if (obj.isMesh || obj.isSkinnedMesh) {
+            const m = Array.isArray(obj.material) ? obj.material : [obj.material];
+            m.forEach(mat => { if (mat && !srcMats.includes(mat)) srcMats.push(mat); });
+        }
+    });
+    if (!srcMats.length) return;
+    let idx = 0;
+    riggedScene.traverse(obj => {
+        if ((obj.isMesh || obj.isSkinnedMesh) && idx < srcMats.length) {
+            obj.material = srcMats[idx++];
+            obj.material.needsUpdate = true;
+        }
+    });
+    console.log(`[Characters] Transferred ${idx} HD material(s)`);
+}
+
 function _init(targetScene) {
-    const loader = new GLTFLoader();
-    const model  = CHARACTER_MODELS[_currentModelIdx];
-    loader.load(model.path, (gltf) => {
+    const loader  = new GLTFLoader();
+    const charDef = CHARACTER_MODELS[_currentModelIdx];
+
+    const rigLoad = new Promise((ok, fail) => loader.load(charDef.path, ok, undefined, fail));
+    const texLoad = charDef.textureSrc
+        ? new Promise((ok, fail) => loader.load(charDef.textureSrc, ok, undefined, fail))
+        : Promise.resolve(null);
+
+    Promise.all([rigLoad, texLoad])
+      .then(([gltf, texGltf]) => {
+        if (texGltf) _transferMaterials(gltf.scene, texGltf.scene);
+        _onLoad(gltf);
+      })
+      .catch(err => console.error('[Characters] Load failed:', err));
+}
+
+function _onLoad(gltf) { ((gltf) => {
         _gltf = gltf;
         _loaded = true;
 
@@ -124,10 +171,7 @@ function _init(targetScene) {
         for (const clip of gltf.animations) {
             console.log(`  clip: ${clip.name} (${clip.duration.toFixed(2)}s, ${clip.tracks.length} tracks)`);
         }
-    }, undefined, (err) => {
-        console.error('[R32.113] Failed to load character model:', err);
-    });
-}
+    })(gltf); }  // close _onLoad + IIFE
 
 export function isLoaded() { return _loaded; }
 
