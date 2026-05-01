@@ -46,26 +46,39 @@ let _demoSpawned = false;
 
 // ── Public API ──────────────────────────────────────────────
 
-// All available rigged character models
-// Rigged GLB = skeleton + animations from Mixamo (no textures).
-// textureSrc = lod0 GLB = HD textures at ~12k poly, loaded in parallel
-// and transferred onto the rigged mesh in Three.js.
-const CHARACTER_MODELS = [
-    // crimson_sentinel has all 14 animations — used as animSrc for every other model
-    { id: 'crimson_sentinel',  label: 'Crimson Sentinel',  path: './assets/models/crimson_sentinel_rigged.glb',  textureSrc: './assets/models/crimson_sentinel_50k.glb'  },
-    // All non-crimson models: animSrc pulls the 14 animations from crimson
-    { id: 'aegis_sentinel',    label: 'Aegis Sentinel',    path: './assets/models/aegis_sentinel_rigged.glb',    textureSrc: './assets/models/aegis_sentinel_50k.glb',    animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'auric_phoenix',     label: 'Auric Phoenix',     path: './assets/models/auric_phoenix_rigged.glb',     textureSrc: './assets/models/auric_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'crimson_titan',     label: 'Crimson Titan',     path: './assets/models/crimson_titan_rigged.glb',     textureSrc: './assets/models/crimson_titan_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'crimson_warforged', label: 'Crimson Warforged', path: './assets/models/crimson_warforged_rigged.glb',  textureSrc: './assets/models/crimson_warforged_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'emerald_sentinel',  label: 'Emerald Sentinel',  path: './assets/models/emerald_sentinel_rigged.glb',  textureSrc: './assets/models/emerald_sentinel_50k.glb',   animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'golden_phoenix',    label: 'Golden Phoenix',    path: './assets/models/golden_phoenix_rigged.glb',    textureSrc: './assets/models/golden_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'iron_wolf',         label: 'Iron Wolf',         path: './assets/models/iron_wolf_rigged.glb',         textureSrc: './assets/models/iron_wolf_50k.glb',          animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'midnight_sentinel', label: 'Midnight Sentinel', path: './assets/models/midnight_sentinel_rigged.glb', textureSrc: './assets/models/midnight_sentinel_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'neon_wolf',         label: 'Neon Wolf',         path: './assets/models/neon_wolf_rigged.glb',         textureSrc: './assets/models/neon_wolf_50k.glb',          animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'obsidian_vanguard', label: 'Obsidian Vanguard', path: './assets/models/obsidian_vanguard_rigged.glb', textureSrc: './assets/models/obsidian_vanguard_50k.glb',  animSrc: './assets/models/crimson_sentinel_rigged.glb' },
-    { id: 'violet_phoenix',    label: 'Violet Phoenix',    path: './assets/models/violet_phoenix_rigged.glb',    textureSrc: './assets/models/violet_phoenix_50k.glb',     animSrc: './assets/models/crimson_sentinel_rigged.glb' },
+// ── Character roster ─────────────────────────────────────────────────────────
+// To add a character: add its id to ROSTER. All paths are derived automatically.
+// To change the animation source: update ANIM_SOURCE_ID.
+//
+// File convention (must exist in assets/models/):
+//   <id>_rigged.glb  — Mixamo skeleton (1 animation; others injected at runtime)
+//   <id>_50k.glb     — HD source mesh with full PBR textures
+
+const ANIM_SOURCE_ID = 'crimson_sentinel'; // holds all 14 canonical animations
+const BASE = './assets/models/';
+
+const ROSTER = [
+    'crimson_sentinel',
+    'aegis_sentinel',
+    'auric_phoenix',
+    'crimson_titan',
+    'crimson_warforged',
+    'emerald_sentinel',
+    'golden_phoenix',
+    'iron_wolf',
+    'midnight_sentinel',
+    'neon_wolf',
+    'obsidian_vanguard',
+    'violet_phoenix',
 ];
+
+const CHARACTER_MODELS = ROSTER.map(id => ({
+    id,
+    label:      id.split('_').map(w => w[0].toUpperCase() + w.slice(1)).join(' '),
+    path:       `${BASE}${id}_rigged.glb`,
+    textureSrc: `${BASE}${id}_50k.glb`,
+    animSrc:    id !== ANIM_SOURCE_ID ? `${BASE}${ANIM_SOURCE_ID}_rigged.glb` : null,
+}));
 window.__characterModels = CHARACTER_MODELS;
 let _currentModelIdx = 0;
 
