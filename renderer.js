@@ -90,6 +90,7 @@ import { EditorAI, initAI }               from './client/editor_ai.js?v=1';
 import { EditorBindings }  from './client/editor_bindings.js?v=1';
 import { EditorLighting }  from './client/editor_lighting.js?v=1';
 import { EventBus }        from './client/event_bus.js?v=1';
+import { initWater, tickWater } from './client/water.js?v=1';
 import { initGamepad, tickGamepad }   from './client/gamepad.js?v=1';
 import { CameraGrounding }             from './client/camera_grounding.js?v=1';
 
@@ -465,6 +466,7 @@ export async function start() {
 
     // DTS weapon viewmodels — read geometry exported from C++ during DTS load
     try { initDTSWeaponModels(); } catch(e) { console.warn('[DTS] initDTSWeaponModels failed:', e); }
+    try { initWater(scene, camera); } catch(e) { console.warn('[Water] init failed:', e); }
     _initFreelook();
 
     // ── Editor Shell ──────────────────────────────────────────────
@@ -5650,6 +5652,7 @@ function loop() {
         if (u && u.uTime) u.uTime.value = t;
     }
 
+    try { tickWater(1/60, camera); } catch(e) {}
     try { PostFX.tickPostFX(t); } catch(e) { /* cosmetic */ }
     if (composer) composer.render();
     else renderer.render(scene, camera);
