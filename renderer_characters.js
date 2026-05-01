@@ -73,11 +73,10 @@ const BASE = './assets/models/';
 // auric_phoenix + crimson_titan removed — their rigged GLBs have 0 meshes
 // (downloaded from Mixamo as animation-only, no "With Skin"). Re-add once
 // re-exported with Format=FBX, Skin=With Skin from mixamo.com.
+// Only crimson_sentinel is properly rigged with skin weights.
+// Add others here once re-exported from Mixamo with "Skin = With Skin".
 const ROSTER = [
-    'crimson_sentinel',   // original hand-rigged — skinned ✅
-    'emerald_sentinel',   // Mixamo download — mesh, no skin
-    'midnight_sentinel',  // Mixamo download — mesh, no skin
-    'obsidian_vanguard',  // Mixamo download — mesh, no skin
+    'crimson_sentinel',
 ];
 
 const CHARACTER_MODELS = ROSTER.map(id => ({
