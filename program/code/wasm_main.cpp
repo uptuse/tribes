@@ -366,8 +366,8 @@ static int teamScore[2]={0,0};
 static int g_scoreLimit=5;
 static int g_timeLimit=600; // 0 = unlimited
 static float g_roundTimer=600.0f;
-static float g_warmupTimer=15.0f;
-static int g_matchState=0; // 0=WARMUP,1=IN_PROGRESS,2=MATCH_END
+static float g_warmupTimer=0.0f; // skip warmup — damage active from first spawn
+static int g_matchState=1; // start directly in IN_PROGRESS; warmup removed
 static float g_spawnProtect[8]={}; // [MAX_PLAYERS]
 static float g_localRespawnTimer=0; // seconds until local player respawns (for HUD)
 static bool g_warnedTime[3]={}; // [0]=4min, [1]=1min, [2]=warmup countdown sounds
@@ -1954,7 +1954,7 @@ extern "C" void setGameSettings(int team,int armor,int botCount,int scoreLimit,i
     g_scoreLimit=scoreLimit>0?scoreLimit:5;
     g_timeLimit=timeLimit;
     g_roundTimer=(float)timeLimit;
-    g_matchState=0;g_warmupTimer=15.0f;
+    g_matchState=1;g_warmupTimer=0.0f;
     teamScore[0]=teamScore[1]=0;
     memset(g_warnedTime,0,sizeof(g_warnedTime));
     memset(g_spawnProtect,0,sizeof(g_spawnProtect));

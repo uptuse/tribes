@@ -4985,11 +4985,12 @@ function updateSkiParticles(dt) {
 // ============================================================
 // R32.73: Projectile trails — glowing particle trail behind each projectile
 // ============================================================
-const TRAIL_MAX = 512;       // max trail particles
-const TRAIL_LIFETIME = 0.25; // seconds — short trail that fades fast
+const TRAIL_MAX = 768;       // larger pool to support dense chaingun segments
+const TRAIL_LIFETIME = 0.35; // seconds — slightly longer so streaks persist
 let _trailPoints = null;
 let _trailPos, _trailAge, _trailAlpha, _trailColor;
 let _trailNextSlot = 0;
+let _trailPrevPos = null;    // previous world positions per projectile slot (for segment interpolation)
 
 function initProjectileTrails() {
     _trailPos   = new Float32Array(TRAIL_MAX * 3);
@@ -5079,6 +5080,9 @@ function _trailEmit(wx, wy, wz, type) {
 function updateProjectileTrails(dt) {
     if (!_trailPoints || !projectileView) return;
 
+    // Lazy-allocate previous-position buffer for dense segment trails
+    if (!_trailPrevPos) _trailPrevPos = new Float32Array(MAX_PROJECTILES * 3).fill(NaN);
+
     // Age existing trail particles
     for (let i = 0; i < TRAIL_MAX; i++) {
         if (_trailAge[i] <= 0) continue;
@@ -5089,7 +5093,6 @@ function updateProjectileTrails(dt) {
             _trailAlpha[i] = 0;
             continue;
         }
-        // Smooth fade-out
         _trailAlpha[i] = (_trailAge[i] / TRAIL_LIFETIME);
     }
 
@@ -5097,12 +5100,34 @@ function updateProjectileTrails(dt) {
     const count = Module._getProjectileStateCount ? Module._getProjectileStateCount() : 0;
     for (let p = 0; p < count && p < MAX_PROJECTILES; p++) {
         const o = p * projectileStride;
-        if (projectileView[o + 9] < 0.5) continue; // not alive
+        const alive = projectileView[o + 9] > 0.5;
+        if (!alive) {
+            // Clear previous position so next activation starts fresh
+            _trailPrevPos[p*3] = NaN;
+            continue;
+        }
         const type = projectileView[o + 6] | 0;
-        _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
-        // Disc, plasma, mortar get extra particles for denser trails
-        if (type === 2 || type === 4 || type === 5)
-            _trailEmit(projectileView[o], projectileView[o+1], projectileView[o+2], type);
+        const cx = projectileView[o], cy = projectileView[o+1], cz = projectileView[o+2];
+
+        if (type === 1 && !isNaN(_trailPrevPos[p*3])) {
+            // Chaingun moves 7m/frame — interpolate particles along the travel segment
+            // so the streak appears continuous rather than as isolated dots 7m apart.
+            const px = _trailPrevPos[p*3], py = _trailPrevPos[p*3+1], pz = _trailPrevPos[p*3+2];
+            const dx = cx-px, dy = cy-py, dz = cz-pz;
+            const segLen = Math.sqrt(dx*dx + dy*dy + dz*dz);
+            const steps = Math.min(16, Math.max(1, Math.ceil(segLen / 1.2)));
+            for (let s = 0; s < steps; s++) {
+                const t2 = steps > 1 ? s / (steps - 1) : 0;
+                _trailEmit(px + dx*t2, py + dy*t2, pz + dz*t2, type);
+            }
+        } else {
+            _trailEmit(cx, cy, cz, type);
+            // Extra particles for slower weapons with visible travel arc
+            if (type === 2 || type === 4 || type === 5)
+                _trailEmit(cx, cy, cz, type);
+        }
+
+        _trailPrevPos[p*3] = cx; _trailPrevPos[p*3+1] = cy; _trailPrevPos[p*3+2] = cz;
     }
 
     _trailPoints.geometry.attributes.position.needsUpdate = true;
