@@ -57,19 +57,18 @@ let _demoSpawned = false;
 const ANIM_SOURCE_ID = 'crimson_sentinel'; // holds all 14 canonical animations
 const BASE = './assets/models/';
 
+// ── Verified Mixamo-rigged models only ─────────────────────────────────────
+// These 6 came from genuine Mixamo downloads (tools/obj_export/*.fbx).
+// The remaining 6 (aegis, warforged, golden_phoenix, iron_wolf, neon_wolf,
+// violet_phoenix) were converted from the original unrigged FBX files in
+// assets/models/ — they have no skeleton. Re-add here once Mixamo-rigged.
 const ROSTER = [
-    'crimson_sentinel',
-    'aegis_sentinel',
-    'auric_phoenix',
-    'crimson_titan',
-    'crimson_warforged',
-    'emerald_sentinel',
-    'golden_phoenix',
-    'iron_wolf',
-    'midnight_sentinel',
-    'neon_wolf',
-    'obsidian_vanguard',
-    'violet_phoenix',
+    'crimson_sentinel',   // original hand-rigged
+    'auric_phoenix',      // tools/obj_export/auric_phoenix_50k.fbx
+    'crimson_titan',      // tools/obj_export/crimson_titan_50k.fbx
+    'emerald_sentinel',   // tools/obj_export/emerald_sentinel_50k.fbx
+    'midnight_sentinel',  // tools/obj_export/midnight_sentinel_50k.fbx
+    'obsidian_vanguard',  // tools/obj_export/obsidian_vanguard_50k.fbx
 ];
 
 const CHARACTER_MODELS = ROSTER.map(id => ({
