@@ -271,11 +271,13 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
     if (localIdx < 0 || !playerView || playerStride <= 0) return;
 
     const is3P = (typeof Module !== 'undefined' && Module._getThirdPerson && Module._getThirdPerson());
+    // Animation editor needs a character on screen regardless of 3P mode
+    const forceShow = !!window.__characterPreview;
     const o = localIdx * playerStride;
     const alive = playerView[o + 13] > 0.5;
     const visible = playerView[o + 18] > 0.5;
 
-    if (is3P && visible) {
+    if ((is3P && visible) || forceShow) {
         if (!_chars[localIdx]) {
             _chars[localIdx] = _createInstance();
         }

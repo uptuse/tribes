@@ -60,17 +60,25 @@ export function setCharacterRig(skeleton, clips) {
 }
 
 function onEnter() {
+  // Force the character to show in the scene even without 3P mode
+  window.__characterPreview = true;
   _buildTimeline();
   document.getElementById('fw-timeline')?.classList.add('open');
-  // Push the right panel up so timeline doesn't hide the character picker
   const panel = document.getElementById('fw-panel');
   if (panel) panel.style.paddingBottom = '225px';
   _updateTimecodeEl();
+  // Re-wire rig now that forceShow is on and sync() will create the instance
+  setTimeout(() => {
+    const li  = window.Module?._getLocalPlayerIdx?.() ?? 0;
+    const rig = window.__Characters?.getRig?.(li);
+    if (rig) setCharacterRig(rig.skeleton, rig.clips);
+  }, 800);
 }
 
 function onExit() {
   _stopPlayback();
   document.getElementById('fw-timeline')?.classList.remove('open');
+  window.__characterPreview = false;
   const panel = document.getElementById('fw-panel');
   if (panel) panel.style.paddingBottom = '';
   if (_skeleton) _resetToBindPose();
