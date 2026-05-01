@@ -137,9 +137,19 @@ function _init(targetScene) {
       .then(([gltf, texGltf, animGltf]) => {
         if (texGltf)  _transferMaterials(gltf.scene, texGltf.scene);
         if (animGltf) {
-            // Replace the rig's single clip with the full 14-clip set
             gltf.animations = animGltf.animations;
-            console.log(`[Characters] Injected ${animGltf.animations.length} animations from crimson sentinel`);
+            // Strip tracks for bones the target skeleton doesn't have.
+            // Prevents 1500+ "No target node found" warnings per character
+            // that fire every frame and tank performance.
+            const boneNames = new Set();
+            gltf.scene.traverse(obj => { if (obj.name) boneNames.add(obj.name); });
+            let stripped = 0;
+            for (const clip of gltf.animations) {
+                const before = clip.tracks.length;
+                clip.tracks = clip.tracks.filter(t => boneNames.has(t.name.split('.')[0]));
+                stripped += before - clip.tracks.length;
+            }
+            console.log(`[Characters] Injected ${animGltf.animations.length} clips, stripped ${stripped} tracks for missing bones`);
         }
         _onLoad(gltf);
       })
