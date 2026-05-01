@@ -104,10 +104,8 @@ function _init(targetScene) {
 
         // R32.126: Compute foot offset — play one frame of idle to find how far
         // below the origin the feet actually are, then use that to lift the model.
-        // CRITICAL: clone the scene for measurement so we don't leave the template
-        // posed mid-idle. Otherwise the next skeletonClone() inherits a posed skeleton.
         {
-            const tmpModel = skeletonClone(gltf.scene);
+            const tmpModel = gltf.scene;
             const tmpMixer = new THREE.AnimationMixer(tmpModel);
             const idleClip = gltf.animations.find(c => c.name === 'idle') || gltf.animations[0];
             if (idleClip) {
@@ -117,7 +115,7 @@ function _init(targetScene) {
                 tmpModel.updateWorldMatrix(true, true);
             }
             // Find the lowest bone world position (should be a foot/toe bone)
-            let lowestY = Infinity;
+            let lowestY = 0;
             tmpModel.traverse(child => {
                 if (child.isBone) {
                     const wp = new THREE.Vector3();
@@ -125,10 +123,11 @@ function _init(targetScene) {
                     if (wp.y < lowestY) lowestY = wp.y;
                 }
             });
-            _footOffset = lowestY < 0 ? -lowestY : 0;
+            // Clamp to sane human range (0–1.5m) — prevents sky/underground
+            const rawOffset = lowestY < 0 ? -lowestY : 0;
+            _footOffset = Math.min(rawOffset, 1.5);
             tmpMixer.stopAllAction();
             tmpMixer.uncacheRoot(tmpModel);
-            // tmpModel goes out of scope and gets GC'd — gltf.scene is untouched
             console.log(`[R32.126] Foot offset from skeleton: ${_footOffset.toFixed(4)}m (lowest bone Y: ${lowestY.toFixed(4)})`);
         }
 
@@ -176,25 +175,31 @@ function _createInstance() {
 
     const model = skeletonClone(_gltf.scene);
 
-    // Mixamo FBX→GLB pipeline sometimes embeds a ±90° X root rotation that leaves the
-    // model face-down or face-up. Detect either polarity and zero it out so the character
-    // stands upright. Some Meshy exports use rotation on the armature child instead of
-    // root, so walk one level down too.
-    const RAD90 = Math.PI / 2;
-    const _isNear = (a, b) => Math.abs(a - b) < 0.05;
-    if (_isNear(model.rotation.x, -RAD90) || _isNear(model.rotation.x, RAD90)) {
-        model.rotation.x = 0;
-    }
-    // Walk the immediate children — sometimes the rotation is on Armature/Scene
-    model.traverse(child => {
-        if (child === model) return;
-        if (_isNear(child.rotation.x, -RAD90) || _isNear(child.rotation.x, RAD90)) {
-            // Only zero out armature-level wrappers, never bones (isBone === true)
-            if (!child.isBone && !child.isSkinnedMesh) {
-                child.rotation.x = 0;
-            }
+    // ── Rotation normalisation ──────────────────────────────────────
+    // fbx2gltf embeds -90° X on the root or first child. Fix both.
+    function _fixRotX(obj) {
+        if (Math.abs(obj.rotation.x + Math.PI / 2) < 0.05 ||
+            Math.abs(obj.rotation.x - Math.PI / 2) < 0.05) {
+            obj.rotation.x = 0;
         }
-    });
+    }
+    _fixRotX(model);
+    model.children.forEach(_fixRotX);
+
+    // ── Scale normalisation ─────────────────────────────────────────
+    // Characters from different pipelines arrive at wildly different scales.
+    // Force every character to fit in a 1.9m bounding box (standing human).
+    {
+        const box = new THREE.Box3().setFromObject(model);
+        const sz  = new THREE.Vector3();
+        box.getSize(sz);
+        const h = sz.y;
+        if (h > 0.01) {
+            const s = 1.9 / h;
+            model.scale.set(s, s, s);
+            console.log(`[Characters] auto-scale: ${h.toFixed(3)}m → 1.9m (×${s.toFixed(4)})`);
+        }
+    }
 
     const mixer = new THREE.AnimationMixer(model);
 
@@ -331,11 +336,12 @@ function _syncLocalPlayer(t, dt, playerView, playerStride, localIdx, playerMeshe
         Locomotion.skiUpdate(char, skiing, speed, turnInput, dt);
         Locomotion.update(char, speed, clip, dt);
         char.mixer.update(dt);
-        // L5+L4: pelvis bob + foot IK on the local player.
-        // _syncLocalPlayer always runs for the local player, so no idx guard needed.
-        const phase = window.__locoPhase ?? -1;
-        Locomotion.pelvisBob(char, speed, phase);
-        FootIK.update(char, !jetting && speed < 40, skiing);
+        // L5+L4: only run on local player — too expensive for all characters
+        if (i === localIdx) {
+            const phase = window.__locoPhase ?? -1;
+            Locomotion.pelvisBob(char, speed, phase);
+            FootIK.update(char, !jetting && speed < 40, skiing);
+        }
     } else {
         if (_chars[localIdx]) _chars[localIdx].model.visible = false;
     }
