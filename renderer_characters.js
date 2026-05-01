@@ -134,12 +134,51 @@ function _init(targetScene) {
       .catch(err => console.error('[Characters] Load failed:', err));
 }
 
+// Normalise a freshly-loaded GLB scene to match the crimson sentinel baseline:
+//   • scale 0.01  (Mixamo cm→m; fbx2gltf models sometimes arrive at 1.0)
+//   • no spurious ±90° X rotation on root or first child
+// Called BEFORE foot-offset computation so all downstream math is consistent.
+function _normaliseScene(scene) {
+    const id = CHARACTER_MODELS[_currentModelIdx]?.id ?? '?';
+
+    // ── Scale ──────────────────────────────────────────────────────────
+    // Traverse until we find a node whose scale differs significantly from 1.
+    // If the entire hierarchy is at scale ≈ 1.0, the model is in centimetres
+    // and needs the standard Mixamo 0.01 correction.
+    let foundScale = false;
+    scene.traverse(obj => {
+        if (foundScale) return;
+        if (Math.abs(obj.scale.x - 0.01) < 0.005) { foundScale = true; } // already correct
+    });
+    if (!foundScale) {
+        // No 0.01 scale found anywhere — apply it at root level.
+        scene.scale.setScalar(0.01);
+        console.log(`[Characters:${id}] Applied 0.01 scale (was at 1.0 — cm→m correction)`);
+    }
+
+    // ── Rotation ───────────────────────────────────────────────────────
+    // fbx2gltf may embed ±π/2 on the scene root or its first child.
+    function _fixRot(obj) {
+        if (Math.abs(Math.abs(obj.rotation.x) - Math.PI / 2) < 0.05) {
+            console.log(`[Characters:${id}] Corrected rotation.x=${obj.rotation.x.toFixed(3)} on ${obj.name||'(unnamed)'}`);
+            obj.rotation.x = 0;
+        }
+    }
+    _fixRot(scene);
+    scene.children.forEach(_fixRot);
+
+    // Force world matrix update so getWorldPosition() is accurate below.
+    scene.updateWorldMatrix(true, true);
+}
+
 function _onLoad(gltf) { ((gltf) => {
+        // Normalise scale + rotation before anything else touches the scene.
+        _normaliseScene(gltf.scene);
+
         _gltf = gltf;
         _loaded = true;
 
         // R32.125: Strip ALL Hips position (root motion). Position is WASM-driven.
-        // We'll compute the foot offset from the skeleton below.
         for (const clip of gltf.animations) {
             clip.tracks = clip.tracks.filter(track => {
                 if (track.name.endsWith('.position') && track.name.includes('Hips')) {
@@ -218,9 +257,8 @@ function _createInstance() {
     if (!_gltf) return null;
 
     const model = skeletonClone(_gltf.scene);
-
-    // Do not touch scale or rotation — crimson_sentinel_rigged.glb is
-    // already correctly sized and oriented (0.01 Mixamo cm→m scale baked in).
+    // _normaliseScene already ran on _gltf.scene at load time, so the clone
+    // inherits the corrected scale and rotation. No further adjustment needed.
 
     const mixer = new THREE.AnimationMixer(model);
 
