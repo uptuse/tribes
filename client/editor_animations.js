@@ -281,7 +281,27 @@ function _buildTimeline() {
     <span class="fw-timecode" id="fw-timecode">0:00.000</span>
     <input type="range" id="fw-scrubber" min="0" max="1000" value="0"
       style="flex:1;accent-color:var(--amber);margin:0 8px" aria-label="Scrub timeline">
-    <span style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono)" id="fw-duration-label"></span>`;
+    <span style="font-size:10px;color:var(--ink-faint);font-family:var(--font-mono)" id="fw-duration-label"></span>
+    <button class="fw-transport-btn" id="fw-btn-collapse" title="Minimise timeline" style="margin-left:4px">▼</button>`;
+
+  document.getElementById('fw-btn-collapse').addEventListener('click', () => {
+    const tl    = document.getElementById('fw-timeline');
+    const area  = document.getElementById('fw-tracks-area');
+    const btn   = document.getElementById('fw-btn-collapse');
+    const panel = document.getElementById('fw-panel');
+    const collapsed = tl.dataset.collapsed === '1';
+    if (collapsed) {
+      tl.dataset.collapsed = '0';
+      if (area)  area.style.display  = '';
+      if (panel) panel.style.paddingBottom = '225px';
+      btn.textContent = '▼'; btn.title = 'Minimise timeline';
+    } else {
+      tl.dataset.collapsed = '1';
+      if (area)  area.style.display  = 'none';
+      if (panel) panel.style.paddingBottom = '46px';
+      btn.textContent = '▲'; btn.title = 'Expand timeline';
+    }
+  });
 
   document.getElementById('fw-btn-rewind').addEventListener('click', () => {
     _currentTime = 0; _stopPlayback();
