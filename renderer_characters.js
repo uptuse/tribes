@@ -47,20 +47,9 @@ let _demoSpawned = false;
 // ── Public API ──────────────────────────────────────────────
 
 // All available rigged character models
+// Only the verified working rigged model. Others pending texture fix.
 const CHARACTER_MODELS = [
-    { id: 'crimson_sentinel',   label: 'Crimson Sentinel',   path: './assets/models/crimson_sentinel_rigged.glb'   },
-    { id: 'auric_phoenix',      label: 'Auric Phoenix',      path: './assets/models/auric_phoenix_rigged.glb'      },
-    { id: 'crimson_titan',      label: 'Crimson Titan',      path: './assets/models/crimson_titan_rigged.glb'      },
-    { id: 'wolf_sentinel',      label: 'Wolf Sentinel',      path: './assets/models/wolf_sentinel_rigged.glb'      },
-    { id: 'aegis_sentinel',     label: 'Aegis Sentinel',     path: './assets/models/aegis_sentinel_rigged.glb'     },
-    { id: 'crimson_warforged',  label: 'Crimson Warforged',  path: './assets/models/crimson_warforged_rigged.glb'  },
-    { id: 'emerald_sentinel',   label: 'Emerald Sentinel',   path: './assets/models/emerald_sentinel_rigged.glb'   },
-    { id: 'golden_phoenix',     label: 'Golden Phoenix',     path: './assets/models/golden_phoenix_rigged.glb'     },
-    { id: 'iron_wolf',          label: 'Iron Wolf',          path: './assets/models/iron_wolf_rigged.glb'          },
-    { id: 'midnight_sentinel',  label: 'Midnight Sentinel',  path: './assets/models/midnight_sentinel_rigged.glb'  },
-    { id: 'neon_wolf',          label: 'Neon Wolf',          path: './assets/models/neon_wolf_rigged.glb'          },
-    { id: 'obsidian_vanguard',  label: 'Obsidian Vanguard',  path: './assets/models/obsidian_vanguard_rigged.glb'  },
-    { id: 'violet_phoenix',     label: 'Violet Phoenix',     path: './assets/models/violet_phoenix_rigged.glb'     },
+    { id: 'crimson_sentinel', label: 'Crimson Sentinel', path: './assets/models/crimson_sentinel_rigged.glb' },
 ];
 window.__characterModels = CHARACTER_MODELS;
 let _currentModelIdx = 0;
@@ -175,31 +164,8 @@ function _createInstance() {
 
     const model = skeletonClone(_gltf.scene);
 
-    // ── Rotation normalisation ──────────────────────────────────────
-    // fbx2gltf embeds -90° X on the root or first child. Fix both.
-    function _fixRotX(obj) {
-        if (Math.abs(obj.rotation.x + Math.PI / 2) < 0.05 ||
-            Math.abs(obj.rotation.x - Math.PI / 2) < 0.05) {
-            obj.rotation.x = 0;
-        }
-    }
-    _fixRotX(model);
-    model.children.forEach(_fixRotX);
-
-    // ── Scale normalisation ─────────────────────────────────────────
-    // Characters from different pipelines arrive at wildly different scales.
-    // Force every character to fit in a 1.9m bounding box (standing human).
-    {
-        const box = new THREE.Box3().setFromObject(model);
-        const sz  = new THREE.Vector3();
-        box.getSize(sz);
-        const h = sz.y;
-        if (h > 0.01) {
-            const s = 1.9 / h;
-            model.scale.set(s, s, s);
-            console.log(`[Characters] auto-scale: ${h.toFixed(3)}m → 1.9m (×${s.toFixed(4)})`);
-        }
-    }
+    // Do not touch scale or rotation — crimson_sentinel_rigged.glb is
+    // already correctly sized and oriented (0.01 Mixamo cm→m scale baked in).
 
     const mixer = new THREE.AnimationMixer(model);
 
