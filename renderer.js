@@ -3304,7 +3304,11 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    position: new THREE.Vector3(-0.015, 0.035, 0.195),
+    // R32.279: position.z shifted from +0.195 to -0.05 to push the bbox
+    // fully in front of camera.near=0.1. Previously, 4 of 8 world-bbox
+    // corners had cz>-0.1 in camera space and were near-plane clipped
+    // (visible as a missing wedge at the bottom-right of the held gun).
+    position: new THREE.Vector3(-0.015, 0.035, -0.05),
     rotation: new THREE.Euler(0.1798, 4.3459, -0.0524, 'YXZ'), // 10.3°X, 249°Y, -3°Z
     scale: 0.18,
 };
@@ -4792,10 +4796,20 @@ function syncCamera() {
         Module._setLocalAimPoint3P(p.x, p.y, p.z);
     }
     // R32.278: feed Spinfusor muzzle world-pos to C++ so disc spawns from gun barrel
-    if (Module._setLocalMuzzleOrigin && _spinfusorReady && _lastWpnIdx === 2 && _spinfusorMuzzleAnchor) {
-        const _mw = new THREE.Vector3();
-        _spinfusorMuzzleAnchor.getWorldPosition(_mw);
-        Module._setLocalMuzzleOrigin(_mw.x, _mw.y, _mw.z);
+    // R32.279: one-shot warn if the wasm export is missing (CI-build regression
+    // we just hit; KEEPALIVE was added but this guards against future drift)
+    if (_spinfusorReady && _lastWpnIdx === 2 && _spinfusorMuzzleAnchor) {
+        if (Module._setLocalMuzzleOrigin) {
+            const _mw = new THREE.Vector3();
+            _spinfusorMuzzleAnchor.getWorldPosition(_mw);
+            Module._setLocalMuzzleOrigin(_mw.x, _mw.y, _mw.z);
+        } else if (!window.__warnedNoMuzzleExport) {
+            window.__warnedNoMuzzleExport = true;
+            console.warn('[R32.279] Module._setLocalMuzzleOrigin is missing from the wasm \u2014 ' +
+                         'discs will spawn from player chest+fwd*2 instead of the gun barrel. ' +
+                         'Rebuild tribes.wasm; check that EMSCRIPTEN_KEEPALIVE is in wasm_main.cpp ' +
+                         'and that build.sh\u2019s EXPORTED_FUNCTIONS list includes _setLocalMuzzleOrigin.');
+        }
     }
 
     let fov = Module._getCameraFov();
