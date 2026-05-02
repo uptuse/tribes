@@ -3305,7 +3305,7 @@ let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
     position: new THREE.Vector3(-0.015, 0.035, 0.195),
-    rotation: new THREE.Euler(-1.2341, 4.3459, -0.0524, 'YXZ'), // -70.7°X, 249°Y, -3°Z
+    rotation: new THREE.Euler(0.1798, 4.3459, -0.0524, 'YXZ'), // 10.3°X, 249°Y, -3°Z
     scale: 0.18,
 };
 
@@ -4790,6 +4790,12 @@ function syncCamera() {
     if (is3P && Module._setLocalAimPoint3P && window._tribesAimPoint3P) {
         const p = window._tribesAimPoint3P;
         Module._setLocalAimPoint3P(p.x, p.y, p.z);
+    }
+    // R32.278: feed Spinfusor muzzle world-pos to C++ so disc spawns from gun barrel
+    if (Module._setLocalMuzzleOrigin && _spinfusorReady && _lastWpnIdx === 2 && _spinfusorMuzzleAnchor) {
+        const _mw = new THREE.Vector3();
+        _spinfusorMuzzleAnchor.getWorldPosition(_mw);
+        Module._setLocalMuzzleOrigin(_mw.x, _mw.y, _mw.z);
     }
 
     let fov = Module._getCameraFov();

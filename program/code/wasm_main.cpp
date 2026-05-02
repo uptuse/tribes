@@ -1354,6 +1354,10 @@ static bool thirdPerson=false;
 // R31.7 C1: 3P aim convergence — JS sets this each frame via setLocalAimPoint3P()
 static Vec3 aimPoint3P={0,0,0};
 static bool hasAimPoint3P=false;
+// R32.278: GLB muzzle origin — JS feeds the viewmodel muzzle world-pos each frame
+// so the Spinfusor disc spawns from the gun barrel, not from player centre+fwd*2.
+static Vec3 g_muzzleOrigin={0,0,0};
+static bool g_hasMuzzleOrigin=false;
 static const float ENERGY_RECHARGE=8.0f; // per second
 
 static void fireWeapon(int pi){
@@ -1364,7 +1368,11 @@ static void fireWeapon(int pi){
     if(!w.usesAmmo&&p.energy<w.energyCost)return;
 
     Vec3 fwd={sinf(p.yaw)*cosf(p.pitch),sinf(p.pitch),-cosf(p.yaw)*cosf(p.pitch)};
-    Vec3 firePos=p.pos+Vec3(0,2,0)+fwd*2;
+    // R32.278: use GLB muzzle world-pos as spawn origin for Spinfusor disc
+    Vec3 firePos=(pi==localPlayer&&p.curWeapon==WPN_DISC&&g_hasMuzzleOrigin)
+        ? g_muzzleOrigin
+        : p.pos+Vec3(0,2,0)+fwd*2;
+    g_hasMuzzleOrigin=false; // consumed once per shot
     // R31.7 C1: 3P aim convergence — override fwd to point firePos→crosshair world point.
     // Without this, the +0.7m (R31.5) or centered (R31.7) camera offset makes shots land
     // 1-2 m off where the crosshair points at medium range.
@@ -2170,6 +2178,10 @@ extern "C" {
         }
         printf("[R32.1] appendInteriorShapeAABBs: added %d collision boxes (total buildings=%d)\n",
                added, numBuildings);
+    }
+    // R32.278: muzzle world-pos from JS viewmodel anchor — consumed by fireWeapon
+    void   setLocalMuzzleOrigin(float x, float y, float z) {
+        g_muzzleOrigin={x,y,z}; g_hasMuzzleOrigin=true;
     }
     // R31.7 C1: aim-convergence point fed from JS ray-march each frame in 3P
     void   setLocalAimPoint3P(float x, float y, float z) {

@@ -89,3 +89,15 @@ document.addEventListener('keydown', (e) => {
 ## Safe numpad keys (confirmed working in Safari on Mac + this game)
 
 `Numpad2`, `Numpad4`, `Numpad6`, `Numpad7`, `Numpad8`, `Numpad9`, `NumpadAdd`, `NumpadSubtract`, `NumpadMultiply`, `NumpadDivide`
+
+## Meshy export axis convention
+
+Meshy AI exports GLB with a non-standard forward axis. In Three.js, viewmodels expect the barrel to point along **-Z** in `weaponHand` local space. Meshy models do not — `rotY = 180°` produces a horizontal gun, not a correctly-aimed one. The working rotation for this project's Meshy exports ends up around **249°Y** to compensate. Expect the same offset for any future Meshy model and tune from there rather than from 180°.
+
+## Muzzle origin for projectiles (not just FX)
+
+The muzzle anchor position (tuned in MUZ mode) serves two purposes:
+1. **CombatFX** — flash and tracer line start point (JS only, `window._weaponMuzzleAnchor`)
+2. **Projectile spawn** — the world position is fed to C++ each frame via `Module._setLocalMuzzleOrigin()` so the actual physics projectile also spawns from the gun barrel, not from player-centre+fwd*2
+
+Both must be wired to get the full effect. The C++ side consumes the override once per shot and resets it.
