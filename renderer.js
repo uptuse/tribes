@@ -3309,6 +3309,25 @@ const _SPINFUSOR_TRANSFORM = {
     scale: 0.18,
 };
 
+// Console tuner — call from DevTools while in 1P with Spinfusor equipped:
+//   tuneSpinfusor(x, y, z, rotY_deg, scale)
+// e.g. tuneSpinfusor(0.05, -0.10, -0.38, 180, 0.20)
+// Logs the line to hardcode once you like the result.
+window.tuneSpinfusor = (x = 0.05, y = -0.06, z = -0.32, rotYDeg = 180, scale = 0.18) => {
+    _SPINFUSOR_TRANSFORM.position.set(x, y, z);
+    _SPINFUSOR_TRANSFORM.rotation.set(0, rotYDeg * Math.PI / 180, 0, 'YXZ');
+    _SPINFUSOR_TRANSFORM.scale = scale;
+    if (_spinfusorGLB) {
+        _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
+        _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
+        _spinfusorGLB.scale.setScalar(scale);
+    }
+    console.log(`[tuneSpinfusor] position:(${x}, ${y}, ${z})  rotY:${rotYDeg}°  scale:${scale}`);
+    console.log(`Hardcode → position: new THREE.Vector3(${x}, ${y}, ${z}),`);
+    console.log(`           rotation: new THREE.Euler(0, ${(rotYDeg*Math.PI/180).toFixed(4)}, 0, 'YXZ'),`);
+    console.log(`           scale: ${scale},`);
+};
+
 // Weapon name label — small discrete overlay near the weapon
 const _wpnLabel = (() => {
     const el = document.createElement('div');
@@ -3323,10 +3342,10 @@ const _wpnLabel = (() => {
 })();
 let _lastWpnIdx = -1;
 
-function _syncWeaponModel(curWpn) {
-    // R32.278: per-frame toggle so visibility stays correct even if the GLB
-    // finishes loading while the Spinfusor is already equipped.
-    const useGLB = (curWpn === 2 && _spinfusorReady);
+function _syncWeaponModel(curWpn, in1P = true) {
+    // R32.278: per-frame toggle. Gate useGLB on in1P so the GLB never renders
+    // in 3P regardless of cascade behaviour (bloom pass has a separate render list).
+    const useGLB = (curWpn === 2 && _spinfusorReady && in1P);
     if (weaponHand) weaponHand.children.forEach(c => {
         if (c === _spinfusorGLB) return;   // GLB visibility owned by useGLB below
         c.visible = !useGLB;
@@ -4694,7 +4713,7 @@ function syncCamera() {
 
     // Swap DTS weapon model; also hide in 3P
     const _curWpn = playerView[o + 16] | 0;
-    _syncWeaponModel(_curWpn);
+    _syncWeaponModel(_curWpn, _in1P);
     for (const mesh of Object.values(_dtsModels)) {
         if (mesh.visible && !_in1P) mesh.visible = false;
     }
