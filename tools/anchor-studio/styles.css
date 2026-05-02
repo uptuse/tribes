@@ -996,3 +996,204 @@ kbd {
     font-size: 11px;
     margin-right: 2px;
 }
+
+
+/* ──────────────────────────────────────────────────────────────────
+ * v0.6 — Tab strip + Terrain Studio tab
+ * ────────────────────────────────────────────────────────────────── */
+
+/* Tab strip in the topbar */
+.tabstrip {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--bg-0);
+}
+.tabstrip-btn {
+    appearance: none;
+    background: transparent;
+    border: 0;
+    color: var(--text-faint);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.2px;
+    padding: 4px 14px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+.tabstrip-btn:hover { color: var(--text); }
+.tabstrip-btn.active {
+    background: var(--accent);
+    color: var(--bg-0);
+    box-shadow: 0 0 12px rgba(245, 165, 36, 0.35);
+}
+
+/* Hide non-active tab body */
+.layout[hidden] { display: none !important; }
+
+/* Section dividers in the terrain left panel */
+.panel-divider {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-faint);
+    padding: 14px 14px 6px;
+    border-top: 1px solid var(--line);
+    margin-top: 6px;
+}
+.panel-left > .panel-divider:first-of-type { border-top: 0; margin-top: 0; }
+
+/* World settings rows */
+.world-settings {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px 14px;
+    border-bottom: 1px solid var(--line);
+}
+.ws-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+.ws-row span { white-space: nowrap; }
+.ws-row select,
+.ws-row input[type="number"],
+.ws-row input[type="text"] {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    color: var(--text);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    font: inherit;
+    font-size: 12px;
+    font-family: var(--font-mono);
+}
+.ws-readout .readout {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+}
+.ws-apply {
+    align-self: flex-end;
+    margin-top: 4px;
+}
+
+/* Brush palette */
+.brush-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 6px 14px 8px;
+}
+.brush-grid .tool-btn {
+    padding: 6px 4px;
+    font-size: 11px;
+    text-align: center;
+}
+.brush-row {
+    display: grid;
+    grid-template-columns: 64px 1fr 40px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 14px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+.brush-row input[type="range"] {
+    width: 100%;
+    accent-color: var(--accent);
+}
+.brush-row .readout {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    text-align: right;
+}
+
+/* Stamp palette */
+.stamp-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 4px;
+    padding: 4px 14px 12px;
+}
+.stamp-btn {
+    appearance: none;
+    background: var(--bg-0);
+    border: 1px solid var(--line);
+    color: var(--text-dim);
+    font: inherit;
+    font-size: 11px;
+    padding: 6px 4px;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all 0.12s ease;
+}
+.stamp-btn:hover { color: var(--text); border-color: var(--line-strong); }
+.stamp-btn.active { color: var(--accent); border-color: var(--accent); }
+
+/* Character preview controls */
+.char-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 6px 14px 14px;
+}
+.char-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-faint);
+}
+.view-toggle {
+    display: flex;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    align-self: flex-start;
+}
+.view-toggle .tool-btn {
+    border: 0;
+    border-radius: 999px;
+    padding: 3px 12px;
+    font-size: 11px;
+}
+.view-toggle .tool-btn.active {
+    background: var(--accent);
+    color: var(--bg-0);
+}
+.char-hint {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--text-faint);
+}
+
+/* Terrain meta + export */
+.ter-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 14px 14px;
+    border-bottom: 1px solid var(--line);
+}
+.ter-export { padding-top: 10px; }
+.import-label {
+    display: inline-block;
+    cursor: pointer;
+}

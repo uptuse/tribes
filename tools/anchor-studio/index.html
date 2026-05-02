@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260502-1115" />
+    <link rel="stylesheet" href="styles.css?v=20260502-1330" />
 </head>
 <body>
     <header class="topbar">
@@ -16,13 +16,20 @@
             <h1>Anchor Studio</h1>
             <span class="brand-sub" id="repo-label">uptuse/tribes</span>
         </div>
+        <nav class="tabstrip" role="tablist" aria-label="Studio tabs">
+            <button class="tabstrip-btn active" role="tab" data-tab-btn="anchors" aria-selected="true">Anchors</button>
+            <button class="tabstrip-btn" role="tab" data-tab-btn="terrain" aria-selected="false">Terrain</button>
+        </nav>
         <div class="topbar-actions">
             <button id="btn-refresh" title="Refresh asset list from GitHub">↻ refresh</button>
             <span class="status-pill" id="status">idle</span>
         </div>
     </header>
 
-    <main class="layout">
+    <!-- ───────────────────────────────────────────────────────────── -->
+    <!-- TAB: ANCHORS                                                   -->
+    <!-- ───────────────────────────────────────────────────────────── -->
+    <main class="layout" data-tab="anchors">
         <!-- LEFT: Scene tree (top) + Library drawer (collapsible bottom) -->
         <aside class="panel panel-left">
             <div class="panel-header">
@@ -147,7 +154,6 @@
                     <button class="chip-btn" data-snap="-45">−45°</button>
                     <button class="chip-btn" data-snap="0">0°</button>
                     <button class="chip-btn" data-snap="45">45°</button>
-                    <button class="chip-btn" data-snap="90">90°</button>
                     <button class="chip-btn" data-snap="180">180°</button>
                 </div>
             </div>
@@ -166,9 +172,148 @@
         </aside>
     </main>
 
+    <!-- ───────────────────────────────────────────────────────────── -->
+    <!-- TAB: TERRAIN                                                   -->
+    <!-- ───────────────────────────────────────────────────────────── -->
+    <main class="layout" data-tab="terrain" hidden>
+        <!-- LEFT: World settings + brush + character preview -->
+        <aside class="panel panel-left">
+            <div class="panel-header">
+                <span class="panel-title">World</span>
+                <span class="panel-count" id="terrain-world-count">256m</span>
+            </div>
+            <div class="world-settings">
+                <label class="ws-row">
+                    <span>grid</span>
+                    <select id="ter-grid-size">
+                        <option value="64">64 × 64</option>
+                        <option value="128" selected>128 × 128</option>
+                        <option value="256">256 × 256</option>
+                        <option value="512">512 × 512</option>
+                    </select>
+                </label>
+                <label class="ws-row">
+                    <span>cell (m)</span>
+                    <input type="number" id="ter-cell-size" min="0.5" max="32" step="0.5" value="2" />
+                </label>
+                <div class="ws-row ws-readout">
+                    <span>extent</span>
+                    <span class="readout" id="ter-extent-readout">256 × 256 m</span>
+                </div>
+                <button class="chip-btn ws-apply" id="ter-apply-world" title="Apply new grid/cell. Existing edits are resampled.">apply &amp; resample</button>
+            </div>
+
+            <div class="panel-divider">Brush</div>
+            <div class="brush-grid" id="ter-tools">
+                <button class="tool-btn active" data-ter-tool="raise"   title="Raise the surface (Shift = lower)">raise</button>
+                <button class="tool-btn" data-ter-tool="lower"   title="Lower the surface">lower</button>
+                <button class="tool-btn" data-ter-tool="smooth"  title="Average heights toward neighbours">smooth</button>
+                <button class="tool-btn" data-ter-tool="flatten" title="Flatten to first-click height">flatten</button>
+                <button class="tool-btn" data-ter-tool="noise"   title="Add coherent noise">noise</button>
+                <button class="tool-btn" data-ter-tool="paint-grass" title="Paint grass material">grass</button>
+                <button class="tool-btn" data-ter-tool="paint-rock"  title="Paint rock material">rock</button>
+                <button class="tool-btn" data-ter-tool="paint-snow"  title="Paint snow material">snow</button>
+                <button class="tool-btn" data-ter-tool="stamp"   title="Drop a heightmap stamp">stamp</button>
+            </div>
+            <label class="brush-row">
+                <span>size</span>
+                <input type="range" id="ter-brush-size" min="1" max="64" step="1" value="12" />
+                <span class="readout" id="ter-brush-size-readout">12</span>
+            </label>
+            <label class="brush-row">
+                <span>strength</span>
+                <input type="range" id="ter-brush-strength" min="0.05" max="5" step="0.05" value="1.5" />
+                <span class="readout" id="ter-brush-strength-readout">1.50</span>
+            </label>
+
+            <div class="panel-divider" id="ter-stamp-divider" hidden>Stamp</div>
+            <div class="stamp-grid" id="ter-stamps" hidden>
+                <button class="stamp-btn" data-ter-stamp="hill"   title="Smooth dome">hill</button>
+                <button class="stamp-btn" data-ter-stamp="crater" title="Inverted dome">crater</button>
+                <button class="stamp-btn" data-ter-stamp="ridge"  title="Linear ridge">ridge</button>
+            </div>
+
+            <div class="panel-divider">Character</div>
+            <div class="char-controls">
+                <button class="chip-btn" id="ter-char-pick" title="Pick a rigged character from the asset library">pick character…</button>
+                <div class="char-row" id="ter-char-row" hidden>
+                    <span class="readout" id="ter-char-name">—</span>
+                    <button class="icon-btn ghost" id="ter-char-clear" title="Remove character">×</button>
+                </div>
+                <div class="view-toggle" id="ter-view-toggle" hidden>
+                    <button class="tool-btn active" data-ter-view="off">off</button>
+                    <button class="tool-btn" data-ter-view="3p">3p</button>
+                    <button class="tool-btn" data-ter-view="1p">1p</button>
+                </div>
+                <div class="char-hint" id="ter-char-hint" hidden>WASD to walk · mouse to look · Esc releases pointer</div>
+            </div>
+        </aside>
+
+        <!-- CENTER: 3D viewport (terrain) -->
+        <section class="panel panel-viewport">
+            <div class="viewport-header">
+                <div class="viewport-title">
+                    <span id="ter-title">Untitled terrain</span>
+                    <span class="hint" id="ter-stats">—</span>
+                </div>
+                <div class="viewport-tools">
+                    <button class="tool-btn" id="ter-btn-undo" title="Undo (Ctrl+Z)">undo</button>
+                    <button class="tool-btn" id="ter-btn-redo" title="Redo (Ctrl+Shift+Z)">redo</button>
+                    <span class="divider"></span>
+                    <button class="tool-btn" id="ter-btn-frame" title="Frame the terrain in view">frame</button>
+                    <button class="tool-btn" id="ter-btn-wire"  title="Toggle wireframe overlay">wire</button>
+                </div>
+            </div>
+            <div class="viewport-canvas-wrap">
+                <canvas id="ter-viewport"></canvas>
+                <div class="viewport-overlay" id="ter-overlay">
+                    <div class="overlay-hint">Pick a brush on the left and drag the terrain to sculpt</div>
+                </div>
+                <div class="viewport-hud" id="ter-hud">
+                    <span class="hud-line" id="ter-hud-coords">—</span>
+                    <span class="hud-line" id="ter-hud-tool">raise · 12 · 1.50</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- RIGHT: Export + import for terrain -->
+        <aside class="panel panel-inspector">
+            <div class="panel-header">
+                <span class="panel-title">Export</span>
+                <span class="panel-count" id="ter-undo-count">0</span>
+            </div>
+            <div class="ter-meta">
+                <label class="ws-row">
+                    <span>name</span>
+                    <input type="text" id="ter-name" placeholder="my_terrain" value="untitled" />
+                </label>
+                <div class="ws-row ws-readout">
+                    <span>min · max</span>
+                    <span class="readout" id="ter-h-readout">0.00 · 0.00 m</span>
+                </div>
+                <div class="ws-row ws-readout">
+                    <span>splat</span>
+                    <span class="readout" id="ter-splat-readout">grass 100% · rock 0% · snow 0%</span>
+                </div>
+            </div>
+            <div class="export-block ter-export">
+                <pre class="export-preview" id="ter-export-preview">{}</pre>
+                <div class="export-actions">
+                    <button id="ter-btn-copy">copy</button>
+                    <button id="ter-btn-download" class="primary">download .refs.json</button>
+                </div>
+                <div class="export-actions">
+                    <label class="chip-btn import-label" for="ter-import-file">import…</label>
+                    <input type="file" id="ter-import-file" accept=".json,application/json" hidden />
+                    <button id="ter-btn-clear" class="warn">clear</button>
+                </div>
+            </div>
+        </aside>
+    </main>
+
     <footer class="bottom-bar">
         <span class="footer-left">
-            anchor studio · <span class="version-stamp" title="build timestamp — if this changes, you're on the new version">v0.5 · build 20260502-1115</span> · <a href="https://github.com/uptuse/tribes/tree/master/tools/anchor-studio" target="_blank" rel="noopener">source</a>
+            anchor studio · <span class="version-stamp" title="build timestamp — if this changes, you're on the new version">v0.6 · build 20260502-1330</span> · <a href="https://github.com/uptuse/tribes/tree/master/tools/anchor-studio" target="_blank" rel="noopener">source</a>
         </span>
         <span class="footer-right" id="footer-tip">
             click a scene asset to focus it · <kbd>Shift</kbd>+click to drop anchor in orbit · drag anchor→anchor to attach · <kbd>P</kbd> place · <kbd>O</kbd> orbit · <kbd>F</kbd> frame · <kbd>V</kbd> axis from view
@@ -183,6 +328,6 @@
         }
     }
     </script>
-    <script type="module" src="app.js?v=20260502-1115"></script>
+    <script type="module" src="app.js?v=20260502-1330"></script>
 </body>
 </html>

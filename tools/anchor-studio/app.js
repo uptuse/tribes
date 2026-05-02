@@ -28,6 +28,7 @@ import { GLTFLoader }      from 'three/addons/loaders/GLTFLoader.js';
 import { OrbitControls }   from 'three/addons/controls/OrbitControls.js';
 import { TransformControls } from 'three/addons/controls/TransformControls.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { bootTerrain, activateTerrain, deactivateTerrain, setAssetList } from './terrain.js?v=20260502-1330';
 
 const REPO   = 'uptuse/tribes';
 const BRANCH = 'master';
@@ -1492,11 +1493,51 @@ window.addEventListener('keydown', (e) => {
     grid.visible = state.showGrid;
     axesHelper.visible = state.showGrid;
     els.btnGrid.classList.add('active');
+    initTabStrip();
     await listGlbsRecursively('assets');
     renderLibrary();
     renderScene();
+    setAssetList(state.assets.map(a => a.path));
     setStatus('ready', 'ready');
 })();
+
+/* ── Top-level tab strip (Anchors / Terrain) ─────────────────────── */
+function initTabStrip() {
+    const buttons = document.querySelectorAll('[data-tab-btn]');
+    const sections = document.querySelectorAll('main.layout[data-tab]');
+    function setTab(name) {
+        buttons.forEach(b => {
+            const on = b.dataset.tabBtn === name;
+            b.classList.toggle('active', on);
+            b.setAttribute('aria-selected', on ? 'true' : 'false');
+        });
+        sections.forEach(s => s.hidden = (s.dataset.tab !== name));
+        // Persist selected tab + hash bookmark
+        try {
+            const root = JSON.parse(localStorage.getItem('anchor_studio.v2') || '{}');
+            root.activeTab = name;
+            localStorage.setItem('anchor_studio.v2', JSON.stringify(root));
+        } catch { /* ignore */ }
+        if (location.hash !== '#' + name) location.hash = name;
+        if (name === 'terrain') {
+            activateTerrain();
+        } else {
+            deactivateTerrain();
+        }
+    }
+    buttons.forEach(b => b.addEventListener('click', () => setTab(b.dataset.tabBtn)));
+    // Restore from hash → storage → default
+    let initial = 'anchors';
+    const hash = (location.hash || '').replace('#', '');
+    if (hash === 'terrain' || hash === 'anchors') initial = hash;
+    else {
+        try {
+            const root = JSON.parse(localStorage.getItem('anchor_studio.v2') || '{}');
+            if (root.activeTab === 'terrain') initial = 'terrain';
+        } catch { /* ignore */ }
+    }
+    setTab(initial);
+}
 
 
 /* ────────────────────────────────────────────────────────────────────
