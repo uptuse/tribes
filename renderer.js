@@ -3620,58 +3620,88 @@ function initWeaponViewmodel() {
         (err) => console.warn('[R32.278] Aurora Pulse Blaster failed to load:', err)
     );
     // R32.278 — in-game placement tuner.
-    // Spinfusor equipped + 1P only. No Shift = position. Shift held = rotation.
-    //   8/2  → z in/out      (Shift) rotX
-    //   4/6  → x left/right  (Shift) rotY
-    //   7/9  → y up/down     (Shift) rotZ
-    //   +/-  → scale
-    //   *    → print values to console
-    // (Avoids Numpad 1/3/5 which Safari maps to weapon-switch keyCodes, and
-    //  NumpadEnter which shares keyCode 13 with regular Enter.)
-    const _ROT_NUDGE = 3 * Math.PI / 180; // 3° per press
+    // Press * (NumpadMultiply) to toggle between POSITION and ROTATION mode.
+    // Same 8/2/4/6/7/9 keys nudge whichever mode is active. +/- = scale.
+    // Values shown live on-screen — no console needed.
+    const _ROT_NUDGE = 3 * Math.PI / 180;
+    const _NUDGE     = 0.005;
+    let   _tuneMode  = 'pos'; // 'pos' or 'rot'
+
+    // On-screen overlay
+    const _tuneOverlay = document.createElement('div');
+    _tuneOverlay.style.cssText = `
+        position:fixed; bottom:110px; right:16px; z-index:20000;
+        font-family:'Roboto Mono',monospace; font-size:11px; line-height:1.6;
+        background:rgba(0,0,0,0.72); color:#ffe066; padding:8px 12px;
+        border:1px solid rgba(255,224,102,0.4); border-radius:4px;
+        pointer-events:none; display:none; white-space:pre;`;
+    document.body.appendChild(_tuneOverlay);
+
     const _applyGLBTransform = () => {
         if (!_spinfusorGLB) return;
         _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
-        _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
+        _spinfusorGLB.rotation.set(
+            _SPINFUSOR_TRANSFORM.rotation.x,
+            _SPINFUSOR_TRANSFORM.rotation.y,
+            _SPINFUSOR_TRANSFORM.rotation.z,
+            'YXZ'
+        );
         _spinfusorGLB.scale.setScalar(_SPINFUSOR_TRANSFORM.scale);
     };
-    window.tuneSpinfusor = function(x, y, z, rotYDeg, scale) {
-        if (x !== undefined) _SPINFUSOR_TRANSFORM.position.x = x;
-        if (y !== undefined) _SPINFUSOR_TRANSFORM.position.y = y;
-        if (z !== undefined) _SPINFUSOR_TRANSFORM.position.z = z;
-        if (rotYDeg !== undefined) _SPINFUSOR_TRANSFORM.rotation.y = rotYDeg * Math.PI / 180;
-        if (scale !== undefined) _SPINFUSOR_TRANSFORM.scale = scale;
-        _applyGLBTransform();
+
+    const _updateTuneOverlay = () => {
         const p = _SPINFUSOR_TRANSFORM.position;
         const r = _SPINFUSOR_TRANSFORM.rotation;
         const s = _SPINFUSOR_TRANSFORM.scale;
-        const deg = v => (v * 180 / Math.PI).toFixed(1);
-        console.log(`[spinfusor] pos(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})  rot(${deg(r.x)}, ${deg(r.y)}, ${deg(r.z)})°  scale:${s}`);
-        console.log(`→ position: new THREE.Vector3(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}),`);
-        console.log(`  rotation: new THREE.Euler(${r.x.toFixed(4)}, ${r.y.toFixed(4)}, ${r.z.toFixed(4)}, 'YXZ'),`);
-        console.log(`  scale: ${s},`);
+        const d = v => (v * 180 / Math.PI).toFixed(1) + '°';
+        const f = v => v.toFixed(3);
+        _tuneOverlay.textContent =
+            `── SPINFUSOR TUNE [${_tuneMode.toUpperCase()}] ──\n` +
+            `pos  x:${f(p.x)}  y:${f(p.y)}  z:${f(p.z)}\n` +
+            `rot  x:${d(r.x)}  y:${d(r.y)}  z:${d(r.z)}\n` +
+            `scale: ${s.toFixed(3)}\n` +
+            `\n* = toggle POS/ROT  +/- = scale\n` +
+            `8/2=fwd/bk  4/6=L/R  7/9=up/dn`;
+        _tuneOverlay.style.display = 'block';
     };
 
-    const _NUDGE = 0.005;
+    window.tuneSpinfusor = function(x, y, z, rotYDeg, scale) {
+        if (x     !== undefined) _SPINFUSOR_TRANSFORM.position.x = x;
+        if (y     !== undefined) _SPINFUSOR_TRANSFORM.position.y = y;
+        if (z     !== undefined) _SPINFUSOR_TRANSFORM.position.z = z;
+        if (rotYDeg !== undefined) _SPINFUSOR_TRANSFORM.rotation.y = rotYDeg * Math.PI / 180;
+        if (scale !== undefined) _SPINFUSOR_TRANSFORM.scale = scale;
+        _applyGLBTransform();
+        _updateTuneOverlay();
+    };
+
     document.addEventListener('keydown', (e) => {
         if (!_spinfusorReady || _lastWpnIdx !== 2) return;
         const p = _SPINFUSOR_TRANSFORM.position;
         const r = _SPINFUSOR_TRANSFORM.rotation;
-        const sh = e.shiftKey;
+        const isRot = _tuneMode === 'rot';
         let changed = true;
         switch (e.code) {
-            case 'Numpad8': sh ? (r.x -= _ROT_NUDGE) : (p.z -= _NUDGE); break;
-            case 'Numpad2': sh ? (r.x += _ROT_NUDGE) : (p.z += _NUDGE); break;
-            case 'Numpad4': sh ? (r.y -= _ROT_NUDGE) : (p.x -= _NUDGE); break;
-            case 'Numpad6': sh ? (r.y += _ROT_NUDGE) : (p.x += _NUDGE); break;
-            case 'Numpad7': sh ? (r.z -= _ROT_NUDGE) : (p.y += _NUDGE); break;
-            case 'Numpad9': sh ? (r.z += _ROT_NUDGE) : (p.y -= _NUDGE); break;
-            case 'NumpadAdd':      _SPINFUSOR_TRANSFORM.scale += 0.005; break;
-            case 'NumpadSubtract': _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
-            case 'NumpadMultiply': window.tuneSpinfusor(); return; // print only
+            case 'NumpadMultiply':
+                _tuneMode = isRot ? 'pos' : 'rot';
+                _updateTuneOverlay();
+                return;
+            // 8/2 = forward/back (pos) or rotX (rot)
+            case 'Numpad8': isRot ? (r.x -= _ROT_NUDGE) : (p.z -= _NUDGE); break;
+            case 'Numpad2': isRot ? (r.x += _ROT_NUDGE) : (p.z += _NUDGE); break;
+            // 4/6 = left/right (pos) or rotY (rot)
+            case 'Numpad4': isRot ? (r.y -= _ROT_NUDGE) : (p.x -= _NUDGE); break;
+            case 'Numpad6': isRot ? (r.y += _ROT_NUDGE) : (p.x += _NUDGE); break;
+            // 7/9 = up/down (pos) or rotZ (rot)
+            case 'Numpad7': isRot ? (r.z -= _ROT_NUDGE) : (p.y += _NUDGE); break;
+            case 'Numpad9': isRot ? (r.z += _ROT_NUDGE) : (p.y -= _NUDGE); break;
+            case 'NumpadAdd':
+                _SPINFUSOR_TRANSFORM.scale += 0.005; break;
+            case 'NumpadSubtract':
+                _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
             default: changed = false;
         }
-        if (changed) { _applyGLBTransform(); window.tuneSpinfusor(); }
+        if (changed) { _applyGLBTransform(); _updateTuneOverlay(); }
     });
 
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
