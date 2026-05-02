@@ -31,3 +31,4 @@ assets/models/*.fbm/
 tools/obj_export/*.obj
 tools/obj_export/*.mtl
 tools/obj_export/*.zip
+server/client

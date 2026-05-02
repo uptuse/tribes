@@ -1,0 +1,44 @@
+# Fly.io deployment config for Tribes Browser Edition
+# Free-tier: shared-cpu-1x, 256MB RAM, single instance, auto-stop when idle.
+# To deploy:  cd /home/ubuntu/tribes && fly deploy
+# To update:  same.  fly deploy is idempotent and ships only what changed.
+# Tail logs:  fly logs
+
+app = "firewolf-tribes"
+primary_region = "ord"   # Chicago — pick a region close to the players.
+                          # Change to 'iad' (Virginia), 'sjc' (San Jose),
+                          # 'fra' (Frankfurt), 'syd' (Sydney), etc. as needed.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "8080"
+  STATIC_DIR = "/app/public"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # Auto-stop when there are no connections. Cold-start ~1s on free tier.
+  # If you want zero-latency joins for your friend, set min_machines_running = 1.
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 0
+  processes = ["app"]
+
+  # WebSocket needs sticky-ish behaviour but Fly's HTTP service handles
+  # that transparently — each WS connection latches to the machine that
+  # received the upgrade.
+
+  [[http_service.checks]]
+    grace_period = "10s"
+    interval = "30s"
+    method = "GET"
+    path = "/health"
+    protocol = "http"
+    timeout = "5s"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 256

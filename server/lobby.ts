@@ -527,6 +527,11 @@ function startMatch(lobby: LobbyState) {
   console.log(`[match] start lobby=${lobby.id} players=${lobby.match.players.size}`);
 
   // Broadcast match start
+  // R32.299: include each player's authoritative spawn pos + rot so the
+  // client can teleport its wasm sim to the server's spawn pad (avoids the
+  // 'host frozen at wasm-local spawn while server thinks they're at a
+  // different spot' divergence). Also include matchStartedMs explicitly so
+  // each client renders the same JS-driven clock.
   broadcastJSON(lobby, {
     type: 'matchStart',
     lobbyId: lobby.id,
@@ -535,14 +540,14 @@ function startMatch(lobby: LobbyState) {
     ranked: lobby.ranked,                // R26
     players: [...lobby.match.players.values()].map(p => ({
       id: p.id, name: p.name, team: p.team, armor: p.armor,
-      // R26: include rating so client can render tier badges on scoreboard + nameplate
+      pos: p.pos, rot: p.rot,            // R32.299: server-authoritative spawn
       rating: p.uuid ? (skillStore.get(p.uuid)?.rating ?? SKILL_INITIAL) : SKILL_INITIAL,
-      // R28: per-match shadow ID — replaces R27's stable-UUID broadcast.
-      // UUID is no longer broadcast; shadowId rotates per match so two players
-      // can't correlate identities across matches.
       shadowId: p.uuid ? getOrAssignShadow(lobby.id, p.uuid) : '',
     })),
     serverTime: Date.now(),
+    matchStartedMs: (lobby as any).matchStartedMs,  // R32.299
+    scoreLimit: 5,                                    // R32.299: server-authoritative
+    timeLimitSec: 600,                                // R32.299: server-authoritative
   });
 
   // R28: per-recipient mute hint — for each connected player, send the list
@@ -891,11 +896,71 @@ function cleanupInactiveLobbies() {
 }
 setInterval(cleanupInactiveLobbies, 5_000);
 
+// R32.293: static-file fallback. STATIC_DIR points at the game's web root
+// (index.html, tribes.js, tribes.wasm, etc). When unset, this returns the
+// legacy server-banner string so dev behaviour is unchanged.
+const STATIC_DIR = Bun.env.STATIC_DIR ?? '';
+const MIME: Record<string, string> = {
+  '.html': 'text/html; charset=utf-8',
+  '.js':   'application/javascript; charset=utf-8',
+  '.mjs':  'application/javascript; charset=utf-8',
+  '.wasm': 'application/wasm',
+  '.json': 'application/json; charset=utf-8',
+  '.css':  'text/css; charset=utf-8',
+  '.png':  'image/png',
+  '.jpg':  'image/jpeg', '.jpeg': 'image/jpeg',
+  '.svg':  'image/svg+xml',
+  '.webp': 'image/webp',
+  '.ico':  'image/x-icon',
+  '.hdr':  'application/octet-stream',
+  '.bin':  'application/octet-stream',
+  '.glb':  'model/gltf-binary',
+  '.gltf': 'model/gltf+json',
+  '.mp3':  'audio/mpeg',
+  '.ogg':  'audio/ogg',
+  '.wav':  'audio/wav',
+  '.txt':  'text/plain; charset=utf-8',
+  '.map':  'application/json; charset=utf-8',
+  '.data': 'application/octet-stream',
+};
+async function serveStatic(pathname: string): Promise<Response> {
+  if (!STATIC_DIR) {
+    return new Response('Tribes Lobby + Match Server (R20). WebSocket: /ws  Browse: /lobbies', { status: 200 });
+  }
+  // Default to index.html on /
+  let p = pathname === '/' ? '/index.html' : pathname;
+  // Strip query (Bun.file ignores it but be explicit)
+  const q = p.indexOf('?'); if (q >= 0) p = p.slice(0, q);
+  // Disallow path traversal
+  if (p.includes('..')) return new Response('forbidden', { status: 403 });
+  // Resolve into STATIC_DIR. Bun.file is async lazy; existence check is via .size.
+  const filePath = STATIC_DIR + p;
+  try {
+    const f = Bun.file(filePath);
+    const exists = await f.exists();
+    if (!exists) return new Response('not found: ' + p, { status: 404 });
+    const ext = (() => { const i = p.lastIndexOf('.'); return i >= 0 ? p.slice(i).toLowerCase() : ''; })();
+    const mime = MIME[ext] || 'application/octet-stream';
+    // Cache hint: hash-busted assets (?v=...) get long cache; everything else is short.
+    return new Response(f, {
+      headers: {
+        'content-type': mime,
+        // 'cross-origin-isolated' isn't required here; the WASM uses unshared mem.
+        'cache-control': 'public, max-age=300',
+      },
+    });
+  } catch (e) {
+    return new Response('serve error: ' + (e as Error).message, { status: 500 });
+  }
+}
+
 const server = Bun.serve({
   port: PORT,
   async fetch(req, srv) {
     const url = new URL(req.url);
-    if (url.pathname === '/' || url.pathname === '/ws') {
+    // R32.293: WebSocket upgrade only on /ws (or any path that arrived with an
+    // Upgrade: websocket header — keeps `/` free for serving the static game).
+    if (url.pathname === '/ws' || req.headers.get('upgrade') === 'websocket') {
       // R20: pass lobbyId + uuid (for reconnect) through to ws data
       const lobbyId = url.searchParams.get('lobbyId') || undefined;
       const uuid = url.searchParams.get('uuid') || '';
@@ -1329,7 +1394,9 @@ const server = Bun.serve({
         });
       }).catch(e => new Response(JSON.stringify({ error: 'upload failed: ' + (e as Error).message }), { status: 500, headers: { 'content-type': 'application/json', 'access-control-allow-origin': '*' } }));
     }
-    return new Response('Tribes Lobby + Match Server (R20). WebSocket: /ws  Browse: /lobbies', { status: 200 });
+    // R32.293: static-file fallback. When STATIC_DIR is set (production deploy),
+    // serve game files from there. In dev (no STATIC_DIR), return the legacy banner.
+    return await serveStatic(url.pathname);
   },
   websocket: {
     open(ws) {
@@ -1408,6 +1475,31 @@ const server = Bun.serve({
         matchesPlayed: row.matchesPlayed,
         ranked: lobby.ranked,                     // R26: client uses this to label the badge
       }));
+      // R32.299: if a match is already in progress, send matchSync so the
+      // late-joiner / reconnecter gets the authoritative clock + spawn pad
+      // immediately (instead of letting the wasm reset its own local clock).
+      if (lobby.match && (lobby as any).matchStartedMs) {
+        const myPlayer = lobby.match.players.get(numericId);
+        ws.send(JSON.stringify({
+          type: 'matchSync',
+          lobbyId: lobby.id,
+          matchStartedMs: (lobby as any).matchStartedMs,
+          serverTime: Date.now(),
+          scoreLimit: 5,
+          timeLimitSec: 600,
+          teamScore: lobby.match.teamScore,
+          mapId: lobby.mapId,
+          mapName: lobby.mapName,
+          yourId: numericId,
+          yourPos: myPlayer ? myPlayer.pos : null,
+          yourRot: myPlayer ? myPlayer.rot : null,
+          yourTeam: myPlayer ? myPlayer.team : -1,
+          players: [...lobby.match.players.values()].map(p => ({
+            id: p.id, name: p.name, team: p.team, armor: p.armor,
+            pos: p.pos, rot: p.rot,
+          })),
+        }));
+      }
       broadcastJSON(lobby, buildPlayerList(lobby));
       metrics.playersConnected++;
       // R27: cancel any pending GDPR delete — they came back within grace

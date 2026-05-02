@@ -1,0 +1,36 @@
+# Keep the Docker build context small.
+# Anything excluded here cannot be COPY'd by the Dockerfile.
+
+# Source / build tooling not needed at runtime
+program/
+tribes_data/
+anchor_studio/
+docs/
+comms/
+*.md
+
+# Bulk source data we don't need at runtime: 230 MB of .fbx raw inputs +
+# unused .glb characters. The renderer only loads wolf_sentinel.glb.
+assets/models/*
+!assets/models/wolf_sentinel.glb
+
+# These were over-aggressively excluded before and broke renderer.js.
+# All of buildings/, weapons/, audio/, hdri/ are genuinely loaded at runtime.
+# So: keep them in.
+
+# Dev artefacts
+.git/
+.github/
+.vscode/
+*.log
+node_modules/
+server/node_modules/
+*.tar.gz
+*.zip
+*.blend
+
+# Keep the Dockerfile itself out of the image
+# (Docker build context still needs them so they're commented out.)
+# Dockerfile
+# .dockerignore
+# fly.toml
