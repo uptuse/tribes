@@ -49,3 +49,18 @@ cp build/tribes.wasm tribes.wasm
 cp build/tribes.data tribes.data
 
 echo "[deploy] Copied to repo root. Ready for git push."
+
+# R32.279: post-link assertion — fail loudly if a critical wasm export was
+# silently dropped by emcc DCE / cache drift. Caught a 4-hour-long debug burst
+# on 2026-05-02 where _setLocalMuzzleOrigin disappeared from the CI build despite
+# being listed in EXPORTED_FUNCTIONS above. Add new exports to this list as needed.
+REQUIRED_EXPORTS=("_setLocalMuzzleOrigin" "_setLocalAimPoint3P" "_setGamepadInput" "_setFreelook")
+for sym in "${REQUIRED_EXPORTS[@]}"; do
+    if ! grep -q "$sym" tribes.js; then
+        echo "[build][FATAL] required wasm export $sym is missing from tribes.js" >&2
+        echo "[build][FATAL] check that the C++ definition has EMSCRIPTEN_KEEPALIVE" >&2
+        echo "[build][FATAL] and that the symbol is in -s EXPORTED_FUNCTIONS in build.sh" >&2
+        exit 1
+    fi
+done
+echo "[build] verified all required exports are present in tribes.js"

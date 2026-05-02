@@ -2180,10 +2180,18 @@ extern "C" {
                added, numBuildings);
     }
     // R32.278: muzzle world-pos from JS viewmodel anchor — consumed by fireWeapon
+    // R32.279: KEEPALIVE — empirically, the GitHub-Actions CI rebuild was
+    // stripping this export despite -s EXPORTED_FUNCTIONS=["_setLocalMuzzleOrigin",...]
+    // in build.sh, breaking disc spawn (firePos fell back to player chest+fwd*2).
+    EMSCRIPTEN_KEEPALIVE
     void   setLocalMuzzleOrigin(float x, float y, float z) {
         g_muzzleOrigin={x,y,z}; g_hasMuzzleOrigin=true;
     }
     // R31.7 C1: aim-convergence point fed from JS ray-march each frame in 3P
+    // R32.279: KEEPALIVE for the same reason as setLocalMuzzleOrigin above
+    // (defensive: this one happens to survive the current CI build, but it's
+    // declared the same way and could regress identically).
+    EMSCRIPTEN_KEEPALIVE
     void   setLocalAimPoint3P(float x, float y, float z) {
         aimPoint3P={x,y,z}; hasAimPoint3P=true;
     }
