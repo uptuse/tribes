@@ -7,7 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="styles.css?v=20260502-1330" />
+    <link rel="stylesheet" href="styles.css?v=20260502-1430" />
 </head>
 <body>
     <header class="topbar">
@@ -203,9 +203,10 @@
                 <button class="chip-btn ws-apply" id="ter-apply-world" title="Apply new grid/cell. Existing edits are resampled.">apply &amp; resample</button>
             </div>
 
-            <div class="panel-divider">Brush</div>
+            <div class="panel-divider">Tool</div>
             <div class="brush-grid" id="ter-tools">
-                <button class="tool-btn active" data-ter-tool="raise"   title="Raise the surface (Shift = lower)">raise</button>
+                <button class="tool-btn active" data-ter-tool="nav"     title="Navigate (drag to pan, right-drag to orbit, wheel to zoom). Shortcut: H">✋ nav</button>
+                <button class="tool-btn" data-ter-tool="raise"   title="Raise the surface (Shift = lower)">raise</button>
                 <button class="tool-btn" data-ter-tool="lower"   title="Lower the surface">lower</button>
                 <button class="tool-btn" data-ter-tool="smooth"  title="Average heights toward neighbours">smooth</button>
                 <button class="tool-btn" data-ter-tool="flatten" title="Flatten to first-click height">flatten</button>
@@ -215,6 +216,7 @@
                 <button class="tool-btn" data-ter-tool="paint-snow"  title="Paint snow material">snow</button>
                 <button class="tool-btn" data-ter-tool="stamp"   title="Drop a heightmap stamp">stamp</button>
             </div>
+            <p class="nav-hint" id="ter-nav-hint">drag = pan · right-drag = orbit · wheel = zoom · H toggles nav</p>
             <label class="brush-row">
                 <span>size</span>
                 <input type="range" id="ter-brush-size" min="1" max="64" step="1" value="12" />
@@ -267,7 +269,7 @@
             <div class="viewport-canvas-wrap">
                 <canvas id="ter-viewport"></canvas>
                 <div class="viewport-overlay" id="ter-overlay">
-                    <div class="overlay-hint">Pick a brush on the left and drag the terrain to sculpt</div>
+                    <div class="overlay-hint"><strong>Drag</strong> to pan · <strong>right-drag</strong> to orbit · <strong>wheel</strong> to zoom. Switch from <kbd>nav</kbd> to a brush on the left to sculpt; hold <kbd>Space</kbd> while painting to pan.</div>
                 </div>
                 <div class="viewport-hud" id="ter-hud">
                     <span class="hud-line" id="ter-hud-coords">—</span>
@@ -313,7 +315,7 @@
 
     <footer class="bottom-bar">
         <span class="footer-left">
-            anchor studio · <span class="version-stamp" title="build timestamp — if this changes, you're on the new version">v0.6 · build 20260502-1330</span> · <a href="https://github.com/uptuse/tribes/tree/master/tools/anchor-studio" target="_blank" rel="noopener">source</a>
+            anchor studio · <span class="version-stamp" title="build timestamp — if this changes, you're on the new version">v0.6.1 · build 20260502-1430</span> · <a href="https://github.com/uptuse/tribes/tree/master/tools/anchor-studio" target="_blank" rel="noopener">source</a>
         </span>
         <span class="footer-right" id="footer-tip">
             click a scene asset to focus it · <kbd>Shift</kbd>+click to drop anchor in orbit · drag anchor→anchor to attach · <kbd>P</kbd> place · <kbd>O</kbd> orbit · <kbd>F</kbd> frame · <kbd>V</kbd> axis from view
@@ -328,6 +330,6 @@
         }
     }
     </script>
-    <script type="module" src="app.js?v=20260502-1330"></script>
+    <script type="module" src="app.js?v=20260502-1430"></script>
 </body>
 </html>

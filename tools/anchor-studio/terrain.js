@@ -40,6 +40,22 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { GLTFLoader }    from 'three/addons/loaders/GLTFLoader.js';
 
+/* ── Pointer/navigation philosophy ─────────────────────────────────
+ * Mirror the in-game Firewolf shell's mouse mapping (see client/shell.js):
+ *   • LEFT button   → reserved for the active tool (paint/sculpt/nav-pan)
+ *   • RIGHT button  → orbit (always, regardless of tool)
+ *   • MIDDLE button → pan   (always, regardless of tool)
+ *   • Wheel         → zoom  (always)
+ * Plus hand-tool semantics:
+ *   • Tool 'nav'    → LEFT also pans (true hand tool); brush is muted.
+ *   • Hold SPACE    → temporary nav (LEFT pans even while a brush is active)
+ *   • Hold ALT      → temporary orbit on LEFT
+ *   • H key         → toggle nav as the sticky tool
+ *   • F key         → frame view
+ * OrbitControls receives the LEFT button only when nav is in effect; it
+ * always receives RIGHT (rotate) and MIDDLE (pan).
+ * ─────────────────────────────────────────────────────────────── */
+
 const STORAGE_KEY  = 'anchor_studio.v2';
 const RAW          = (path) => `https://raw.githubusercontent.com/uptuse/tribes/master/${path}`;
 const SCHEMA_VER   = 1;
@@ -49,7 +65,7 @@ const DEFAULTS = {
     gridSize: 128,
     cellSize: 2,
     view: {
-        tool: 'raise',
+        tool: 'nav',  // default to hand/nav so the user can orbit immediately
         brushSize: 12,
         brushStrength: 1.5,
         stamp: 'hill',
@@ -112,6 +128,9 @@ let saveDebounce = null;
 let els = {};
 let dragInfo = null;       // { lastX, lastY, button, isPainting }
 let pickedAssetPaths = []; // populated from app.js on demand
+
+/* Modifier-key state. Updated by global keydown/keyup. */
+const mods = { space: false, alt: false };
 
 let onTerrainExportRequest = null;  // optional callback hook
 
@@ -495,6 +514,18 @@ function initThree(canvas) {
     controls.enableDamping = true;
     controls.dampingFactor = 0.08;
     controls.maxPolarAngle = Math.PI * 0.49;
+    controls.screenSpacePanning = true;
+    controls.panSpeed = 1.0;
+    controls.zoomSpeed = 1.1;
+    controls.rotateSpeed = 0.9;
+    // In-game-style mouse mapping: LEFT is owned by the tool (we toggle it on
+    // dynamically when nav is in effect); RIGHT always orbits; MIDDLE always pans.
+    controls.mouseButtons = {
+        LEFT:   null,
+        MIDDLE: THREE.MOUSE.PAN,
+        RIGHT:  THREE.MOUSE.ROTATE,
+    };
+    controls.touches = { ONE: null, TWO: THREE.TOUCH.DOLLY_PAN };
 
     raycaster = new THREE.Raycaster();
     pointer   = new THREE.Vector2();
@@ -524,9 +555,47 @@ function pointerToWorld(ev) {
     return hits.length ? hits[0].point : null;
 }
 
+/* Decide what a left-drag means right now: 'nav-pan', 'nav-orbit', or 'paint'.
+ * Right and middle buttons are always nav (handled by OrbitControls directly). */
+function resolveLeftAction() {
+    if (mods.alt)            return 'nav-orbit';
+    if (mods.space)          return 'nav-pan';
+    if (stateView.tool === 'nav') return 'nav-pan';
+    return 'paint';
+}
+
+/* Toggle whether OrbitControls owns the LEFT button. */
+function setLeftMouseToControls(action) {
+    if (!controls) return;
+    if (action === 'nav-pan')   controls.mouseButtons.LEFT = THREE.MOUSE.PAN;
+    else if (action === 'nav-orbit') controls.mouseButtons.LEFT = THREE.MOUSE.ROTATE;
+    else                        controls.mouseButtons.LEFT = null;
+}
+
+function updateCanvasCursor() {
+    if (!els.canvas) return;
+    let c = 'crosshair';
+    if (mods.alt)             c = 'grab';
+    else if (mods.space)      c = 'grab';
+    else if (stateView.tool === 'nav') c = 'grab';
+    els.canvas.style.cursor = c;
+}
+
 function onPointerDown(ev) {
     if (!active) return;
+    // Right and middle: let OrbitControls handle entirely.
+    if (ev.button === 1 || ev.button === 2) return;
     if (ev.button !== 0) return;
+
+    const action = resolveLeftAction();
+    setLeftMouseToControls(action);
+    if (action !== 'paint') {
+        // Nav drag — give the cursor a grabbing hint.
+        if (els.canvas) els.canvas.style.cursor = 'grabbing';
+        return;  // do NOT preventDefault; OrbitControls needs the event
+    }
+
+    // Painting path:
     if (charObj && stateView.viewMode === '1p') return;  // disable sculpt in 1p
     const wp = pointerToWorld(ev);
     if (!wp) return;
@@ -575,6 +644,7 @@ function onPointerUp() {
         dragInfo = null;
         queueSave();
     }
+    updateCanvasCursor();
 }
 
 /* ── Stats / readouts ─────────────────────────────────────────────── */
@@ -829,6 +899,7 @@ function gatherEls() {
         stats:        $('ter-stats'),
         hudCoords:    $('ter-hud-coords'),
         hudTool:      $('ter-hud-tool'),
+
         gridSize:     $('ter-grid-size'),
         cellSize:     $('ter-cell-size'),
         extentReadout:$('ter-extent-readout'),
@@ -860,6 +931,8 @@ function gatherEls() {
         charClear:    $('ter-char-clear'),
         viewToggle:   $('ter-view-toggle'),
         charHint:     $('ter-char-hint'),
+        navHint:      $('ter-nav-hint'),
+        terMain:      document.querySelector('main[data-tab="terrain"]'),
     };
 }
 
@@ -896,6 +969,21 @@ function syncViewToggle() {
     }
 }
 
+function syncToolStateExtras() {
+    // Keep the LEFT-button mapping fresh whenever the tool changes (without a drag),
+    // so e.g. a single click in nav mode pans on press rather than after first move.
+    setLeftMouseToControls(resolveLeftAction());
+    updateCanvasCursor();
+    if (els.navHint) {
+        const tool = stateView.tool;
+        if (tool === 'nav') {
+            els.navHint.textContent = 'drag = pan · right-drag = orbit · wheel = zoom · H toggles nav';
+        } else {
+            els.navHint.textContent = `${tool} · right-drag orbit · middle-drag pan · Space-drag pan · Alt-drag orbit · wheel zoom`;
+        }
+    }
+}
+
 function wire() {
     // Tool buttons
     els.toolBar?.addEventListener('click', (e) => {
@@ -903,6 +991,7 @@ function wire() {
         if (!btn) return;
         stateView.tool = btn.dataset.terTool;
         syncToolbarUI();
+        syncToolStateExtras();
         syncStats();
         queueSave();
     });
@@ -993,6 +1082,8 @@ function wire() {
     els.canvas.addEventListener('pointerdown', onPointerDown);
     window.addEventListener('pointermove', onPointerMove);
     window.addEventListener('pointerup', onPointerUp);
+    // Suppress the browser context menu so right-drag-to-orbit feels right.
+    els.canvas.addEventListener('contextmenu', (e) => { e.preventDefault(); });
     // Keys
     window.addEventListener('keydown', (e) => {
         if (!active) return;
@@ -1009,12 +1100,36 @@ function wire() {
             syncToolbarUI(); syncStats(); queueSave();
         } else if (e.key.toLowerCase() === 'f') {
             frame();
+        } else if (e.key.toLowerCase() === 'h') {
+            // Toggle the sticky nav (hand) tool
+            stateView.tool = (stateView.tool === 'nav') ? 'raise' : 'nav';
+            syncToolbarUI();
+            syncToolStateExtras();
+            syncStats();
+            queueSave();
+        } else if (e.code === 'Space') {
+            // Hold-space → temporary nav-pan
+            if (!mods.space) {
+                mods.space = true;
+                e.preventDefault();
+                syncToolStateExtras();
+            }
+        } else if (e.key === 'Alt') {
+            if (!mods.alt) { mods.alt = true; syncToolStateExtras(); }
         } else if (['w','a','s','d'].includes(e.key.toLowerCase())) {
             keys.add(e.key.toLowerCase());
         }
     });
     window.addEventListener('keyup', (e) => {
         if (['w','a','s','d'].includes(e.key.toLowerCase())) keys.delete(e.key.toLowerCase());
+        if (e.code === 'Space') { mods.space = false; syncToolStateExtras(); }
+        if (e.key === 'Alt')    { mods.alt   = false; syncToolStateExtras(); }
+    });
+    // If the window loses focus mid-drag, drop modifier state to avoid sticky pan.
+    window.addEventListener('blur', () => {
+        mods.space = false;
+        mods.alt = false;
+        if (active) syncToolStateExtras();
     });
 }
 
@@ -1055,6 +1170,7 @@ export function bootTerrain() {
     syncUndoCount();
     syncViewToggle();
     wire();
+    syncToolStateExtras();
     if (charAssetPath) loadCharacter(charAssetPath);
     frame();
 }

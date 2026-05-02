@@ -1197,3 +1197,19 @@ kbd {
     display: inline-block;
     cursor: pointer;
 }
+
+
+/* v0.6.1 — Terrain nav hint + canvas cursors */
+.nav-hint {
+    margin: 6px 14px 4px;
+    padding: 6px 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--text-dim);
+    background: rgba(245, 165, 36, 0.04);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-sm);
+    line-height: 1.45;
+}
+canvas#ter-viewport { cursor: grab; }
+canvas#ter-viewport.dragging { cursor: grabbing; }

@@ -1,47 +1,38 @@
 # Anchor Studio — todo
 
-## v0.5 (shipped 20260502-1115)
+## v0.6.1 — Terrain navigation fix (in progress)
+
+- [ ] Add `nav` (hand/pan/orbit) tool button to brush toolbar; default when terrain tab opens
+- [ ] When `nav` is active: OrbitControls fully on. LMB = orbit, RMB = pan, wheel = zoom, middle = pan. No painting.
+- [ ] When a brush tool is active: LMB-drag paints, but
+  - [ ] hold `Space` while dragging → temporary nav (pan with LMB)
+  - [ ] hold `Alt` while dragging → temporary orbit
+  - [ ] RMB-drag → always orbit (regardless of mode)
+  - [ ] middle-drag → always pan
+  - [ ] wheel → always zoom
+- [ ] Cursor feedback: grab/grabbing for nav, crosshair for paint, brush ghost shown only in paint
+- [ ] Press `H` → nav mode shortcut (Photoshop muscle memory)
+- [ ] Update on-screen hint text to teach the controls
+- [ ] Bump build stamp
+- [ ] Browser smoke test: orbit, pan, zoom, paint, hold-Space-to-pan-during-paint
+- [ ] Commit + push
+
+## v0.6 — Terrain tab (shipped 20260502-1330)
+- [x] Top-level tab strip (Anchors / Terrain)
+- [x] Terrain module (terrain.js) self-contained scene
+- [x] Configurable world extent (grid + cell, resample on apply)
+- [x] Brushes: raise / lower / smooth / flatten / noise
+- [x] Material paint: grass / rock / snow
+- [x] Stamps: hill / crater / ridge
+- [x] Undo/redo (30 deep), Ctrl+Z / Ctrl+Shift+Z
+- [x] localStorage persistence
+- [x] terrain.refs.json export + import
+- [x] Character preview (pick rigged GLB, 1p/3p, WASD walk)
+- [x] HANDOFF.md
+
+## v0.5 — Anchor scale + drag-to-attach (shipped 20260502-1115)
 - [x] Per-asset scale persisted in refs.json
 - [x] Reference asset (★) with × multiplier readout
 - [x] Drag-to-attach
 - [x] Shift-click to place anchor in orbit mode
 - [x] Auto-select after place
-
-## v0.6 — Terrain Studio tab + handoff doc
-
-### Documentation
-- [ ] HANDOFF.md — full context dump for a fresh AI session:
-  data model (localStorage shape + refs.json contract), file layout,
-  rendering pipeline (three.js scene graph), interaction modes,
-  anchor coordinate spaces, runtime contract for the game side
-  (parent.worldScale × child.refsScale rule), how to add a new tab,
-  known gotchas (e.g. listGlbsRecursively rate limits, axis modes,
-  cycle prevention).
-
-### Terrain core
-- [ ] Top-level tab system: `[ ANCHORS ] [ TERRAIN ]` next to brand
-- [ ] Persist active tab in localStorage; bookmarkable via #hash
-- [ ] Terrain mode: own scene root, swapped on tab change
-- [ ] Configurable world extent: default 256m × 256m, user-resizable;
-      resampling preserves existing edits
-- [ ] Height grid (default 128×128 over the extent) stored as Float32Array
-- [ ] Splat layers: grass / rock / snow as 3 weight channels
-- [ ] Brushes: raise / lower / smooth / flatten / noise / paint-grass /
-      paint-rock / paint-snow / stamp
-- [ ] Brush size [, brush strength , Shift inverts, Ctrl smooths
-- [ ] Stamp library: 3 built-in stamps (hill, crater, ridge)
-- [ ] Undo / redo (~20 deep), per-stroke not per-cell
-- [ ] localStorage persistence (chunked / debounced)
-- [ ] Export terrain.refs.json (heightmap + splat + bounds + version)
-- [ ] Import terrain.refs.json (drag-drop or file picker)
-
-### Character preview
-- [ ] Pick any rigged character from the asset library, drop onto terrain
-- [ ] Walk mode (WASD over terrain surface, gravity stuck to height)
-- [ ] Toggle 1p (camera at character eye) / 3p (camera behind)
-- [ ] Show character scale relative to terrain extent
-
-### Cleanup
-- [ ] Bump build stamp to 20260502-XXXX
-- [ ] Smoke test in browser
-- [ ] Commit + push
