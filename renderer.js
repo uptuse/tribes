@@ -74,9 +74,10 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; // R32.57: cust
 import { initCustomSky, updateCustomSky, removeOldSky } from './renderer_sky.js?v=169'; // R32.63: full sky system
 import * as Characters from './renderer_characters.js?v=277'; // R32.277: wrapper Group fix
 import { initMoodBed } from './client/audio.js'; // R32.156: mood bed moved from renderer_cohesion.js
+import { initKenneyBase } from './renderer_kenney_base.js?v=R32.292'; // R32.292: Kenney modular DS base prefab
 import * as DayNight from './renderer_daynight.js?v=179'; // R32.169: extracted day/night cycle
 import * as PostFX from './client/post_fx.js?v=3';        // Phase-C: visual playground
-import { Shell }           from './client/shell.js?v=1';
+import { Shell }           from './client/shell.js?v=R32.285';
 import { EditorTuning }    from './client/editor_tuning.js?v=1';
 import { EditorAssets }    from './client/editor_assets.js?v=1';
 import { EditorBuildings, initBuildingsEditor } from './client/editor_buildings.js?v=1';
@@ -105,8 +106,11 @@ let _fovPunchExtra = 0; // R32.45: FOV kick from nearby explosions (degrees)
 let terrainMesh;
 let playerMeshes = [];
 let projectileMeshes = [];
-let discMeshes  = [];  // WPN_DISC (type 2) — spinning torus
+let discMeshes  = [];  // WPN_DISC (type 2) — spinning torus group (rim+core+halo)
 let chainMeshes = [];  // WPN_CHAINGUN (type 1) — tracer streak
+// R32.286: refs to the shared disc materials so the per-frame render block
+// can drive their pulse. Set during init (search for `_discMatRef =`).
+let _discMatRef = null, _discCoreMatRef = null, _discHaloMatRef = null;
 
 // Recoil spring state — applied on top of sway in updateWeaponHand()
 const _kick = { rx: 0, pz: 0, vRx: 0, vPz: 0 };
@@ -331,6 +335,7 @@ export async function start() {
     // which is now redirected to Rapier (see below)
     initCustomModels(); // R32.57: load custom GLB models
     await initBaseAccents(); // R32.2: per-team VehiclePad + RepairPack + side-mounted flag stand
+    initKenneyBase(scene); // R32.292: Kenney modular DS base prefab (?kenneyBase=1 to enable)
     initPlayers();
     try {
         Characters.init(scene);
@@ -3147,17 +3152,103 @@ function initProjectiles() {
         projectileMeshes.push(mesh);
     }
 
-    // Disc — spinning torus (hole makes it unmistakable from any angle)
-    const discGeom = new THREE.TorusGeometry(0.30, 0.07, 10, 28);
+    // Disc — Tribes spinfusor energy projectile.
+    //
+    // R32.286: was a bare torus, looked dead. Now built as a small group:
+    //   - torus (the rim itself, blue-white emissive, pulses)
+    //   - core plane (additive radial gradient filling the hole, plasma-like)
+    //   - halo sprite (soft additive glow ring around the whole thing)
+    // The torus material is shared across all projectiles (one pulse for all
+    // — cheap and looks intentional). Per-disc children carry the additive
+    // textures so they follow position/rotation correctly.
+    const discGeom = new THREE.TorusGeometry(0.30, 0.07, 12, 32);
     const discMat  = new THREE.MeshStandardMaterial({
-        color: 0x88CCFF, emissive: 0x1155FF, emissiveIntensity: 3.5,
+        color: 0xCCEEFF, emissive: 0x44AAFF, emissiveIntensity: 4.5,
         roughness: 0.1, metalness: 0.9,
     });
+
+    // Procedural radial-gradient texture, used for both the core plane and
+    // the halo sprite. Built once on a 128x128 canvas so we don't ship any
+    // image file. White-hot center, fading to electric blue, then transparent.
+    function _buildDiscEnergyTex() {
+        const c = document.createElement('canvas');
+        c.width = c.height = 128;
+        const ctx = c.getContext('2d');
+        const grd = ctx.createRadialGradient(64, 64, 0, 64, 64, 64);
+        grd.addColorStop(0.00, 'rgba(255,255,255,1.0)');  // white-hot core
+        grd.addColorStop(0.20, 'rgba(180,220,255,0.95)'); // pale blue
+        grd.addColorStop(0.55, 'rgba(70,150,255,0.55)');  // electric blue
+        grd.addColorStop(1.00, 'rgba(20,60,180,0.00)');   // fade to nothing
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, 128, 128);
+        const tex = new THREE.CanvasTexture(c);
+        tex.colorSpace = THREE.SRGBColorSpace;
+        return tex;
+    }
+    const _discEnergyTex = _buildDiscEnergyTex();
+
+    // Shared material instances so every disc gets the same pulse phase —
+    // we drive .opacity / .scale per-frame in the disc render block below.
+    // Both core and halo are AdditiveBlended (depthWrite false) so they
+    // glow over whatever's behind them without writing to the depth buffer.
+    _discMatRef = discMat;  // expose for per-frame pulse
+    // R32.288: core is now a SpriteMaterial (was MeshBasicMaterial on a
+    // CircleGeometry plane). Reason: when the disc face is perpendicular to
+    // flight (R32.287 orientation), a plane-based core is edge-on to the
+    // shooter and disappears, leaving the donut hole exposed. A Sprite is
+    // always camera-facing, so it covers the hole from every angle.
+    const _discCoreMat = new THREE.SpriteMaterial({
+        map: _discEnergyTex,
+        color: 0xFFFFFF,
+        transparent: true,
+        opacity: 0.85,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+    _discCoreMatRef = _discCoreMat;
+    const _discHaloMat = new THREE.SpriteMaterial({
+        map: _discEnergyTex,
+        color: 0x99CCFF,
+        transparent: true,
+        opacity: 0.55,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+    });
+    _discHaloMatRef = _discHaloMat;
+    // R32.288: core is now a Sprite, no shared geometry needed.
+
     for (let i = 0; i < MAX_PROJECTILES; i++) {
-        const mesh = new THREE.Mesh(discGeom, discMat);
-        mesh.visible = false;
-        scene.add(mesh);
-        discMeshes.push(mesh);
+        // Wrap the torus + core + halo + light in a Group so position/rotation
+        // applies to all of them. discMeshes[i] points at the group; it still
+        // has .position/.quaternion like a Mesh, so the disc-render code works.
+        const group = new THREE.Group();
+        const torus = new THREE.Mesh(discGeom, discMat);
+        // R32.288: Sprite-based core. Always faces the camera, closes the
+        // donut hole from any disc orientation. Scale matches torus inner
+        // diameter (~0.46) so it visually plugs the hole.
+        const core  = new THREE.Sprite(_discCoreMat);
+        core.scale.set(0.46, 0.46, 0.46);
+        const halo  = new THREE.Sprite(_discHaloMat);
+        halo.scale.set(1.0, 1.0, 1.0);  // updated per-frame for pulse
+        // R32.287: real PointLight so the disc actually casts pulsing cyan
+        // light onto walls/ground/players as it flies past. Three.js per-shader
+        // light count is limited (default 4-ish across the scene depending on
+        // hardware), so we only enable lights on the 3 newest active discs;
+        // older discs disable theirs. Cyan, range 8m, no shadow casting.
+        const light = new THREE.PointLight(0x66CCFF, 0.0, 8.0, 2.0);
+        light.castShadow = false;
+        light.visible = false;  // off until activated by the cap-to-3 logic
+        group.add(torus);
+        group.add(core);
+        group.add(halo);
+        group.add(light);
+        group.userData.torus = torus;
+        group.userData.core  = core;
+        group.userData.halo  = halo;
+        group.userData.light = light;
+        group.visible = false;
+        scene.add(group);
+        discMeshes.push(group);
     }
 
     // Chaingun — tracer streak aligned to velocity. Wider than a real bullet so it's visible.
@@ -3304,16 +3395,17 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    // R32.279: position.z shifted from +0.195 to push the bbox fully in
-    // front of camera.near=0.1. Previously, 4 of 8 world-bbox corners had
-    // cz>-0.1 in camera space and were near-plane clipped (visible as a
-    // missing wedge at the bottom-right of the held gun).
-    // R32.280: tightened from -0.05 back to +0.02. -0.05 over-pushed the
-    // gun forward (looked too far away from the camera). +0.02 satisfies
-    // the bbox math (largest cz drops from +0.059 to ~-0.121, ~21mm of
-    // safety margin past the near plane) while keeping the gun close to
-    // its original on-screen size.
-    position: new THREE.Vector3(-0.015, 0.035, 0.02),
+    // R32.281: reverted to the original +0.195 per user preference.
+    // The R32.279/R32.280 z-shift was an attempt to clear the camera
+    // near plane (camera.near=0.1) and prevent the bottom-right wedge
+    // of the gun from being clipped. Visually, however, the gun looks
+    // wrong further from the camera because there is no rendered hand
+    // anchoring it; pulling it back makes it look detached. User has
+    // accepted the bottom-right clip in exchange for the closer pose.
+    // Future fix: drop camera.near from 0.1 to ~0.02 to recover the
+    // clipped wedge without moving the model. Not done now because it
+    // affects depth-buffer precision across the whole scene.
+    position: new THREE.Vector3(-0.015, 0.035, 0.195),
     rotation: new THREE.Euler(0.1798, 4.3459, -0.0524, 'YXZ'), // 10.3°X, 249°Y, -3°Z
     scale: 0.18,
 };
@@ -4368,6 +4460,24 @@ function syncProjectiles() {
     const now   = performance.now() * 0.001;
     if (!_prevProjAlive) _prevProjAlive = new Uint8Array(MAX_PROJECTILES);
 
+    // R32.286: drive shared disc-material pulse once per frame, before the
+    // projectile loop. Two sine waves in counter-phase so the rim and the
+    // energy core trade brightness, reading as live plasma.
+    if (_discMatRef) {
+        _discMatRef.emissiveIntensity = 4.5 + Math.sin(now * 8.0) * 1.5;
+    }
+    if (_discCoreMatRef) {
+        _discCoreMatRef.opacity = 0.85 - Math.sin(now * 8.0) * 0.25;
+    }
+    // R32.287: per-frame pulse value for disc point-lights. Same rhythm as
+    // the rim emissive so they read as one. Range 1.6..6.4 (large amplitude
+    // so the light visibly throbs on nearby surfaces).
+    const _discLightIntensity = 4.0 + Math.sin(now * 8.0) * 2.4;
+    // Cap-to-3 active disc lights to stay under Three.js per-shader light
+    // limits. Reset counter each frame; render block enables the first 3.
+    let _discLightsActive = 0;
+    const _discLightsMax  = 3;
+
     for (let i = 0; i < MAX_PROJECTILES; i++) {
         const sphere = projectileMeshes[i];
         const disc   = discMeshes[i];
@@ -4376,7 +4486,8 @@ function syncProjectiles() {
 
         if (i >= count) {
             sphere.visible = false;
-            if (disc)  disc.visible  = false;
+            if (disc)  { disc.visible  = false;
+                         if (disc.userData && disc.userData.light) disc.userData.light.visible = false; }
             if (chain) chain.visible = false;
             _prevProjAlive[i] = 0;
             continue;
@@ -4388,7 +4499,8 @@ function syncProjectiles() {
 
         if (!alive) {
             sphere.visible = false;
-            if (disc)  disc.visible  = false;
+            if (disc)  { disc.visible  = false;
+                         if (disc.userData && disc.userData.light) disc.userData.light.visible = false; }
             if (chain) chain.visible = false;
             continue;
         }
@@ -4407,11 +4519,78 @@ function syncProjectiles() {
         const type = projectileView[o + 6] | 0;
 
         if (type === 2 && disc) {
-            // Disc: spinning torus
+            // R32.286: per-disc halo scale pulse (Sprite, always faces camera).
+            const _halo = disc.userData && disc.userData.halo;
+            if (_halo) {
+                const _hs = 1.05 + Math.sin(now * 6.0) * 0.18;  // 0.87..1.23
+                _halo.scale.set(_hs, _hs, _hs);
+            }
+            // R32.287: pulse the per-disc PointLight, but only for the first 3
+            // active discs to stay within Three.js per-shader light limits.
+            // Older active discs have their light disabled (still drawn as a
+            // bright glowing torus, just no scene illumination).
+            const _light = disc.userData && disc.userData.light;
+            if (_light) {
+                if (_discLightsActive < _discLightsMax) {
+                    _light.visible   = true;
+                    _light.intensity = _discLightIntensity;
+                    _discLightsActive++;
+                } else {
+                    _light.visible   = false;
+                    _light.intensity = 0.0;
+                }
+            }
+
+            // Disc orientation: torus +Z (its central axis) aligned to the
+            // velocity vector — disc face perpendicular to flight. From the
+            // shooter's POV (looking along velocity), you see the rim edge-on,
+            // never the hole, regardless of whether you shoot horizontal,
+            // angled up, or straight down. This matches the original Tribes
+            // spinfusor disc behaviour.
+            //
+            // Why we landed here:
+            //   R32.282: aligned torus +Y to velocity (wrong axis). Tumbled.
+            //   R32.283: aligned torus +Z to velocity (correct axis), worked
+            //            but I misread the result — user wanted face-flat.
+            //   R32.284: aligned torus +Z to world-UP (face flat). Worked for
+            //            horizontal shots but exposed the hole when shooting
+            //            up or down at an angle.
+            //   R32.287: back to +Z aligned to velocity. The disc face follows
+            //            the flight angle, so the hole is always pointed away
+            //            from the line of sight. Plus a tiny wobble.
+            //
+            // Composition:
+            //   q1 = rotation that maps torus +Z onto v̂ (face perpendicular to flight)
+            //   q2 = spin around v̂ by (now * 14) (frisbee spin, ~134 RPM)
+            //   q3 = small ~3° nod on an axis perpendicular to v̂
+            //   final = q1 · q3 · q2  (in this order so q2 is the local spin)
             sphere.visible = false; if (chain) chain.visible = false;
             disc.visible = true;
             disc.position.set(px, py, pz);
-            disc.rotation.set(Math.PI * 0.5, 0, now * 14.0, 'ZYX');
+
+            const _spd = Math.sqrt(vx*vx + vy*vy + vz*vz);
+            const _torusAxisLocal = new THREE.Vector3(0, 0, 1);
+            if (_spd > 0.1) {
+                const _vDir = new THREE.Vector3(vx/_spd, vy/_spd, vz/_spd);
+                // q1: align local +Z to velocity.
+                const _q1 = new THREE.Quaternion().setFromUnitVectors(_torusAxisLocal, _vDir);
+                // q2: frisbee spin around the (now world-aligned) +Z. In local
+                //     frame this is a Z-axis rotation; we'll apply as local.
+                const _q2 = new THREE.Quaternion().setFromAxisAngle(_torusAxisLocal, now * 14.0);
+                // q3: small nod around an axis perpendicular to flight, world-y
+                //     biased so it reads as a horizontal wobble for typical
+                //     near-horizontal shots.
+                const _sideAxis = new THREE.Vector3().crossVectors(_vDir, new THREE.Vector3(0,1,0));
+                if (_sideAxis.lengthSq() < 1e-6) _sideAxis.set(1,0,0);
+                _sideAxis.normalize();
+                const _q3 = new THREE.Quaternion().setFromAxisAngle(_sideAxis, Math.sin(now * 4.0) * 0.05);
+                // Apply: spin (local) → wobble (world) → align to velocity.
+                // disc.quaternion = q3 * q1 * q2  so spin is innermost (local).
+                disc.quaternion.copy(_q3).multiply(_q1).multiply(_q2);
+            } else {
+                // Stationary fallback: lay flat and spin around world-Y.
+                disc.rotation.set(Math.PI * 0.5, now * 14.0, 0, 'XYZ');
+            }
 
         } else if (type === 1 && chain) {
             // Chaingun: invisible sphere, bright tracer aligned to velocity

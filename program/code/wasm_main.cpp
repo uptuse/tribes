@@ -1400,10 +1400,36 @@ static void fireWeapon(int pi){
     else p.energy-=w.energyCost;
     p.fireCooldown=w.fireTime+w.reloadTime;
     if(w.kickback>0)p.vel-=fwd*(w.kickback*0.01f*g_tuneKickback);
-    // Fire sound (local player only — UI bus, not positional)
+    // Fire sound (local player only — UI bus, not positional).
+    // R32.291: was `int sndId = p.curWeapon` with comment claiming the
+    //          weapon enum matched sound slot 0-8. It does not. The JS
+    //          sound enum (client/audio.js) is
+    //              0=DISC_FIRE 1=CHAINGUN_FIRE 2=PLASMA_FIRE
+    //              3=GRENADE_FIRE 4=IMPACT 5=PLAYER_HIT
+    //              6=FLAG_PICKUP 7=FLAG_CAPTURE 8=GEN_DESTROY
+    //          while the C++ WeaponType enum is
+    //              0=BLASTER 1=CHAINGUN 2=DISC 3=GRENADE_LAUNCHER
+    //              4=PLASMA 5=MORTAR 6=LASER 7=ELF 8=REPAIR
+    //          so the identity mapping had blaster->disc, disc->plasma,
+    //          plasma->impact, etc. Use an explicit LUT instead.
     if(pi==localPlayer){
-        int sndId=p.curWeapon; // weapon enum matches sound slot 0-8
-        EM_ASM({ if(window.playSoundUI)window.playSoundUI($0); }, sndId);
+        // Indexed by WeaponType. -1 means "no fire sound".
+        static const int kWeaponFireSound[WPN_COUNT] = {
+            2,  // WPN_BLASTER         -> PLASMA_FIRE (energy bolt; closest fit)
+            1,  // WPN_CHAINGUN        -> CHAINGUN_FIRE
+            0,  // WPN_DISC            -> DISC_FIRE   <-- the spinfusor
+            3,  // WPN_GRENADE_LAUNCHER-> GRENADE_FIRE
+            2,  // WPN_PLASMA          -> PLASMA_FIRE (shared with blaster)
+            12, // WPN_MORTAR          -> MORTAR_BOOM (sound id 12)
+            2,  // WPN_LASER           -> PLASMA_FIRE
+            -1, // WPN_ELF             -> none (continuous beam, no per-shot SFX)
+            -1  // WPN_REPAIR          -> none
+        };
+        int wpn = p.curWeapon;
+        int sndId = (wpn>=0 && wpn<WPN_COUNT) ? kWeaponFireSound[wpn] : -1;
+        if(sndId>=0){
+            EM_ASM({ if(window.playSoundUI)window.playSoundUI($0); }, sndId);
+        }
     }
 }
 
@@ -3003,8 +3029,14 @@ extern "C" void mainLoop(){
         if(!projs[i].active)continue;
         const WeaponData&w=weapons[projs[i].weapon];
         if(projs[i].weapon==WPN_DISC&&gpuDisc.valid){
-            renderDTSModel(gpuDisc,vp,projs[i].pos,gameTime*15.0f,1.0f,1.0f,1.0f,
-                           1.0f,-1,-1,-1,0,eye);
+            // R32.282: WASM-side DTS disc render DISABLED. The DTS model is
+            // authored with a non-vertical central axis, so spinning it via
+            // Mat4::rotateY(gameTime*15) made the disc visually tumble (you'd
+            // see the donut hole, then the rim, then the hole again). The
+            // Three.js renderer (renderer.js, discMeshes path) draws the
+            // disc instead with a quaternion that aligns the torus axis to
+            // the velocity vector — frisbee-style flight. Particle trail is
+            // kept here so the cyan trail is unchanged.
             spawnPart(projs[i].pos,{0,0,0},0.1f,0.8f,1.0f,0.15f,0.15f); // cyan trail
         }else if(projs[i].weapon==WPN_CHAINGUN){
             oBatch.clear();

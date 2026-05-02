@@ -15,7 +15,10 @@ import { Layers }           from './editor_core/Layers.js';
 const _state = {
   mode:      'play',
   panelOpen: false,
-  helpOpen:  true,
+  // R32.285: was `true` — user wants the Tribes game to land directly in
+  // play with no firewolf welcome card overlay. H or the help icon in the
+  // top bar still summons it on demand.
+  helpOpen:  false,
   orbitCtrl: null,
 };
 
@@ -274,7 +277,9 @@ function _buildPanel() {
 }
 
 function _buildHelp() {
-  return `<div id="fw-help">
+  // R32.285: render with .hidden class so even if some downstream code reads
+  // the markup before _toggleHelp runs, the card never flashes on first paint.
+  return `<div id="fw-help" class="hidden">
     <div class="fw-help-card fw-panel">
       <div class="fw-help-header">
         <div class="fw-wordmark">firewolf

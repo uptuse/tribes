@@ -4,6 +4,29 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Starsiege: Tribes — Browser Edition</title>
+
+  <!-- R32.282: single source of truth for the build version. Drives:
+         (a) version chip top-right (so user can see what's loaded)
+         (b) cache-buster query strings on tribes.js / tribes.wasm /
+             tribes.data / renderer.js so each rebuild force-loads
+             without a hard reload. Bump BUILD_VER on every code change. -->
+  <script>
+    window.BUILD_VER = 'R32.298-multiplayer';
+    // emscripten reads window.Module.locateFile(filename, prefix) when
+    // resolving tribes.wasm and tribes.data. Append ?v=BUILD_VER so the
+    // browser treats each build's wasm/data as a distinct URL. Defined
+    // BEFORE tribes.js loads so the hook is in place before instantiation.
+    window.Module = window.Module || {};
+    window.Module.locateFile = function(path, prefix) {
+      var base = (prefix || '') + path;
+      // Only add the buster to the binaries we actually rebuild.
+      if (path === 'tribes.wasm' || path === 'tribes.data') {
+        return base + '?v=' + window.BUILD_VER;
+      }
+      return base;
+    };
+  </script>
+
   <!-- R26: SEO + social-share preview meta -->
   <meta name="description" content="Starsiege: Tribes — Browser Edition. The 1998 Dynamix classic, ported to WebGL2 + WebAssembly. Skiing, jetpacks, three armor classes, capture-the-flag with bots and friends. No install.">
   <meta name="keywords" content="Tribes, Starsiege, browser game, WebAssembly, WebGL, FPS, capture the flag, skiing, jetpack">
@@ -514,12 +537,35 @@
     .station-opt:hover,.station-opt.selected { border-color:#D4A030; color:#FFC850; background:rgba(40,35,20,0.7); }
     #station-offline { color:#C8302C; font-family:'Cinzel',serif; font-size:1em; letter-spacing:3px; text-align:center; margin:20px 0; }
   </style>
-  <!-- R21: production server URL — replace with your deployed Cloudflare Workers URL -->
+  <!-- R32.293: lobby server URL resolution.
+       Production (Fly.io): WebSocket served from same origin under /ws.
+       Local dev (sandbox): explicit ws://<host>:8082/ws because the lobby
+       runs on a different port than the static file server.
+       Override priority: ?server=ws://... → window.__TRIBES_SERVER_URL → mode default. -->
   <script>
-    // Set this to your CF Workers deployed URL after running deploy.sh.
-    // Example: window.__TRIBES_SERVER_URL = 'wss://tribes-lobby.youraccount.workers.dev/ws';
-    // Leave undefined for local dev (?multiplayer=local will hit ws://localhost:3000/ws).
-    // window.__TRIBES_SERVER_URL = 'wss://tribes-server.workers.dev/ws';
+    (function(){
+      var loc = window.location;
+      var qs = new URLSearchParams(loc.search);
+      // Allow ?lobby=ws://...  to point at any server (for ad-hoc testing).
+      var explicit = qs.get('lobby');
+      if (explicit) { window.__TRIBES_SERVER_URL = explicit; return; }
+      var lobbyPort = qs.get('lobbyPort') || '8082';
+      // Manus sandbox pattern: hostname looks like '8770-i1isb2gd8vflaquxkqm2e-XXX.us1.manus.computer'.
+      // Each port has its own subdomain — replace the leading port number to find the lobby.
+      var manusMatch = loc.hostname.match(/^(\d+)(-[a-z0-9-]+\.us\d+\.manus\.computer)$/);
+      if (manusMatch) {
+        var scheme = (loc.protocol === 'https:') ? 'wss' : 'ws';
+        window.__TRIBES_SERVER_URL = scheme + '://' + lobbyPort + manusMatch[2] + '/ws';
+        return;
+      }
+      // Fly.io / single-origin production: WSS on the same host under /ws.
+      if (loc.protocol === 'https:') {
+        window.__TRIBES_SERVER_URL = 'wss://' + loc.host + '/ws';
+        return;
+      }
+      // Plain http://localhost: lobby on a different port on the same machine.
+      window.__TRIBES_SERVER_URL = 'ws://' + loc.hostname + ':' + lobbyPort + '/ws';
+    })();
   </script>
   <!-- Three.js r170 — PINNED. DO NOT upgrade without testing the 6 onBeforeCompile hooks
        in renderer.js (terrain shader, interior materials, building PBR patches, toon pass,
@@ -563,7 +609,15 @@
   <!-- R32.153.2-manus: dev-only version chip, fixed top-right, ALWAYS visible.
        User asked for this so they can verify each new build is actually live.
        The text is the single source of truth; the menu footer reads from it. -->
-  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">2 May · 19:07</div>
+  <div id="version-chip" style="position:fixed;top:8px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#FFD479;border:1px solid rgba(255,212,121,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);">R32.282 · disc-frisbee</div>
+  <script>
+    // R32.282: keep the chip in sync with window.BUILD_VER so I only have to
+    // bump it in one place. Runs as soon as the chip exists in the DOM.
+    (function(){
+      var chip = document.getElementById('version-chip');
+      if (chip && window.BUILD_VER) chip.textContent = window.BUILD_VER;
+    })();
+  </script>
   <!-- R32.153-manus: FPS HUD per user request "add that back in the upper right-hand corner so I can actually see the FPS". Sits below the version chip, same styling. Updated by a 4Hz interval that samples performance.now() deltas via requestAnimationFrame. -->
   <div id="fps-chip" style="position:fixed;top:36px;right:10px;z-index:10000;font-family:'Roboto Mono',monospace;font-size:11px;letter-spacing:0.5px;padding:4px 8px;background:rgba(0,0,0,0.55);color:#9DEAA0;border:1px solid rgba(157,234,160,0.35);border-radius:3px;pointer-events:none;text-shadow:0 0 4px rgba(0,0,0,0.8);min-width:42px;text-align:right;">-- fps</div>
   <!-- R32.153-manus: in-game day/night clock chip. Updated by the renderer's
@@ -3353,11 +3407,50 @@
         // R22: match_end_horn — same but ascending crescendo→decrescendo
         b=mb(1.50);da=d(b);for(i=0;i<da.length;i++){var t=i/sr;var f=220+t*60;var e=t<0.6?(t/0.6):(Math.exp(-(t-0.6)*2.5));var saw=2*((f*t)%1)-1;da[i]=(saw+Math.sin(2*Math.PI*f*2*t)*0.5)*e*0.35;}
         this.bufs[16]=b;
+
+        // R32.292: override procedural DISC_FIRE (id 0) with the
+        //          'Coll Anderson - Sliding Whoosh By 15' sample.
+        //          Try MP3 first (universal browser support), then OGG.
+        //          Tag the buffer with __label so playAt logging can
+        //          confirm which buffer was actually played.
+        (function(self){
+          var tryUrls = [
+            'assets/sfx/disc_fire.mp3?v=R32.293',
+            'assets/sfx/disc_fire.ogg?v=R32.293'
+          ];
+          function tryNext(i){
+            if(i >= tryUrls.length){
+              console.warn('[R32.292] DISC_FIRE: all sample URLs failed, procedural fallback in use');
+              return;
+            }
+            var url = tryUrls[i];
+            fetch(url).then(function(r){
+              if(!r.ok) throw new Error('http '+r.status);
+              return r.arrayBuffer();
+            }).then(function(ab){
+              return new Promise(function(res,rej){
+                self.ctx.decodeAudioData(ab, res, rej);
+              });
+            }).then(function(buf){
+              buf.__label = 'DISC_FIRE-sample-'+url.split('/').pop().split('?')[0];
+              self.bufs[0] = buf;
+              console.log('[R32.292] '+buf.__label+' loaded:', buf.duration.toFixed(2)+'s');
+            }).catch(function(e){
+              console.warn('[R32.292] '+url+' failed:', e.message||e);
+              tryNext(i+1);
+            });
+          }
+          tryNext(0);
+        })(this);
       },
 
       playAt:function(id,x,y,z){
         if(!this.ctx||this.muted||!this.bufs[id])return;
-        var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
+        // R32.292 diag: log sound id + label + duration so we can verify
+        //               WHICH buffer is playing (sample vs procedural).
+        var b=this.bufs[id];
+        if(window.__SFX_DEBUG) console.log('[SFX] playAt id='+id+' label='+(b.__label||'procedural')+' dur='+b.duration.toFixed(2)+'s pos=('+x.toFixed(1)+','+y.toFixed(1)+','+z.toFixed(1)+')');
+        var src=this.ctx.createBufferSource();src.buffer=b;
         var pan=this.ctx.createPanner();
         pan.panningModel='HRTF';pan.distanceModel='inverse';
         pan.refDistance=8;pan.maxDistance=80;pan.rolloffFactor=1.5;
@@ -3368,7 +3461,9 @@
 
       playUI:function(id){
         if(!this.ctx||this.muted||!this.bufs[id])return;
-        var src=this.ctx.createBufferSource();src.buffer=this.bufs[id];
+        var b=this.bufs[id];
+        if(window.__SFX_DEBUG) console.log('[SFX] playUI id='+id+' label='+(b.__label||'procedural')+' dur='+b.duration.toFixed(2)+'s');
+        var src=this.ctx.createBufferSource();src.buffer=b;
         src.connect(this.uiBus);src.start();
       },
 
@@ -4067,7 +4162,10 @@
       hint.classList.toggle('show',gameStarted && !locked && !modalOpen);
     });
 
-    var Module={
+    // R32.282: was `var Module={...}` which overwrote the early
+    // window.Module that holds our locateFile cache-buster. Now we
+    // assign onto the existing object so locateFile survives.
+    Object.assign(window.Module, {
       canvas:canvas,
       print:function(t){
         console.log(t);
@@ -4093,6 +4191,9 @@
         Module.setStatus(left?'Loading... ('+(this.totalDependencies-left)+'/'+this.totalDependencies+')':'');
       },
       onRuntimeInitialized:function(){
+        // R32.282: log the version so the console makes it obvious which
+        // build is running, in addition to the on-screen chip.
+        if (window.BUILD_VER) console.log('[BUILD] tribes runtime initialized,', window.BUILD_VER);
         document.getElementById('loading').classList.add('hidden');
         showScreen(null); // Skip home screen — go directly into game
         // R17 cutover: Three.js is the DEFAULT renderer.
@@ -4112,7 +4213,9 @@
           } else {
             console.error('[R29] _setRenderMode is NOT exported — legacy renderer will run, expect black screen');
           }
-          import('./renderer.js?v=shell33').then(function(m){
+          // R32.282: bumped from shell33 — each renderer.js change should bump
+          // this so the dynamic ESM import bypasses the browser module cache.
+          import('./renderer.js?v=R32.293').then(function(m){
             console.log('[R29] renderer.js module loaded, calling start()');
             if(typeof m.start === 'function'){
               m.start();
@@ -4260,7 +4363,43 @@
             });
             // R24+R26: skill rating updates (joinAck + matchEnd) → main-menu display
             //          + tier badge + promotion/demotion animation
-            window.__tribesOnSkillUpdate = function(info){
+            // R32.295: when the lobby server says a match has started, jump out of
+              // the main menu and into the game scene. Without this, two browsers
+              // could connect, the server would auto-start the match, and both
+              // clients would sit on the main menu forever — the netcode would
+              // be running invisibly under the menu (you can see HUD telemetry
+              // and the INVULNERABLE countdown leaking through, but the world
+              // is hidden by the .active main-menu overlay).
+              window.__tribesOnMatchStart = function(msg){
+                try {
+                  console.log('[R32.295] matchStart received - entering game');
+                  if (window.gameStarted) return; // already in-game (e.g. solo PLAY)
+                  // Single-player setup defaults are fine for multiplayer too —
+                  // server is authoritative for everything that matters.
+                  if (typeof selectedTeam === 'undefined' || selectedTeam == null) selectedTeam = 0;
+                  if (typeof selectedArmor === 'undefined' || selectedArmor == null) selectedArmor = 0;
+                  if (typeof gameSettings === 'undefined' || !gameSettings) {
+                    gameSettings = { botCount:0, scoreLimit:5, timeLimit:600, invertY:false };
+                  } else {
+                    gameSettings.botCount = 0; // server fills with bots if needed
+                  }
+                  startGame();
+                  // Force-dismiss the PREPARING BATTLEFIELD overlay after a short delay
+                  // in case the renderer's first-frame callback has already fired (or never
+                  // does). The overlay is purely cosmetic; if the world isn't ready yet,
+                  // the user will just see the loading state inside the canvas, which is
+                  // far better than being stuck on a frozen overlay forever.
+                  setTimeout(function(){
+                    var prep = document.getElementById('renderer-prep');
+                    if (prep && prep.style.display !== 'none') {
+                      console.log('[R32.296] force-dismissing prep overlay (matchStart received)');
+                      prep.style.opacity = '0';
+                      setTimeout(function(){ prep.style.display = 'none'; }, 400);
+                    }
+                  }, 2500);
+                } catch(e) { console.error('[R32.296] onMatchStart failed', e); }
+              };
+              window.__tribesOnSkillUpdate = function(info){
               var rv = document.getElementById('player-rating-val');
               var rd = document.getElementById('player-rating-delta');
               var rc = document.getElementById('player-rating-count');
@@ -4349,9 +4488,14 @@
           }
         });
       }
-    };
+    });  // R32.282: close of Object.assign(window.Module, {...})
+    var Module = window.Module;  // local alias preserves the rest of the script
     Module.setStatus('Downloading...');
   </script>
-  <script async type="text/javascript" src="tribes.js"></script>
+  <!-- R32.282: cache-buster query string. tribes.js itself is rebuilt every
+       wasm build, so its etag should normally change, but Manus's static
+       file server (Python http.server) emits no ETag/Last-Modified, so the
+       browser will happily reuse a stale cached copy. ?v= forces a refetch. -->
+  <script async type="text/javascript" src="tribes.js?v=R32.293"></script>
 </body>
 </html>

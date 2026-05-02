@@ -80,7 +80,7 @@ export const SPAWN_PROTECTION_SEC = 3;
 // Anti-cheat thresholds
 export const AC_MAX_SPEED_M_PER_S = 60;
 export const AC_MAX_AIM_RATE_DEG_PER_S = 1080;
-export const AC_MAX_INPUT_RATE_HZ = 100;       // sustained
+export const AC_MAX_INPUT_RATE_HZ = 250;       // sustained — raised from 100/s to 250/s in R32.297 because real browsers with 144Hz monitors and 1000Hz mice routinely send 100-120 inputs/s, causing false-positive kicks. 250/s still catches scripted speedhacks while allowing normal high-refresh play.
 export const AC_INPUT_RATE_WINDOW_SEC = 1;
 
 // Reconciliation
