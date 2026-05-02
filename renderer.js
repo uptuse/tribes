@@ -3616,20 +3616,8 @@ function initWeaponViewmodel() {
             m.add(anchor);
             _spinfusorMuzzleAnchor = anchor;
 
-            // Debug dot — bright yellow sphere at the muzzle anchor.
-            // Visible in-game for rabbit-technique muzzle placement (MUZ mode).
-            // Remove once anchor is hardcoded.
-            const _dot = new THREE.Mesh(
-                new THREE.SphereGeometry(0.04, 8, 6),
-                new THREE.MeshBasicMaterial({ color: 0xffff00, depthTest: false })
-            );
-            _dot.frustumCulled = false;
-            _dot.renderOrder   = 999;
-            _dot.position.copy(anchor.position);
-            m.add(_dot);
-            _spinfusorMuzzleAnchor      = anchor; // module-level var used by _syncWeaponModel
-            window._spinfusorMuzzleDot  = _dot;
-            window._spinfusorAnchorRef  = anchor;
+            anchor.position.set(-1.4, 0.3, 0.053); // tuned via rabbit/MUZ mode
+            _spinfusorMuzzleAnchor = anchor;
 
             m.visible   = false;
             _spinfusorGLB = m;
@@ -3641,13 +3629,10 @@ function initWeaponViewmodel() {
         undefined,
         (err) => console.warn('[R32.278] Aurora Pulse Blaster failed to load:', err)
     );
-    // R32.278 — rabbit-technique tuner.
-    // * cycles POS → ROT → MUZ. Same 8/2/4/6/7/9 keys nudge whichever mode is active.
-    // MUZ moves the yellow debug dot (and muzzle anchor) in GLB local space.
-    const _ROT_NUDGE = 3 * Math.PI / 180; // 3° per press
-    const _NUDGE     = 0.005;             // metres per press (POS)
-    const _MUZ_NUDGE = 0.05;             // GLB local-space units per press (MUZ)
-    let   _tuneMode  = 'pos';            // 'pos' | 'rot' | 'muz'
+    // R32.278 — rabbit-technique tuner. * toggles POS ↔ ROT.
+    const _ROT_NUDGE = 3 * Math.PI / 180;
+    const _NUDGE     = 0.005;
+    let   _tuneMode  = 'pos'; // 'pos' | 'rot'
 
     const _tuneOverlay = document.createElement('div');
     _tuneOverlay.style.cssText = `
@@ -3674,15 +3659,12 @@ function initWeaponViewmodel() {
         const s = _SPINFUSOR_TRANSFORM.scale;
         const d = v => (v * 180 / Math.PI).toFixed(1) + '°';
         const f = v => v.toFixed(3);
-        const dot = window._spinfusorMuzzleDot;
-        const mp = dot ? dot.position : { x: 0, y: 0, z: 0 };
         _tuneOverlay.textContent =
             `── SPINFUSOR TUNE [${_tuneMode.toUpperCase()}] ──\n` +
             `pos   x:${f(p.x)}  y:${f(p.y)}  z:${f(p.z)}\n` +
             `rot   x:${d(r.x)}  y:${d(r.y)}  z:${d(r.z)}\n` +
             `scale: ${s.toFixed(3)}\n` +
-            `muz   x:${f(mp.x)}  y:${f(mp.y)}  z:${f(mp.z)}\n` +
-            `\n* = cycle mode  +/- = scale\n` +
+            `\n* = toggle POS/ROT  +/- = scale\n` +
             `8/2=fwd/bk  4/6=L/R  7/9=up/dn`;
         _tuneOverlay.style.display = 'block';
     };
@@ -3701,44 +3683,22 @@ function initWeaponViewmodel() {
         if (!_spinfusorReady || _lastWpnIdx !== 2) return;
         const p   = _SPINFUSOR_TRANSFORM.position;
         const r   = _SPINFUSOR_TRANSFORM.rotation;
-        const dot = window._spinfusorMuzzleDot;
-        const anc = window._spinfusorAnchorRef;
         const isRot = _tuneMode === 'rot';
-        const isMuz = _tuneMode === 'muz';
         let changed = true;
-
         switch (e.code) {
             case 'NumpadMultiply':
-                _tuneMode = _tuneMode === 'pos' ? 'rot' : _tuneMode === 'rot' ? 'muz' : 'pos';
+                _tuneMode = isRot ? 'pos' : 'rot';
                 _updateTuneOverlay(); return;
-
-            case 'Numpad8':
-                isMuz ? (dot && (dot.position.z -= _MUZ_NUDGE)) :
-                isRot ? (r.x -= _ROT_NUDGE) : (p.z -= _NUDGE); break;
-            case 'Numpad2':
-                isMuz ? (dot && (dot.position.z += _MUZ_NUDGE)) :
-                isRot ? (r.x += _ROT_NUDGE) : (p.z += _NUDGE); break;
-            case 'Numpad4':
-                isMuz ? (dot && (dot.position.x -= _MUZ_NUDGE)) :
-                isRot ? (r.y -= _ROT_NUDGE) : (p.x -= _NUDGE); break;
-            case 'Numpad6':
-                isMuz ? (dot && (dot.position.x += _MUZ_NUDGE)) :
-                isRot ? (r.y += _ROT_NUDGE) : (p.x += _NUDGE); break;
-            case 'Numpad7':
-                isMuz ? (dot && (dot.position.y += _MUZ_NUDGE)) :
-                isRot ? (r.z -= _ROT_NUDGE) : (p.y += _NUDGE); break;
-            case 'Numpad9':
-                isMuz ? (dot && (dot.position.y -= _MUZ_NUDGE)) :
-                isRot ? (r.z += _ROT_NUDGE) : (p.y -= _NUDGE); break;
-
-            case 'NumpadAdd':
-                _SPINFUSOR_TRANSFORM.scale += 0.005; break;
-            case 'NumpadSubtract':
-                _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
+            case 'Numpad8': isRot ? (r.x -= _ROT_NUDGE) : (p.z -= _NUDGE); break;
+            case 'Numpad2': isRot ? (r.x += _ROT_NUDGE) : (p.z += _NUDGE); break;
+            case 'Numpad4': isRot ? (r.y -= _ROT_NUDGE) : (p.x -= _NUDGE); break;
+            case 'Numpad6': isRot ? (r.y += _ROT_NUDGE) : (p.x += _NUDGE); break;
+            case 'Numpad7': isRot ? (r.z -= _ROT_NUDGE) : (p.y += _NUDGE); break;
+            case 'Numpad9': isRot ? (r.z += _ROT_NUDGE) : (p.y -= _NUDGE); break;
+            case 'NumpadAdd':      _SPINFUSOR_TRANSFORM.scale += 0.005; break;
+            case 'NumpadSubtract': _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
             default: changed = false;
         }
-        // Keep anchor in sync with dot so CombatFX fires from the right spot
-        if (changed && isMuz && dot && anc) anc.position.copy(dot.position);
         if (changed) { _applyGLBTransform(); _updateTuneOverlay(); }
     });
 
