@@ -3304,9 +3304,9 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    position: new THREE.Vector3(-0.015, 0.045, 0.185),
-    rotation: new THREE.Euler(0.2793, 3.6128, 0, 'YXZ'), // 16°X, 207°Y from tuner
-    scale: 0.180,
+    position: new THREE.Vector3(0.05, -0.06, -0.32),
+    rotation: new THREE.Euler(0, Math.PI, 0, 'YXZ'),
+    scale: 0.18,
 };
 
 
@@ -3626,6 +3626,7 @@ function initWeaponViewmodel() {
             _dot.renderOrder   = 999;
             _dot.position.copy(anchor.position);
             m.add(_dot);
+            _spinfusorMuzzleAnchor      = anchor; // module-level var used by _syncWeaponModel
             window._spinfusorMuzzleDot  = _dot;
             window._spinfusorAnchorRef  = anchor;
 
