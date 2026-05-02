@@ -3304,8 +3304,8 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    position: new THREE.Vector3(0.05, -0.06, -0.32),
-    rotation: new THREE.Euler(0, Math.PI, 0, 'YXZ'),
+    position: new THREE.Vector3(-0.015, 0.035, 0.195),
+    rotation: new THREE.Euler(-1.2341, 4.3459, -0.0524, 'YXZ'), // -70.7°X, 249°Y, -3°Z
     scale: 0.18,
 };
 
@@ -3591,7 +3591,8 @@ function initWeaponViewmodel() {
                 const mats = Array.isArray(child.material) ? child.material : [child.material];
                 mats.forEach(mat => {
                     if (!mat) return;
-                    mat.transparent = false; // override any BLEND alphaMode baked in the GLB
+                    mat.side        = THREE.DoubleSide; // render back faces (rotation exposes them)
+                    mat.transparent = false;
                     mat.opacity     = 1;
                     mat.alphaTest   = 0;
                     mat.depthWrite  = true;
