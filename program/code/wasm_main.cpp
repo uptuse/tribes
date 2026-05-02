@@ -323,6 +323,7 @@ struct Projectile {
     float life;
     int weapon;
     int ownerTeam;
+    int ownerIdx;   // R32.280: index of shooting player; used to skip self in hit/splash loops during the first frames after spawn so muzzle-origin discs don't insta-kill the shooter
     bool active;
 };
 static Projectile projs[MAX_PROJ];
@@ -1389,6 +1390,7 @@ static void fireWeapon(int pi){
             projs[i].life=w.projLife;
             projs[i].weapon=p.curWeapon;
             projs[i].ownerTeam=p.team;
+            projs[i].ownerIdx=pi; // R32.280: remember shooter for self-hit suppression
             projs[i].active=true;
             spawnBurst(firePos,3,0.3f,5,w.r,w.g,w.b,0.2f);
             break;
@@ -2622,8 +2624,15 @@ extern "C" void mainLoop(){
         bool hitPlayer=false;
         // Check player hits — swept sphere to prevent tunneling at high muzzle velocities.
         // Chaingun at 425 m/s moves 7m/frame; a point check would miss 1m-radius hit spheres.
+        // R32.280: shooter self-hit suppression. With muzzle-origin spawn (R32.279)
+        // discs spawn inside the shooter's hit-sphere on frame 0 and the swept-sphere
+        // catches them on the way out, killing the shooter. Skip self until the
+        // projectile has lived long enough to clear any conceivable hit-sphere.
+        // At 80 m/s a disc travels 4 m in 50 ms; the largest hit-sphere is ~1.4 m.
+        float projAge=weapons[projs[i].weapon].projLife-projs[i].life;
         if(!hitTerrain&&!hitBuilding&&!expired)for(int j=0;j<MAX_PLAYERS;j++){
             if(!players[j].active||!players[j].alive)continue;
+            if(j==projs[i].ownerIdx&&projAge<0.05f)continue;
             Vec3 center=players[j].pos+Vec3(0,1.2f,0);
             float hitR=armors[players[j].armor].hitW+0.5f;
             // Closest point on the frame's travel segment [prevPos → pos] to sphere center

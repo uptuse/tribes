@@ -3304,11 +3304,16 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    // R32.279: position.z shifted from +0.195 to -0.05 to push the bbox
-    // fully in front of camera.near=0.1. Previously, 4 of 8 world-bbox
-    // corners had cz>-0.1 in camera space and were near-plane clipped
-    // (visible as a missing wedge at the bottom-right of the held gun).
-    position: new THREE.Vector3(-0.015, 0.035, -0.05),
+    // R32.279: position.z shifted from +0.195 to push the bbox fully in
+    // front of camera.near=0.1. Previously, 4 of 8 world-bbox corners had
+    // cz>-0.1 in camera space and were near-plane clipped (visible as a
+    // missing wedge at the bottom-right of the held gun).
+    // R32.280: tightened from -0.05 back to +0.02. -0.05 over-pushed the
+    // gun forward (looked too far away from the camera). +0.02 satisfies
+    // the bbox math (largest cz drops from +0.059 to ~-0.121, ~21mm of
+    // safety margin past the near plane) while keeping the gun close to
+    // its original on-screen size.
+    position: new THREE.Vector3(-0.015, 0.035, 0.02),
     rotation: new THREE.Euler(0.1798, 4.3459, -0.0524, 'YXZ'), // 10.3°X, 249°Y, -3°Z
     scale: 0.18,
 };
