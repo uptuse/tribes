@@ -3304,9 +3304,9 @@ let _spinfusorReady = false;
 let _spinfusorMuzzleAnchor = null;  // Object3D near barrel tip for CombatFX
 let _proceduralMuzzleAnchor = null; // hoisted from initWeaponViewmodel for per-shot routing
 const _SPINFUSOR_TRANSFORM = {
-    position: new THREE.Vector3(0.05, -0.06, -0.32),
-    rotation: new THREE.Euler(0, Math.PI, 0, 'YXZ'), // barrel toward -Z in weaponHand space
-    scale: 0.18,
+    position: new THREE.Vector3(-0.015, 0.045, 0.185),
+    rotation: new THREE.Euler(0.2793, 3.6128, 0, 'YXZ'), // 16°X, 207°Y from tuner
+    scale: 0.180,
 };
 
 
@@ -3586,12 +3586,18 @@ function initWeaponViewmodel() {
                 if (!child.isMesh) return;
                 child.castShadow    = false;
                 child.receiveShadow = false;
-                child.frustumCulled = false;  // viewmodel always on screen
-                child.renderOrder   = 1;      // behind procedural arms (renderOrder 2)
-                if (child.material) {
-                    child.material.depthWrite = true;
-                    child.material.depthTest  = true;
-                }
+                child.frustumCulled = false;
+                child.renderOrder   = 1;
+                const mats = Array.isArray(child.material) ? child.material : [child.material];
+                mats.forEach(mat => {
+                    if (!mat) return;
+                    mat.transparent = false; // override any BLEND alphaMode baked in the GLB
+                    mat.opacity     = 1;
+                    mat.alphaTest   = 0;
+                    mat.depthWrite  = true;
+                    mat.depthTest   = true;
+                    mat.needsUpdate = true;
+                });
             });
             // Muzzle anchor: compute model's local-space bbox to find barrel tip.
             // Geometry bbox is in local space; union across all meshes.
