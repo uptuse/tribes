@@ -3309,24 +3309,6 @@ const _SPINFUSOR_TRANSFORM = {
     scale: 0.18,
 };
 
-// Console tuner — call from DevTools while in 1P with Spinfusor equipped:
-//   tuneSpinfusor(x, y, z, rotY_deg, scale)
-// e.g. tuneSpinfusor(0.05, -0.10, -0.38, 180, 0.20)
-// Logs the line to hardcode once you like the result.
-window.tuneSpinfusor = (x = 0.05, y = -0.06, z = -0.32, rotYDeg = 180, scale = 0.18) => {
-    _SPINFUSOR_TRANSFORM.position.set(x, y, z);
-    _SPINFUSOR_TRANSFORM.rotation.set(0, rotYDeg * Math.PI / 180, 0, 'YXZ');
-    _SPINFUSOR_TRANSFORM.scale = scale;
-    if (_spinfusorGLB) {
-        _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
-        _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
-        _spinfusorGLB.scale.setScalar(scale);
-    }
-    console.log(`[tuneSpinfusor] position:(${x}, ${y}, ${z})  rotY:${rotYDeg}°  scale:${scale}`);
-    console.log(`Hardcode → position: new THREE.Vector3(${x}, ${y}, ${z}),`);
-    console.log(`           rotation: new THREE.Euler(0, ${(rotYDeg*Math.PI/180).toFixed(4)}, 0, 'YXZ'),`);
-    console.log(`           scale: ${scale},`);
-};
 
 // Weapon name label — small discrete overlay near the weapon
 const _wpnLabel = (() => {
@@ -3637,6 +3619,53 @@ function initWeaponViewmodel() {
         undefined,
         (err) => console.warn('[R32.278] Aurora Pulse Blaster failed to load:', err)
     );
+    // R32.278 — in-game placement tuner.
+    // console: window.tuneSpinfusor(x, y, z, rotYDeg, scale)
+    // keyboard (Spinfusor equipped + 1P only):
+    //   Numpad 8/2  → z in/out   Numpad 4/6 → x left/right
+    //   Numpad 7/9  → y up/down  Numpad +/- → scale up/down
+    //   Numpad 5    → print current values to console
+    window.tuneSpinfusor = function(x, y, z, rotYDeg, scale) {
+        if (x !== undefined) _SPINFUSOR_TRANSFORM.position.x = x;
+        if (y !== undefined) _SPINFUSOR_TRANSFORM.position.y = y;
+        if (z !== undefined) _SPINFUSOR_TRANSFORM.position.z = z;
+        if (rotYDeg !== undefined) _SPINFUSOR_TRANSFORM.rotation.set(0, rotYDeg * Math.PI / 180, 0, 'YXZ');
+        if (scale !== undefined) _SPINFUSOR_TRANSFORM.scale = scale;
+        if (_spinfusorGLB) {
+            _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
+            _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
+            _spinfusorGLB.scale.setScalar(_SPINFUSOR_TRANSFORM.scale);
+        }
+        const p = _SPINFUSOR_TRANSFORM.position;
+        const s = _SPINFUSOR_TRANSFORM.scale;
+        const ry = (_SPINFUSOR_TRANSFORM.rotation.y * 180 / Math.PI).toFixed(1);
+        console.log(`[spinfusor] pos(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})  rotY:${ry}°  scale:${s}`);
+        console.log(`→ position: new THREE.Vector3(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}),`);
+        console.log(`  rotation: new THREE.Euler(0, ${_SPINFUSOR_TRANSFORM.rotation.y.toFixed(4)}, 0, 'YXZ'),`);
+        console.log(`  scale: ${s},`);
+    };
+
+    // Keyboard nudge — small step each keydown
+    const _NUDGE = 0.005;
+    document.addEventListener('keydown', (e) => {
+        if (!_spinfusorReady || _lastWpnIdx !== 2) return;
+        const p = _SPINFUSOR_TRANSFORM.position;
+        let changed = true;
+        switch (e.code) {
+            case 'Numpad8': p.z -= _NUDGE; break;  // forward
+            case 'Numpad2': p.z += _NUDGE; break;  // back
+            case 'Numpad4': p.x -= _NUDGE; break;  // left
+            case 'Numpad6': p.x += _NUDGE; break;  // right
+            case 'Numpad7': p.y += _NUDGE; break;  // up
+            case 'Numpad9': p.y -= _NUDGE; break;  // down
+            case 'NumpadAdd':      _SPINFUSOR_TRANSFORM.scale += 0.005; break;
+            case 'NumpadSubtract': _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
+            case 'Numpad5': window.tuneSpinfusor(); break; // print without changing
+            default: changed = false;
+        }
+        if (changed && e.code !== 'Numpad5') window.tuneSpinfusor();
+    });
+
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
 }
 
