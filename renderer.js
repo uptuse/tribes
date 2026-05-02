@@ -3620,50 +3620,59 @@ function initWeaponViewmodel() {
         (err) => console.warn('[R32.278] Aurora Pulse Blaster failed to load:', err)
     );
     // R32.278 — in-game placement tuner.
-    // console: window.tuneSpinfusor(x, y, z, rotYDeg, scale)
-    // keyboard (Spinfusor equipped + 1P only):
-    //   Numpad 8/2  → z in/out   Numpad 4/6 → x left/right
-    //   Numpad 7/9  → y up/down  Numpad +/- → scale up/down
-    //   Numpad 5    → print current values to console
+    // Keyboard (Spinfusor equipped + 1P):
+    //   8/2  z in/out    4/6  x left/right    7/9  y up/down
+    //   1/3  rotY        0/.  rotX            Enter/Del  rotZ
+    //   +/-  scale       5    print values
+    const _ROT_NUDGE = 3 * Math.PI / 180; // 3° per press
+    const _applyGLBTransform = () => {
+        if (!_spinfusorGLB) return;
+        _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
+        _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
+        _spinfusorGLB.scale.setScalar(_SPINFUSOR_TRANSFORM.scale);
+    };
     window.tuneSpinfusor = function(x, y, z, rotYDeg, scale) {
         if (x !== undefined) _SPINFUSOR_TRANSFORM.position.x = x;
         if (y !== undefined) _SPINFUSOR_TRANSFORM.position.y = y;
         if (z !== undefined) _SPINFUSOR_TRANSFORM.position.z = z;
-        if (rotYDeg !== undefined) _SPINFUSOR_TRANSFORM.rotation.set(0, rotYDeg * Math.PI / 180, 0, 'YXZ');
+        if (rotYDeg !== undefined) _SPINFUSOR_TRANSFORM.rotation.y = rotYDeg * Math.PI / 180;
         if (scale !== undefined) _SPINFUSOR_TRANSFORM.scale = scale;
-        if (_spinfusorGLB) {
-            _spinfusorGLB.position.copy(_SPINFUSOR_TRANSFORM.position);
-            _spinfusorGLB.rotation.copy(_SPINFUSOR_TRANSFORM.rotation);
-            _spinfusorGLB.scale.setScalar(_SPINFUSOR_TRANSFORM.scale);
-        }
+        _applyGLBTransform();
         const p = _SPINFUSOR_TRANSFORM.position;
+        const r = _SPINFUSOR_TRANSFORM.rotation;
         const s = _SPINFUSOR_TRANSFORM.scale;
-        const ry = (_SPINFUSOR_TRANSFORM.rotation.y * 180 / Math.PI).toFixed(1);
-        console.log(`[spinfusor] pos(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})  rotY:${ry}°  scale:${s}`);
+        const deg = v => (v * 180 / Math.PI).toFixed(1);
+        console.log(`[spinfusor] pos(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)})  rot(${deg(r.x)}, ${deg(r.y)}, ${deg(r.z)})°  scale:${s}`);
         console.log(`→ position: new THREE.Vector3(${p.x.toFixed(3)}, ${p.y.toFixed(3)}, ${p.z.toFixed(3)}),`);
-        console.log(`  rotation: new THREE.Euler(0, ${_SPINFUSOR_TRANSFORM.rotation.y.toFixed(4)}, 0, 'YXZ'),`);
+        console.log(`  rotation: new THREE.Euler(${r.x.toFixed(4)}, ${r.y.toFixed(4)}, ${r.z.toFixed(4)}, 'YXZ'),`);
         console.log(`  scale: ${s},`);
     };
 
-    // Keyboard nudge — small step each keydown
     const _NUDGE = 0.005;
     document.addEventListener('keydown', (e) => {
         if (!_spinfusorReady || _lastWpnIdx !== 2) return;
         const p = _SPINFUSOR_TRANSFORM.position;
+        const r = _SPINFUSOR_TRANSFORM.rotation;
         let changed = true;
         switch (e.code) {
-            case 'Numpad8': p.z -= _NUDGE; break;  // forward
-            case 'Numpad2': p.z += _NUDGE; break;  // back
-            case 'Numpad4': p.x -= _NUDGE; break;  // left
-            case 'Numpad6': p.x += _NUDGE; break;  // right
-            case 'Numpad7': p.y += _NUDGE; break;  // up
-            case 'Numpad9': p.y -= _NUDGE; break;  // down
+            case 'Numpad8': p.z -= _NUDGE; break;          // z forward
+            case 'Numpad2': p.z += _NUDGE; break;          // z back
+            case 'Numpad4': p.x -= _NUDGE; break;          // x left
+            case 'Numpad6': p.x += _NUDGE; break;          // x right
+            case 'Numpad7': p.y += _NUDGE; break;          // y up
+            case 'Numpad9': p.y -= _NUDGE; break;          // y down
+            case 'Numpad1': r.y -= _ROT_NUDGE; break;      // rotY −
+            case 'Numpad3': r.y += _ROT_NUDGE; break;      // rotY +
+            case 'Numpad0': r.x -= _ROT_NUDGE; break;      // rotX −
+            case 'NumpadDecimal': r.x += _ROT_NUDGE; break;// rotX +
+            case 'NumpadEnter': r.z -= _ROT_NUDGE; break;  // rotZ −
+            case 'NumpadEqual': r.z += _ROT_NUDGE; break;  // rotZ + (some keyboards)
             case 'NumpadAdd':      _SPINFUSOR_TRANSFORM.scale += 0.005; break;
             case 'NumpadSubtract': _SPINFUSOR_TRANSFORM.scale = Math.max(0.01, _SPINFUSOR_TRANSFORM.scale - 0.005); break;
-            case 'Numpad5': window.tuneSpinfusor(); break; // print without changing
+            case 'Numpad5': window.tuneSpinfusor(); return; // print only
             default: changed = false;
         }
-        if (changed && e.code !== 'Numpad5') window.tuneSpinfusor();
+        if (changed) { _applyGLBTransform(); window.tuneSpinfusor(); }
     });
 
     // (camera.add(weaponHand) happens in initStateViews after camera is created)
