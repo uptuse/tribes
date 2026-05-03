@@ -154,6 +154,32 @@ extern "C" void setPhysicsTuning(float gravity, float jetForce,
     if(kickback       > 0) g_tuneKickback        = kickback;
 }
 
+// ============================================================
+// R33 Slice 1: server-authoritative match clock + score
+// ============================================================
+// When g_networked == false (default) the wasm runs the match clock,
+// scoring, and match-end logic locally exactly as before. Solo PLAY
+// never touches this flag, so solo behavior is bit-identical.
+//
+// When g_networked == true (set by JS via _setNetworked(1) on multiplayer
+// URLs) the local clock decrement, the score-limit match-end check, and
+// the time-up match-end check are all skipped. Instead JS calls
+// _applyServerMatchState() each time the server broadcasts a matchTick,
+// writing the authoritative state into the same g_* vars that
+// _getMatchState() and the HUD read. Net effect: clock + score are now
+// driven by one clock (the server's); the wasm just renders them.
+//
+// Movement, physics, projectiles, bots are STILL local in this slice.
+// Slice 2 adds remote-player snapshot interp; Slice 3 adds local-player
+// prediction + reconciliation. Do not extend the gating beyond clock+
+// score in this slice or solo PLAY will diverge.
+//
+// The flag itself and the two exports that operate on it are defined
+// further down (after the match-state globals are declared, around line
+// ~395) so that they can reference g_matchState/teamScore/g_roundTimer
+// directly. Search for 'R33 Slice 1 impl' to find them.
+static bool g_networked = false;
+
 static const int TSIZE=RAINDANCE_SIZE; // 257
 static const float TSCALE=8.0f; // 8 meters per terrain cell (Tribes default)
 
@@ -373,6 +399,32 @@ static float g_spawnProtect[8]={}; // [MAX_PLAYERS]
 static float g_localRespawnTimer=0; // seconds until local player respawns (for HUD)
 static bool g_warnedTime[3]={}; // [0]=4min, [1]=1min, [2]=warmup countdown sounds
 static const float FLAG_RETURN_TIME=45.0f;
+
+// R33 Slice 1 impl. Forward-declared at line ~177; defined here because
+// the body needs g_matchState / teamScore / g_roundTimer above.
+extern "C" EMSCRIPTEN_KEEPALIVE void setNetworked(int on){
+    g_networked = (on != 0);
+    printf("[R33] g_networked = %d\n", (int)g_networked);
+}
+extern "C" EMSCRIPTEN_KEEPALIVE void applyServerMatchState(
+        int state, double matchAgeMs, int scoreLimit, int timeLimitSec,
+        int teamScore0, int teamScore1){
+    // matchAgeMs = how long ago (in ms) the server's match started; we
+    // recompute g_roundTimer from that so the wasm HUD shows the same
+    // remaining time as the server. Caller passes (Date.now() - matchStartedMs).
+    g_matchState   = state;
+    g_scoreLimit   = scoreLimit > 0 ? scoreLimit : 5;
+    g_timeLimit    = timeLimitSec;
+    if(timeLimitSec > 0){
+        float remain = (float)(timeLimitSec - matchAgeMs / 1000.0);
+        if(remain < 0) remain = 0;
+        g_roundTimer = remain;
+    }else{
+        g_roundTimer = 0;
+    }
+    teamScore[0] = teamScore0;
+    teamScore[1] = teamScore1;
+}
 
 // ============================================================
 // Nav grid (64×64, 32m cells) — built once at init from building AABBs
@@ -2576,25 +2628,32 @@ extern "C" void mainLoop(){
     }
 
     // Match state machine
-    if(g_matchState==0){ // WARMUP
-        g_warmupTimer-=dt;
-        if(!g_warnedTime[2]&&g_warmupTimer<3){g_warnedTime[2]=true;EM_ASM({if(window.playSoundUI)window.playSoundUI(5);},0);}
-        if(g_warmupTimer<=0){
-            g_matchState=1;g_roundTimer=(float)g_timeLimit;
-            printf("[EVENT] WARMUP COMPLETE — FIGHT!\n");
-            EM_ASM({if(window.playSoundUI)window.playSoundUI(6);},0);
-        }
-    }else if(g_matchState==1){ // IN_PROGRESS
-        if(g_timeLimit>0){
-            g_roundTimer-=dt;
-            if(!g_warnedTime[0]&&g_roundTimer<240){g_warnedTime[0]=true;printf("[EVENT] 4 MINUTES REMAINING\n");}
-            if(!g_warnedTime[1]&&g_roundTimer<60){g_warnedTime[1]=true;printf("[EVENT] 1 MINUTE REMAINING\n");}
-            if(g_roundTimer<=0){
-                g_roundTimer=0;g_matchState=2;
-                int w=teamScore[0]>teamScore[1]?0:(teamScore[1]>teamScore[0]?1:-1);
-                if(w>=0)printf("[EVENT] === TIME UP — %s WINS! %d-%d ===\n",w==0?"BLOOD EAGLE":"DIAMOND SWORD",teamScore[0],teamScore[1]);
-                else printf("[EVENT] === TIME UP — DRAW! %d-%d ===\n",teamScore[0],teamScore[1]);
-                EM_ASM({if(window.onMatchEnd)window.onMatchEnd($0,$1,$2);},w,teamScore[0],teamScore[1]);
+    // R33 Slice 1: skip the entire local match-state machine when networked.
+    // Server broadcasts authoritative state via _applyServerMatchState().
+    // 4-min / 1-min announcement events still fire from the server side
+    // (TODO: server-side announcer broadcast in slice 2; for now they're
+    // simply silent in networked mode, which is harmless).
+    if(!g_networked){
+        if(g_matchState==0){ // WARMUP
+            g_warmupTimer-=dt;
+            if(!g_warnedTime[2]&&g_warmupTimer<3){g_warnedTime[2]=true;EM_ASM({if(window.playSoundUI)window.playSoundUI(5);},0);}
+            if(g_warmupTimer<=0){
+                g_matchState=1;g_roundTimer=(float)g_timeLimit;
+                printf("[EVENT] WARMUP COMPLETE — FIGHT!\n");
+                EM_ASM({if(window.playSoundUI)window.playSoundUI(6);},0);
+            }
+        }else if(g_matchState==1){ // IN_PROGRESS
+            if(g_timeLimit>0){
+                g_roundTimer-=dt;
+                if(!g_warnedTime[0]&&g_roundTimer<240){g_warnedTime[0]=true;printf("[EVENT] 4 MINUTES REMAINING\n");}
+                if(!g_warnedTime[1]&&g_roundTimer<60){g_warnedTime[1]=true;printf("[EVENT] 1 MINUTE REMAINING\n");}
+                if(g_roundTimer<=0){
+                    g_roundTimer=0;g_matchState=2;
+                    int w=teamScore[0]>teamScore[1]?0:(teamScore[1]>teamScore[0]?1:-1);
+                    if(w>=0)printf("[EVENT] === TIME UP — %s WINS! %d-%d ===\n",w==0?"BLOOD EAGLE":"DIAMOND SWORD",teamScore[0],teamScore[1]);
+                    else printf("[EVENT] === TIME UP — DRAW! %d-%d ===\n",teamScore[0],teamScore[1]);
+                    EM_ASM({if(window.onMatchEnd)window.onMatchEnd($0,$1,$2);},w,teamScore[0],teamScore[1]);
+                }
             }
         }
     }
@@ -2821,13 +2880,19 @@ extern "C" void mainLoop(){
                     int cf=players[i].carryingFlag;
                     flags[cf].carried=false;flags[cf].pos=flags[cf].homePos;flags[cf].atHome=true;
                     players[i].carryingFlag=-1;
+                    // R33 Slice 1: in networked mode, the server is the score
+                    // authority. We still increment optimistically so the local
+                    // HUD doesn't lag a frame behind the cap sound, but the
+                    // server's next matchTick will overwrite teamScore[] with
+                    // its authoritative count, and we suppress the local
+                    // match-end declaration (server decides when the match ends).
                     teamScore[players[i].team]++;
                     players[i].score+=5;
                     printf("[CTF] %s CAPTURED the flag! Score: Red %d - Blue %d\n",
                            players[i].name,teamScore[0],teamScore[1]);
                     if(i==localPlayer)EM_ASM({ if(window.playSoundUI)window.playSoundUI(7); },0);
                     printf("[EVENT] %s CAPS! (%d-%d)\n",players[i].team==0?"RED":"BLUE",teamScore[0],teamScore[1]);
-                    if(g_matchState==1&&teamScore[players[i].team]>=g_scoreLimit){
+                    if(!g_networked && g_matchState==1 && teamScore[players[i].team]>=g_scoreLimit){
                         g_matchState=2;
                         int w=players[i].team;
                         printf("[EVENT] === %s WINS! %d-%d ===\n",w==0?"BLOOD EAGLE":"DIAMOND SWORD",teamScore[0],teamScore[1]);

@@ -58,6 +58,68 @@ let inputLoop = null;
 let pingLoop = null; // R32.157: store ping interval for cleanup
 let inputProvider = null;   // () → {buttons, mouseDX, mouseDY, weaponSelect}
 
+// ============================================================
+// R33 Slice 1 — server-authoritative match clock + score plumbing
+// ============================================================
+// Called from the matchStart / matchTick / matchSync handlers below.
+// Each call:
+//   1. Flips the wasm into networked mode (idempotent, only logs once).
+//   2. Pushes the server-authoritative {matchState, scoreLimit,
+//      timeLimitSec, teamScore[], matchStartedMs, serverTime} into the
+//      wasm so its HUD shows the same time + score as every other client.
+//
+// Why we pass (Date.now() - matchStartedMs) instead of the server's
+// 'serverTime' field: the wasm computes remaining = timeLimitSec -
+// matchAge/1000. If matchAge were measured in *server clock*, every
+// client would see a slightly different age (clock skew), defeating the
+// point. By measuring matchAge against the client's *own* Date.now()
+// minus the server-broadcast matchStartedMs, all clients converge on the
+// same remaining time as long as their wall-clocks are roughly correct
+// (and we re-broadcast every second so any drift gets corrected within
+// 1s anyway). serverTime is kept in the payload for future RTT-aware
+// interpolation in Slice 2/3 but is intentionally not used here.
+//
+// Solo PLAY never receives matchStart/matchTick/matchSync (no socket),
+// so applyServerMatchStateToWasm() is never called and the wasm stays
+// in g_networked=false — bit-identical to pre-R33 solo behavior.
+let __r33SetNetworkedFn = null;
+let __r33ApplyMatchStateFn = null;
+let __r33LoggedNetworkedOn = false;
+function applyServerMatchStateToWasm(msg, tag) {
+    const M = window.Module;
+    if (!M) { console.warn('[R33] wasm Module not ready, dropping ' + tag); return; }
+    // Lazily resolve the cwrapped exports the first time we need them.
+    // _setNetworked: (int) -> void
+    // _applyServerMatchState: (state, matchAgeMs, scoreLimit, timeLimitSec, score0, score1) -> void
+    if (!__r33SetNetworkedFn) {
+        if (typeof M.cwrap !== 'function') { console.error('[R33] Module.cwrap missing'); return; }
+        try {
+            __r33SetNetworkedFn = M.cwrap('setNetworked', null, ['number']);
+            __r33ApplyMatchStateFn = M.cwrap('applyServerMatchState', null,
+                ['number', 'number', 'number', 'number', 'number', 'number']);
+        } catch (e) { console.error('[R33] cwrap failed:', e); return; }
+    }
+    if (!__r33LoggedNetworkedOn) {
+        __r33SetNetworkedFn(1);
+        __r33LoggedNetworkedOn = true;
+        log('[R33] wasm switched to networked mode (server-authoritative clock+score)');
+    }
+    // R33 Slice 1 bugfix: do NOT use `| 0` on matchStartedMs — epoch ms
+    // values (~1.78e12) overflow int32 and silently truncate to garbage.
+    // Use Number() coercion + a real-vs-undefined guard.
+    const startedMs  = (typeof msg.matchStartedMs === 'number' && msg.matchStartedMs > 0)
+        ? msg.matchStartedMs : Date.now();
+    const matchAgeMs = Math.max(0, Date.now() - startedMs);
+    const state      = (msg.matchState ?? 1) | 0;
+    const scoreLim   = (msg.scoreLimit ?? 5) | 0;
+    const timeLim    = (msg.timeLimitSec ?? 600) | 0;
+    const ts         = msg.teamScore || [0, 0];
+    // matchAgeMs can exceed int32 only after ~24 days of match runtime; for
+    // CTF that's fine, but pass as double-typed argument anyway via cwrap's
+    // 'number' which marshals as f64.
+    __r33ApplyMatchStateFn(state, matchAgeMs, scoreLim, timeLim, ts[0] | 0, ts[1] | 0);
+}
+
 // Latest server snapshot (for prediction reconcile)
 let latestSnapshot = null;
 
@@ -205,6 +267,19 @@ export function start() {
             const teammateIds = msg.players.filter(p => p.team === myTeam && p.id !== myNumericId).map(p => p.id);
             voice.openPeers(teammateIds).catch(e => console.warn('[VOICE] openPeers failed', e));
             if (window.__tribesOnMatchStart) window.__tribesOnMatchStart(msg);
+            // R33 Slice 1: switch wasm into networked mode (server is now the
+            // authority for clock + score) and prime it with the initial
+            // server-broadcast state. Solo PLAY never reaches this branch, so
+            // its wasm stays in g_networked=false (bit-identical to before).
+            applyServerMatchStateToWasm(msg, /*tag=*/'matchStart');
+        } else if (msg.type === 'matchTick') {
+            // R33 Slice 1: 1Hz authoritative clock+score broadcast.
+            // Idempotent: each tick fully overwrites client wasm match state.
+            applyServerMatchStateToWasm(msg, /*tag=*/'matchTick');
+        } else if (msg.type === 'matchSync') {
+            // R33 Slice 1: late-joiner / reconnecter authoritative state.
+            // Sent once on joinAck if a match is already in progress.
+            applyServerMatchStateToWasm(msg, /*tag=*/'matchSync');
         } else if (msg.type === 'matchEnd') {
             log('matchEnd score=' + msg.teamScore.join('-') + ' winner=' + msg.winner);
             telemetry.inMatch = false;

@@ -29,7 +29,8 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
 "_dtsDiscVC","_dtsDiscIC","_dtsDiscV","_dtsDiscN","_dtsDiscI",
 "_dtsGrenadeVC","_dtsGrenadeIC","_dtsGrenadeV","_dtsGrenadeN","_dtsGrenadeI",
 "_pause","_teleportPlayer","_reloadBuildings","_writeHeightmapPatch","_spawnDummy",
-"_setGamepadInput","_setLocalMuzzleOrigin"]' \
+"_setGamepadInput","_setLocalMuzzleOrigin",
+"_setNetworked","_applyServerMatchState"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 
 echo "[build] Output: build/tribes.html, build/tribes.js, build/tribes.wasm, build/tribes.data"
@@ -41,7 +42,7 @@ cp build/tribes.data tribes.data
 echo "[deploy] Copied to repo root."
 
 # Post-link export verification (same as build.sh)
-REQUIRED_EXPORTS=("_setLocalMuzzleOrigin" "_setLocalAimPoint3P" "_setGamepadInput" "_setFreelook")
+REQUIRED_EXPORTS=("_setLocalMuzzleOrigin" "_setLocalAimPoint3P" "_setGamepadInput" "_setFreelook" "_setNetworked" "_applyServerMatchState")
 for sym in "${REQUIRED_EXPORTS[@]}"; do
     if ! grep -q "$sym" tribes.js; then
         echo "[build][FATAL] required wasm export $sym is missing from tribes.js" >&2

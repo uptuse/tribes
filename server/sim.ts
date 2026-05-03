@@ -152,6 +152,10 @@ export class Match {
     warmupTimer = MATCH_WARMUP_SEC;
     roundTimer = 600;
     scoreLimit = 5;
+    // R33 Slice 1: explicit configured time limit (seconds). roundTimer
+    // decrements every tick; timeLimitSec stays constant so clients can
+    // recompute remaining time from (timeLimitSec - matchAgeMs/1000).
+    timeLimitSec = 600;
     lagCompBuffer: LagCompFrame[] = [];
     cheatLog: { playerId: number; reason: string; tick: number }[] = [];
     // R25: active map metadata (id is what gets broadcast and what the client requests)

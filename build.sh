@@ -36,7 +36,8 @@ emcc program/code/wasm_main.cpp -o build/tribes.html \
 "_dtsDiscVC","_dtsDiscIC","_dtsDiscV","_dtsDiscN","_dtsDiscI",
 "_dtsGrenadeVC","_dtsGrenadeIC","_dtsGrenadeV","_dtsGrenadeN","_dtsGrenadeI",
 "_pause","_teleportPlayer","_reloadBuildings","_writeHeightmapPatch","_spawnDummy",
-"_setGamepadInput","_setLocalMuzzleOrigin"]' \
+"_setGamepadInput","_setLocalMuzzleOrigin",
+"_setNetworked","_applyServerMatchState"]' \
   -s EXPORTED_RUNTIME_METHODS='["ccall","cwrap","UTF8ToString","HEAPF32","HEAP32","HEAPU32"]'
 # R29: _setRenderMode must stay in EXPORTED_FUNCTIONS above — required for Three.js cutover.
 
@@ -54,7 +55,7 @@ echo "[deploy] Copied to repo root. Ready for git push."
 # silently dropped by emcc DCE / cache drift. Caught a 4-hour-long debug burst
 # on 2026-05-02 where _setLocalMuzzleOrigin disappeared from the CI build despite
 # being listed in EXPORTED_FUNCTIONS above. Add new exports to this list as needed.
-REQUIRED_EXPORTS=("_setLocalMuzzleOrigin" "_setLocalAimPoint3P" "_setGamepadInput" "_setFreelook")
+REQUIRED_EXPORTS=("_setLocalMuzzleOrigin" "_setLocalAimPoint3P" "_setGamepadInput" "_setFreelook" "_setNetworked" "_applyServerMatchState")
 for sym in "${REQUIRED_EXPORTS[@]}"; do
     if ! grep -q "$sym" tribes.js; then
         echo "[build][FATAL] required wasm export $sym is missing from tribes.js" >&2

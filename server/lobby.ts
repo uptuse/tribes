@@ -266,6 +266,7 @@ interface LobbyState {
   tickInterval: ReturnType<typeof setInterval> | null;
   snapshotInterval: ReturnType<typeof setInterval> | null;
   deltaInterval: ReturnType<typeof setInterval> | null;
+  matchTickInterval: ReturnType<typeof setInterval> | null;  // R33 Slice 1: 1Hz authoritative clock+score broadcast
   rematchHoldUntil: number;
   rematchVotes: Set<number>;     // R20: numericIds that voted yes
   // R25: map vote — populated at endMatch with three options (current + 2 random),
@@ -390,6 +391,7 @@ function newLobby(id: string, isPublic: boolean): LobbyState {
     tickInterval: null,
     snapshotInterval: null,
     deltaInterval: null,
+    matchTickInterval: null,  // R33 Slice 1
     rematchHoldUntil: 0,
     rematchVotes: new Set(),
     mapVoteOptions: [],
@@ -545,9 +547,9 @@ function startMatch(lobby: LobbyState) {
       shadowId: p.uuid ? getOrAssignShadow(lobby.id, p.uuid) : '',
     })),
     serverTime: Date.now(),
-    matchStartedMs: (lobby as any).matchStartedMs,  // R32.299
-    scoreLimit: 5,                                    // R32.299: server-authoritative
-    timeLimitSec: 600,                                // R32.299: server-authoritative
+    matchStartedMs: (lobby as any).matchStartedMs,  // R33 Slice 1: server clock
+    scoreLimit: lobby.match.scoreLimit,             // R33 Slice 1
+    timeLimitSec: lobby.match.timeLimitSec,         // R33 Slice 1
   });
 
   // R28: per-recipient mute hint — for each connected player, send the list
@@ -652,6 +654,26 @@ function startMatch(lobby: LobbyState) {
     if (!lobby.match) return;
     try { broadcastBinary(lobby, lobby.match.serializeDelta()); } catch (e) { console.error('[delta]', e); }
   }, 1000 / DELTA_HZ);
+
+  // R33 Slice 1: 1Hz match-clock + score broadcast. Each client's wasm calls
+  // _applyServerMatchState() with these values so the HUD time-remaining and
+  // team scores are driven by the server's clock instead of each client's
+  // local wasm clock. Solves the 'host clock != client clock' drift bug.
+  lobby.matchTickInterval = setInterval(() => {
+    if (!lobby.match) return;
+    try {
+      broadcastJSON(lobby, {
+        type: 'matchTick',
+        lobbyId: lobby.id,
+        matchState: lobby.match.matchState,            // 0=warmup 1=in-progress 2=ended
+        matchStartedMs: (lobby as any).matchStartedMs,
+        serverTime: Date.now(),
+        scoreLimit: lobby.match.scoreLimit,
+        timeLimitSec: lobby.match.timeLimitSec,        // R33 Slice 1: configured limit
+        teamScore: lobby.match.teamScore,
+      });
+    } catch (e) { console.error('[matchTick]', e); }
+  }, 1000);
 }
 
 function endMatch(lobby: LobbyState) {
@@ -793,6 +815,7 @@ function endMatch(lobby: LobbyState) {
   if (lobby.tickInterval) { clearInterval(lobby.tickInterval); lobby.tickInterval = null; }
   if (lobby.snapshotInterval) { clearInterval(lobby.snapshotInterval); lobby.snapshotInterval = null; }
   if (lobby.deltaInterval) { clearInterval(lobby.deltaInterval); lobby.deltaInterval = null; }
+  if (lobby.matchTickInterval) { clearInterval(lobby.matchTickInterval); lobby.matchTickInterval = null; }  // R33 Slice 1
   // Hold the Match object so reconnections can still find their state mid-end-screen
   // We'll null it on actual rematch start or hold-timeout.
 }
@@ -851,6 +874,21 @@ function checkPlayAgainVote(lobby: LobbyState) {
       if (!lobby.match) return;
       try { broadcastBinary(lobby, lobby.match.serializeDelta()); } catch {}
     }, 1000 / DELTA_HZ);
+    // R33 Slice 1: re-mount matchTick broadcast on rematch as well
+    lobby.matchTickInterval = setInterval(() => {
+      if (!lobby.match) return;
+      try {
+        broadcastJSON(lobby, {
+          type: 'matchTick', lobbyId: lobby.id,
+          matchState: lobby.match.matchState,
+          matchStartedMs: (lobby as any).matchStartedMs,
+          serverTime: Date.now(),
+          scoreLimit: lobby.match.scoreLimit,
+          timeLimitSec: lobby.match.timeLimitSec,
+          teamScore: lobby.match.teamScore,
+        });
+      } catch {}
+    }, 1000);
     // R28: rotate shadow IDs for the rematch (new IDs prevent correlation
     // across the match boundary even within the same lobby).
     clearShadowMap(lobby.id);
@@ -889,6 +927,7 @@ function cleanupInactiveLobbies() {
       if (lobby.tickInterval) clearInterval(lobby.tickInterval);
       if (lobby.snapshotInterval) clearInterval(lobby.snapshotInterval);
       if (lobby.deltaInterval) clearInterval(lobby.deltaInterval);
+      if (lobby.matchTickInterval) clearInterval(lobby.matchTickInterval);  // R33 Slice 1
       lobbies.delete(id);
       console.log(`[lobby] reaped empty lobby ${id}`);
     }
@@ -1483,10 +1522,11 @@ const server = Bun.serve({
         ws.send(JSON.stringify({
           type: 'matchSync',
           lobbyId: lobby.id,
+          matchState: lobby.match.matchState,
           matchStartedMs: (lobby as any).matchStartedMs,
           serverTime: Date.now(),
-          scoreLimit: 5,
-          timeLimitSec: 600,
+          scoreLimit: lobby.match.scoreLimit,
+          timeLimitSec: lobby.match.timeLimitSec,
           teamScore: lobby.match.teamScore,
           mapId: lobby.mapId,
           mapName: lobby.mapName,

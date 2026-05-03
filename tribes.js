@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpb9b8te1t.js
+// include: /tmp/tmpu54lih58.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /tmp/tmpb9b8te1t.js
-// include: /tmp/tmp2aushbp4.js
+// end include: /tmp/tmpu54lih58.js
+// include: /tmp/tmpzndp1o76.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmp2aushbp4.js
-// include: /tmp/tmp5vlg0oit.js
+  // end include: /tmp/tmpzndp1o76.js
+// include: /tmp/tmpgz4nkvwp.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmp5vlg0oit.js
+  // end include: /tmp/tmpgz4nkvwp.js
 
 
 var arguments_ = [];
@@ -6448,25 +6448,25 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  349044: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 349117: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 349187: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 349234: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349281: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349333: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
- 349390: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 349448: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349506: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349555: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349607: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349656: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 349838: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349900: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349962: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 350012: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 350068: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 350120: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 350209: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  349060: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 349133: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 349203: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 349250: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349297: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349349: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 349406: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349464: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349522: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349571: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349623: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349672: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349854: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349916: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349978: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 350028: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 350084: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 350136: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 350225: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
@@ -6475,6 +6475,8 @@ var _pause = Module['_pause'] = makeInvalidEarlyAccess('_pause');
 var _setGamepadInput = Module['_setGamepadInput'] = makeInvalidEarlyAccess('_setGamepadInput');
 var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings');
 var _setPhysicsTuning = Module['_setPhysicsTuning'] = makeInvalidEarlyAccess('_setPhysicsTuning');
+var _setNetworked = Module['_setNetworked'] = makeInvalidEarlyAccess('_setNetworked');
+var _applyServerMatchState = Module['_applyServerMatchState'] = makeInvalidEarlyAccess('_applyServerMatchState');
 var _reloadBuildings = Module['_reloadBuildings'] = makeInvalidEarlyAccess('_reloadBuildings');
 var _teleportPlayer = Module['_teleportPlayer'] = makeInvalidEarlyAccess('_teleportPlayer');
 var _writeHeightmapPatch = Module['_writeHeightmapPatch'] = makeInvalidEarlyAccess('_writeHeightmapPatch');
@@ -6559,6 +6561,8 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['setGamepadInput'] != 'undefined', 'missing Wasm export: setGamepadInput');
   assert(typeof wasmExports['setSettings'] != 'undefined', 'missing Wasm export: setSettings');
   assert(typeof wasmExports['setPhysicsTuning'] != 'undefined', 'missing Wasm export: setPhysicsTuning');
+  assert(typeof wasmExports['setNetworked'] != 'undefined', 'missing Wasm export: setNetworked');
+  assert(typeof wasmExports['applyServerMatchState'] != 'undefined', 'missing Wasm export: applyServerMatchState');
   assert(typeof wasmExports['reloadBuildings'] != 'undefined', 'missing Wasm export: reloadBuildings');
   assert(typeof wasmExports['teleportPlayer'] != 'undefined', 'missing Wasm export: teleportPlayer');
   assert(typeof wasmExports['writeHeightmapPatch'] != 'undefined', 'missing Wasm export: writeHeightmapPatch');
@@ -6639,6 +6643,8 @@ function assignWasmExports(wasmExports) {
   _setGamepadInput = Module['_setGamepadInput'] = createExportWrapper('setGamepadInput', 5);
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
   _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 6);
+  _setNetworked = Module['_setNetworked'] = createExportWrapper('setNetworked', 1);
+  _applyServerMatchState = Module['_applyServerMatchState'] = createExportWrapper('applyServerMatchState', 6);
   _reloadBuildings = Module['_reloadBuildings'] = createExportWrapper('reloadBuildings', 2);
   _teleportPlayer = Module['_teleportPlayer'] = createExportWrapper('teleportPlayer', 3);
   _writeHeightmapPatch = Module['_writeHeightmapPatch'] = createExportWrapper('writeHeightmapPatch', 5);
