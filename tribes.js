@@ -71,7 +71,7 @@ var ENVIRONMENT_IS_SHELL = !ENVIRONMENT_IS_WEB && !ENVIRONMENT_IS_NODE && !ENVIR
 
 // --pre-jses are emitted after the Module integration code, so that they can
 // refer to Module (if they choose; they can also define Module)
-// include: /tmp/tmpu54lih58.js
+// include: /tmp/tmp74chmwpd.js
 
   if (!Module['expectedDataFileDownloads']) Module['expectedDataFileDownloads'] = 0;
   Module['expectedDataFileDownloads']++;
@@ -208,21 +208,21 @@ Module['FS_createPath']("/assets/tribes/maps", "raindance", true, true);
 
   })();
 
-// end include: /tmp/tmpu54lih58.js
-// include: /tmp/tmpzndp1o76.js
+// end include: /tmp/tmp74chmwpd.js
+// include: /tmp/tmpmeftd0kj.js
 
     // All the pre-js content up to here must remain later on, we need to run
     // it.
     if ((typeof ENVIRONMENT_IS_WASM_WORKER != 'undefined' && ENVIRONMENT_IS_WASM_WORKER) || (typeof ENVIRONMENT_IS_PTHREAD != 'undefined' && ENVIRONMENT_IS_PTHREAD) || (typeof ENVIRONMENT_IS_AUDIO_WORKLET != 'undefined' && ENVIRONMENT_IS_AUDIO_WORKLET)) Module['preRun'] = [];
     var necessaryPreJSTasks = Module['preRun'].slice();
-  // end include: /tmp/tmpzndp1o76.js
-// include: /tmp/tmpgz4nkvwp.js
+  // end include: /tmp/tmpmeftd0kj.js
+// include: /tmp/tmp0hme6jn0.js
 
     if (!Module['preRun']) throw 'Module.preRun should exist because file support used it; did a pre-js delete it?';
     necessaryPreJSTasks.forEach((task) => {
       if (Module['preRun'].indexOf(task) < 0) throw 'All preRun tasks that exist before user pre-js code should remain after; did you replace Module or modify Module.preRun?';
     });
-  // end include: /tmp/tmpgz4nkvwp.js
+  // end include: /tmp/tmp0hme6jn0.js
 
 
 var arguments_ = [];
@@ -377,7 +377,7 @@ var NODEFS = 'NODEFS is no longer included by default; build with -lnodefs.js';
 // perform assertions in shell.js after we set up out() and err(), as otherwise
 // if an assertion fails it cannot print the message
 
-assert(!ENVIRONMENT_IS_SHELL, 'shell environment detected but not enabled at build time (add `shell` to `-sENVIRONMENT` to enable)');
+assert(!ENVIRONMENT_IS_SHELL, 'shell environment detected but not enabled at build time.  Add `shell` to `-sENVIRONMENT` to enable.');
 
 // end include: shell.js
 
@@ -2234,7 +2234,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
           path = FS.cwd() + '/' + path;
         }
   
-        // limit max consecutive symlinks to SYMLOOP_MAX.
+        // limit max consecutive symlinks to 40 (SYMLOOP_MAX).
         linkloop: for (var nlinks = 0; nlinks < 40; nlinks++) {
           // split the absolute path
           var parts = path.split('/').filter((p) => !!p);
@@ -2526,14 +2526,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
         var arg = setattr ? stream : node;
         setattr ??= node.node_ops.setattr;
         FS.checkOpExists(setattr, 63)
-        try {
-          setattr(arg, attr);
-        } catch (e) {
-          if (e instanceof RangeError) {
-            throw new FS.ErrnoError(22);
-          }
-          throw e;
-        }
+        setattr(arg, attr);
       },
   chrdev_stream_ops:{
   open(stream) {
@@ -3760,7 +3753,6 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
   };
   
   var SYSCALLS = {
-  currentUmask:18,
   calculateAt(dirfd, path, allowEmpty) {
         if (PATH.isAbs(path)) {
           return path;
@@ -3861,8 +3853,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
           return stream.flags;
         case 4: {
           var arg = syscallGetVarargI();
-          var mask = 289792;
-          stream.flags = (stream.flags & ~mask) | (arg & mask);
+          stream.flags |= arg;
           return 0;
         }
         case 12: {
@@ -3994,9 +3985,6 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
       path = SYSCALLS.getStr(path);
       path = SYSCALLS.calculateAt(dirfd, path);
       var mode = varargs ? syscallGetVarargI() : 0;
-      if (flags & 64) {
-        mode &= ~SYSCALLS.currentUmask;
-      }
       return FS.open(path, flags, mode).fd;
     } catch (e) {
     if (typeof FS == 'undefined' || !(e.name === 'ErrnoError')) throw e;
@@ -4173,7 +4161,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
    * @param {boolean=} noSetTiming
    */
   var setMainLoop = (iterFunc, fps, simulateInfiniteLoop, arg, noSetTiming) => {
-      assert(!MainLoop.func, 'emscripten_set_main_loop: there can only be one main loop function at once')
+      assert(!MainLoop.func, 'emscripten_set_main_loop: there can only be one main loop function at once: call emscripten_cancel_main_loop to cancel the previous one before setting a new one with different parameters.');
       MainLoop.func = iterFunc;
       MainLoop.arg = arg;
   
@@ -4528,7 +4516,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
     };
   
   var stringToUTF8 = (str, outPtr, maxBytesToWrite) => {
-      assert(typeof maxBytesToWrite == 'number', 'stringToUTF8 requires a third parameter that specifies the length of the output buffer');
+      assert(typeof maxBytesToWrite == 'number', 'stringToUTF8(str, outPtr, maxBytesToWrite) is missing the third parameter that specifies the length of the output buffer!');
       return stringToUTF8Array(str, HEAPU8, outPtr, maxBytesToWrite);
     };
   
@@ -4543,7 +4531,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
         wasmTableMirror[funcPtr] = func = wasmTable.get(funcPtr);
       }
       /** @suppress {checkTypes} */
-      assert(wasmTable.get(funcPtr) == func, 'table mirror is out of date');
+      assert(wasmTable.get(funcPtr) == func, 'JavaScript-side Wasm function table mirror is out of date!');
       return func;
     };
   var registerKeyEventCallback = (target, userData, useCapture, callbackfunc, eventTypeId, eventTypeString, targetThread) => {
@@ -5282,7 +5270,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
   
   try {
   
-      if (isNaN(offset)) return 22;
+      if (isNaN(offset)) return 61;
       var stream = SYSCALLS.getStreamFromFD(fd);
       FS.llseek(stream, offset, whence);
       HEAP64[((newOffset)>>3)] = BigInt(stream.position);
@@ -5913,7 +5901,7 @@ var findStringEnd = (heapOrArray, idx, maxBytesToRead, ignoreNul) => {
       var func = getCFunc(ident);
       var cArgs = [];
       var stack = 0;
-      assert(returnType !== 'array', 'return type should not be "array"');
+      assert(returnType !== 'array', 'Return type should not be "array".');
       if (args) {
         for (var i = 0; i < args.length; i++) {
           var converter = toC[argTypes[i]];
@@ -6448,54 +6436,30 @@ function checkIncomingModuleAPI() {
   ignoredModuleProp('onSbrkGrow');
 }
 var ASM_CONSTS = {
-  349060: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
- 349133: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
- 349203: () => { if(window.playSoundUI)window.playSoundUI(5); },  
- 349250: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349297: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349349: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
- 349406: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
- 349464: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 349522: () => { if(window.playSoundUI)window.playSoundUI(7); },  
- 349571: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
- 349623: () => { if(window.playSoundUI)window.playSoundUI(6); },  
- 349672: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
- 349854: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349916: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
- 349978: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
- 350028: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
- 350084: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
- 350136: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
- 350225: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
+  348676: ($0, $1, $2, $3, $4, $5, $6, $7) => { if(window.sbRow)window.sbRow($0,$1,$2,$3,$4,$5,$6,UTF8ToString($7)); },  
+ 348749: ($0, $1, $2, $3, $4) => { if(window.sbFinish)window.sbFinish($0,$1,$2,$3,UTF8ToString($4)); },  
+ 348819: () => { if(window.playSoundUI)window.playSoundUI(5); },  
+ 348866: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 348913: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 348965: ($0, $1) => { if(window.onDamageSource)window.onDamageSource($0,$1); },  
+ 349022: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(8,$0,$1,$2); },  
+ 349080: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349138: () => { if(window.playSoundUI)window.playSoundUI(7); },  
+ 349187: ($0, $1, $2) => { if(window.onMatchEnd)window.onMatchEnd($0,$1,$2); },  
+ 349239: () => { if(window.playSoundUI)window.playSoundUI(6); },  
+ 349288: ($0, $1) => { const renderMs=(window.r3FrameTime||0); const fps60=60000.0/$0; console.log('[PERF] avg-dt='+fps60.toFixed(1)+'ms physics='+$1.toFixed(2)+'ms render='+renderMs.toFixed(2)+'ms'); },  
+ 349470: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349532: ($0, $1, $2, $3, $4) => { if(window.updateAudio)window.updateAudio($0,$1,$2,$3,$4); },  
+ 349594: ($0) => { if(window.playSoundUI)window.playSoundUI($0); },  
+ 349644: ($0, $1, $2) => { if(window.playSoundAt)window.playSoundAt(4,$0,$1,$2); },  
+ 349700: ($0) => { if(window.onHitConfirm)window.onHitConfirm($0); },  
+ 349752: ($0, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) => { if(window.updateHUD)window.updateHUD($0,$1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13); },  
+ 349841: ($0, $1, $2, $3) => { if(window.updateMatchHUD)window.updateMatchHUD($0,$1,$2,$3); }
 };
 
 // Imports from the Wasm binary.
-var _setFreelook = Module['_setFreelook'] = makeInvalidEarlyAccess('_setFreelook');
-var _pause = Module['_pause'] = makeInvalidEarlyAccess('_pause');
-var _setGamepadInput = Module['_setGamepadInput'] = makeInvalidEarlyAccess('_setGamepadInput');
 var _setSettings = Module['_setSettings'] = makeInvalidEarlyAccess('_setSettings');
 var _setPhysicsTuning = Module['_setPhysicsTuning'] = makeInvalidEarlyAccess('_setPhysicsTuning');
-var _setNetworked = Module['_setNetworked'] = makeInvalidEarlyAccess('_setNetworked');
-var _applyServerMatchState = Module['_applyServerMatchState'] = makeInvalidEarlyAccess('_applyServerMatchState');
-var _reloadBuildings = Module['_reloadBuildings'] = makeInvalidEarlyAccess('_reloadBuildings');
-var _teleportPlayer = Module['_teleportPlayer'] = makeInvalidEarlyAccess('_teleportPlayer');
-var _writeHeightmapPatch = Module['_writeHeightmapPatch'] = makeInvalidEarlyAccess('_writeHeightmapPatch');
-var _dtsChaingunVC = Module['_dtsChaingunVC'] = makeInvalidEarlyAccess('_dtsChaingunVC');
-var _dtsChaingunIC = Module['_dtsChaingunIC'] = makeInvalidEarlyAccess('_dtsChaingunIC');
-var _dtsChaingunV = Module['_dtsChaingunV'] = makeInvalidEarlyAccess('_dtsChaingunV');
-var _dtsChaingunN = Module['_dtsChaingunN'] = makeInvalidEarlyAccess('_dtsChaingunN');
-var _dtsChaingunI = Module['_dtsChaingunI'] = makeInvalidEarlyAccess('_dtsChaingunI');
-var _dtsDiscVC = Module['_dtsDiscVC'] = makeInvalidEarlyAccess('_dtsDiscVC');
-var _dtsDiscIC = Module['_dtsDiscIC'] = makeInvalidEarlyAccess('_dtsDiscIC');
-var _dtsDiscV = Module['_dtsDiscV'] = makeInvalidEarlyAccess('_dtsDiscV');
-var _dtsDiscN = Module['_dtsDiscN'] = makeInvalidEarlyAccess('_dtsDiscN');
-var _dtsDiscI = Module['_dtsDiscI'] = makeInvalidEarlyAccess('_dtsDiscI');
-var _dtsGrenadeVC = Module['_dtsGrenadeVC'] = makeInvalidEarlyAccess('_dtsGrenadeVC');
-var _dtsGrenadeIC = Module['_dtsGrenadeIC'] = makeInvalidEarlyAccess('_dtsGrenadeIC');
-var _dtsGrenadeV = Module['_dtsGrenadeV'] = makeInvalidEarlyAccess('_dtsGrenadeV');
-var _dtsGrenadeN = Module['_dtsGrenadeN'] = makeInvalidEarlyAccess('_dtsGrenadeN');
-var _dtsGrenadeI = Module['_dtsGrenadeI'] = makeInvalidEarlyAccess('_dtsGrenadeI');
-var _spawnDummy = Module['_spawnDummy'] = makeInvalidEarlyAccess('_spawnDummy');
 var _setGameSettings = Module['_setGameSettings'] = makeInvalidEarlyAccess('_setGameSettings');
 var _updateScoreboard = Module['_updateScoreboard'] = makeInvalidEarlyAccess('_updateScoreboard');
 var _applyLoadout = Module['_applyLoadout'] = makeInvalidEarlyAccess('_applyLoadout');
@@ -6528,10 +6492,6 @@ var _getThirdPerson = Module['_getThirdPerson'] = makeInvalidEarlyAccess('_getTh
 var _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = makeInvalidEarlyAccess('_appendInteriorShapeAABBs');
 var _setLocalMuzzleOrigin = Module['_setLocalMuzzleOrigin'] = makeInvalidEarlyAccess('_setLocalMuzzleOrigin');
 var _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = makeInvalidEarlyAccess('_setLocalAimPoint3P');
-var _getLayoutEntityCount = Module['_getLayoutEntityCount'] = makeInvalidEarlyAccess('_getLayoutEntityCount');
-var _isLayoutLoaded = Module['_isLayoutLoaded'] = makeInvalidEarlyAccess('_isLayoutLoaded');
-var _getLayoutEntity = Module['_getLayoutEntity'] = makeInvalidEarlyAccess('_getLayoutEntity');
-var _setLayoutEntityPos = Module['_setLayoutEntityPos'] = makeInvalidEarlyAccess('_setLayoutEntityPos');
 var _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = makeInvalidEarlyAccess('_appendInteriorMeshTris');
 var _getPlayerSkiing = Module['_getPlayerSkiing'] = makeInvalidEarlyAccess('_getPlayerSkiing');
 var _getPlayerSpeed = Module['_getPlayerSpeed'] = makeInvalidEarlyAccess('_getPlayerSpeed');
@@ -6556,32 +6516,8 @@ var wasmMemory = makeInvalidEarlyAccess('wasmMemory');
 var wasmTable = makeInvalidEarlyAccess('wasmTable');
 
 function assignWasmExports(wasmExports) {
-  assert(typeof wasmExports['setFreelook'] != 'undefined', 'missing Wasm export: setFreelook');
-  assert(typeof wasmExports['pause'] != 'undefined', 'missing Wasm export: pause');
-  assert(typeof wasmExports['setGamepadInput'] != 'undefined', 'missing Wasm export: setGamepadInput');
   assert(typeof wasmExports['setSettings'] != 'undefined', 'missing Wasm export: setSettings');
   assert(typeof wasmExports['setPhysicsTuning'] != 'undefined', 'missing Wasm export: setPhysicsTuning');
-  assert(typeof wasmExports['setNetworked'] != 'undefined', 'missing Wasm export: setNetworked');
-  assert(typeof wasmExports['applyServerMatchState'] != 'undefined', 'missing Wasm export: applyServerMatchState');
-  assert(typeof wasmExports['reloadBuildings'] != 'undefined', 'missing Wasm export: reloadBuildings');
-  assert(typeof wasmExports['teleportPlayer'] != 'undefined', 'missing Wasm export: teleportPlayer');
-  assert(typeof wasmExports['writeHeightmapPatch'] != 'undefined', 'missing Wasm export: writeHeightmapPatch');
-  assert(typeof wasmExports['dtsChaingunVC'] != 'undefined', 'missing Wasm export: dtsChaingunVC');
-  assert(typeof wasmExports['dtsChaingunIC'] != 'undefined', 'missing Wasm export: dtsChaingunIC');
-  assert(typeof wasmExports['dtsChaingunV'] != 'undefined', 'missing Wasm export: dtsChaingunV');
-  assert(typeof wasmExports['dtsChaingunN'] != 'undefined', 'missing Wasm export: dtsChaingunN');
-  assert(typeof wasmExports['dtsChaingunI'] != 'undefined', 'missing Wasm export: dtsChaingunI');
-  assert(typeof wasmExports['dtsDiscVC'] != 'undefined', 'missing Wasm export: dtsDiscVC');
-  assert(typeof wasmExports['dtsDiscIC'] != 'undefined', 'missing Wasm export: dtsDiscIC');
-  assert(typeof wasmExports['dtsDiscV'] != 'undefined', 'missing Wasm export: dtsDiscV');
-  assert(typeof wasmExports['dtsDiscN'] != 'undefined', 'missing Wasm export: dtsDiscN');
-  assert(typeof wasmExports['dtsDiscI'] != 'undefined', 'missing Wasm export: dtsDiscI');
-  assert(typeof wasmExports['dtsGrenadeVC'] != 'undefined', 'missing Wasm export: dtsGrenadeVC');
-  assert(typeof wasmExports['dtsGrenadeIC'] != 'undefined', 'missing Wasm export: dtsGrenadeIC');
-  assert(typeof wasmExports['dtsGrenadeV'] != 'undefined', 'missing Wasm export: dtsGrenadeV');
-  assert(typeof wasmExports['dtsGrenadeN'] != 'undefined', 'missing Wasm export: dtsGrenadeN');
-  assert(typeof wasmExports['dtsGrenadeI'] != 'undefined', 'missing Wasm export: dtsGrenadeI');
-  assert(typeof wasmExports['spawnDummy'] != 'undefined', 'missing Wasm export: spawnDummy');
   assert(typeof wasmExports['setGameSettings'] != 'undefined', 'missing Wasm export: setGameSettings');
   assert(typeof wasmExports['updateScoreboard'] != 'undefined', 'missing Wasm export: updateScoreboard');
   assert(typeof wasmExports['applyLoadout'] != 'undefined', 'missing Wasm export: applyLoadout');
@@ -6614,10 +6550,6 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['appendInteriorShapeAABBs'] != 'undefined', 'missing Wasm export: appendInteriorShapeAABBs');
   assert(typeof wasmExports['setLocalMuzzleOrigin'] != 'undefined', 'missing Wasm export: setLocalMuzzleOrigin');
   assert(typeof wasmExports['setLocalAimPoint3P'] != 'undefined', 'missing Wasm export: setLocalAimPoint3P');
-  assert(typeof wasmExports['getLayoutEntityCount'] != 'undefined', 'missing Wasm export: getLayoutEntityCount');
-  assert(typeof wasmExports['isLayoutLoaded'] != 'undefined', 'missing Wasm export: isLayoutLoaded');
-  assert(typeof wasmExports['getLayoutEntity'] != 'undefined', 'missing Wasm export: getLayoutEntity');
-  assert(typeof wasmExports['setLayoutEntityPos'] != 'undefined', 'missing Wasm export: setLayoutEntityPos');
   assert(typeof wasmExports['appendInteriorMeshTris'] != 'undefined', 'missing Wasm export: appendInteriorMeshTris');
   assert(typeof wasmExports['getPlayerSkiing'] != 'undefined', 'missing Wasm export: getPlayerSkiing');
   assert(typeof wasmExports['getPlayerSpeed'] != 'undefined', 'missing Wasm export: getPlayerSpeed');
@@ -6638,32 +6570,8 @@ function assignWasmExports(wasmExports) {
   assert(typeof wasmExports['emscripten_stack_get_current'] != 'undefined', 'missing Wasm export: emscripten_stack_get_current');
   assert(typeof wasmExports['memory'] != 'undefined', 'missing Wasm export: memory');
   assert(typeof wasmExports['__indirect_function_table'] != 'undefined', 'missing Wasm export: __indirect_function_table');
-  _setFreelook = Module['_setFreelook'] = createExportWrapper('setFreelook', 1);
-  _pause = Module['_pause'] = createExportWrapper('pause', 1);
-  _setGamepadInput = Module['_setGamepadInput'] = createExportWrapper('setGamepadInput', 5);
   _setSettings = Module['_setSettings'] = createExportWrapper('setSettings', 1);
   _setPhysicsTuning = Module['_setPhysicsTuning'] = createExportWrapper('setPhysicsTuning', 6);
-  _setNetworked = Module['_setNetworked'] = createExportWrapper('setNetworked', 1);
-  _applyServerMatchState = Module['_applyServerMatchState'] = createExportWrapper('applyServerMatchState', 6);
-  _reloadBuildings = Module['_reloadBuildings'] = createExportWrapper('reloadBuildings', 2);
-  _teleportPlayer = Module['_teleportPlayer'] = createExportWrapper('teleportPlayer', 3);
-  _writeHeightmapPatch = Module['_writeHeightmapPatch'] = createExportWrapper('writeHeightmapPatch', 5);
-  _dtsChaingunVC = Module['_dtsChaingunVC'] = createExportWrapper('dtsChaingunVC', 0);
-  _dtsChaingunIC = Module['_dtsChaingunIC'] = createExportWrapper('dtsChaingunIC', 0);
-  _dtsChaingunV = Module['_dtsChaingunV'] = createExportWrapper('dtsChaingunV', 0);
-  _dtsChaingunN = Module['_dtsChaingunN'] = createExportWrapper('dtsChaingunN', 0);
-  _dtsChaingunI = Module['_dtsChaingunI'] = createExportWrapper('dtsChaingunI', 0);
-  _dtsDiscVC = Module['_dtsDiscVC'] = createExportWrapper('dtsDiscVC', 0);
-  _dtsDiscIC = Module['_dtsDiscIC'] = createExportWrapper('dtsDiscIC', 0);
-  _dtsDiscV = Module['_dtsDiscV'] = createExportWrapper('dtsDiscV', 0);
-  _dtsDiscN = Module['_dtsDiscN'] = createExportWrapper('dtsDiscN', 0);
-  _dtsDiscI = Module['_dtsDiscI'] = createExportWrapper('dtsDiscI', 0);
-  _dtsGrenadeVC = Module['_dtsGrenadeVC'] = createExportWrapper('dtsGrenadeVC', 0);
-  _dtsGrenadeIC = Module['_dtsGrenadeIC'] = createExportWrapper('dtsGrenadeIC', 0);
-  _dtsGrenadeV = Module['_dtsGrenadeV'] = createExportWrapper('dtsGrenadeV', 0);
-  _dtsGrenadeN = Module['_dtsGrenadeN'] = createExportWrapper('dtsGrenadeN', 0);
-  _dtsGrenadeI = Module['_dtsGrenadeI'] = createExportWrapper('dtsGrenadeI', 0);
-  _spawnDummy = Module['_spawnDummy'] = createExportWrapper('spawnDummy', 0);
   _setGameSettings = Module['_setGameSettings'] = createExportWrapper('setGameSettings', 5);
   _updateScoreboard = Module['_updateScoreboard'] = createExportWrapper('updateScoreboard', 0);
   _applyLoadout = Module['_applyLoadout'] = createExportWrapper('applyLoadout', 3);
@@ -6696,10 +6604,6 @@ function assignWasmExports(wasmExports) {
   _appendInteriorShapeAABBs = Module['_appendInteriorShapeAABBs'] = createExportWrapper('appendInteriorShapeAABBs', 2);
   _setLocalMuzzleOrigin = Module['_setLocalMuzzleOrigin'] = createExportWrapper('setLocalMuzzleOrigin', 3);
   _setLocalAimPoint3P = Module['_setLocalAimPoint3P'] = createExportWrapper('setLocalAimPoint3P', 3);
-  _getLayoutEntityCount = Module['_getLayoutEntityCount'] = createExportWrapper('getLayoutEntityCount', 0);
-  _isLayoutLoaded = Module['_isLayoutLoaded'] = createExportWrapper('isLayoutLoaded', 0);
-  _getLayoutEntity = Module['_getLayoutEntity'] = createExportWrapper('getLayoutEntity', 6);
-  _setLayoutEntityPos = Module['_setLayoutEntityPos'] = createExportWrapper('setLayoutEntityPos', 4);
   _appendInteriorMeshTris = Module['_appendInteriorMeshTris'] = createExportWrapper('appendInteriorMeshTris', 8);
   _getPlayerSkiing = Module['_getPlayerSkiing'] = createExportWrapper('getPlayerSkiing', 0);
   _getPlayerSpeed = Module['_getPlayerSpeed'] = createExportWrapper('getPlayerSpeed', 0);
