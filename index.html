@@ -1921,11 +1921,31 @@
       // Show prep overlay while Three.js builds the scene (dismissed by renderer on first frame)
       var prep = document.getElementById('renderer-prep');
       if(prep){ prep.style.display='flex'; prep.style.opacity='1'; }
-      // Animate the prep bar so it feels alive
-      var bar=document.getElementById('prep-bar'); var pct=0;
-      window._prepInterval=setInterval(function(){
-        pct=Math.min(pct+2,90); if(bar)bar.style.width=pct+'%';
-      },50);
+      // R33: real-progress prep bar. Old code walked 0→90% in 22.5s and
+      // then *sat at 90%* waiting for the renderer's first-frame callback,
+      // which made the last 10% feel disproportionately slow. New code walks
+      // 0→75% slowly (asymptote at the slow part of loading) and only fills
+      // the remaining 75→100% when real milestones complete.
+      //   - 0→30%: WASM module instantiation (Module.calledRun)
+      //   - 30→60%: first tick fired (Module._isReady() returns 1)
+      //   - 60→90%: first frame rendered (window.__firstFrameRendered set)
+      //   - 90→100%: snapped by the existing R32.296 dismiss path on
+      //     matchStart
+      var bar=document.getElementById('prep-bar');
+      function setBar(p){ if(bar) bar.style.width = Math.max(0, Math.min(100, p))+'%'; }
+      var startedAt = performance.now();
+      window._prepInterval = setInterval(function(){
+        // Floor based on real signals
+        var floor = 5;
+        if (window.Module) floor = 30;
+        if (window.Module && typeof window.Module._isReady === 'function' && window.Module._isReady()) floor = 60;
+        if (window.__firstFrameRendered) floor = 90;
+        // Add a small time-based drift so the bar always feels alive
+        // (cap drift at +5% above floor so we never overshoot the next milestone)
+        var ageS = (performance.now() - startedAt) / 1000;
+        var drift = Math.min(5, ageS * 0.5);
+        setBar(floor + drift);
+      }, 100);
       document.getElementById('hud').classList.add('active');
       // R24: show gear icon + connection-quality bars in-match
       document.getElementById('hud-gear').classList.add('show');
@@ -4226,6 +4246,7 @@
             // Auto-start directly into the game — no home screen
             window.__rendererReady = function(){
               // Called by renderer.js on first rendered frame
+              window.__firstFrameRendered = true;  // R33: lifts prep-bar floor to 90%
               var prep=document.getElementById('renderer-prep');
               if(!prep) return;
               clearInterval(window._prepInterval);

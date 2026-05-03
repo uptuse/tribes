@@ -260,6 +260,23 @@ export function start() {
             log('matchStart in ' + msg.lobbyId + ' players=' + msg.players.length);
             telemetry.inMatch = true;
             startInputLoop();
+            // R33 Slice 1: teleport the wasm to the server-authoritative
+            // spawn pad. Without this, the wasm's local match-start logic
+            // spawns the player at a different position than where the
+            // server thinks they are; the snapshot reconcile loop then
+            // yanks them across the map ("teleported elsewhere and frozen"
+            // symptom on 2nd-player join). Server has been broadcasting
+            // pos+rot since R32.299; this is the missing client-side
+            // consume.
+            try {
+                const myRow = msg.players.find(p => p.id === myNumericId);
+                if (myRow && myRow.pos && Array.isArray(myRow.pos) && myRow.pos.length >= 3 &&
+                    window.Module && typeof window.Module._teleportPlayer === 'function') {
+                    window.Module._teleportPlayer(myRow.pos[0], myRow.pos[1], myRow.pos[2]);
+                    log('[R33] teleported to server spawn pad: ' +
+                        myRow.pos.map(v => v.toFixed(1)).join(','));
+                }
+            } catch (e) { console.warn('[R33] spawn-teleport failed', e); }
             // R23: open voice peers to all teammates
             voice.setLocalNumericId(myNumericId);
             voice.init(send);
@@ -280,6 +297,19 @@ export function start() {
             // R33 Slice 1: late-joiner / reconnecter authoritative state.
             // Sent once on joinAck if a match is already in progress.
             applyServerMatchStateToWasm(msg, /*tag=*/'matchSync');
+            // R33 Slice 1: also teleport to the server's view of where we
+            // are. Without this, a reconnecting player respawns at the
+            // wasm's locally-picked spawn (probably wrong) and then snaps
+            // when the next snapshot arrives — visible as a freeze + jump
+            // for the reconnecter and as a teleport for everyone watching.
+            try {
+                if (msg.yourPos && Array.isArray(msg.yourPos) && msg.yourPos.length >= 3 &&
+                    window.Module && typeof window.Module._teleportPlayer === 'function') {
+                    window.Module._teleportPlayer(msg.yourPos[0], msg.yourPos[1], msg.yourPos[2]);
+                    log('[R33] resync teleport to server pos: ' +
+                        msg.yourPos.map(v => v.toFixed(1)).join(','));
+                }
+            } catch (e) { console.warn('[R33] resync-teleport failed', e); }
         } else if (msg.type === 'matchEnd') {
             log('matchEnd score=' + msg.teamScore.join('-') + ' winner=' + msg.winner);
             telemetry.inMatch = false;
